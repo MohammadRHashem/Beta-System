@@ -1,0 +1,4 @@
+backend/node_modules/
+backend/baileys_auth_info/
+frontend/node_modules/
+.env
