@@ -7,6 +7,8 @@ const { Server } = require("socket.io");
 const whatsappController = require('./controllers/whatsappController');
 const batchController = require('./controllers/batchController');
 const templateController = require('./controllers/templateController');
+const settingsController = require('./controllers/settingsController');
+
 
 const app = express();
 const server = http.createServer(app);
@@ -57,6 +59,11 @@ app.get('/api/templates', templateController.getAllTemplates);
 app.post('/api/templates', templateController.createTemplate);
 app.put('/api/templates/:id', templateController.updateTemplate);
 app.delete('/api/templates/:id', templateController.deleteTemplate);
+
+app.get('/api/settings/forwarding', settingsController.getForwardingRules);
+app.post('/api/settings/forwarding', settingsController.createForwardingRule);
+app.get('/api/settings/groups', settingsController.getGroupSettings);
+app.post('/api/settings/groups', settingsController.updateGroupSetting);
 
 const HOST = '0.0.0.0';
 const PORT = process.env.PORT || 5000;

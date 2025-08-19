@@ -1,5 +1,8 @@
-const { Client, LocalAuth } = require('whatsapp-web.js');
+const { Client, LocalAuth, MessageMedia } = require('whatsapp-web.js');
 const qrcode = require('qrcode');
+const fs = require('fs/promises'); // Use promises version of fs
+const { execa } = require('execa');
+const pool =require('../config/db');
 
 let client;
 let qrCodeData;
@@ -35,6 +38,107 @@ const initializeWhatsApp = () => {
         console.log('Connection opened. Client is ready!');
         qrCodeData = null;
         connectionStatus = 'connected';
+    });
+    
+    // --- NEW MESSAGE LISTENER ---
+    client.on('message', async (message) => {
+        try {
+            const chat = await message.getChat();
+            // 1. Process only incoming messages from groups that have media
+            if (!chat.isGroup || !message.hasMedia || message.fromMe) {
+                return;
+            }
+
+            // 2. Check group settings in DB
+            const [settings] = await pool.query('SELECT * FROM group_settings WHERE group_jid = ?', [chat.id._serialized]);
+            const groupSettings = settings[0] || { forwarding_enabled: true, archiving_enabled: true }; // Default to enabled
+
+            if (!groupSettings.forwarding_enabled && !groupSettings.archiving_enabled) {
+                console.log(`[PROCESS] Ignoring message from disabled group: ${chat.name}`);
+                return;
+            }
+
+            // 3. Download the media
+            const media = await message.downloadMedia();
+            if (!media || !['image/jpeg', 'image/jpg', 'image/png', 'application/pdf'].includes(media.mimetype)) {
+                console.log(`[PROCESS] Ignoring unsupported media type: ${media.mimetype}`);
+                return;
+            }
+
+            console.log(`[PROCESS] Received valid media from group: ${chat.name}`);
+            const tempFilePath = `/tmp/${message.id.id}.${media.mimetype.split('/')[1]}`;
+            await fs.writeFile(tempFilePath, Buffer.from(media.data, 'base64'));
+
+            // 4. Execute the Python script
+            // IMPORTANT: Make sure the path to your python script is correct!
+            const pythonScriptPath = '/home/ubuntu/TRK-TechAssistant/main.py';
+            const { stdout } = await execa('python3', [pythonScriptPath, tempFilePath]);
+            const invoiceJson = JSON.parse(stdout);
+
+            console.log(`[PROCESS] Python script processed successfully for invoice: ${invoiceJson.invoice_id}`);
+            
+            // Clean up the temp file
+            await fs.unlink(tempFilePath);
+
+            // 5. Save to `invoices_all` table (if archiving is enabled)
+            if (groupSettings.archiving_enabled) {
+                 await pool.query(
+                    `INSERT INTO invoices_all (invoice_id, source_group_jid, payment_method, invoice_date, invoice_time, amount, currency, sender_name, recipient_name, raw_json_data) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                    [invoiceJson.invoice_id, chat.id._serialized, invoiceJson.payment_method, invoiceJson.invoice_date, invoiceJson.invoice_time, invoiceJson.amount, invoiceJson.currency, invoiceJson.sender?.name, invoiceJson.recipient?.name, JSON.stringify(invoiceJson)]
+                );
+            }
+
+            // 6. Routing and Archiving Logic
+            const recipientName = invoiceJson.recipient?.name?.toLowerCase() || '';
+            const [rules] = await pool.query('SELECT * FROM forwarding_rules');
+
+            let ruleMatched = false;
+            for (const rule of rules) {
+                if (recipientName.includes(rule.trigger_keyword.toLowerCase())) {
+                    ruleMatched = true;
+                    console.log(`[PROCESS] Matched rule "${rule.trigger_keyword}"`);
+                    
+                    // Forward the message
+                    if (groupSettings.forwarding_enabled) {
+                        await client.sendMessage(rule.destination_group_jid, media, { caption: `Invoice from: ${chat.name}\nID: ${invoiceJson.invoice_id}` });
+                        console.log(`[PROCESS] Forwarded media to: ${rule.destination_group_name}`);
+                    }
+
+                    // Archive to specific tables
+                    if (groupSettings.archiving_enabled) {
+                        const { invoice_id, sender, recipient, amount } = invoiceJson;
+                        if (invoice_id && sender?.name && recipient?.name && amount) {
+                            await pool.query(
+                                'INSERT INTO invoices_trkbit_approved (invoice_id, source_group_jid, sender_name, recipient_name, amount) VALUES (?, ?, ?, ?, ?)',
+                                [invoice_id, chat.id._serialized, sender.name, recipient.name, amount]
+                            );
+                            console.log(`[PROCESS] Archived to trkbit_approved.`);
+                        } else {
+                             await pool.query(
+                                'INSERT INTO invoices_trkbit_unapproved (invoice_id, source_group_jid, raw_json_data) VALUES (?, ?, ?)',
+                                [invoice_id, chat.id._serialized, JSON.stringify(invoiceJson)]
+                            );
+                            console.log(`[PROCESS] Archived to trkbit_unapproved due to missing fields.`);
+                        }
+                    }
+                    break; // Stop after first match
+                }
+            }
+
+            // Handle "Chave Pix" (no rule matched)
+            if (!ruleMatched && groupSettings.archiving_enabled) {
+                 await pool.query(
+                    'INSERT INTO invoices_chave_pix (invoice_id, source_group_jid, raw_json_data) VALUES (?, ?, ?)',
+                    [invoiceJson.invoice_id, chat.id._serialized, JSON.stringify(invoiceJson)]
+                );
+                console.log(`[PROCESS] No rule matched. Archived to chave_pix.`);
+            }
+
+        } catch (error) {
+            console.error('[PROCESS-ERROR] An error occurred during message processing:', error);
+            // Optional: Send an error message back to the source group
+            // message.reply(`An error occurred while processing your invoice: ${error.message}`);
+        }
     });
     
     client.on('disconnected', (reason) => {
