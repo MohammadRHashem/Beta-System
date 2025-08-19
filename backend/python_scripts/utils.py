@@ -1,52 +1,45 @@
 import json
+import os # Import os to get environment variables
 from prompts import prompt_2
 import google.generativeai as genai
 from pdf2image import convert_from_path
 
+# --- FIX 1: LOAD API KEY FROM ENVIRONMENT ---
+# The key is now loaded securely and is not hardcoded.
+api_key = os.getenv('GOOGLE_API_KEY')
+genai.configure(api_key=api_key)
 
-vision_model = genai.GenerativeModel(model_name="models/gemini-2.0-flash")
-genai.configure(api_key="AIzaSyCzaAsTFeqten0g3ajWefZYXLIOHu-rP38")
+vision_model = genai.GenerativeModel(model_name="gemini-1.5-flash")
 
+def clean_text_and_load_json(response_text):
+    # This function now expects raw text and returns a Python dictionary
+    try:
+        # Find the start and end of the JSON block
+        start = response_text.find('{')
+        end = response_text.rfind('}') + 1
+        if start == -1 or end == 0:
+            return None # No JSON found
 
-def pdf_to_images(pdf_path, output_folder, dpi=300):
-    images = convert_from_path(pdf_path, dpi=dpi)
-
-    for i, image in enumerate(images):
-        image_path = f"{output_folder}/page_{i+1}.png"
-        image.save(image_path, "PNG")
-
-
-def clean_text(response):
-    response = response.replace("`", "")
-    response = response.replace("json", "")
-    response_dict = json.loads(response)
-    response_dict["transaction_id"] = response_dict.get("transaction_id", "").replace(
-        "O", "0"
-    )
-    response = json.dumps(response_dict, indent=2)
-    return response.strip()
-
+        json_str = response_text[start:end]
+        response_dict = json.loads(json_str)
+        
+        # Perform any cleaning if necessary
+        response_dict["invoice_id"] = response_dict.get("invoice_id", "").replace("O", "0")
+        return response_dict
+    except (json.JSONDecodeError, TypeError):
+        return None # Return None if JSON is invalid
 
 def gemini_img_ocr(image_data, file_extension):
     try:
-        mime_type = None
-        if file_extension == ".jpg" or file_extension == ".jpeg":
-            mime_type = "image/jpeg"
-        elif file_extension == ".png":
-            mime_type = "image/png"
-
+        mime_type = "image/jpeg" if file_extension in [".jpg", ".jpeg"] else "image/png"
         contents = [
             {"mime_type": mime_type, "data": image_data},
             {"text": prompt_2},
         ]
-
         response = vision_model.generate_content(contents)
         return response.text
-
-    except Exception as e:
-        # print("Error in gemini_img_ocr:", e)
-        return None
-
+    except Exception:
+        return None # Return None on any API error
 
 def gemini_pdf_ocr(pdf_data):
     try:
@@ -57,7 +50,5 @@ def gemini_pdf_ocr(pdf_data):
         ]
         response = vision_model.generate_content(contents)
         return response.text
-
-    except Exception as e:
-        print("Error in gemini_pdf_ocr:", e)
+    except Exception:
         return None

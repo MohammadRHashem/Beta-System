@@ -5,6 +5,7 @@ const pool = require('../config/db');
 const path = require('path');
 const execa = require('execa');
 const os = require('os');
+const dotenv = require('dotenv');
 
 let client;
 let qrCodeData;
@@ -43,16 +44,19 @@ const processQueue = async () => {
         const tempFilePath = `/tmp/${message.id.id}.${media.mimetype.split('/')[1] || 'bin'}`;
         await fs.writeFile(tempFilePath, Buffer.from(media.data, 'base64'));
         
-        // --- THIS IS THE CRITICAL FIX ---
-        const pythonProjectPath = path.join(os.homedir(), 'python_scripts');
-        const pythonScriptPath = path.join(pythonProjectPath, 'main.py');
-        const pythonExecutablePath = path.join(pythonProjectPath, 'venv', 'bin', 'python3');
+        // --- FIX 5: CORRECT PATHS FOR THE NEW STRUCTURE ---
+        const pythonScriptsDir = path.join(__dirname, '..', 'python_scripts');
+        const pythonExecutablePath = path.join(pythonScriptsDir, 'venv', 'bin', 'python3');
+        const pythonScriptPath = path.join(pythonScriptsDir, 'main.py');
+        
+        // Load the Python project's .env file
+        const pythonEnvPath = path.join(pythonScriptsDir, '.env');
+        const pythonEnv = dotenv.config({ path: pythonEnvPath }).parsed;
         
         let invoiceJson;
         try {
-            // Use the 'cwd' option to set the working directory for the script
             const { stdout } = await execa(pythonExecutablePath, [pythonScriptPath, tempFilePath], {
-                cwd: pythonProjectPath
+                env: pythonEnv 
             });
             invoiceJson = JSON.parse(stdout);
             console.log(`[PROCESS] Python script success. Invoice ID: ${invoiceJson.invoice_id}`);
@@ -67,7 +71,7 @@ const processQueue = async () => {
         await fs.unlink(tempFilePath);
 
         if (!invoiceJson || !invoiceJson.invoice_id) {
-             console.error(`[PROCESS-ERROR] Python script returned invalid JSON or missing invoice_id for media from ${chat.name}`);
+             console.log(`[PROCESS-INFO] Python script returned no valid invoice_id. Skipping forwarding/archiving for this file.`);
              isProcessing = false;
              processQueue();
              return;
@@ -130,60 +134,21 @@ const processQueue = async () => {
 
 const initializeWhatsApp = () => {
     console.log('Initializing WhatsApp client...');
-    
-    client = new Client({
-        authStrategy: new LocalAuth({ dataPath: 'wwebjs_sessions' }),
-        puppeteer: {
-            headless: true,
-            args: [
-                '--no-sandbox',
-                '--disable-setuid-sandbox',
-                '--disable-dev-shm-usage',
-                '--disable-accelerated-2d-canvas',
-                '--no-first-run',
-                '--no-zygote',
-                '--single-process',
-                '--disable-gpu'
-            ],
-        }
-    });
-
-    client.on('qr', async (qr) => {
-        console.log('QR code generated.');
-        qrCodeData = await qrcode.toDataURL(qr);
-        connectionStatus = 'qr';
-    });
-
-    client.on('ready', () => {
-        console.log('Connection opened. Client is ready!');
-        qrCodeData = null;
-        connectionStatus = 'connected';
-    });
-    
+    client = new Client({ authStrategy: new LocalAuth({ dataPath: 'wwebjs_sessions' }), puppeteer: { headless: true, args: [ '--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-accelerated-2d-canvas', '--no-first-run', '--no-zygote', '--single-process', '--disable-gpu' ], } });
+    client.on('qr', async (qr) => { console.log('QR code generated.'); qrCodeData = await qrcode.toDataURL(qr); connectionStatus = 'qr'; });
+    client.on('ready', () => { console.log('Connection opened. Client is ready!'); qrCodeData = null; connectionStatus = 'connected'; });
     client.on('message', async (message) => {
         try {
             const chat = await message.getChat();
-            if (!chat.isGroup || !message.hasMedia || message.fromMe) {
-                return;
-            }
+            if (!chat.isGroup || !message.hasMedia || message.fromMe) { return; }
             messageQueue.push(message);
             processQueue();
-
         } catch (error) {
             console.error('[MESSAGE-HANDLER-ERROR] Could not queue message:', error);
         }
     });
-    
-    client.on('disconnected', (reason) => {
-        console.log('Client was logged out or disconnected', reason);
-        connectionStatus = 'disconnected';
-    });
-    
-    client.on('auth_failure', msg => {
-        console.error('AUTHENTICATION FAILURE', msg);
-        connectionStatus = 'disconnected';
-    });
-
+    client.on('disconnected', (reason) => { console.log('Client was logged out or disconnected', reason); connectionStatus = 'disconnected'; });
+    client.on('auth_failure', msg => { console.error('AUTHENTICATION FAILURE', msg); connectionStatus = 'disconnected'; });
     client.initialize();
 };
 
