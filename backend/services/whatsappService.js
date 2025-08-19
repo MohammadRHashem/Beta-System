@@ -117,7 +117,7 @@ const broadcast = async (io, socketId, groupObjects, message) => {
             });
 
             // STEP 3: COOLDOWN DELAY
-            const cooldownDelay = Math.floor(Math.random() * (6000 - 2500 + 1) + 2500);
+            const cooldownDelay = 2;
             await delay(cooldownDelay);
 
         } catch (error) {
