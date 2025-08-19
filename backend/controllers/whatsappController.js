@@ -1,5 +1,5 @@
 const fs = require('fs-extra');
-const { Queue } = require('bullmq'); // Import the Queue class
+const { Queue } = require('bullmq');
 const baileysService = require('../services/baileys');
 const pool = require('../config/db');
 
@@ -97,19 +97,14 @@ exports.broadcastMessage = async (req, res) => {
     }
     
     try {
-        // Add the broadcast request as a job to the queue.
-        // We pass 'io' through the job data, which is a bit of a hack but works.
-        // A more advanced setup would have the worker handle 'io' itself.
+        // The job data is now a clean, serializable object. No more 'io' object.
         await broadcastQueue.add('send-message', {
-            io: req.io, // Pass the io instance
             socketId,
             groupObjects,
             message
         });
         
         console.log(`[CONTROLLER] Broadcast job for socket ${socketId} added to the queue.`);
-        
-        // Let the user know their job is queued.
         res.status(202).json({ message: 'Broadcast job has been queued successfully.' });
 
     } catch (error) {

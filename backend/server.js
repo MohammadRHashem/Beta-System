@@ -4,6 +4,7 @@ const cors = require('cors');
 const http = require('http');
 const { Server } = require("socket.io");
 require('./services/broadcastWorker');
+const { QueueEvents } = require('bullmq');
 
 const whatsappController = require('./controllers/whatsappController');
 const batchController = require('./controllers/batchController');
@@ -39,6 +40,28 @@ io.on('connection', (socket) => {
     console.log(`[Socket.io] A user connected with ID: ${socket.id}`);
     socket.on('disconnect', () => {
         console.log(`[Socket.io] User disconnected with ID: ${socket.id}`);
+    });
+});
+
+const queueEvents = new QueueEvents('broadcast-queue', {
+    connection: { host: 'localhost', port: 6379, maxRetriesPerRequest: null }
+});
+
+queueEvents.on('progress', ({ jobId, data }) => {
+    // A job has reported progress. 'data' is the progress object.
+    const job = broadcastQueue.getJob(jobId); // We need to get the job to find the socketId
+    job.then(j => {
+        if (j) {
+            const socketId = j.data.socketId;
+            console.log(`[QUEUE-EVENT] Progress for job ${jobId} -> socket ${socketId}:`, data);
+            
+            // Forward the progress to the correct client
+            if (data.status === 'complete') {
+                 io.to(socketId).emit('broadcast:complete', data);
+            } else {
+                 io.to(socketId).emit('broadcast:progress', data);
+            }
+        }
     });
 });
 

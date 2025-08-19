@@ -83,13 +83,14 @@ const fetchAllGroups = async () => {
 };
 
 // --- COMPLETELY REWRITTEN BROADCAST FUNCTION FOR MAXIMUM STABILITY ---
-const broadcast = async (io, socketId, groupObjects, message) => {
+const broadcast = async (progressReporter, groupObjects, message) => {
     if (!sock || connectionStatus !== 'connected') {
-        io.to(socketId).emit('broadcast:error', { message: 'WhatsApp is not connected.' });
+        // Report an initial error and stop
+        await progressReporter({ status: 'error', message: 'WhatsApp is not connected.' });
         return;
     }
 
-    console.log(`[BROADCAST] Starting advanced broadcast to ${groupObjects.length} groups for socket ${socketId}.`);
+    console.log(`[BROADCAST] Starting broadcast to ${groupObjects.length} groups.`);
     
     let successfulSends = 0;
     let failedSends = 0;
@@ -98,31 +99,26 @@ const broadcast = async (io, socketId, groupObjects, message) => {
 
     for (const group of groupObjects) {
         try {
-            // Emit a "sending" status update to the client
-            io.to(socketId).emit('broadcast:progress', { 
+            await progressReporter({ 
                 groupName: group.name, 
                 status: 'sending',
                 message: `Sending to "${group.name}"...`
             });
 
-            // STEP 1: SIMULATE TYPING
             await sock.sendPresenceUpdate('composing', group.id);
             const typingDelay = Math.floor(Math.random() * (1500 - 750 + 1) + 750);
             await delay(typingDelay);
 
-            // STEP 2: SEND MESSAGE
             await sock.sendMessage(group.id, { text: message });
             successfulSends++;
             successfulGroups.push(group.name);
 
-            // Emit a "success" status update
-            io.to(socketId).emit('broadcast:progress', {
+            await progressReporter({
                 groupName: group.name,
                 status: 'success',
                 message: `Successfully sent to "${group.name}".`
             });
 
-            // STEP 3: COOLDOWN DELAY
             const cooldownDelay = Math.floor(Math.random() * (6000 - 2500 + 1) + 2500);
             await delay(cooldownDelay);
 
@@ -131,25 +127,25 @@ const broadcast = async (io, socketId, groupObjects, message) => {
             failedSends++;
             failedGroups.push(group.name);
             
-            // Emit a "failed" status update
-            io.to(socketId).emit('broadcast:progress', {
+            await progressReporter({
                 groupName: group.name,
                 status: 'failed',
                 message: `Failed to send to "${group.name}". Reason: ${error.message}`
             });
-            await delay(5000); // Longer delay after a failure
+            await delay(5000);
         }
     }
 
-    // Final completion event with summary
-    io.to(socketId).emit('broadcast:complete', {
+    // Final completion report with summary
+    await progressReporter({
+        status: 'complete',
         total: groupObjects.length,
         successful: successfulSends,
         failed: failedSends,
         successfulGroups,
         failedGroups
     });
-    console.log(`[BROADCAST] Finished for socket ${socketId}. Success: ${successfulSends}, Failed: ${failedSends}`);
+    console.log(`[BROADCAST] Finished. Success: ${successfulSends}, Failed: ${failedSends}`);
 };
 
 
