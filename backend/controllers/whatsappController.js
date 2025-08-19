@@ -1,6 +1,8 @@
 const fs = require('fs-extra');
 const { Queue } = require('bullmq');
 const baileysService = require('../services/baileys');
+const broadcastQueue = require('../services/queue'); // <-- IMPORT the queue
+
 const pool = require('../config/db');
 
 // --- Create a new Queue instance ---
@@ -97,7 +99,7 @@ exports.broadcastMessage = async (req, res) => {
     }
     
     try {
-        // The job data is now a clean, serializable object. No more 'io' object.
+        // Use the imported broadcastQueue
         await broadcastQueue.add('send-message', {
             socketId,
             groupObjects,
