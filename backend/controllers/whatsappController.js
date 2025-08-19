@@ -1,6 +1,15 @@
 const fs = require('fs-extra');
+const { Queue } = require('bullmq'); // Import the Queue class
 const baileysService = require('../services/baileys');
 const pool = require('../config/db');
+
+// --- Create a new Queue instance ---
+const broadcastQueue = new Queue('broadcast-queue', {
+    connection: {
+        host: 'localhost',
+        port: 6379
+    }
+});
 
 // --- No changes to these functions ---
 exports.init = () => {
@@ -80,28 +89,31 @@ exports.syncGroups = async (req, res) => {
 };
 
 
-// --- MODIFIED broadcastMessage FUNCTION ---
-exports.broadcastMessage = (req, res) => {
+exports.broadcastMessage = async (req, res) => {
     const { groupObjects, message, socketId } = req.body;
 
     if (!groupObjects || !message || !socketId || !Array.isArray(groupObjects)) {
-        return res.status(400).json({ message: 'Invalid request body. groupObjects (array), message (string), and socketId are required.' });
+        return res.status(400).json({ message: 'Invalid request body.' });
     }
     
-    // This try-catch block provides robust error logging.
     try {
-        // Immediately respond to the client
-        res.status(202).json({ message: 'Broadcast accepted and will start shortly.' });
+        // Add the broadcast request as a job to the queue.
+        // We pass 'io' through the job data, which is a bit of a hack but works.
+        // A more advanced setup would have the worker handle 'io' itself.
+        await broadcastQueue.add('send-message', {
+            io: req.io, // Pass the io instance
+            socketId,
+            groupObjects,
+            message
+        });
         
-        // Run the actual broadcast in the background.
-        console.log(`[CONTROLLER] Handing off broadcast job to Baileys service for socket ${socketId}.`);
-        baileysService.broadcast(req.io, socketId, groupObjects, message);
+        console.log(`[CONTROLLER] Broadcast job for socket ${socketId} added to the queue.`);
+        
+        // Let the user know their job is queued.
+        res.status(202).json({ message: 'Broadcast job has been queued successfully.' });
 
     } catch (error) {
-        console.error("[CONTROLLER-ERROR] Failed to start broadcast job:", error);
-        // If starting the job fails, we should notify the specific client via WebSocket
-        if (req.io && socketId) {
-            req.io.to(socketId).emit('broadcast:error', { message: 'Failed to start the broadcast process on the server.' });
-        }
+        console.error("[CONTROLLER-ERROR] Failed to add broadcast job to queue:", error);
+        res.status(500).json({ message: 'Failed to queue the broadcast job.' });
     }
 };
