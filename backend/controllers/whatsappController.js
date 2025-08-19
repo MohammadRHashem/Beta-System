@@ -1,6 +1,6 @@
 const fs = require('fs-extra');
 const baileysService = require('../services/baileys');
-const pool = require('../config/db'); // <-- Make sure you have this import
+const pool = require('../config/db');
 
 exports.init = () => {
     baileysService.init();
@@ -32,11 +32,8 @@ exports.logout = async (req, res) => {
     }
 };
 
-// --- MODIFIED ---
-// This function now quickly fetches groups from YOUR database.
 exports.getGroups = async (req, res) => {
     try {
-        // We use user_id = 1 as a placeholder for a single-user system
         const [groups] = await pool.query(
             'SELECT group_jid as id, group_name as name FROM whatsapp_groups WHERE user_id = 1 ORDER BY group_name'
         );
@@ -47,38 +44,63 @@ exports.getGroups = async (req, res) => {
     }
 };
 
-// --- NEW FUNCTION ---
-// This function fetches groups from WhatsApp and saves them to your database.
+// --- DEFINITIVELY CORRECTED syncGroups FUNCTION ---
 exports.syncGroups = async (req, res) => {
+    const connection = await pool.getConnection(); // Use a single connection for the transaction
     try {
-        // Step 1: Fetch all groups fresh from Baileys/WhatsApp
-        console.log('Starting group sync from WhatsApp...');
-        const freshGroups = await baileysService.fetchAllGroups();
-        console.log(`Fetched ${freshGroups.length} groups from WhatsApp.`);
+        console.log('Starting robust group sync...');
+        await connection.beginTransaction();
 
-        if (freshGroups.length === 0) {
-            return res.status(200).json({ message: 'No groups found to sync.' });
+        // Step 1: Fetch fresh groups from WhatsApp (Source of Truth)
+        const freshGroups = await baileysService.fetchAllGroups();
+        const freshGroupIds = new Set(freshGroups.map(g => g.id));
+        console.log(`[SYNC] Fetched ${freshGroups.length} groups from WhatsApp.`);
+
+        // Step 2: Fetch stale group IDs currently in our database
+        const [staleDbGroups] = await connection.query('SELECT group_jid FROM whatsapp_groups WHERE user_id = 1');
+        const staleGroupIds = new Set(staleDbGroups.map(g => g.group_jid));
+        console.log(`[SYNC] Found ${staleGroupIds.size} groups in the database.`);
+
+        // Step 3: CALCULATE THE DIFFERENCE - Find groups to DELETE
+        // These are groups that exist in our database but NOT in the fresh list from WhatsApp.
+        const groupsToDelete = [...staleGroupIds].filter(id => !freshGroupIds.has(id));
+
+        if (groupsToDelete.length > 0) {
+            console.log(`[SYNC] Deleting ${groupsToDelete.length} obsolete groups:`, groupsToDelete);
+            // Thanks to 'ON DELETE CASCADE', deleting from whatsapp_groups
+            // will also automatically clean up the batch_group_link table.
+            await connection.query('DELETE FROM whatsapp_groups WHERE user_id = 1 AND group_jid IN (?)', [groupsToDelete]);
+            console.log('[SYNC] Obsolete groups deleted successfully.');
+        } else {
+            console.log('[SYNC] No groups needed deletion.');
         }
 
-        // Step 2: Prepare the data for an "UPSERT" operation
-        // (INSERT a new group, or UPDATE the name if it already exists)
-        const groupValues = freshGroups.map(g => [1, g.id, g.name]); // user_id = 1
+        // Step 4: UPSERT (Insert or Update) the fresh group list
+        // This handles new groups and name changes for existing groups.
+        if (freshGroups.length > 0) {
+            const groupValues = freshGroups.map(g => [1, g.id, g.name]); // user_id = 1
+            const upsertQuery = `
+                INSERT INTO whatsapp_groups (user_id, group_jid, group_name)
+                VALUES ?
+                ON DUPLICATE KEY UPDATE group_name = VALUES(group_name);
+            `;
+            await connection.query(upsertQuery, [groupValues]);
+            console.log('[SYNC] Upserted fresh group list to the database.');
+        }
 
-        // Step 3: Execute the UPSERT query
-        const query = `
-            INSERT INTO whatsapp_groups (user_id, group_jid, group_name)
-            VALUES ?
-            ON DUPLICATE KEY UPDATE group_name = VALUES(group_name);
-        `;
-        
-        await pool.query(query, [groupValues]);
-        console.log('Database sync complete.');
-
-        res.status(200).json({ message: `Successfully synced ${freshGroups.length} groups.` });
+        // If all steps succeeded, commit the transaction
+        await connection.commit();
+        console.log('[SYNC] Database sync complete and transaction committed.');
+        res.status(200).json({ message: `Sync complete. Synced ${freshGroups.length} groups. Removed ${groupsToDelete.length} obsolete groups.` });
 
     } catch (error) {
-        console.error('Error syncing groups:', error);
+        // If any step failed, roll back the entire transaction to prevent partial updates
+        await connection.rollback();
+        console.error('[SYNC-ERROR] Transaction rolled back due to error:', error);
         res.status(500).json({ message: error.message || 'An error occurred during group sync.' });
+    } finally {
+        // Always release the connection back to the pool
+        connection.release();
     }
 };
 
