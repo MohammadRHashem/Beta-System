@@ -2,3 +2,5 @@ backend/node_modules/
 backend/baileys_auth_info/
 frontend/node_modules/
 .env
+backend/python_scripts/venv
+backend/python_scripts/__pycache__
