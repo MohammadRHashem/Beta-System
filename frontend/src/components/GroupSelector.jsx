@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import styled from 'styled-components';
 import { createBatch, updateBatch } from '../services/api';
-import { FaSyncAlt } from 'react-icons/fa'; // Import sync icon
+import { FaSyncAlt } from 'react-icons/fa';
 
 const Container = styled.div`
     background: #fff;
@@ -9,9 +9,10 @@ const Container = styled.div`
     border: 1px solid ${({ theme }) => theme.border};
     border-radius: 8px;
     height: fit-content;
+    display: flex;
+    flex-direction: column;
 `;
 
-// --- NEW COMPONENT FOR THE HEADER AREA ---
 const HeaderContainer = styled.div`
     display: flex;
     justify-content: space-between;
@@ -36,7 +37,6 @@ const SyncButton = styled.button`
         opacity: 0.6;
     }
 
-    /* Simple spinning animation */
     .spin {
         animation: spin 1s linear infinite;
     }
@@ -61,6 +61,7 @@ const GroupList = styled.ul`
     border: 1px solid ${({ theme }) => theme.border};
     border-radius: 4px;
     padding: 0.5rem;
+    flex-grow: 1; /* Allow list to take up available space */
 `;
 
 const GroupItem = styled.li`
@@ -123,13 +124,12 @@ const CancelButton = styled.button`
 `;
 
 
-const GroupSelector = ({ allGroups, selectedGroups, setSelectedGroups, onBatchUpdate, editingBatch, setEditingBatch, onSync, isSyncing  }) => {
+const GroupSelector = ({ allGroups, selectedGroups, setSelectedGroups, onBatchUpdate, editingBatch, setEditingBatch, onSync, isSyncing }) => {
     const [searchTerm, setSearchTerm] = useState('');
     const [batchName, setBatchName] = useState('');
     
     const isEditMode = editingBatch !== null;
 
-    // When edit mode starts, populate the name field
     useEffect(() => {
         if (isEditMode) {
             setBatchName(editingBatch.name);
@@ -139,7 +139,6 @@ const GroupSelector = ({ allGroups, selectedGroups, setSelectedGroups, onBatchUp
     }, [editingBatch, isEditMode]);
 
     const handleSelect = (groupId) => {
-        // We need to create a new Set to trigger a re-render
         const newSelectedGroups = new Set(selectedGroups);
         if (newSelectedGroups.has(groupId)) {
             newSelectedGroups.delete(groupId);
@@ -166,8 +165,8 @@ const GroupSelector = ({ allGroups, selectedGroups, setSelectedGroups, onBatchUp
                 alert(`Batch "${batchName}" saved successfully!`);
             }
             setBatchName('');
-            setEditingBatch(null); // Exit edit mode
-            onBatchUpdate(); // Refresh the batch list
+            setEditingBatch(null);
+            onBatchUpdate();
         } catch (error) {
             console.error('Error saving/updating batch:', error);
             alert('Failed to save batch.');
@@ -179,9 +178,28 @@ const GroupSelector = ({ allGroups, selectedGroups, setSelectedGroups, onBatchUp
         setSelectedGroups(new Set());
     };
 
-    const filteredGroups = allGroups.filter(g =>
-        g.name && g.name.toLowerCase().includes(searchTerm.toLowerCase())
-    );
+    // --- SORTING AND FILTERING LOGIC ---
+    const sortedAndFilteredGroups = useMemo(() => {
+        // First, filter by the search term
+        const filtered = (allGroups || []).filter(g =>
+            g.name && g.name.toLowerCase().includes(searchTerm.toLowerCase())
+        );
+        
+        // Then, sort the filtered list
+        return filtered.sort((a, b) => {
+            const aIsSelected = selectedGroups.has(a.id);
+            const bIsSelected = selectedGroups.has(b.id);
+
+            if (aIsSelected && !bIsSelected) {
+                return -1; // a comes first
+            }
+            if (!aIsSelected && bIsSelected) {
+                return 1; // b comes first
+            }
+            return 0; // maintain original order if both are selected or not selected
+        });
+    }, [allGroups, searchTerm, selectedGroups]);
+
 
     return (
         <Container>
@@ -192,6 +210,7 @@ const GroupSelector = ({ allGroups, selectedGroups, setSelectedGroups, onBatchUp
                     {isSyncing ? 'Syncing...' : 'Sync Groups'}
                 </SyncButton>
             </HeaderContainer>
+
             <SearchInput
                 type="text"
                 placeholder="Search groups..."
@@ -199,7 +218,7 @@ const GroupSelector = ({ allGroups, selectedGroups, setSelectedGroups, onBatchUp
                 onChange={(e) => setSearchTerm(e.target.value)}
             />
             <GroupList>
-                {filteredGroups.map(group => (
+                {sortedAndFilteredGroups.map(group => (
                     <GroupItem key={group.id} onClick={() => handleSelect(group.id)}>
                         <Checkbox
                             readOnly

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import styled from 'styled-components';
 import { FaPaste, FaEdit, FaTrash } from 'react-icons/fa';
 import Modal from './Modal';
@@ -16,6 +16,14 @@ const Title = styled.h3`
   align-items: center;
   gap: 0.5rem;
   margin-bottom: 1rem;
+`;
+
+const SearchInput = styled.input`
+    width: 100%;
+    padding: 0.75rem;
+    border: 1px solid ${({ theme }) => theme.border};
+    border-radius: 4px;
+    margin-bottom: 1rem;
 `;
 
 const TemplateList = styled.ul`
@@ -37,7 +45,6 @@ const TemplateItem = styled.li`
     }
 `;
 
-// THIS IS THE MISSING PIECE OF CODE THAT CAUSED THE ERROR
 const ItemName = styled.span`
     flex-grow: 1;
     white-space: nowrap;
@@ -49,7 +56,7 @@ const ActionsContainer = styled.div`
     display: flex;
     gap: 0.75rem;
     color: ${({ theme }) => theme.lightText};
-    padding-left: 1rem; /* Add space between text and icons */
+    padding-left: 1rem;
     
     svg {
         &:hover {
@@ -85,6 +92,7 @@ const ModalForm = styled.div`
 const TemplateManager = ({ templates, onTemplateSelect, onTemplatesUpdate }) => {
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingTemplate, setEditingTemplate] = useState(null);
+    const [searchTerm, setSearchTerm] = useState('');
 
     const handleEditClick = (template) => {
         setEditingTemplate({ ...template });
@@ -120,12 +128,25 @@ const TemplateManager = ({ templates, onTemplateSelect, onTemplatesUpdate }) => 
         }
     };
 
+    const filteredTemplates = useMemo(() => {
+        return (templates || []).filter(template =>
+            template.name.toLowerCase().includes(searchTerm.toLowerCase())
+        );
+    }, [templates, searchTerm]);
+
+
     return (
         <>
             <Container>
                 <Title><FaPaste /> Use Template</Title>
+                <SearchInput
+                    type="text"
+                    placeholder="Search templates..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                />
                 <TemplateList>
-                    {(templates || []).map(template => (
+                    {filteredTemplates.map(template => (
                         <TemplateItem key={template.id}>
                             <ItemName onClick={() => onTemplateSelect(template.text)} title={template.name}>
                                 {template.name}

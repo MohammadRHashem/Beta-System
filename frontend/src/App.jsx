@@ -144,19 +144,19 @@ function App() {
     };
 
     const handleSyncGroups = async () => {
-        setIsSyncing(true);
-        try {
-            // Call the new sync endpoint on the backend
-            const { data } = await api.post('/groups/sync');
-            alert(data.message);
-            // After a successful sync, we need to refresh the data on the frontend
-            await handleDataUpdate(); 
-        } catch (error) {
-            console.error('Failed to sync groups:', error);
-            alert(error.response?.data?.message || 'Failed to sync groups.');
-        } finally {
-            setIsSyncing(false);
-        }
+      setIsSyncing(true);
+      try {
+        const { data } = await api.post("/groups/sync");
+        alert(data.message);
+        // After sync, we call a hard refresh to get the latest data.
+        // This is simpler than trying to merge state and ensures everything is fresh.
+        window.location.reload();
+      } catch (error) {
+        console.error("Failed to sync groups:", error);
+        alert(error.response?.data?.message || "Failed to sync groups.");
+        setIsSyncing(false); // Make sure to re-enable the button on failure
+      }
+      // No need for a finally block, as success causes a reload.
     };
 
     const handleDataUpdate = async () => {

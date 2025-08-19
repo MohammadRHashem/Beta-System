@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useMemo } from 'react';
 import styled from 'styled-components';
 import { FaLayerGroup, FaEdit, FaTrash } from 'react-icons/fa';
 import { deleteBatch } from '../services/api';
@@ -15,6 +15,14 @@ const Title = styled.h3`
   align-items: center;
   gap: 0.5rem;
   margin-bottom: 1rem;
+`;
+
+const SearchInput = styled.input`
+    width: 100%;
+    padding: 0.75rem;
+    border: 1px solid ${({ theme }) => theme.border};
+    border-radius: 4px;
+    margin-bottom: 1rem;
 `;
 
 const BatchList = styled.ul`
@@ -36,10 +44,8 @@ const BatchItem = styled.li`
     }
 `;
 
-// THIS IS THE MISSING PIECE OF CODE THAT CAUSED THE ERROR
 const ItemName = styled.span`
     flex-grow: 1;
-    /* Add these for better text handling on long names */
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -49,7 +55,7 @@ const ActionsContainer = styled.div`
     display: flex;
     gap: 0.75rem;
     color: ${({ theme }) => theme.lightText};
-    padding-left: 1rem; /* Add some space so icons don't touch text */
+    padding-left: 1rem;
     
     svg {
         &:hover {
@@ -59,13 +65,14 @@ const ActionsContainer = styled.div`
 `;
 
 const BatchManager = ({ batches, onBatchSelect, onBatchEdit, onBatchesUpdate }) => {
-    
+    const [searchTerm, setSearchTerm] = useState('');
+
     const handleDelete = async (batchId, batchName) => {
         if (window.confirm(`Are you sure you want to delete the batch "${batchName}"?`)) {
             try {
                 await deleteBatch(batchId);
                 alert('Batch deleted successfully.');
-                onBatchesUpdate(); // Refresh the list in App.jsx
+                onBatchesUpdate();
             } catch (error) {
                 console.error('Failed to delete batch:', error);
                 alert('Failed to delete batch.');
@@ -73,14 +80,26 @@ const BatchManager = ({ batches, onBatchSelect, onBatchEdit, onBatchesUpdate }) 
         }
     };
     
+    const filteredBatches = useMemo(() => {
+        return (batches || []).filter(batch => 
+            batch.name.toLowerCase().includes(searchTerm.toLowerCase())
+        );
+    }, [batches, searchTerm]);
+
     return (
         <Container>
             <Title><FaLayerGroup /> Select Batch</Title>
+            <SearchInput
+                type="text"
+                placeholder="Search batches..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+            />
             <BatchList>
                 <BatchItem onClick={() => onBatchSelect(null)}>
                     <ItemName>-- Clear Selection --</ItemName>
                 </BatchItem>
-                {(batches || []).map(batch => (
+                {filteredBatches.map(batch => (
                     <BatchItem key={batch.id}>
                         <ItemName onClick={() => onBatchSelect(batch.id)} title={batch.name}>
                             {batch.name}
