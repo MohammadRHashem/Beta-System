@@ -25,6 +25,7 @@ const startSocket = async () => {
         auth: state,
         printQRInTerminal: false,
         logger,
+        markOnlineOnConnect: false,
         // Add a browser config to appear more legitimate
         browser: ['Beta Broadcaster', 'Chrome', '1.0.0']
     });
