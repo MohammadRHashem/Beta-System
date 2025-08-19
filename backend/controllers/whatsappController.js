@@ -2,6 +2,7 @@ const fs = require('fs-extra');
 const baileysService = require('../services/baileys');
 const pool = require('../config/db');
 
+// --- No changes to these functions ---
 exports.init = () => {
     baileysService.init();
 };
@@ -44,78 +45,63 @@ exports.getGroups = async (req, res) => {
     }
 };
 
-// --- DEFINITIVELY CORRECTED syncGroups FUNCTION ---
 exports.syncGroups = async (req, res) => {
-    const connection = await pool.getConnection(); // Use a single connection for the transaction
+    const connection = await pool.getConnection();
     try {
-        console.log('Starting robust group sync...');
         await connection.beginTransaction();
-
-        // Step 1: Fetch fresh groups from WhatsApp (Source of Truth)
         const freshGroups = await baileysService.fetchAllGroups();
         const freshGroupIds = new Set(freshGroups.map(g => g.id));
-        console.log(`[SYNC] Fetched ${freshGroups.length} groups from WhatsApp.`);
-
-        // Step 2: Fetch stale group IDs currently in our database
         const [staleDbGroups] = await connection.query('SELECT group_jid FROM whatsapp_groups WHERE user_id = 1');
         const staleGroupIds = new Set(staleDbGroups.map(g => g.group_jid));
-        console.log(`[SYNC] Found ${staleGroupIds.size} groups in the database.`);
-
-        // Step 3: CALCULATE THE DIFFERENCE - Find groups to DELETE
-        // These are groups that exist in our database but NOT in the fresh list from WhatsApp.
         const groupsToDelete = [...staleGroupIds].filter(id => !freshGroupIds.has(id));
 
         if (groupsToDelete.length > 0) {
-            console.log(`[SYNC] Deleting ${groupsToDelete.length} obsolete groups:`, groupsToDelete);
-            // Thanks to 'ON DELETE CASCADE', deleting from whatsapp_groups
-            // will also automatically clean up the batch_group_link table.
             await connection.query('DELETE FROM whatsapp_groups WHERE user_id = 1 AND group_jid IN (?)', [groupsToDelete]);
-            console.log('[SYNC] Obsolete groups deleted successfully.');
-        } else {
-            console.log('[SYNC] No groups needed deletion.');
         }
 
-        // Step 4: UPSERT (Insert or Update) the fresh group list
-        // This handles new groups and name changes for existing groups.
         if (freshGroups.length > 0) {
-            const groupValues = freshGroups.map(g => [1, g.id, g.name]); // user_id = 1
+            const groupValues = freshGroups.map(g => [1, g.id, g.name]);
             const upsertQuery = `
                 INSERT INTO whatsapp_groups (user_id, group_jid, group_name)
                 VALUES ?
                 ON DUPLICATE KEY UPDATE group_name = VALUES(group_name);
             `;
             await connection.query(upsertQuery, [groupValues]);
-            console.log('[SYNC] Upserted fresh group list to the database.');
         }
-
-        // If all steps succeeded, commit the transaction
         await connection.commit();
-        console.log('[SYNC] Database sync complete and transaction committed.');
-        res.status(200).json({ message: `Sync complete. Synced ${freshGroups.length} groups. Removed ${groupsToDelete.length} obsolete groups.` });
-
+        res.status(200).json({ message: `Successfully synced ${freshGroups.length} groups. Deleted ${groupsToDelete.length} obsolete groups.` });
     } catch (error) {
-        // If any step failed, roll back the entire transaction to prevent partial updates
         await connection.rollback();
-        console.error('[SYNC-ERROR] Transaction rolled back due to error:', error);
+        console.error('Error syncing groups, transaction rolled back:', error);
         res.status(500).json({ message: error.message || 'An error occurred during group sync.' });
     } finally {
-        // Always release the connection back to the pool
         connection.release();
     }
 };
 
-exports.broadcastMessage = async (req, res) => {
-    // We now expect groupObjects, message, and the client's socketId
+
+// --- MODIFIED broadcastMessage FUNCTION ---
+exports.broadcastMessage = (req, res) => {
     const { groupObjects, message, socketId } = req.body;
 
     if (!groupObjects || !message || !socketId || !Array.isArray(groupObjects)) {
         return res.status(400).json({ message: 'Invalid request body. groupObjects (array), message (string), and socketId are required.' });
     }
+    
+    // This try-catch block provides robust error logging.
+    try {
+        // Immediately respond to the client
+        res.status(202).json({ message: 'Broadcast accepted and will start shortly.' });
+        
+        // Run the actual broadcast in the background.
+        console.log(`[CONTROLLER] Handing off broadcast job to Baileys service for socket ${socketId}.`);
+        baileysService.broadcast(req.io, socketId, groupObjects, message);
 
-    // Immediately respond to the client so the UI doesn't hang
-    res.status(202).json({ message: 'Broadcast accepted and initiated.' });
-
-    // Run the actual broadcast in the background. DO NOT await it.
-    // We pass the 'io' instance from the request so the service can emit events.
-    baileysService.broadcast(req.io, socketId, groupObjects, message);
+    } catch (error) {
+        console.error("[CONTROLLER-ERROR] Failed to start broadcast job:", error);
+        // If starting the job fails, we should notify the specific client via WebSocket
+        if (req.io && socketId) {
+            req.io.to(socketId).emit('broadcast:error', { message: 'Failed to start the broadcast process on the server.' });
+        }
+    }
 };

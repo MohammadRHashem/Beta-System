@@ -2,7 +2,7 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const http = require('http');
-const { Server } = require("socket.io"); // Import the socket.io Server class
+const { Server } = require("socket.io");
 
 const whatsappController = require('./controllers/whatsappController');
 const batchController = require('./controllers/batchController');
@@ -11,37 +11,39 @@ const templateController = require('./controllers/templateController');
 const app = express();
 const server = http.createServer(app);
 
-// Initialize socket.io server with CORS policy
 const io = new Server(server, {
+    path: "/socket.io/",
     cors: {
-        origin: "https://beta.hashemlabs.dev", // In production, you might restrict this to your domain
+        origin: "https://beta.hashemlabs.dev",
         methods: ["GET", "POST"]
     }
 });
 
 app.use(cors({
-    origin: "https://beta.hashemlabs.dev",
+    origin: "https://beta.hashemlabs.dev"
 }));
+
 app.use(express.json());
 
-// Socket.io connection logic
+// --- THIS IS THE CRITICAL FIX ---
+// The middleware is now defined globally.
+// It attaches the main 'io' server instance to every single request.
+app.use((req, res, next) => {
+    req.io = io;
+    next();
+});
+
+// The connection event is now only for logging and potential future per-socket logic.
 io.on('connection', (socket) => {
     console.log(`[Socket.io] A user connected with ID: ${socket.id}`);
-    
-    // Pass the io and socket instances to the controller so it can emit events
-    // This makes the 'io' instance available to all requests via req.io
-    app.use((req, res, next) => {
-        req.io = io;
-        req.socket = socket;
-        next();
-    });
-
     socket.on('disconnect', () => {
         console.log(`[Socket.io] User disconnected with ID: ${socket.id}`);
     });
 });
 
+
 // --- API Routes ---
+// Now every route below this line will have access to req.io
 app.get('/api/status', whatsappController.getStatus);
 app.get('/api/qr', whatsappController.getQRCode);
 app.post('/api/logout', whatsappController.logout);
