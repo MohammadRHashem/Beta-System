@@ -1,5 +1,4 @@
-// --- IMPORT THE NORMALIZATION UTILITY AT THE TOP ---
-const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion, jidNormalizedUser } = require('@whiskeysockets/baileys');
+const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion } = require('@whiskeysockets/baileys');
 const { Boom } = require('@hapi/boom');
 const pino = require('pino');
 const qrcode = require('qrcode');
@@ -11,12 +10,14 @@ let connectionStatus = 'disconnected';
 const logger = pino({
     transport: {
         target: 'pino-pretty',
-        options: { colorize: true }
+        options: {
+            colorize: true
+        }
     }
 });
 
 const startSocket = async () => {
-    const { state, saveCreds } = await useMultiFileAuthState('baileileys_auth_info');
+    const { state, saveCreds } = await useMultiFileAuthState('baileys_auth_info');
     const { version } = await fetchLatestBaileysVersion();
 
     sock = makeWASocket({
@@ -24,6 +25,8 @@ const startSocket = async () => {
         auth: state,
         printQRInTerminal: false,
         logger,
+        markOnlineOnConnect: false,
+        // Add a browser config to appear more legitimate
         browser: ['Beta Broadcaster', 'Chrome', '1.0.0']
     });
 
@@ -67,6 +70,7 @@ const fetchAllGroups = async () => {
     try {
         const groupList = await sock.groupFetchAllParticipating();
         const groups = Object.values(groupList);
+        console.log(`Fetched ${groups.length} groups.`);
         return groups.map(group => ({
             id: group.id,
             name: group.subject,
@@ -78,15 +82,14 @@ const fetchAllGroups = async () => {
     }
 };
 
+// --- COMPLETELY REWRITTEN BROADCAST FUNCTION FOR MAXIMUM STABILITY ---
 const broadcast = async (io, socketId, groupObjects, message) => {
-    if (!sock || !sock.user || connectionStatus !== 'connected') {
-        io.to(socketId).emit('broadcast:error', { message: 'WhatsApp is not connected or user is not available.' });
+    if (!sock || connectionStatus !== 'connected') {
+        io.to(socketId).emit('broadcast:error', { message: 'WhatsApp is not connected.' });
         return;
     }
 
-    // --- USE THE NORMALIZED ID FOR RELIABLE COMPARISON ---
-    const normalizedBotId = jidNormalizedUser(sock.user.id);
-    console.log(`[BROADCAST] Starting broadcast for ${groupObjects.length} groups. Normalized Bot ID: ${normalizedBotId}`);
+    console.log(`[BROADCAST] Starting advanced broadcast to ${groupObjects.length} groups for socket ${socketId}.`);
     
     let successfulSends = 0;
     let failedSends = 0;
@@ -95,58 +98,50 @@ const broadcast = async (io, socketId, groupObjects, message) => {
 
     for (const group of groupObjects) {
         try {
-            io.to(socketId).emit('broadcast:progress', { 
-                groupName: group.name, 
-                status: 'sending',
-                message: `Checking permissions for "${group.name}"...`
-            });
-
-            const metadata = await sock.groupMetadata(group.id);
-            
-            // --- COMPARE NORMALIZED IDs ---
-            const botParticipant = metadata.participants.find(p => jidNormalizedUser(p.id) === normalizedBotId);
-
-            if (!botParticipant || !botParticipant.admin) {
-                const reason = !botParticipant ? "Bot is not a member of this group." : "Not an admin in this group.";
-                throw new Error(reason);
-            }
-
+            // Emit a "sending" status update to the client
             io.to(socketId).emit('broadcast:progress', { 
                 groupName: group.name, 
                 status: 'sending',
                 message: `Sending to "${group.name}"...`
             });
+
+            // STEP 1: SIMULATE TYPING
             await sock.sendPresenceUpdate('composing', group.id);
             const typingDelay = Math.floor(Math.random() * (1500 - 750 + 1) + 750);
             await delay(typingDelay);
 
+            // STEP 2: SEND MESSAGE
             await sock.sendMessage(group.id, { text: message });
             successfulSends++;
             successfulGroups.push(group.name);
 
+            // Emit a "success" status update
             io.to(socketId).emit('broadcast:progress', {
                 groupName: group.name,
                 status: 'success',
                 message: `Successfully sent to "${group.name}".`
             });
 
+            // STEP 3: COOLDOWN DELAY
             const cooldownDelay = Math.floor(Math.random() * (6000 - 2500 + 1) + 2500);
             await delay(cooldownDelay);
 
         } catch (error) {
-            console.error(`[BROADCAST-ERROR] Failed to process ${group.name} (${group.id}):`, error.message);
+            console.error(`[BROADCAST-ERROR] Failed to send to ${group.name} (${group.id}):`, error.message);
             failedSends++;
             failedGroups.push(group.name);
             
+            // Emit a "failed" status update
             io.to(socketId).emit('broadcast:progress', {
                 groupName: group.name,
                 status: 'failed',
                 message: `Failed to send to "${group.name}". Reason: ${error.message}`
             });
-            await delay(1000);
+            await delay(5000); // Longer delay after a failure
         }
     }
 
+    // Final completion event with summary
     io.to(socketId).emit('broadcast:complete', {
         total: groupObjects.length,
         successful: successfulSends,
@@ -156,6 +151,7 @@ const broadcast = async (io, socketId, groupObjects, message) => {
     });
     console.log(`[BROADCAST] Finished for socket ${socketId}. Success: ${successfulSends}, Failed: ${failedSends}`);
 };
+
 
 module.exports = {
     init: startSocket,
