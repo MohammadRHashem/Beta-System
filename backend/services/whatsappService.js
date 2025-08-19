@@ -2,6 +2,7 @@ const { Client, LocalAuth, MessageMedia } = require('whatsapp-web.js');
 const qrcode = require('qrcode');
 const fs = require('fs/promises');
 const pool = require('../config/db');
+const path = require('path');
 
 // --- THIS IS THE CRITICAL FIX ---
 // We import the entire module, not destructure it.
@@ -68,7 +69,7 @@ const initializeWhatsApp = () => {
             const tempFilePath = `/tmp/${message.id.id}.${media.mimetype.split('/')[1]}`;
             await fs.writeFile(tempFilePath, Buffer.from(media.data, 'base64'));
 
-            const pythonScriptPath = '~/Beta-System/backend/python_scripts/main.py';
+            const pythonScriptPath = path.join(__dirname, '../python_scripts/main.py');
 
             // --- THIS IS THE SECOND PART OF THE FIX ---
             // We call execa directly, not as a property of an object.
