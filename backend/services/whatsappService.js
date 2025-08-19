@@ -10,36 +10,32 @@ let client;
 let qrCodeData;
 let connectionStatus = 'disconnected';
 
-// --- In-Memory Queue for Sequential Processing ---
 const messageQueue = [];
 let isProcessing = false;
 
-// --- The function that processes one message at a time ---
 const processQueue = async () => {
     if (isProcessing || messageQueue.length === 0) {
         return;
     }
     isProcessing = true;
-    const message = messageQueue.shift(); // Get the next message from the queue
+    const message = messageQueue.shift();
 
     try {
         const chat = await message.getChat();
         
-        // Check group settings in DB
         const [settings] = await pool.query('SELECT * FROM group_settings WHERE group_jid = ?', [chat.id._serialized]);
         const groupSettings = settings[0] || { forwarding_enabled: true, archiving_enabled: true };
 
         if (!groupSettings.forwarding_enabled && !groupSettings.archiving_enabled) {
-            console.log(`[QUEUE] Ignoring message from disabled group: ${chat.name}`);
             isProcessing = false;
-            processQueue(); // Process next item
+            processQueue();
             return;
         }
 
         const media = await message.downloadMedia();
         if (!media || !['image/jpeg', 'image/jpg', 'image/png', 'application/pdf'].includes(media.mimetype)) {
             isProcessing = false;
-            processQueue(); // Process next item
+            processQueue();
             return;
         }
 
@@ -47,21 +43,25 @@ const processQueue = async () => {
         const tempFilePath = `/tmp/${message.id.id}.${media.mimetype.split('/')[1] || 'bin'}`;
         await fs.writeFile(tempFilePath, Buffer.from(media.data, 'base64'));
         
-        const pythonExecutablePath = path.join(os.homedir(), 'TRK-TechAssistant', 'venv', 'bin', 'python3');
-        const pythonScriptPath = path.join(os.homedir(), 'TRK-TechAssistant', 'main.py');
+        // --- THIS IS THE CRITICAL FIX ---
+        const pythonProjectPath = path.join(os.homedir(), 'python_scripts');
+        const pythonScriptPath = path.join(pythonProjectPath, 'main.py');
+        const pythonExecutablePath = path.join(pythonProjectPath, 'venv', 'bin', 'python3');
         
-        // Robust error handling for the Python script
         let invoiceJson;
         try {
-            const { stdout } = await execa(pythonExecutablePath, [pythonScriptPath, tempFilePath]);
+            // Use the 'cwd' option to set the working directory for the script
+            const { stdout } = await execa(pythonExecutablePath, [pythonScriptPath, tempFilePath], {
+                cwd: pythonProjectPath
+            });
             invoiceJson = JSON.parse(stdout);
             console.log(`[PROCESS] Python script success. Invoice ID: ${invoiceJson.invoice_id}`);
         } catch (pythonError) {
             console.error(`[PYTHON-ERROR] Script failed for media from ${chat.name}. Stderr:`, pythonError.stderr);
-            await fs.unlink(tempFilePath); // Clean up temp file
+            await fs.unlink(tempFilePath);
             isProcessing = false;
-            processQueue(); // Process next item
-            return; // Exit this function
+            processQueue();
+            return;
         }
         
         await fs.unlink(tempFilePath);
@@ -102,13 +102,11 @@ const processQueue = async () => {
                             'INSERT INTO invoices_trkbit_approved (invoice_id, source_group_jid, sender_name, recipient_name, amount) VALUES (?, ?, ?, ?, ?)',
                             [invoice_id, chat.id._serialized, sender.name, recipient.name, amount]
                         );
-                        console.log(`[PROCESS] Archived to trkbit_approved.`);
                     } else {
                          await pool.query(
                             'INSERT INTO invoices_trkbit_unapproved (invoice_id, source_group_jid, raw_json_data) VALUES (?, ?, ?)',
                             [invoice_id, chat.id._serialized, JSON.stringify(invoiceJson)]
                         );
-                        console.log(`[PROCESS] Archived to trkbit_unapproved due to missing fields.`);
                     }
                 }
                 break;
@@ -120,7 +118,6 @@ const processQueue = async () => {
                 'INSERT INTO invoices_chave_pix (invoice_id, source_group_jid, raw_json_data) VALUES (?, ?, ?)',
                 [invoiceJson.invoice_id, chat.id._serialized, JSON.stringify(invoiceJson)]
             );
-            console.log(`[PROCESS] No rule matched. Archived to chave_pix.`);
         }
 
     } catch (error) {
