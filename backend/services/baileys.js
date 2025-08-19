@@ -23,7 +23,8 @@ const startSocket = async () => {
     sock = makeWASocket({
         version,
         auth: state,
-        printQRInTerminal: false, // We'll handle QR code manually
+        markOnlineOnConnect: false,
+        printQRInTerminal: false,
         logger,
     });
 

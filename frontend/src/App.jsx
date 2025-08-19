@@ -9,17 +9,14 @@ import TemplateManager from './components/TemplateManager';
 import { FaWhatsapp } from 'react-icons/fa';
 
 const AppContainer = styled.div`
-  max-width: 1400px;
-  width: 100%; // <-- NEW: Ensure it doesn't exceed screen width
-  margin: 1rem auto; // Reduced top/bottom margin for smaller screens
-  padding: 1rem; // Reduced padding for smaller screens
+  max-width: 1600px;
+  width: 100%;
+  margin: 1rem auto;
+  padding: 1rem;
   background: #FFF;
   border-radius: 8px;
   box-shadow: 0 4px 6px rgba(50, 50, 93, 0.11), 0 1px 3px rgba(0, 0, 0, 0.08);
-
-  // --- NEW ---
-  // Ensure padding is respected and content doesn't overflow
-  box-sizing: border-box; 
+  box-sizing: border-box;
 `;
 
 const Header = styled.header`
@@ -58,20 +55,26 @@ const QRContainer = styled.div`
 
 const MainContent = styled.div`
   display: grid;
-  /* 3-column layout */
-  grid-template-columns: 350px 1fr 350px;
+  /* New 2-column layout */
+  grid-template-columns: 450px 1fr;
   gap: 1.5rem;
   align-items: flex-start;
 
   @media (max-width: 1200px) {
-    grid-template-columns: 1fr 2fr;
-  }
-  @media (max-width: 900px) {
     grid-template-columns: 1fr;
   }
 `;
 
-const LeftColumn = styled.div`
+const LeftPanel = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  /* Make this panel 'sticky' so the group list scrolls independently */
+  position: sticky;
+  top: 1.5rem;
+`;
+
+const RightPanel = styled.div`
   display: flex;
   flex-direction: column;
   gap: 1.5rem;
@@ -85,7 +88,7 @@ function App() {
     const [batches, setBatches] = useState([]);
     const [templates, setTemplates] = useState([]);
     const [message, setMessage] = useState('');
-    const [editingBatch, setEditingBatch] = useState(null); // State for batch edit mode
+    const [editingBatch, setEditingBatch] = useState(null);
     const [isSyncing, setIsSyncing] = useState(false);
 
     const fetchInitialData = useCallback(async () => {
@@ -143,35 +146,17 @@ function App() {
         }
     };
 
-    const handleSyncGroups = async () => {
-      setIsSyncing(true);
-      try {
-        const { data } = await api.post("/groups/sync");
-        alert(data.message);
-        // After sync, we call a hard refresh to get the latest data.
-        // This is simpler than trying to merge state and ensures everything is fresh.
-        window.location.reload();
-      } catch (error) {
-        console.error("Failed to sync groups:", error);
-        alert(error.response?.data?.message || "Failed to sync groups.");
-        setIsSyncing(false); // Make sure to re-enable the button on failure
-      }
-      // No need for a finally block, as success causes a reload.
-    };
-
     const handleDataUpdate = async () => {
         try {
-            const [batchesRes, templatesRes] = await Promise.all([getBatches(), getTemplates()]);
+            const [batchesRes, templatesRes, groupsRes] = await Promise.all([getBatches(), getTemplates(), api.get('/groups')]);
             setBatches(batchesRes.data);
             setTemplates(templatesRes.data);
+            setAllGroups(groupsRes.data);
         } catch (error) {
             console.error("Error refreshing data:", error);
         }
     };
 
-    // ----- BUG FIX STARTS HERE -----
-
-    // New helper function to ONLY load groups for a batch without changing edit mode.
     const loadGroupsForBatch = async (batchId) => {
         if (!batchId) {
             setSelectedGroups(new Set());
@@ -185,20 +170,31 @@ function App() {
         }
     };
 
-    // This function is for selecting a batch to broadcast to. It CANCELS edit mode.
     const handleBatchSelect = (batchId) => {
-        setEditingBatch(null); // Cancel any ongoing edit
+        setEditingBatch(null);
         loadGroupsForBatch(batchId);
     };
 
-    // This function is for editing a batch. It ENTERS edit mode.
     const handleBatchEdit = (batch) => {
         setEditingBatch(batch);
-        loadGroupsForBatch(batch.id); // Use the safe helper function
+        loadGroupsForBatch(batch.id);
     };
 
-    // ----- BUG FIX ENDS HERE -----
-
+    const handleSyncGroups = async () => {
+        if (!window.confirm("This will fetch the latest group list from WhatsApp and update the database. Groups you have left will be removed. Continue?")) {
+            return;
+        }
+        setIsSyncing(true);
+        try {
+            const { data } = await api.post('/groups/sync');
+            alert(data.message);
+            window.location.reload(); 
+        } catch (error) {
+            console.error('Failed to sync groups:', error);
+            alert(error.response?.data?.message || 'Failed to sync groups.');
+            setIsSyncing(false);
+        }
+    };
 
     return (
         <AppContainer>
@@ -216,36 +212,38 @@ function App() {
 
             {status === 'connected' && (
                 <MainContent>
-                    <LeftColumn>
+                    <LeftPanel>
                         <BatchManager
                             batches={batches}
                             onBatchSelect={handleBatchSelect}
                             onBatchEdit={handleBatchEdit}
                             onBatchesUpdate={handleDataUpdate}
                         />
-                         <TemplateManager
+                        <GroupSelector
+                            allGroups={allGroups}
+                            selectedGroups={selectedGroups}
+                            setSelectedGroups={setSelectedGroups}
+                            onBatchUpdate={handleDataUpdate}
+                            editingBatch={editingBatch}
+                            setEditingBatch={setEditingBatch}
+                            onSync={handleSyncGroups} 
+                            isSyncing={isSyncing}
+                        />
+                    </LeftPanel>
+                    
+                    <RightPanel>
+                        <TemplateManager
                             templates={templates}
                             onTemplateSelect={(text) => setMessage(text)}
                             onTemplatesUpdate={handleDataUpdate}
                         />
-                    </LeftColumn>
-
-                    <BroadcastForm
-                        selectedGroupIds={Array.from(selectedGroups)}
-                        message={message}
-                        setMessage={setMessage}
-                        onTemplateSave={handleDataUpdate}
-                    />
-                    <GroupSelector
-                        allGroups={allGroups}
-                        selectedGroups={selectedGroups}
-                        setSelectedGroups={setSelectedGroups}
-                        onBatchUpdate={handleDataUpdate}
-                        editingBatch={editingBatch}
-                        setEditingBatch={setEditingBatch}
-                        onSync={handleSyncGroups} 
-                        isSyncing={isSyncing}
-                    />
+                        <BroadcastForm
+                            selectedGroupIds={Array.from(selectedGroups)}
+                            message={message}
+                            setMessage={setMessage}
+                            onTemplateSave={handleDataUpdate}
+                        />
+                    </RightPanel>
                 </MainContent>
             )}
         </AppContainer>
