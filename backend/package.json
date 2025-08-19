@@ -11,7 +11,6 @@
   "license": "ISC",
   "description": "",
   "dependencies": {
-    "@whiskeysockets/baileys": "^6.7.18",
     "cors": "^2.8.5",
     "dotenv": "^17.2.1",
     "express": "^5.1.0",
@@ -20,7 +19,8 @@
     "pino": "^9.9.0",
     "pino-pretty": "^13.1.1",
     "qrcode": "^1.5.4",
-    "socket.io": "^4.8.1"
+    "socket.io": "^4.8.1",
+    "whatsapp-web.js": "^1.32.0"
   },
   "devDependencies": {
     "nodemon": "^3.1.10"
