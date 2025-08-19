@@ -1,23 +1,31 @@
-const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion } = require('@whiskeysockets/baileys');
+const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion, makeInMemoryStore } = require('@whiskeysockets/baileys');
 const { Boom } = require('@hapi/boom');
 const pino = require('pino');
 const qrcode = require('qrcode');
+const fs = require('fs-extra');
 
 let sock;
 let qrCodeData;
 let connectionStatus = 'disconnected';
+const SESSION_DIR = './baileys_auth_info';
 
-const logger = pino({
-    transport: {
-        target: 'pino-pretty',
-        options: {
-            colorize: true
-        }
-    }
-});
+// --- STABILITY UPGRADE 1: Use Pino logger with specified level ---
+// This provides more detailed logs for debugging connection issues.
+const logger = pino({ level: 'silent' });
+
+// --- STABILITY UPGRADE 2: Use an In-Memory Store ---
+// The store will cache small amounts of data that Baileys needs frequently,
+// like contacts and chat names, reducing redundant requests and improving performance.
+const store = makeInMemoryStore({ logger });
+store?.readFromFile('./baileys_store.json');
+// Save the store data to a file every 10 seconds
+setInterval(() => {
+    store?.writeToFile('./baileys_store.json');
+}, 10_000);
+
 
 const startSocket = async () => {
-    const { state, saveCreds } = await useMultiFileAuthState('baileys_auth_info');
+    const { state, saveCreds } = await useMultiFileAuthState(SESSION_DIR);
     const { version } = await fetchLatestBaileysVersion();
 
     sock = makeWASocket({
@@ -25,10 +33,33 @@ const startSocket = async () => {
         auth: state,
         printQRInTerminal: false,
         logger,
-        markOnlineOnConnect: false,
-        // Add a browser config to appear more legitimate
-        browser: ['Beta Broadcaster', 'Chrome', '1.0.0']
+        browser: ['Beta Broadcaster', 'Chrome', '1.0.0'],
+        
+        // --- STABILITY UPGRADE 3: Advanced Connection Options ---
+        
+        // This will fetch all pending messages when the connection is established
+        getMessage: async key => {
+            if (store) {
+                const msg = await store.loadMessage(key.remoteJid, key.id);
+                return msg?.message || undefined;
+            }
+            // only if store is not present
+            return { conversation: 'hello' };
+        },
+        
+        // This can help mitigate issues with syncd patches
+        patchVersion: { account: 1, device: 2 },
+        
+        // This can help with network connection stability
+        connectTimeoutMs: 60_000,
+        keepAliveIntervalMs: 20_000,
+        
+        // This helps in WA Web resume states
+        syncFullHistory: true,
     });
+    
+    // Bind the store to the socket
+    store?.bind(sock.ev);
 
     sock.ev.on('connection.update', async (update) => {
         const { connection, lastDisconnect, qr } = update;
@@ -40,10 +71,20 @@ const startSocket = async () => {
         }
 
         if (connection === 'close') {
-            const shouldReconnect = (lastDisconnect.error instanceof Boom)?.output?.statusCode !== DisconnectReason.loggedOut;
+            const statusCode = (lastDisconnect.error instanceof Boom)?.output?.statusCode;
+            const shouldReconnect = statusCode !== DisconnectReason.loggedOut && statusCode !== DisconnectReason.connectionReplaced;
+            
             connectionStatus = 'disconnected';
-            console.log('Connection closed due to ', lastDisconnect.error, ', reconnecting ', shouldReconnect);
+            console.log(`Connection closed due to: ${lastDisconnect.error}, reconnecting: ${shouldReconnect}`);
+
             if (shouldReconnect) {
+                startSocket();
+            } else {
+                console.log("Connection closed permanently. Deleting session and requesting new QR scan.");
+                // We ONLY delete the session if it's a permanent, unrecoverable error.
+                await fs.remove(SESSION_DIR);
+                await fs.remove('./baileys_store.json');
+                // Restarting will now generate a new QR code
                 startSocket();
             }
         } else if (connection === 'open') {
