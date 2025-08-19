@@ -3,10 +3,6 @@ const qrcode = require('qrcode');
 const fs = require('fs/promises');
 const pool = require('../config/db');
 const path = require('path');
-
-// --- THIS IS THE CRITICAL FIX ---
-// We import the entire module, not destructure it.
-// For execa v5, the function is the default export.
 const execa = require('execa');
 
 let client;
@@ -56,7 +52,6 @@ const initializeWhatsApp = () => {
             const groupSettings = settings[0] || { forwarding_enabled: true, archiving_enabled: true };
 
             if (!groupSettings.forwarding_enabled && !groupSettings.archiving_enabled) {
-                console.log(`[PROCESS] Ignoring message from disabled group: ${chat.name}`);
                 return;
             }
 
@@ -66,14 +61,20 @@ const initializeWhatsApp = () => {
             }
 
             console.log(`[PROCESS] Received valid media from group: ${chat.name}`);
-            const tempFilePath = `/tmp/${message.id.id}.${media.mimetype.split('/')[1]}`;
+            const tempFilePath = `/tmp/${message.id.id}.${media.mimetype.split('/')[1] || 'bin'}`;
             await fs.writeFile(tempFilePath, Buffer.from(media.data, 'base64'));
 
-            const pythonScriptPath = path.join(__dirname, '../python_scripts/main.py');
+            // --- THIS IS THE CRITICAL FIX ---
+            // Construct the absolute paths for the venv python executable and the script
+            const pythonVenvPath = path.join(__dirname, '..', 'python_scripts', 'venv', 'bin', 'python3');
+            const pythonScriptPath = path.join(__dirname, '..', 'python_scripts', 'main.py');
+            
+            console.log(`[PROCESS] Executing Python script: ${pythonScriptPath}`);
+            console.log(`[PROCESS] Using venv executable: ${pythonVenvPath}`);
 
-            // --- THIS IS THE SECOND PART OF THE FIX ---
-            // We call execa directly, not as a property of an object.
-            const { stdout } = await execa(__dirname, '../python_scripts/venv/bin/python3', [pythonScriptPath, tempFilePath]);
+            // Correctly call execa with the executable as the first argument
+            // and an array of script + arguments as the second.
+            const { stdout } = await execa(pythonVenvPath, [pythonScriptPath, tempFilePath]);
             
             const invoiceJson = JSON.parse(stdout);
             console.log(`[PROCESS] Python script processed successfully for invoice: ${invoiceJson.invoice_id}`);
@@ -97,7 +98,6 @@ const initializeWhatsApp = () => {
                     console.log(`[PROCESS] Matched rule "${rule.trigger_keyword}"`);
                     
                     if (groupSettings.forwarding_enabled) {
-                        // Re-create the MessageMedia object to forward it
                         const mediaToForward = new MessageMedia(media.mimetype, media.data, media.filename);
                         await client.sendMessage(rule.destination_group_jid, mediaToForward, { caption: `Invoice from: ${chat.name}\nID: ${invoiceJson.invoice_id}` });
                         console.log(`[PROCESS] Forwarded media to: ${rule.destination_group_name}`);
