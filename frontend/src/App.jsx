@@ -1,11 +1,13 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import styled from 'styled-components';
+import { io } from 'socket.io-client';
 import api, { getBatches, getTemplates, getGroupIdsForBatch } from './services/api';
 import StatusIndicator from './components/StatusIndicator';
 import GroupSelector from './components/GroupSelector';
 import BroadcastForm from './components/BroadcastForm';
 import BatchManager from './components/BatchManager';
 import TemplateManager from './components/TemplateManager';
+import BroadcastProgressModal from './components/BroadcastProgressModal';
 import { FaWhatsapp } from 'react-icons/fa';
 
 const AppContainer = styled.div`
@@ -55,7 +57,6 @@ const QRContainer = styled.div`
 
 const MainContent = styled.div`
   display: grid;
-  /* New 2-column layout */
   grid-template-columns: 450px 1fr;
   gap: 1.5rem;
   align-items: flex-start;
@@ -69,7 +70,6 @@ const LeftPanel = styled.div`
   display: flex;
   flex-direction: column;
   gap: 1.5rem;
-  /* Make this panel 'sticky' so the group list scrolls independently */
   position: sticky;
   top: 1.5rem;
 `;
@@ -79,6 +79,8 @@ const RightPanel = styled.div`
   flex-direction: column;
   gap: 1.5rem;
 `;
+
+const API_URL = 'https://beta.hashemlabs.dev';
 
 function App() {
     const [status, setStatus] = useState('disconnected');
@@ -90,6 +92,49 @@ function App() {
     const [message, setMessage] = useState('');
     const [editingBatch, setEditingBatch] = useState(null);
     const [isSyncing, setIsSyncing] = useState(false);
+
+    const socket = useRef(null);
+    const [socketId, setSocketId] = useState(null);
+    const [isBroadcasting, setIsBroadcasting] = useState(false);
+    const [broadcastLogs, setBroadcastLogs] = useState([]);
+    const [broadcastSummary, setBroadcastSummary] = useState({ total: 0, successful: 0, failed: 0 });
+    const [isBroadcastComplete, setIsBroadcastComplete] = useState(false);
+
+    useEffect(() => {
+        socket.current = io(API_URL, {
+            // Add transports to improve WebSocket compatibility
+            transports: ['websocket', 'polling']
+        });
+
+        socket.current.on('connect', () => {
+            console.log('Connected to WebSocket server with ID:', socket.current.id);
+            setSocketId(socket.current.id);
+        });
+
+        socket.current.on('broadcast:progress', (log) => {
+            setBroadcastLogs(prevLogs => [...prevLogs, log]);
+            setBroadcastSummary(prevSummary => ({
+                ...prevSummary,
+                successful: log.status === 'success' ? prevSummary.successful + 1 : prevSummary.successful,
+                failed: log.status === 'failed' ? prevSummary.failed + 1 : prevSummary.failed,
+            }));
+        });
+
+        socket.current.on('broadcast:complete', (summary) => {
+            setBroadcastSummary(summary);
+            setIsBroadcastComplete(true);
+            setBroadcastLogs(prevLogs => [...prevLogs, { status: 'info', message: '--- Broadcast Finished ---' }]);
+        });
+        
+        // Handle connection errors
+        socket.current.on('connect_error', (err) => {
+            console.error('WebSocket connection error:', err.message);
+        });
+
+        return () => {
+            socket.current.disconnect();
+        };
+    }, []);
 
     const fetchInitialData = useCallback(async () => {
         try {
@@ -196,57 +241,85 @@ function App() {
         }
     };
 
+    const startBroadcast = (groupObjects, broadcastMessage) => {
+        setIsBroadcasting(true);
+        setIsBroadcastComplete(false);
+        setBroadcastLogs([]);
+        setBroadcastSummary({ total: groupObjects.length, successful: 0, failed: 0 });
+
+        api.post('/broadcast', {
+            groupObjects,
+            message: broadcastMessage,
+            socketId
+        });
+    };
+
     return (
-        <AppContainer>
-            <Header>
-                <Title><FaWhatsapp /> Beta Broadcaster</Title>
-                <StatusIndicator status={status} onLogout={handleLogout}/>
-            </Header>
+        <>
+            <AppContainer>
+                <Header>
+                    <Title>
+                        <FaWhatsapp /> Beta Broadcaster
+                    </Title>
+                    <StatusIndicator status={status} onLogout={handleLogout} />
+                </Header>
 
-            {status === 'qr' && (
-                <QRContainer>
-                    <h2>Scan to Connect WhatsApp</h2>
-                    {qrCode && <img src={qrCode} alt="QR Code" />}
-                </QRContainer>
-            )}
+                {status === "qr" && (
+                    <QRContainer>
+                        <h2>Scan to Connect WhatsApp</h2>
+                        {qrCode && <img src={qrCode} alt="QR Code" />}
+                    </QRContainer>
+                )}
 
-            {status === 'connected' && (
-                <MainContent>
-                    <LeftPanel>
-                        <BatchManager
-                            batches={batches}
-                            onBatchSelect={handleBatchSelect}
-                            onBatchEdit={handleBatchEdit}
-                            onBatchesUpdate={handleDataUpdate}
-                        />
-                        <GroupSelector
-                            allGroups={allGroups}
-                            selectedGroups={selectedGroups}
-                            setSelectedGroups={setSelectedGroups}
-                            onBatchUpdate={handleDataUpdate}
-                            editingBatch={editingBatch}
-                            setEditingBatch={setEditingBatch}
-                            onSync={handleSyncGroups} 
-                            isSyncing={isSyncing}
-                        />
-                    </LeftPanel>
-                    
-                    <RightPanel>
-                        <TemplateManager
-                            templates={templates}
-                            onTemplateSelect={(text) => setMessage(text)}
-                            onTemplatesUpdate={handleDataUpdate}
-                        />
-                        <BroadcastForm
-                            selectedGroupIds={Array.from(selectedGroups)}
-                            message={message}
-                            setMessage={setMessage}
-                            onTemplateSave={handleDataUpdate}
-                        />
-                    </RightPanel>
-                </MainContent>
-            )}
-        </AppContainer>
+                {status === "connected" && (
+                    <MainContent>
+                        <LeftPanel>
+                            <BatchManager
+                                batches={batches}
+                                onBatchSelect={handleBatchSelect}
+                                onBatchEdit={handleBatchEdit}
+                                onBatchesUpdate={handleDataUpdate}
+                            />
+                            <GroupSelector
+                                allGroups={allGroups}
+                                selectedGroups={selectedGroups}
+                                setSelectedGroups={setSelectedGroups}
+                                onBatchUpdate={handleDataUpdate}
+                                editingBatch={editingBatch}
+                                setEditingBatch={setEditingBatch}
+                                onSync={handleSyncGroups}
+                                isSyncing={isSyncing}
+                            />
+                        </LeftPanel>
+
+                        <RightPanel>
+                            <TemplateManager
+                                templates={templates}
+                                onTemplateSelect={(text) => setMessage(text)}
+                                onTemplatesUpdate={handleDataUpdate}
+                            />
+                            <BroadcastForm
+                                selectedGroupIds={Array.from(selectedGroups)}
+                                allGroups={allGroups}
+                                message={message}
+                                setMessage={setMessage}
+                                onTemplateSave={handleDataUpdate}
+                                onBroadcastStart={startBroadcast}
+                                isBroadcasting={isBroadcasting}
+                            />
+                        </RightPanel>
+                    </MainContent>
+                )}
+            </AppContainer>
+            
+            <BroadcastProgressModal
+                isOpen={isBroadcasting}
+                onClose={() => setIsBroadcasting(false)}
+                logs={broadcastLogs}
+                summary={broadcastSummary}
+                isComplete={isBroadcastComplete}
+            />
+        </>
     );
 }
 

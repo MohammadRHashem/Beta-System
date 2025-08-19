@@ -68,29 +68,16 @@ const SaveTemplateButton = styled.button`
     font-weight: bold;
 `;
 
-const BroadcastForm = ({ selectedGroupIds, message, setMessage, onTemplateSave }) => {
-    const [isSending, setIsSending] = useState(false);
-    const [result, setResult] = useState(null);
+const BroadcastForm = ({ selectedGroupIds, allGroups, message, setMessage, onTemplateSave, onBroadcastStart, isBroadcasting }) => {
     const [templateName, setTemplateName] = useState('');
 
     const handleSubmit = async (e) => {
         e.preventDefault();
-        if (!message || selectedGroupIds.length === 0 || isSending) return;
+        if (!message || selectedGroupIds.length === 0 || isBroadcasting) return;
 
-        setIsSending(true);
-        setResult(null);
-
-        try {
-            const { data } = await api.post('/broadcast', {
-                groups: selectedGroupIds,
-                message,
-            });
-            setResult({ type: 'success', text: `Broadcast sent! Successful: ${data.successful}/${data.total}.` });
-            setMessage('');
-        } catch (error) {
-            setResult({ type: 'error', text: error.response?.data?.message || 'Failed to send broadcast.' });
-        } finally {
-            setIsSending(false);
+        if (window.confirm(`You are about to send a message to ${selectedGroupIds.length} groups. Are you sure you want to proceed?`)) {
+            const groupObjects = allGroups.filter(g => selectedGroupIds.includes(g.id));
+            onBroadcastStart(groupObjects, message);
         }
     };
 
@@ -118,9 +105,8 @@ const BroadcastForm = ({ selectedGroupIds, message, setMessage, onTemplateSave }
                     placeholder="Type your message here, or select a template..."
                     value={message}
                     onChange={(e) => setMessage(e.target.value)}
-                    disabled={isSending}
+                    disabled={isBroadcasting}
                 />
-
                 <TemplateSaveContainer>
                     <TemplateInput
                         type="text"
@@ -129,23 +115,21 @@ const BroadcastForm = ({ selectedGroupIds, message, setMessage, onTemplateSave }
                         onChange={(e) => setTemplateName(e.target.value)}
                     />
                     <SaveTemplateButton
-                        type="button" // Important to prevent form submission
+                        type="button"
                         disabled={!templateName || !message}
                         onClick={handleSaveTemplate}
                     >
                         Save
                     </SaveTemplateButton>
                 </TemplateSaveContainer>
-
                 <SendButton
                     type="submit"
-                    disabled={!message || selectedGroupIds.length === 0 || isSending}
+                    disabled={!message || selectedGroupIds.length === 0 || isBroadcasting}
                     style={{ marginTop: '1rem' }}
                 >
-                    {isSending ? 'Sending...' : `Send to ${selectedGroupIds.length} Groups`}
+                    {isBroadcasting ? 'Broadcasting...' : `Send to ${selectedGroupIds.length} Groups`}
                 </SendButton>
             </form>
-            {result && <ResultMessage type={result.type}>{result.text}</ResultMessage>}
         </FormContainer>
     );
 };

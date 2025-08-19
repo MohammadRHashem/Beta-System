@@ -23,12 +23,13 @@ const startSocket = async () => {
     sock = makeWASocket({
         version,
         auth: state,
-        markOnlineOnConnect: false,
         printQRInTerminal: false,
         logger,
+        markOnlineOnConnect: false,
+        // Add a browser config to appear more legitimate
+        browser: ['Beta Broadcaster', 'Chrome', '1.0.0']
     });
 
-    // Handle connection updates
     sock.ev.on('connection.update', async (update) => {
         const { connection, lastDisconnect, qr } = update;
 
@@ -52,7 +53,6 @@ const startSocket = async () => {
         }
     });
 
-    // Save credentials on update
     sock.ev.on('creds.update', saveCreds);
 
     return sock;
@@ -61,9 +61,6 @@ const startSocket = async () => {
 const getSocket = () => sock;
 const getQR = () => qrCodeData;
 const getStatus = () => connectionStatus;
-
-// --- FIX FOR RATE-LIMITING ---
-// Staggered fetching with a delay
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 const fetchAllGroups = async () => {
@@ -74,9 +71,6 @@ const fetchAllGroups = async () => {
         const groupList = await sock.groupFetchAllParticipating();
         const groups = Object.values(groupList);
         console.log(`Fetched ${groups.length} groups.`);
-
-        // Optional: Fetch metadata more slowly if needed, but this is usually enough
-        // For this example, we return the basic list which is efficient.
         return groups.map(group => ({
             id: group.id,
             name: group.subject,
@@ -88,37 +82,76 @@ const fetchAllGroups = async () => {
     }
 };
 
-
-// --- FIX FOR "WAITING FOR THIS MESSAGE" ---
-// The key is ensuring a valid session and using a message queue.
-const broadcast = async (groups, message) => {
+// --- COMPLETELY REWRITTEN BROADCAST FUNCTION FOR MAXIMUM STABILITY ---
+const broadcast = async (io, socketId, groupObjects, message) => {
     if (!sock || connectionStatus !== 'connected') {
-        throw new Error('WhatsApp is not connected.');
+        io.to(socketId).emit('broadcast:error', { message: 'WhatsApp is not connected.' });
+        return;
     }
 
-    console.log(`Starting broadcast to ${groups.length} groups.`);
+    console.log(`[BROADCAST] Starting advanced broadcast to ${groupObjects.length} groups for socket ${socketId}.`);
+    
     let successfulSends = 0;
     let failedSends = 0;
+    const failedGroups = [];
+    const successfulGroups = [];
 
-    for (const groupId of groups) {
+    for (const group of groupObjects) {
         try {
-            // The faulty check has been removed. We now attempt to send directly.
-            await sock.sendMessage(groupId, { text: message });
-            console.log(`Message sent successfully to ${groupId}`);
-            successfulSends++;
+            // Emit a "sending" status update to the client
+            io.to(socketId).emit('broadcast:progress', { 
+                groupName: group.name, 
+                status: 'sending',
+                message: `Sending to "${group.name}"...`
+            });
 
-            // Add a randomized delay to mimic human behavior and avoid rate limits
-            const randomDelay = Math.floor(Math.random() * (4000 - 1500 + 1) + 1500); // Delay between 1.5s and 4s
-            await delay(randomDelay);
+            // STEP 1: SIMULATE TYPING
+            await sock.sendPresenceUpdate('composing', group.id);
+            const typingDelay = Math.floor(Math.random() * (1500 - 750 + 1) + 750);
+            await delay(typingDelay);
+
+            // STEP 2: SEND MESSAGE
+            await sock.sendMessage(group.id, { text: message });
+            successfulSends++;
+            successfulGroups.push(group.name);
+
+            // Emit a "success" status update
+            io.to(socketId).emit('broadcast:progress', {
+                groupName: group.name,
+                status: 'success',
+                message: `Successfully sent to "${group.name}".`
+            });
+
+            // STEP 3: COOLDOWN DELAY
+            const cooldownDelay = Math.floor(Math.random() * (6000 - 2500 + 1) + 2500);
+            await delay(cooldownDelay);
 
         } catch (error) {
-            console.error(`Failed to send message to ${groupId}:`, error.message);
+            console.error(`[BROADCAST-ERROR] Failed to send to ${group.name} (${group.id}):`, error.message);
             failedSends++;
+            failedGroups.push(group.name);
+            
+            // Emit a "failed" status update
+            io.to(socketId).emit('broadcast:progress', {
+                groupName: group.name,
+                status: 'failed',
+                message: `Failed to send to "${group.name}". Reason: ${error.message}`
+            });
+            await delay(5000); // Longer delay after a failure
         }
     }
-    console.log(`Broadcast finished. Successful: ${successfulSends}, Failed: ${failedSends}`);
-    return { total: groups.length, successful: successfulSends, failed: failedSends };
+
+    // Final completion event with summary
+    io.to(socketId).emit('broadcast:complete', {
+        total: groupObjects.length,
+        successful: successfulSends,
+        failed: failedSends,
+        successfulGroups,
+        failedGroups
+    });
+    console.log(`[BROADCAST] Finished for socket ${socketId}. Success: ${successfulSends}, Failed: ${failedSends}`);
 };
+
 
 module.exports = {
     init: startSocket,

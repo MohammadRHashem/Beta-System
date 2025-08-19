@@ -105,15 +105,17 @@ exports.syncGroups = async (req, res) => {
 };
 
 exports.broadcastMessage = async (req, res) => {
-    const { groups, message } = req.body;
-    if (!groups || !message || !Array.isArray(groups)) {
-        return res.status(400).json({ message: 'Invalid request body.' });
+    // We now expect groupObjects, message, and the client's socketId
+    const { groupObjects, message, socketId } = req.body;
+
+    if (!groupObjects || !message || !socketId || !Array.isArray(groupObjects)) {
+        return res.status(400).json({ message: 'Invalid request body. groupObjects (array), message (string), and socketId are required.' });
     }
 
-    try {
-        const result = await baileysService.broadcast(groups, message);
-        res.status(200).json({ message: `Broadcast initiated.`, ...result });
-    } catch (error) {
-        res.status(500).json({ message: error.message });
-    }
+    // Immediately respond to the client so the UI doesn't hang
+    res.status(202).json({ message: 'Broadcast accepted and initiated.' });
+
+    // Run the actual broadcast in the background. DO NOT await it.
+    // We pass the 'io' instance from the request so the service can emit events.
+    baileysService.broadcast(req.io, socketId, groupObjects, message);
 };
