@@ -73,7 +73,7 @@ const initializeWhatsApp = () => {
 
             // --- THIS IS THE SECOND PART OF THE FIX ---
             // We call execa directly, not as a property of an object.
-            const { stdout } = await execa('python3', [pythonScriptPath, tempFilePath]);
+            const { stdout } = await execa(__dirname, '../python_scripts/venv/bin/python3', [pythonScriptPath, tempFilePath]);
             
             const invoiceJson = JSON.parse(stdout);
             console.log(`[PROCESS] Python script processed successfully for invoice: ${invoiceJson.invoice_id}`);
