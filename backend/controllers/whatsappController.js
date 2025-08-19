@@ -99,7 +99,7 @@ exports.broadcastMessage = async (req, res) => {
     }
     
     try {
-        // Use the imported broadcastQueue
+        // Use the imported broadcastQueue.
         await broadcastQueue.add('send-message', {
             socketId,
             groupObjects,
