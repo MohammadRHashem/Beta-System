@@ -5,7 +5,6 @@ let client;
 let qrCodeData;
 let connectionStatus = 'disconnected';
 
-// This function will replace 'startSocket'
 const initializeWhatsApp = () => {
     console.log('Initializing WhatsApp client...');
     
@@ -20,7 +19,7 @@ const initializeWhatsApp = () => {
                 '--disable-accelerated-2d-canvas',
                 '--no-first-run',
                 '--no-zygote',
-                '--single-process', // This is for docker, but can help on small servers
+                '--single-process',
                 '--disable-gpu'
             ],
         }
@@ -41,7 +40,6 @@ const initializeWhatsApp = () => {
     client.on('disconnected', (reason) => {
         console.log('Client was logged out or disconnected', reason);
         connectionStatus = 'disconnected';
-        // Optional: you might want to destroy and re-initialize the client here.
     });
     
     client.on('auth_failure', msg => {
@@ -51,8 +49,6 @@ const initializeWhatsApp = () => {
 
     client.initialize();
 };
-
-// --- These functions mimic the old service, so our controller doesn't need to change ---
 
 const getQR = () => qrCodeData;
 const getStatus = () => connectionStatus;
@@ -67,7 +63,7 @@ const fetchAllGroups = async () => {
         const groups = chats.filter(chat => chat.isGroup);
         console.log(`Fetched ${groups.length} groups.`);
         return groups.map(group => ({
-            id: group.id._serialized, // The format for group IDs is different
+            id: group.id._serialized, // This is the correct ID format
             name: group.name,
             participants: group.participants.length
         }));
@@ -77,6 +73,7 @@ const fetchAllGroups = async () => {
     }
 };
 
+// --- BROADCAST FUNCTION WITH "TYPING..." SIMULATION RE-IMPLEMENTED ---
 const broadcast = async (io, socketId, groupObjects, message) => {
     if (connectionStatus !== 'connected') {
         io.to(socketId).emit('broadcast:error', { message: 'WhatsApp is not connected.' });
@@ -97,15 +94,18 @@ const broadcast = async (io, socketId, groupObjects, message) => {
                 status: 'sending',
                 message: `Sending to "${group.name}"...`
             });
-            
-            // Note: whatsapp-web.js does not have a "typing" presence for groups,
-            // but its session stability makes it less necessary.
-            
-            // A short delay is still good practice.
-            const typingDelay = Math.floor(Math.random() * (1500 - 750 + 1) + 750);
+
+            // STEP 1: GET THE CHAT OBJECT AND SIMULATE TYPING
+            const chat = await client.getChatById(group.id);
+            // This will set the status to "typing..." for about 25 seconds
+            chat.sendStateTyping();
+
+            // A short delay is still good practice to let the "typing" status appear
+            const typingDelay = Math.floor(Math.random() * (2000 - 1000 + 1) + 1000); // 1 to 2 seconds
             await delay(typingDelay);
 
-            // The send function is simpler
+            // STEP 2: SEND THE MESSAGE
+            // Sending the message will automatically clear the "typing" state.
             await client.sendMessage(group.id, message);
             successfulSends++;
             successfulGroups.push(group.name);
@@ -116,6 +116,7 @@ const broadcast = async (io, socketId, groupObjects, message) => {
                 message: `Successfully sent to "${group.name}".`
             });
 
+            // STEP 3: COOLDOWN DELAY
             const cooldownDelay = Math.floor(Math.random() * (6000 - 2500 + 1) + 2500);
             await delay(cooldownDelay);
 
@@ -144,7 +145,7 @@ const broadcast = async (io, socketId, groupObjects, message) => {
 };
 
 module.exports = {
-    init: initializeWhatsApp, // Exporting the new init function
+    init: initializeWhatsApp,
     getQR,
     getStatus,
     fetchAllGroups,
