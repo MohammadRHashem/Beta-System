@@ -25,7 +25,6 @@ const startSocket = async () => {
         auth: state,
         printQRInTerminal: false,
         logger,
-        markOnlineOnConnect: false,
         // Add a browser config to appear more legitimate
         browser: ['Beta Broadcaster', 'Chrome', '1.0.0']
     });
@@ -82,15 +81,13 @@ const fetchAllGroups = async () => {
     }
 };
 
-// --- COMPLETELY REWRITTEN BROADCAST FUNCTION FOR MAXIMUM STABILITY ---
-const broadcast = async (progressReporter, groupObjects, message) => {
+const broadcast = async (io, socketId, groupObjects, message) => {
     if (!sock || connectionStatus !== 'connected') {
-        // Report an initial error and stop
-        await progressReporter({ status: 'error', message: 'WhatsApp is not connected.' });
+        io.to(socketId).emit('broadcast:error', { message: 'WhatsApp is not connected.' });
         return;
     }
 
-    console.log(`[BROADCAST] Starting broadcast to ${groupObjects.length} groups.`);
+    console.log(`[BROADCAST] Starting advanced broadcast to ${groupObjects.length} groups for socket ${socketId}.`);
     
     let successfulSends = 0;
     let failedSends = 0;
@@ -99,7 +96,7 @@ const broadcast = async (progressReporter, groupObjects, message) => {
 
     for (const group of groupObjects) {
         try {
-            await progressReporter({ 
+            io.to(socketId).emit('broadcast:progress', { 
                 groupName: group.name, 
                 status: 'sending',
                 message: `Sending to "${group.name}"...`
@@ -113,7 +110,7 @@ const broadcast = async (progressReporter, groupObjects, message) => {
             successfulSends++;
             successfulGroups.push(group.name);
 
-            await progressReporter({
+            io.to(socketId).emit('broadcast:progress', {
                 groupName: group.name,
                 status: 'success',
                 message: `Successfully sent to "${group.name}".`
@@ -127,7 +124,7 @@ const broadcast = async (progressReporter, groupObjects, message) => {
             failedSends++;
             failedGroups.push(group.name);
             
-            await progressReporter({
+            io.to(socketId).emit('broadcast:progress', {
                 groupName: group.name,
                 status: 'failed',
                 message: `Failed to send to "${group.name}". Reason: ${error.message}`
@@ -136,18 +133,15 @@ const broadcast = async (progressReporter, groupObjects, message) => {
         }
     }
 
-    // Final completion report with summary
-    await progressReporter({
-        status: 'complete',
+    io.to(socketId).emit('broadcast:complete', {
         total: groupObjects.length,
         successful: successfulSends,
         failed: failedSends,
         successfulGroups,
         failedGroups
     });
-    console.log(`[BROADCAST] Finished. Success: ${successfulSends}, Failed: ${failedSends}`);
+    console.log(`[BROADCAST] Finished for socket ${socketId}. Success: ${successfulSends}, Failed: ${failedSends}`);
 };
-
 
 module.exports = {
     init: startSocket,

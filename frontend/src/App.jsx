@@ -242,10 +242,10 @@ function App() {
     };
 
     const startBroadcast = (groupObjects, broadcastMessage) => {
+        // Reset state for new broadcast (NO "queued" message)
         setIsBroadcasting(true);
         setIsBroadcastComplete(false);
-        // NEW: Initial log entry to show the user they are in the queue
-        setBroadcastLogs([{ status: 'info', message: 'Your broadcast has been queued and will begin shortly...' }]);
+        setBroadcastLogs([]);
         setBroadcastSummary({ total: groupObjects.length, successful: 0, failed: 0 });
 
         api.post('/broadcast', {

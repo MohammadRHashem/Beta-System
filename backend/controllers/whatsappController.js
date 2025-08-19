@@ -1,19 +1,7 @@
 const fs = require('fs-extra');
-const { Queue } = require('bullmq');
 const baileysService = require('../services/baileys');
-const broadcastQueue = require('../services/queue'); // <-- IMPORT the queue
-
 const pool = require('../config/db');
 
-// --- Create a new Queue instance ---
-const broadcastQueue = new Queue('broadcast-queue', {
-    connection: {
-        host: 'localhost',
-        port: 6379
-    }
-});
-
-// --- No changes to these functions ---
 exports.init = () => {
     baileysService.init();
 };
@@ -90,8 +78,7 @@ exports.syncGroups = async (req, res) => {
     }
 };
 
-
-exports.broadcastMessage = async (req, res) => {
+exports.broadcastMessage = (req, res) => {
     const { groupObjects, message, socketId } = req.body;
 
     if (!groupObjects || !message || !socketId || !Array.isArray(groupObjects)) {
@@ -99,18 +86,15 @@ exports.broadcastMessage = async (req, res) => {
     }
     
     try {
-        // Use the imported broadcastQueue.
-        await broadcastQueue.add('send-message', {
-            socketId,
-            groupObjects,
-            message
-        });
+        res.status(202).json({ message: 'Broadcast accepted and will start shortly.' });
         
-        console.log(`[CONTROLLER] Broadcast job for socket ${socketId} added to the queue.`);
-        res.status(202).json({ message: 'Broadcast job has been queued successfully.' });
+        console.log(`[CONTROLLER] Handing off broadcast job to Baileys service for socket ${socketId}.`);
+        baileysService.broadcast(req.io, socketId, groupObjects, message);
 
     } catch (error) {
-        console.error("[CONTROLLER-ERROR] Failed to add broadcast job to queue:", error);
-        res.status(500).json({ message: 'Failed to queue the broadcast job.' });
+        console.error("[CONTROLLER-ERROR] Failed to start broadcast job:", error);
+        if (req.io && socketId) {
+            req.io.to(socketId).emit('broadcast:error', { message: 'Failed to start the broadcast process on the server.' });
+        }
     }
 };
