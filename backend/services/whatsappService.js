@@ -4,10 +4,132 @@ const fs = require('fs/promises');
 const pool = require('../config/db');
 const path = require('path');
 const execa = require('execa');
+const os = require('os');
 
 let client;
 let qrCodeData;
 let connectionStatus = 'disconnected';
+
+// --- In-Memory Queue for Sequential Processing ---
+const messageQueue = [];
+let isProcessing = false;
+
+// --- The function that processes one message at a time ---
+const processQueue = async () => {
+    if (isProcessing || messageQueue.length === 0) {
+        return;
+    }
+    isProcessing = true;
+    const message = messageQueue.shift(); // Get the next message from the queue
+
+    try {
+        const chat = await message.getChat();
+        
+        // Check group settings in DB
+        const [settings] = await pool.query('SELECT * FROM group_settings WHERE group_jid = ?', [chat.id._serialized]);
+        const groupSettings = settings[0] || { forwarding_enabled: true, archiving_enabled: true };
+
+        if (!groupSettings.forwarding_enabled && !groupSettings.archiving_enabled) {
+            console.log(`[QUEUE] Ignoring message from disabled group: ${chat.name}`);
+            isProcessing = false;
+            processQueue(); // Process next item
+            return;
+        }
+
+        const media = await message.downloadMedia();
+        if (!media || !['image/jpeg', 'image/jpg', 'image/png', 'application/pdf'].includes(media.mimetype)) {
+            isProcessing = false;
+            processQueue(); // Process next item
+            return;
+        }
+
+        console.log(`[PROCESS] Started processing media from group: ${chat.name}`);
+        const tempFilePath = `/tmp/${message.id.id}.${media.mimetype.split('/')[1] || 'bin'}`;
+        await fs.writeFile(tempFilePath, Buffer.from(media.data, 'base64'));
+        
+        const pythonExecutablePath = path.join(os.homedir(), 'TRK-TechAssistant', 'venv', 'bin', 'python3');
+        const pythonScriptPath = path.join(os.homedir(), 'TRK-TechAssistant', 'main.py');
+        
+        // Robust error handling for the Python script
+        let invoiceJson;
+        try {
+            const { stdout } = await execa(pythonExecutablePath, [pythonScriptPath, tempFilePath]);
+            invoiceJson = JSON.parse(stdout);
+            console.log(`[PROCESS] Python script success. Invoice ID: ${invoiceJson.invoice_id}`);
+        } catch (pythonError) {
+            console.error(`[PYTHON-ERROR] Script failed for media from ${chat.name}. Stderr:`, pythonError.stderr);
+            await fs.unlink(tempFilePath); // Clean up temp file
+            isProcessing = false;
+            processQueue(); // Process next item
+            return; // Exit this function
+        }
+        
+        await fs.unlink(tempFilePath);
+
+        if (!invoiceJson || !invoiceJson.invoice_id) {
+             console.error(`[PROCESS-ERROR] Python script returned invalid JSON or missing invoice_id for media from ${chat.name}`);
+             isProcessing = false;
+             processQueue();
+             return;
+        }
+        
+        if (groupSettings.archiving_enabled) {
+            await pool.query(
+               `INSERT INTO invoices_all (invoice_id, source_group_jid, payment_method, invoice_date, invoice_time, amount, currency, sender_name, recipient_name, raw_json_data) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+               [invoiceJson.invoice_id, chat.id._serialized, invoiceJson.payment_method, invoiceJson.invoice_date, invoiceJson.invoice_time, invoiceJson.amount, invoiceJson.currency, invoiceJson.sender?.name, invoiceJson.recipient?.name, JSON.stringify(invoiceJson)]
+           );
+        }
+
+        const recipientName = invoiceJson.recipient?.name?.toLowerCase() || '';
+        const [rules] = await pool.query('SELECT * FROM forwarding_rules');
+
+        let ruleMatched = false;
+        for (const rule of rules) {
+            if (recipientName.includes(rule.trigger_keyword.toLowerCase())) {
+                ruleMatched = true;
+                console.log(`[PROCESS] Matched rule "${rule.trigger_keyword}"`);
+                
+                if (groupSettings.forwarding_enabled) {
+                    const mediaToForward = new MessageMedia(media.mimetype, media.data, media.filename);
+                    await client.sendMessage(rule.destination_group_jid, mediaToForward, { caption: `Invoice from: ${chat.name}\nID: ${invoiceJson.invoice_id}` });
+                    console.log(`[PROCESS] Forwarded media to: ${rule.destination_group_name}`);
+                }
+
+                if (groupSettings.archiving_enabled) {
+                    const { invoice_id, sender, recipient, amount } = invoiceJson;
+                    if (invoice_id && sender?.name && recipient?.name && amount) {
+                        await pool.query(
+                            'INSERT INTO invoices_trkbit_approved (invoice_id, source_group_jid, sender_name, recipient_name, amount) VALUES (?, ?, ?, ?, ?)',
+                            [invoice_id, chat.id._serialized, sender.name, recipient.name, amount]
+                        );
+                        console.log(`[PROCESS] Archived to trkbit_approved.`);
+                    } else {
+                         await pool.query(
+                            'INSERT INTO invoices_trkbit_unapproved (invoice_id, source_group_jid, raw_json_data) VALUES (?, ?, ?)',
+                            [invoice_id, chat.id._serialized, JSON.stringify(invoiceJson)]
+                        );
+                        console.log(`[PROCESS] Archived to trkbit_unapproved due to missing fields.`);
+                    }
+                }
+                break;
+            }
+        }
+
+        if (!ruleMatched && groupSettings.archiving_enabled) {
+             await pool.query(
+                'INSERT INTO invoices_chave_pix (invoice_id, source_group_jid, raw_json_data) VALUES (?, ?, ?)',
+                [invoiceJson.invoice_id, chat.id._serialized, JSON.stringify(invoiceJson)]
+            );
+            console.log(`[PROCESS] No rule matched. Archived to chave_pix.`);
+        }
+
+    } catch (error) {
+        console.error('[QUEUE-PROCESS-ERROR] A critical error occurred:', error);
+    } finally {
+        isProcessing = false;
+        processQueue();
+    }
+};
 
 const initializeWhatsApp = () => {
     console.log('Initializing WhatsApp client...');
@@ -47,92 +169,11 @@ const initializeWhatsApp = () => {
             if (!chat.isGroup || !message.hasMedia || message.fromMe) {
                 return;
             }
-
-            const [settings] = await pool.query('SELECT * FROM group_settings WHERE group_jid = ?', [chat.id._serialized]);
-            const groupSettings = settings[0] || { forwarding_enabled: true, archiving_enabled: true };
-
-            if (!groupSettings.forwarding_enabled && !groupSettings.archiving_enabled) {
-                return;
-            }
-
-            const media = await message.downloadMedia();
-            if (!media || !['image/jpeg', 'image/jpg', 'image/png', 'application/pdf'].includes(media.mimetype)) {
-                return;
-            }
-
-            console.log(`[PROCESS] Received valid media from group: ${chat.name}`);
-            const tempFilePath = `/tmp/${message.id.id}.${media.mimetype.split('/')[1] || 'bin'}`;
-            await fs.writeFile(tempFilePath, Buffer.from(media.data, 'base64'));
-
-            // --- THIS IS THE CRITICAL FIX ---
-            // Construct the absolute paths for the venv python executable and the script
-            const pythonVenvPath = path.join(__dirname, '..', 'python_scripts', 'venv', 'bin', 'python3');
-            const pythonScriptPath = path.join(__dirname, '..', 'python_scripts', 'main.py');
-            
-            console.log(`[PROCESS] Executing Python script: ${pythonScriptPath}`);
-            console.log(`[PROCESS] Using venv executable: ${pythonVenvPath}`);
-
-            // Correctly call execa with the executable as the first argument
-            // and an array of script + arguments as the second.
-            const { stdout } = await execa(pythonVenvPath, [pythonScriptPath, tempFilePath]);
-            
-            const invoiceJson = JSON.parse(stdout);
-            console.log(`[PROCESS] Python script processed successfully for invoice: ${invoiceJson.invoice_id}`);
-            
-            await fs.unlink(tempFilePath);
-
-            if (groupSettings.archiving_enabled) {
-                 await pool.query(
-                    `INSERT INTO invoices_all (invoice_id, source_group_jid, payment_method, invoice_date, invoice_time, amount, currency, sender_name, recipient_name, raw_json_data) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-                    [invoiceJson.invoice_id, chat.id._serialized, invoiceJson.payment_method, invoiceJson.invoice_date, invoiceJson.invoice_time, invoiceJson.amount, invoiceJson.currency, invoiceJson.sender?.name, invoiceJson.recipient?.name, JSON.stringify(invoiceJson)]
-                );
-            }
-
-            const recipientName = invoiceJson.recipient?.name?.toLowerCase() || '';
-            const [rules] = await pool.query('SELECT * FROM forwarding_rules');
-
-            let ruleMatched = false;
-            for (const rule of rules) {
-                if (recipientName.includes(rule.trigger_keyword.toLowerCase())) {
-                    ruleMatched = true;
-                    console.log(`[PROCESS] Matched rule "${rule.trigger_keyword}"`);
-                    
-                    if (groupSettings.forwarding_enabled) {
-                        const mediaToForward = new MessageMedia(media.mimetype, media.data, media.filename);
-                        await client.sendMessage(rule.destination_group_jid, mediaToForward, { caption: `Invoice from: ${chat.name}\nID: ${invoiceJson.invoice_id}` });
-                        console.log(`[PROCESS] Forwarded media to: ${rule.destination_group_name}`);
-                    }
-
-                    if (groupSettings.archiving_enabled) {
-                        const { invoice_id, sender, recipient, amount } = invoiceJson;
-                        if (invoice_id && sender?.name && recipient?.name && amount) {
-                            await pool.query(
-                                'INSERT INTO invoices_trkbit_approved (invoice_id, source_group_jid, sender_name, recipient_name, amount) VALUES (?, ?, ?, ?, ?)',
-                                [invoice_id, chat.id._serialized, sender.name, recipient.name, amount]
-                            );
-                            console.log(`[PROCESS] Archived to trkbit_approved.`);
-                        } else {
-                             await pool.query(
-                                'INSERT INTO invoices_trkbit_unapproved (invoice_id, source_group_jid, raw_json_data) VALUES (?, ?, ?)',
-                                [invoice_id, chat.id._serialized, JSON.stringify(invoiceJson)]
-                            );
-                            console.log(`[PROCESS] Archived to trkbit_unapproved due to missing fields.`);
-                        }
-                    }
-                    break;
-                }
-            }
-
-            if (!ruleMatched && groupSettings.archiving_enabled) {
-                 await pool.query(
-                    'INSERT INTO invoices_chave_pix (invoice_id, source_group_jid, raw_json_data) VALUES (?, ?, ?)',
-                    [invoiceJson.invoice_id, chat.id._serialized, JSON.stringify(invoiceJson)]
-                );
-                console.log(`[PROCESS] No rule matched. Archived to chave_pix.`);
-            }
+            messageQueue.push(message);
+            processQueue();
 
         } catch (error) {
-            console.error('[PROCESS-ERROR] An error occurred during message processing:', error);
+            console.error('[MESSAGE-HANDLER-ERROR] Could not queue message:', error);
         }
     });
     
@@ -152,8 +193,89 @@ const initializeWhatsApp = () => {
 const getQR = () => qrCodeData;
 const getStatus = () => connectionStatus;
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
-const fetchAllGroups = async () => { /* ... existing code, no changes ... */ };
-const broadcast = async (io, socketId, groupObjects, message) => { /* ... existing code, no changes ... */ };
+
+const fetchAllGroups = async () => {
+    if (connectionStatus !== 'connected') {
+        throw new Error('WhatsApp is not connected.');
+    }
+    try {
+        const chats = await client.getChats();
+        const groups = chats.filter(chat => chat.isGroup);
+        console.log(`Fetched ${groups.length} groups.`);
+        return groups.map(group => ({
+            id: group.id._serialized,
+            name: group.name,
+            participants: group.participants.length
+        }));
+    } catch (error) {
+        console.error('Error fetching groups:', error);
+        throw error;
+    }
+};
+
+const broadcast = async (io, socketId, groupObjects, message) => {
+    if (connectionStatus !== 'connected') {
+        io.to(socketId).emit('broadcast:error', { message: 'WhatsApp is not connected.' });
+        return;
+    }
+
+    console.log(`[BROADCAST] Starting broadcast to ${groupObjects.length} groups for socket ${socketId}.`);
+    
+    let successfulSends = 0;
+    let failedSends = 0;
+    const failedGroups = [];
+    const successfulGroups = [];
+
+    for (const group of groupObjects) {
+        try {
+            io.to(socketId).emit('broadcast:progress', { 
+                groupName: group.name, 
+                status: 'sending',
+                message: `Sending to "${group.name}"...`
+            });
+            
+            const chat = await client.getChatById(group.id);
+            chat.sendStateTyping();
+
+            const typingDelay = Math.floor(Math.random() * (2000 - 1000 + 1) + 1000);
+            await delay(typingDelay);
+
+            await client.sendMessage(group.id, message);
+            successfulSends++;
+            successfulGroups.push(group.name);
+
+            io.to(socketId).emit('broadcast:progress', {
+                groupName: group.name,
+                status: 'success',
+                message: `Successfully sent to "${group.name}".`
+            });
+
+            const cooldownDelay = Math.floor(Math.random() * (6000 - 2500 + 1) + 2500);
+            await delay(cooldownDelay);
+
+        } catch (error) {
+            console.error(`[BROADCAST-ERROR] Failed to send to ${group.name} (${group.id}):`, error.message);
+            failedSends++;
+            failedGroups.push(group.name);
+            
+            io.to(socketId).emit('broadcast:progress', {
+                groupName: group.name,
+                status: 'failed',
+                message: `Failed to send to "${group.name}". Reason: ${error.message}`
+            });
+            await delay(5000);
+        }
+    }
+
+    io.to(socketId).emit('broadcast:complete', {
+        total: groupObjects.length,
+        successful: successfulSends,
+        failed: failedSends,
+        successfulGroups,
+        failedGroups
+    });
+    console.log(`[BROADCAST] Finished for socket ${socketId}. Success: ${successfulSends}, Failed: ${failedSends}`);
+};
 
 module.exports = {
     init: initializeWhatsApp,
