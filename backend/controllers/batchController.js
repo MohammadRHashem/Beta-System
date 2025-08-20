@@ -1,8 +1,13 @@
 const pool = require('../config/db');
 
+// --- GET ALL BATCHES (User-Specific) ---
 exports.getAllBatches = async (req, res) => {
+    const userId = req.user.id; // Get user ID
     try {
-        const [batches] = await pool.query('SELECT id, name FROM group_batches ORDER BY name');
+        const [batches] = await pool.query(
+            'SELECT id, name FROM group_batches WHERE user_id = ? ORDER BY name',
+            [userId]
+        );
         res.json(batches);
     } catch (error) {
         console.error('Error fetching batches:', error);
@@ -10,6 +15,7 @@ exports.getAllBatches = async (req, res) => {
     }
 };
 
+// --- GET GROUPS FOR A BATCH (Still Public - OK for now, but could be secured) ---
 exports.getGroupIdsByBatch = async (req, res) => {
     try {
         const batchId = req.params.id;
@@ -22,7 +28,9 @@ exports.getGroupIdsByBatch = async (req, res) => {
     }
 };
 
+// --- CREATE BATCH (User-Specific) ---
 exports.createBatch = async (req, res) => {
+    const userId = req.user.id; // Get user ID
     const { name, groupIds } = req.body;
     if (!name || !groupIds || !Array.isArray(groupIds) || groupIds.length === 0) {
         return res.status(400).json({ message: 'Batch name and a non-empty array of group IDs are required.' });
@@ -31,12 +39,12 @@ exports.createBatch = async (req, res) => {
     const connection = await pool.getConnection();
     try {
         await connection.beginTransaction();
-
-        // Insert the new batch
-        const [result] = await connection.query('INSERT INTO group_batches (name) VALUES (?)', [name]);
+        const [result] = await connection.query(
+            'INSERT INTO group_batches (user_id, name) VALUES (?, ?)',
+            [userId, name] // Add user_id
+        );
         const newBatchId = result.insertId;
 
-        // Prepare and insert the group links
         const linkValues = groupIds.map(groupId => [newBatchId, groupId]);
         await connection.query('INSERT INTO batch_group_link (batch_id, group_id) VALUES ?', [linkValues]);
 
@@ -51,7 +59,9 @@ exports.createBatch = async (req, res) => {
     }
 };
 
+// --- UPDATE BATCH (User-Specific) ---
 exports.updateBatch = async (req, res) => {
+    const userId = req.user.id; // Get user ID
     const { id } = req.params;
     const { name, groupIds } = req.body;
 
@@ -62,14 +72,17 @@ exports.updateBatch = async (req, res) => {
     const connection = await pool.getConnection();
     try {
         await connection.beginTransaction();
+        
+        // Security check: Make sure this user owns the batch they are trying to edit
+        const [batchCheck] = await connection.query('SELECT id FROM group_batches WHERE id = ? AND user_id = ?', [id, userId]);
+        if (batchCheck.length === 0) {
+            await connection.rollback();
+            return res.status(403).json({ message: 'Forbidden: You do not own this batch.' });
+        }
 
-        // 1. Update the batch name
-        await connection.query('UPDATE group_batches SET name = ? WHERE id = ?', [name, id]);
-
-        // 2. Delete all existing group links for this batch
+        await connection.query('UPDATE group_batches SET name = ? WHERE id = ? AND user_id = ?', [name, id, userId]);
         await connection.query('DELETE FROM batch_group_link WHERE batch_id = ?', [id]);
 
-        // 3. Insert the new group links (if any)
         if (groupIds.length > 0) {
             const linkValues = groupIds.map(groupId => [id, groupId]);
             await connection.query('INSERT INTO batch_group_link (batch_id, group_id) VALUES ?', [linkValues]);
@@ -86,14 +99,14 @@ exports.updateBatch = async (req, res) => {
     }
 };
 
+// --- DELETE BATCH (User-Specific) ---
 exports.deleteBatch = async (req, res) => {
+    const userId = req.user.id; // Get user ID
     const { id } = req.params;
     try {
-        // Because of "ON DELETE CASCADE" in our table setup,
-        // deleting from group_batches will automatically delete all linked
-        // groups from batch_group_link.
-        await pool.query('DELETE FROM group_batches WHERE id = ?', [id]);
-        res.status(204).send(); // 204 No Content is a standard response for successful deletion
+        // Security: Ensure a user can only delete their own batches
+        await pool.query('DELETE FROM group_batches WHERE id = ? AND user_id = ?', [id, userId]);
+        res.status(204).send();
     } catch (error) {
         console.error('Error deleting batch:', error);
         res.status(500).json({ message: 'Failed to delete batch' });
