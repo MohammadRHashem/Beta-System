@@ -27,12 +27,6 @@ const processQueue = async () => {
         const [settings] = await pool.query('SELECT * FROM group_settings WHERE group_jid = ?', [chat.id._serialized]);
         const groupSettings = settings[0] || { forwarding_enabled: true, archiving_enabled: true };
 
-        if (!groupSettings.forwarding_enabled && !groupSettings.archiving_enabled) {
-            isProcessing = false;
-            processQueue();
-            return;
-        }
-
         const media = await message.downloadMedia();
         if (!media || !['image/jpeg', 'image/jpg', 'image/png', 'application/pdf'].includes(media.mimetype)) {
             isProcessing = false;
@@ -66,7 +60,7 @@ const processQueue = async () => {
                 env: pythonEnv
             });
             invoiceJson = JSON.parse(stdout);
-            console.log(`[PROCESS] Python script success. Invoice ID: ${invoiceJson.invoice_id || invoiceJson.transaction_id}`);
+            console.log(`[PROCESS] Python script success. Transaction ID: ${invoiceJson.transaction_id}`);
         } catch (pythonError) {
             console.error(`[PYTHON-ERROR] Script failed for media from ${chat.name}. Stderr:`, pythonError.stderr);
             await fs.unlink(tempFilePath);
@@ -77,60 +71,47 @@ const processQueue = async () => {
         
         await fs.unlink(tempFilePath);
 
-        const invoiceIdentifier = invoiceJson.invoice_id || invoiceJson.transaction_id;
+        const invoiceIdentifier = invoiceJson.transaction_id; // Using the key from your Python script
 
-        if (!invoiceIdentifier) {
-             console.log(`[PROCESS-INFO] Python script returned no valid invoice/transaction_id. Skipping.`);
-             isProcessing = false;
-             processQueue();
-             return;
-        }
-        
+        // --- NEW SAVING LOGIC ---
         if (groupSettings.archiving_enabled) {
-            await pool.query(
-               `INSERT INTO invoices_all (invoice_id, source_group_jid, payment_method, invoice_date, invoice_time, amount, currency, sender_name, recipient_name, raw_json_data) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-               [invoiceIdentifier, chat.id._serialized, invoiceJson.payment_method, invoiceJson.invoice_date, invoiceJson.invoice_time, invoiceJson.amount, invoiceJson.currency, invoiceJson.sender?.name, invoiceJson.recipient?.name, JSON.stringify(invoiceJson)]
-           );
+            const { amount, sender, recipient } = invoiceJson;
+            // Check if all required fields for saving are present
+            if (amount && sender?.name && recipient?.name) {
+                // Convert WhatsApp's Unix timestamp to a MySQL-friendly format
+                const receivedAt = new Date(message.timestamp * 1000);
+
+                await pool.query(
+                   `INSERT INTO invoices (transaction_id, sender_name, recipient_name, pix_key, amount, source_group_jid, received_at, raw_json_data) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+                   [invoiceIdentifier, sender.name, recipient.name, recipient.pix_key, amount, chat.id._serialized, receivedAt, JSON.stringify(invoiceJson)]
+                );
+                console.log(`[PROCESS] Invoice ${invoiceIdentifier} meets requirements and was saved to the database.`);
+            } else {
+                console.log(`[PROCESS] Invoice from ${chat.name} did not meet saving requirements (missing amount, sender, or recipient). Skipping save.`);
+            }
+        } else {
+            console.log(`[PROCESS] Archiving is disabled for group ${chat.name}. Skipping save.`);
         }
 
-        const recipientName = invoiceJson.recipient?.name?.toLowerCase() || '';
-        const [rules] = await pool.query('SELECT * FROM forwarding_rules');
-
-        let ruleMatched = false;
-        for (const rule of rules) {
-            if (recipientName.includes(rule.trigger_keyword.toLowerCase())) {
-                ruleMatched = true;
-                console.log(`[PROCESS] Matched rule "${rule.trigger_keyword}"`);
-                
-                if (groupSettings.forwarding_enabled) {
-                    const mediaToForward = new MessageMedia(media.mimetype, media.data, media.filename);
-                    await client.sendMessage(rule.destination_group_jid, mediaToForward, { caption: `Invoice from: ${chat.name}\nID: ${invoiceIdentifier}` });
-                    console.log(`[PROCESS] Forwarded media to: ${rule.destination_group_name}`);
-                }
-
-                if (groupSettings.archiving_enabled) {
-                    const { sender, recipient, amount } = invoiceJson;
-                    if (invoiceIdentifier && sender?.name && recipient?.name && amount) {
-                        await pool.query(
-                            'INSERT INTO invoices_trkbit_approved (invoice_id, source_group_jid, sender_name, recipient_name, amount) VALUES (?, ?, ?, ?, ?)',
-                            [invoiceIdentifier, chat.id._serialized, sender.name, recipient.name, amount]
-                        );
-                    } else {
-                         await pool.query(
-                            'INSERT INTO invoices_trkbit_unapproved (invoice_id, source_group_jid, raw_json_data) VALUES (?, ?, ?)',
-                            [invoiceIdentifier, chat.id._serialized, JSON.stringify(invoiceJson)]
-                        );
+        // --- NEW FORWARDING LOGIC ---
+        if (groupSettings.forwarding_enabled) {
+            const recipientName = invoiceJson.recipient?.name?.toLowerCase() || '';
+            if (recipientName) {
+                const [rules] = await pool.query('SELECT * FROM forwarding_rules');
+                for (const rule of rules) {
+                    if (recipientName.includes(rule.trigger_keyword.toLowerCase())) {
+                        console.log(`[PROCESS] Matched forwarding rule "${rule.trigger_keyword}"`);
+                        const mediaToForward = new MessageMedia(media.mimetype, media.data, media.filename);
+                        await client.sendMessage(rule.destination_group_jid, mediaToForward, { caption: `Invoice from: ${chat.name}\nID: ${invoiceIdentifier}` });
+                        console.log(`[PROCESS] Forwarded media to: ${rule.destination_group_name}`);
+                        break; // Stop after the first match
                     }
                 }
-                break;
+            } else {
+                 console.log(`[PROCESS] No recipient name found for forwarding rule check. Skipping forward.`);
             }
-        }
-
-        if (!ruleMatched && groupSettings.archiving_enabled) {
-             await pool.query(
-                'INSERT INTO invoices_chave_pix (invoice_id, source_group_jid, raw_json_data) VALUES (?, ?, ?)',
-                [invoiceIdentifier, chat.id._serialized, JSON.stringify(invoiceJson)]
-            );
+        } else {
+            console.log(`[PROCESS] Forwarding is disabled for group ${chat.name}. Skipping forward.`);
         }
 
     } catch (error) {
@@ -150,12 +131,6 @@ const initializeWhatsApp = () => {
     client.on('message', async (message) => {
         try {
             const chat = await message.getChat();
-            
-            // --- THIS IS THE CORRECTED LOGIC ---
-            // Process the message IF:
-            // - It IS a group
-            // - It DOES have media
-            // - It is NOT from me (it is a received message)
             if (chat.isGroup && message.hasMedia && !message.fromMe) {
                 console.log(`[QUEUE] Queuing incoming media from: ${chat.name}`);
                 messageQueue.push(message);
