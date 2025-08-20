@@ -4,6 +4,7 @@ const fs = require('fs/promises');
 const pool = require('../config/db');
 const path = require('path');
 const execa = require('execa');
+const os = require('os');
 const dotenv = require('dotenv');
 
 let client;
@@ -43,19 +44,16 @@ const processQueue = async () => {
         const tempFilePath = `/tmp/${message.id.id}.${media.mimetype.split('/')[1] || 'bin'}`;
         await fs.writeFile(tempFilePath, Buffer.from(media.data, 'base64'));
         
-        // --- THIS IS THE FINAL, CORRECTED LOGIC ---
         const pythonScriptsDir = path.join(__dirname, '..', 'python_scripts');
         const pythonExecutablePath = path.join(pythonScriptsDir, 'venv', 'bin', 'python3');
         const pythonScriptPath = path.join(pythonScriptsDir, 'main.py');
         
-        // 1. Explicitly load the Python project's .env file
         const pythonEnvPath = path.join(pythonScriptsDir, '.env');
         const pythonEnv = dotenv.config({ path: pythonEnvPath }).parsed;
 
         if (!pythonEnv || !pythonEnv.GOOGLE_API_KEY) {
-            // This is a critical failure. We log it and stop.
-            console.error('[PROCESS-ERROR] Could not load GOOGLE_API_KEY from python_scripts/.env file. Halting processing for this message.');
-            await fs.unlink(tempFilePath); // Clean up
+            console.error('[PROCESS-ERROR] Could not load GOOGLE_API_KEY from python_scripts/.env file.');
+            await fs.unlink(tempFilePath);
             isProcessing = false;
             processQueue();
             return;
@@ -63,10 +61,9 @@ const processQueue = async () => {
         
         let invoiceJson;
         try {
-            // 2. Execute the script with the correct working directory and injected environment
             const { stdout } = await execa(pythonExecutablePath, [pythonScriptPath, tempFilePath], {
-                cwd: pythonScriptsDir, // Set the working directory
-                env: pythonEnv       // Inject the API key
+                cwd: pythonScriptsDir,
+                env: pythonEnv
             });
             invoiceJson = JSON.parse(stdout);
             console.log(`[PROCESS] Python script success. Invoice ID: ${invoiceJson.invoice_id || invoiceJson.transaction_id}`);
@@ -80,11 +77,10 @@ const processQueue = async () => {
         
         await fs.unlink(tempFilePath);
 
-        // Use the correct key from your python output
         const invoiceIdentifier = invoiceJson.invoice_id || invoiceJson.transaction_id;
 
         if (!invoiceIdentifier) {
-             console.log(`[PROCESS-INFO] Python script returned no valid invoice/transaction_id. Skipping forwarding/archiving.`);
+             console.log(`[PROCESS-INFO] Python script returned no valid invoice/transaction_id. Skipping.`);
              isProcessing = false;
              processQueue();
              return;
@@ -150,16 +146,26 @@ const initializeWhatsApp = () => {
     client = new Client({ authStrategy: new LocalAuth({ dataPath: 'wwebjs_sessions' }), puppeteer: { headless: true, args: [ '--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-accelerated-2d-canvas', '--no-first-run', '--no-zygote', '--single-process', '--disable-gpu' ], } });
     client.on('qr', async (qr) => { console.log('QR code generated.'); qrCodeData = await qrcode.toDataURL(qr); connectionStatus = 'qr'; });
     client.on('ready', () => { console.log('Connection opened. Client is ready!'); qrCodeData = null; connectionStatus = 'connected'; });
+    
     client.on('message', async (message) => {
         try {
             const chat = await message.getChat();
-            if (!chat.isGroup || !message.hasMedia || !message.fromMe) { return; }
-            messageQueue.push(message);
-            processQueue();
+            
+            // --- THIS IS THE CORRECTED LOGIC ---
+            // Process the message IF:
+            // - It IS a group
+            // - It DOES have media
+            // - It is NOT from me (it is a received message)
+            if (chat.isGroup && message.hasMedia && !message.fromMe) {
+                console.log(`[QUEUE] Queuing incoming media from: ${chat.name}`);
+                messageQueue.push(message);
+                processQueue();
+            }
         } catch (error) {
             console.error('[MESSAGE-HANDLER-ERROR] Could not queue message:', error);
         }
     });
+    
     client.on('disconnected', (reason) => { console.log('Client was logged out or disconnected', reason); connectionStatus = 'disconnected'; });
     client.on('auth_failure', msg => { console.error('AUTHENTICATION FAILURE', msg); connectionStatus = 'disconnected'; });
     client.initialize();
