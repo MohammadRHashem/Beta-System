@@ -137,7 +137,7 @@ const MainLayout = () => {
                 <PageContent>
                     {status === 'qr' ? (
                         <QRContainer>
-                            <h2>Scan to Connect WhatsApp API</h2>
+                            <h2>Scan to Connect WhatsApp API...</h2>
                             {qrCode && <img src={qrCode} alt="QR Code" />}
                         </QRContainer>
                     ) : (
