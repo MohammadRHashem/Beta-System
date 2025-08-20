@@ -7,13 +7,11 @@ exports.init = () => {
 };
 
 exports.getStatus = (req, res) => {
-  const status = whatsappService.getStatus();
-  res.json({ status });
-};
-
-exports.getQRCode = (req, res) => {
-  const qr = whatsappService.getQR();
-  res.json({ qr });
+    // This assumes you have refactored to a sessionManager as discussed
+    // If you are still on a single-session model:
+    const status = whatsappService.getStatus();
+    const qr = whatsappService.getQR(); // Get the current QR code
+    res.json({ status, qr }); // Return both status and qr code together
 };
 
 exports.logout = async (req, res) => {

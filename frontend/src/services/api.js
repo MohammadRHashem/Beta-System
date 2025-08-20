@@ -7,6 +7,19 @@ const apiClient = axios.create({
     },
 });
 
+apiClient.interceptors.response.use(
+    response => response,
+    error => {
+        if (error.response && error.response.status === 401) {
+            localStorage.removeItem('authToken');
+            localStorage.removeItem('user');
+            // Reloading the page will force the user to the login screen
+            window.location.href = '/login'; 
+        }
+        return Promise.reject(error);
+    }
+);
+
 export const getBatches = () => apiClient.get('/batches');
 export const getGroupIdsForBatch = (batchId) => apiClient.get(`/batches/${batchId}`);
 export const createBatch = (data) => apiClient.post('/batches', data);

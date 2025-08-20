@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import styled from 'styled-components';
-import { Routes, Route, useLocation } from 'react-router-dom';
+import { Routes, Route, useLocation, Navigate } from 'react-router-dom';
+import { useAuth } from './context/AuthContext';
 import api from './services/api';
 
 // Import Layout Components
@@ -11,6 +12,10 @@ import StatusIndicator from './components/StatusIndicator';
 import BroadcasterPage from './pages/BroadcasterPage';
 import AiForwardingPage from './pages/AiForwardingPage';
 import GroupSettingsPage from './pages/GroupSettingsPage';
+import LoginPage from './pages/LoginPage';
+// import RegisterPage from './pages/RegisterPage'; // You would create this for registration
+
+// --- STYLED COMPONENTS (No Changes) ---
 
 const AppLayout = styled.div`
     display: flex;
@@ -48,7 +53,6 @@ const PageContent = styled.div`
     flex-grow: 1;
 `;
 
-
 const QRContainer = styled.div`
   padding: 2rem;
   text-align: center;
@@ -61,6 +65,7 @@ const QRContainer = styled.div`
 `;
 
 function App() {
+    const { isAuthenticated, loading, logout } = useAuth();
     const [status, setStatus] = useState('disconnected');
     const [qrCode, setQrCode] = useState(null);
     const [allGroups, setAllGroups] = useState([]);
@@ -69,78 +74,99 @@ function App() {
     const pageName = location.pathname.replace('/', '').replace(/-/g, ' ') || 'broadcaster';
 
     const fetchAllGroupsForConfig = useCallback(async () => {
+        if (!isAuthenticated) return; // Don't fetch if not logged in
         try {
             const groupsRes = await api.get('/groups');
             setAllGroups(groupsRes.data || []);
         } catch (error) {
             console.error("Error fetching groups for config:", error);
         }
-    }, []);
+    }, [isAuthenticated]);
 
     const checkStatus = useCallback(async () => {
+        if (!isAuthenticated) return; // Don't check status if not logged in
         try {
             const { data } = await api.get('/status');
-            if (data.status !== status) {
-                setStatus(data.status);
-                if (data.status === 'qr') {
-                    const qrRes = await api.get('/qr');
-                    setQrCode(qrRes.data.qr);
-                } else {
-                    setQrCode(null);
-                    if (data.status === 'connected' && allGroups.length === 0) {
-                        fetchAllGroupsForConfig();
-                    }
+            setStatus(data.status);
+            if (data.status === 'qr') {
+                // The QR code now comes directly from the status endpoint
+                // to avoid race conditions. We need to update the backend for this.
+                setQrCode(data.qr || null);
+            } else {
+                setQrCode(null);
+                if (data.status === 'connected' && allGroups.length === 0) {
+                    fetchAllGroupsForConfig();
                 }
             }
         } catch (error) {
             console.error("Error checking status:", error);
-            setStatus('disconnected');
         }
-    }, [status, allGroups.length, fetchAllGroupsForConfig]);
+    }, [isAuthenticated, allGroups.length, fetchAllGroupsForConfig]);
 
     useEffect(() => {
-        checkStatus();
         const interval = setInterval(checkStatus, 5000);
         return () => clearInterval(interval);
     }, [checkStatus]);
+
+    useEffect(() => {
+        if (isAuthenticated) {
+            checkStatus(); // Run initial check immediately on login
+        }
+    }, [isAuthenticated, checkStatus]);
     
     const handleLogout = async () => {
         try {
             await api.post('/logout');
-            setAllGroups([]);
-            // checkStatus will run on the next interval and handle the UI update
         } catch (error) {
-            console.error('Error logging out:', error);
+            console.error('Error informing backend of logout:', error);
+        } finally {
+            logout(); // This clears frontend state and token
         }
     };
 
-    return (
-        <AppLayout>
-            <Sidebar />
+    if (loading) {
+        return <div>Loading Application...</div>;
+    }
 
-            <ContentArea>
-                <Header>
-                    <PageTitle>{pageName}</PageTitle>
-                    <StatusIndicator status={status} onLogout={handleLogout} />
-                </Header>
-                
-                <PageContent>
-                    {status !== 'connected' ? (
-                        <QRContainer>
-                            <h2>Scan to Connect WhatsApp</h2>
-                            {qrCode && <img src={qrCode} alt="QR Code" />}
-                        </QRContainer>
+    return (
+        <Routes>
+            <Route path="/login" element={<LoginPage />} />
+            {/* <Route path="/register" element={<RegisterPage />} /> */}
+            
+            <Route 
+                path="/*"
+                element={
+                    isAuthenticated ? (
+                        <AppLayout>
+                            <Sidebar />
+                            <ContentArea>
+                                <Header>
+                                    <PageTitle>{pageName}</PageTitle>
+                                    <StatusIndicator status={status} onLogout={handleLogout} />
+                                </Header>
+                                <PageContent>
+                                    {status !== 'connected' ? (
+                                        <QRContainer>
+                                            <h2>Scan to Connect WhatsApp</h2>
+                                            {qrCode && <img src={qrCode} alt="QR Code" />}
+                                        </QRContainer>
+                                    ) : (
+                                        <Routes>
+                                            <Route path="/broadcaster" element={<BroadcasterPage allGroups={allGroups} />} />
+                                            <Route path="/ai-forwarding" element={<AiForwardingPage allGroups={allGroups} />} />
+                                            <Route path="/group-settings" element={<GroupSettingsPage />} />
+                                            <Route path="*" element={<Navigate to="/broadcaster" replace />} />
+                                        </Routes>
+                                    )}
+                                </PageContent>
+                            </ContentArea>
+                        </AppLayout>
                     ) : (
-                        <Routes>
-                            <Route path="/broadcaster" element={<BroadcasterPage allGroups={allGroups} />} />
-                            <Route path="/ai-forwarding" element={<AiForwardingPage allGroups={allGroups} />} />
-                            <Route path="/group-settings" element={<GroupSettingsPage />} />
-                            <Route path="/" element={<BroadcasterPage allGroups={allGroups} />} />
-                        </Routes>
-                    )}
-                </PageContent>
-            </ContentArea>
-        </AppLayout>
+                        <Navigate to="/login" replace />
+                    )
+                } 
+            />
+        </Routes>
     );
 }
 
