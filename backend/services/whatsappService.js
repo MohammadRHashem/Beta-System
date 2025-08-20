@@ -297,5 +297,4 @@ module.exports = {
   fetchAllGroups,
   broadcast,
   refreshAbbreviationCache,
-  refreshAdminCache
 };
