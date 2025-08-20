@@ -6,32 +6,27 @@ const path = require('path');
 const execa = require('execa');
 const os = require('os');
 const dotenv = require('dotenv');
+const { Queue, Worker } = require('bullmq');
 
 let client;
 let qrCodeData;
 let connectionStatus = 'disconnected';
-
-const messageQueue = [];
-let isProcessing = false;
 let abbreviationCache = [];
 
-const refreshAbbreviationCache = async () => {
-    try {
-        console.log('[CACHE] Refreshing abbreviations cache...');
-        const [abbreviations] = await pool.query('SELECT `trigger`, `response` FROM abbreviations');
-        abbreviationCache = abbreviations;
-        console.log(`[CACHE] Loaded ${abbreviationCache.length} abbreviations.`);
-    } catch (error) {
-        console.error('[CACHE-ERROR] Failed to refresh abbreviations cache:', error);
-    }
-};
+// --- PERSISTENT QUEUE SETUP ---
+const redisConnection = { host: 'localhost', port: 6379, maxRetriesPerRequest: null };
+const invoiceQueue = new Queue('invoice-processing-queue', { connection: redisConnection });
 
-const processQueue = async () => {
-    if (isProcessing || messageQueue.length === 0) {
-        return;
+// --- THE WORKER THAT PROCESSES JOBS FROM THE QUEUE ---
+const invoiceWorker = new Worker('invoice-processing-queue', async (job) => {
+    // We need the client to be available to re-hydrate the message
+    if (!client) {
+        throw new Error("WhatsApp client is not initialized. Cannot process job.");
     }
-    isProcessing = true;
-    const message = messageQueue.shift();
+    
+    const { messageData } = job.data;
+    // Re-hydrate the message object from its raw data to get its methods
+    const message = client.constructMessage(client, messageData);
 
     try {
         const chat = await message.getChat();
@@ -40,19 +35,17 @@ const processQueue = async () => {
         const groupSettings = settings[0] || { forwarding_enabled: true, archiving_enabled: true };
 
         if (!groupSettings.forwarding_enabled && !groupSettings.archiving_enabled) {
-            isProcessing = false;
-            processQueue();
+            console.log(`[WORKER] Ignoring job ${job.id} from disabled group: ${chat.name}`);
             return;
         }
 
         const media = await message.downloadMedia();
         if (!media || !['image/jpeg', 'image/jpg', 'image/png', 'application/pdf'].includes(media.mimetype)) {
-            isProcessing = false;
-            processQueue();
+            console.log(`[WORKER] Ignoring job ${job.id} with unsupported media type.`);
             return;
         }
 
-        console.log(`[PROCESS] Started processing media from group: ${chat.name}`);
+        console.log(`[WORKER] Processing job ${job.id} for media from group: ${chat.name}`);
         const tempFilePath = `/tmp/${message.id.id}.${media.mimetype.split('/')[1] || 'bin'}`;
         await fs.writeFile(tempFilePath, Buffer.from(media.data, 'base64'));
         
@@ -64,36 +57,25 @@ const processQueue = async () => {
         const pythonEnv = dotenv.config({ path: pythonEnvPath }).parsed;
 
         if (!pythonEnv || !pythonEnv.GOOGLE_API_KEY) {
-            console.error('[PROCESS-ERROR] Could not load GOOGLE_API_KEY from python_scripts/.env file.');
-            await fs.unlink(tempFilePath);
-            isProcessing = false;
-            processQueue();
-            return;
+            throw new Error('Could not load GOOGLE_API_KEY from python_scripts/.env file.');
         }
         
         let invoiceJson;
         try {
-            const { stdout } = await execa(pythonExecutablePath, [pythonScriptPath, tempFilePath], {
-                cwd: pythonScriptsDir,
-                env: pythonEnv
-            });
+            const { stdout } = await execa(pythonExecutablePath, [pythonScriptPath, tempFilePath], { cwd: pythonScriptsDir, env: pythonEnv });
             invoiceJson = JSON.parse(stdout);
-            console.log(`[PROCESS] Python script success. Transaction ID: ${invoiceJson.transaction_id}`);
+            console.log(`[WORKER] Python script success for job ${job.id}. Transaction ID: ${invoiceJson.transaction_id}`);
         } catch (pythonError) {
-            console.error(`[PYTHON-ERROR] Script failed for media from ${chat.name}. Stderr:`, pythonError.stderr);
+            console.error(`[WORKER-PYTHON-ERROR] Script failed for job ${job.id}. Stderr:`, pythonError.stderr);
             await fs.unlink(tempFilePath);
-            isProcessing = false;
-            processQueue();
-            return;
+            throw pythonError; // This will cause the job to fail and be retried by BullMQ
         }
         
         await fs.unlink(tempFilePath);
         const invoiceIdentifier = invoiceJson.transaction_id;
 
         if (!invoiceIdentifier) {
-             console.log(`[PROCESS-INFO] Python script returned no valid invoice/transaction_id. Skipping.`);
-             isProcessing = false;
-             processQueue();
+             console.log(`[WORKER-INFO] Python script returned no valid transaction_id for job ${job.id}.`);
              return;
         }
         
@@ -105,9 +87,7 @@ const processQueue = async () => {
                    `INSERT INTO invoices (transaction_id, sender_name, recipient_name, pix_key, amount, source_group_jid, received_at, raw_json_data) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
                    [invoiceIdentifier, sender.name, recipient.name, recipient.pix_key, amount, chat.id._serialized, receivedAt, JSON.stringify(invoiceJson)]
                 );
-                console.log(`[PROCESS] Invoice ${invoiceIdentifier} saved to the database.`);
-            } else {
-                console.log(`[PROCESS] Invoice from ${chat.name} did not meet saving requirements. Skipping save.`);
+                console.log(`[WORKER] Invoice ${invoiceIdentifier} from job ${job.id} saved to DB.`);
             }
         }
         
@@ -117,20 +97,32 @@ const processQueue = async () => {
                 const [rules] = await pool.query('SELECT * FROM forwarding_rules');
                 for (const rule of rules) {
                     if (recipientName.includes(rule.trigger_keyword.toLowerCase())) {
-                        console.log(`[PROCESS] Matched forwarding rule "${rule.trigger_keyword}"`);
                         const mediaToForward = new MessageMedia(media.mimetype, media.data, media.filename);
                         await client.sendMessage(rule.destination_group_jid, mediaToForward, { caption: `Invoice from: ${chat.name}\nID: ${invoiceIdentifier}` });
-                        console.log(`[PROCESS] Forwarded media to: ${rule.destination_group_name}`);
+                        console.log(`[WORKER] Forwarded media for job ${job.id}.`);
                         break;
                     }
                 }
             }
         }
     } catch (error) {
-        console.error('[QUEUE-PROCESS-ERROR] A critical error occurred:', error);
-    } finally {
-        isProcessing = false;
-        processQueue();
+        console.error(`[WORKER-ERROR] A critical error occurred while processing job ${job.id}:`, error);
+        throw error; // Throwing the error tells BullMQ the job failed
+    }
+}, { connection: redisConnection });
+
+invoiceWorker.on('failed', (job, err) => {
+    console.error(`[QUEUE] Job ${job.id} failed permanently after retries with error: ${err.message}`);
+});
+
+const refreshAbbreviationCache = async () => {
+    try {
+        console.log('[CACHE] Refreshing abbreviations cache...');
+        const [abbreviations] = await pool.query('SELECT `trigger`, `response` FROM abbreviations');
+        abbreviationCache = abbreviations;
+        console.log(`[CACHE] Loaded ${abbreviationCache.length} abbreviations.`);
+    } catch (error) {
+        console.error('[CACHE-ERROR] Failed to refresh abbreviations cache:', error);
     }
 };
 
@@ -151,29 +143,25 @@ const initializeWhatsApp = () => {
         refreshAbbreviationCache();
     });
     
-    // --- THIS IS THE FINAL, SIMPLIFIED MESSAGE HANDLER ---
     client.on('message', async (message) => {
         try {
             const chat = await message.getChat();
-            if (!chat.isGroup) return; // Only process messages from groups
+            if (!chat.isGroup) return;
 
-            // --- Path 1: Handle Abbreviations from ANY participant ---
             if (message.body) {
                 const triggerText = message.body.trim();
-                const match = abbreviationCache.find(abbr => abbr.trigger == triggerText);
-                
+                const match = abbreviationCache.find(abbr => abbr.trigger === triggerText);
                 if (match) {
-                    console.log(`[ABBR] Trigger "${triggerText}" found in group "${chat.name}". Sending response.`);
-                    // The bot sends the response to the group.
+                    console.log(`[ABBR] Trigger "${triggerText}" found. Sending response.`);
                     await client.sendMessage(chat.id._serialized, match.response);
-                    return; // Abbreviation handled, stop processing.
+                    return;
                 }
             }
 
-            // --- Path 2: Handle Incoming Invoices (from other participants) ---
             if (message.hasMedia && !message.fromMe) {
-                messageQueue.push(message);
-                processQueue();
+                // Add the raw message data to the persistent queue
+                await invoiceQueue.add('process-invoice', { messageData: message.rawData });
+                console.log(`[QUEUE] Added incoming media from "${chat.name}" to persistent queue.`);
             }
         } catch (error) {
             console.error('[MESSAGE-HANDLER-ERROR] An error occurred:', error);
@@ -195,106 +183,94 @@ const initializeWhatsApp = () => {
 
 const getQR = () => qrCodeData;
 const getStatus = () => connectionStatus;
-const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
 const fetchAllGroups = async () => {
-  if (connectionStatus !== "connected") {
-    throw new Error("WhatsApp is not connected.");
-  }
-  try {
-    const chats = await client.getChats();
-    const groups = chats.filter((chat) => chat.isGroup);
-    console.log(`Fetched ${groups.length} groups.`);
-    return groups.map((group) => ({
-      id: group.id._serialized,
-      name: group.name,
-      participants: group.participants.length,
-    }));
-  } catch (error) {
-    console.error("Error fetching groups:", error);
-    throw error;
-  }
+    if (connectionStatus !== 'connected') {
+        throw new Error('WhatsApp is not connected.');
+    }
+    try {
+        const chats = await client.getChats();
+        const groups = chats.filter(chat => chat.isGroup);
+        console.log(`Fetched ${groups.length} groups.`);
+        return groups.map(group => ({
+            id: group.id._serialized,
+            name: group.name,
+            participants: group.participants.length
+        }));
+    } catch (error) {
+        console.error('Error fetching groups:', error);
+        throw error;
+    }
 };
 
 const broadcast = async (io, socketId, groupObjects, message) => {
-  if (connectionStatus !== "connected") {
-    io.to(socketId).emit("broadcast:error", {
-      message: "WhatsApp is not connected.",
-    });
-    return;
-  }
-
-  console.log(
-    `[BROADCAST] Starting broadcast to ${groupObjects.length} groups for socket ${socketId}.`
-  );
-
-  let successfulSends = 0;
-  let failedSends = 0;
-  const failedGroups = [];
-  const successfulGroups = [];
-
-  for (const group of groupObjects) {
-    try {
-      io.to(socketId).emit("broadcast:progress", {
-        groupName: group.name,
-        status: "sending",
-        message: `Sending to "${group.name}"...`,
-      });
-
-      const chat = await client.getChatById(group.id);
-      chat.sendStateTyping();
-
-      const typingDelay = Math.floor(Math.random() * (2000 - 1000 + 1) + 1000);
-      await delay(typingDelay);
-
-      await client.sendMessage(group.id, message);
-      successfulSends++;
-      successfulGroups.push(group.name);
-
-      io.to(socketId).emit("broadcast:progress", {
-        groupName: group.name,
-        status: "success",
-        message: `Successfully sent to "${group.name}".`,
-      });
-
-      const cooldownDelay = Math.floor(
-        Math.random() * (6000 - 2500 + 1) + 2500
-      );
-      await delay(cooldownDelay);
-    } catch (error) {
-      console.error(
-        `[BROADCAST-ERROR] Failed to send to ${group.name} (${group.id}):`,
-        error.message
-      );
-      failedSends++;
-      failedGroups.push(group.name);
-
-      io.to(socketId).emit("broadcast:progress", {
-        groupName: group.name,
-        status: "failed",
-        message: `Failed to send to "${group.name}". Reason: ${error.message}`,
-      });
-      await delay(5000);
+    if (connectionStatus !== 'connected') {
+        io.to(socketId).emit('broadcast:error', { message: 'WhatsApp is not connected.' });
+        return;
     }
-  }
 
-  io.to(socketId).emit("broadcast:complete", {
-    total: groupObjects.length,
-    successful: successfulSends,
-    failed: failedSends,
-    successfulGroups,
-    failedGroups,
-  });
-  console.log(
-    `[BROADCAST] Finished for socket ${socketId}. Success: ${successfulSends}, Failed: ${failedSends}`
-  );
+    console.log(`[BROADCAST] Starting broadcast to ${groupObjects.length} groups for socket ${socketId}.`);
+    
+    let successfulSends = 0;
+    let failedSends = 0;
+    const failedGroups = [];
+    const successfulGroups = [];
+
+    for (const group of groupObjects) {
+        try {
+            io.to(socketId).emit('broadcast:progress', { 
+                groupName: group.name, 
+                status: 'sending',
+                message: `Sending to "${group.name}"...`
+            });
+            
+            const chat = await client.getChatById(group.id);
+            chat.sendStateTyping();
+
+            const typingDelay = Math.floor(Math.random() * (2000 - 1000 + 1) + 1000);
+            await new Promise(resolve => setTimeout(resolve, typingDelay));
+
+            await client.sendMessage(group.id, message);
+            successfulSends++;
+            successfulGroups.push(group.name);
+
+            io.to(socketId).emit('broadcast:progress', {
+                groupName: group.name,
+                status: 'success',
+                message: `Successfully sent to "${group.name}".`
+            });
+
+            const cooldownDelay = Math.floor(Math.random() * (6000 - 2500 + 1) + 2500);
+            await new Promise(resolve => setTimeout(resolve, cooldownDelay));
+
+        } catch (error) {
+            console.error(`[BROADCAST-ERROR] Failed to send to ${group.name} (${group.id}):`, error.message);
+            failedSends++;
+            failedGroups.push(group.name);
+            
+            io.to(socketId).emit('broadcast:progress', {
+                groupName: group.name,
+                status: 'failed',
+                message: `Failed to send to "${group.name}". Reason: ${error.message}`
+            });
+            await new Promise(resolve => setTimeout(resolve, 5000));
+        }
+    }
+
+    io.to(socketId).emit('broadcast:complete', {
+        total: groupObjects.length,
+        successful: successfulSends,
+        failed: failedSends,
+        successfulGroups,
+        failedGroups
+    });
+    console.log(`[BROADCAST] Finished for socket ${socketId}. Success: ${successfulSends}, Failed: ${failedSends}`);
 };
 
 module.exports = {
-  init: initializeWhatsApp,
-  getQR,
-  getStatus,
-  fetchAllGroups,
-  broadcast,
-  refreshAbbreviationCache,
+    init: initializeWhatsApp,
+    getQR,
+    getStatus,
+    fetchAllGroups,
+    broadcast,
+    refreshAbbreviationCache
 };
