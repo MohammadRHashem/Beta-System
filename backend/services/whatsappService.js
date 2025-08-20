@@ -13,8 +13,8 @@ let connectionStatus = 'disconnected';
 
 const messageQueue = [];
 let isProcessing = false;
-
 let abbreviationCache = [];
+
 const refreshAbbreviationCache = async () => {
     try {
         console.log('[CACHE] Refreshing abbreviations cache...');
@@ -35,9 +35,14 @@ const processQueue = async () => {
 
     try {
         const chat = await message.getChat();
-        
         const [settings] = await pool.query('SELECT * FROM group_settings WHERE group_jid = ?', [chat.id._serialized]);
         const groupSettings = settings[0] || { forwarding_enabled: true, archiving_enabled: true };
+
+        if (!groupSettings.forwarding_enabled && !groupSettings.archiving_enabled) {
+            isProcessing = false;
+            processQueue();
+            return;
+        }
 
         const media = await message.downloadMedia();
         if (!media || !['image/jpeg', 'image/jpg', 'image/png', 'application/pdf'].includes(media.mimetype)) {
@@ -82,30 +87,29 @@ const processQueue = async () => {
         }
         
         await fs.unlink(tempFilePath);
+        const invoiceIdentifier = invoiceJson.transaction_id;
 
-        const invoiceIdentifier = invoiceJson.transaction_id; // Using the key from your Python script
-
-        // --- NEW SAVING LOGIC ---
+        if (!invoiceIdentifier) {
+             console.log(`[PROCESS-INFO] Python script returned no valid invoice/transaction_id. Skipping.`);
+             isProcessing = false;
+             processQueue();
+             return;
+        }
+        
         if (groupSettings.archiving_enabled) {
             const { amount, sender, recipient } = invoiceJson;
-            // Check if all required fields for saving are present
             if (amount && sender?.name && recipient?.name) {
-                // Convert WhatsApp's Unix timestamp to a MySQL-friendly format
                 const receivedAt = new Date(message.timestamp * 1000);
-
                 await pool.query(
                    `INSERT INTO invoices (transaction_id, sender_name, recipient_name, pix_key, amount, source_group_jid, received_at, raw_json_data) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
                    [invoiceIdentifier, sender.name, recipient.name, recipient.pix_key, amount, chat.id._serialized, receivedAt, JSON.stringify(invoiceJson)]
                 );
-                console.log(`[PROCESS] Invoice ${invoiceIdentifier} meets requirements and was saved to the database.`);
+                console.log(`[PROCESS] Invoice ${invoiceIdentifier} saved to the database.`);
             } else {
-                console.log(`[PROCESS] Invoice from ${chat.name} did not meet saving requirements (missing amount, sender, or recipient). Skipping save.`);
+                console.log(`[PROCESS] Invoice from ${chat.name} did not meet saving requirements. Skipping save.`);
             }
-        } else {
-            console.log(`[PROCESS] Archiving is disabled for group ${chat.name}. Skipping save.`);
         }
-
-        // --- NEW FORWARDING LOGIC ---
+        
         if (groupSettings.forwarding_enabled) {
             const recipientName = invoiceJson.recipient?.name?.toLowerCase() || '';
             if (recipientName) {
@@ -116,16 +120,11 @@ const processQueue = async () => {
                         const mediaToForward = new MessageMedia(media.mimetype, media.data, media.filename);
                         await client.sendMessage(rule.destination_group_jid, mediaToForward, { caption: `Invoice from: ${chat.name}\nID: ${invoiceIdentifier}` });
                         console.log(`[PROCESS] Forwarded media to: ${rule.destination_group_name}`);
-                        break; // Stop after the first match
+                        break;
                     }
                 }
-            } else {
-                 console.log(`[PROCESS] No recipient name found for forwarding rule check. Skipping forward.`);
             }
-        } else {
-            console.log(`[PROCESS] Forwarding is disabled for group ${chat.name}. Skipping forward.`);
         }
-
     } catch (error) {
         console.error('[QUEUE-PROCESS-ERROR] A critical error occurred:', error);
     } finally {
@@ -137,32 +136,46 @@ const processQueue = async () => {
 const initializeWhatsApp = () => {
     console.log('Initializing WhatsApp client...');
     client = new Client({ authStrategy: new LocalAuth({ dataPath: 'wwebjs_sessions' }), puppeteer: { headless: true, args: [ '--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-accelerated-2d-canvas', '--no-first-run', '--no-zygote', '--single-process', '--disable-gpu' ], } });
-    client.on('qr', async (qr) => { console.log('QR code generated.'); qrCodeData = await qrcode.toDataURL(qr); connectionStatus = 'qr'; });
-    client.on('ready', () => { console.log('Connection opened. Client is ready!'); qrCodeData = null; connectionStatus = 'connected'; refreshAbbreviationCache(); });
     
+    client.on('qr', async (qr) => {
+        console.log('QR code generated.');
+        qrCodeData = await qrcode.toDataURL(qr);
+        connectionStatus = 'qr';
+    });
+
+    client.on('ready', () => {
+        console.log('Connection opened. Client is ready!');
+        qrCodeData = null;
+        connectionStatus = 'connected';
+        refreshAbbreviationCache();
+    });
+    
+    // --- THIS IS THE FINAL, CORRECTED MESSAGE HANDLER ---
     client.on('message', async (message) => {
         try {
-            // --- ABBREVIATION LOGIC ---
-            // This runs IN PARALLEL and BEFORE the invoice queue logic.
-            // It must be fast.
+            // --- Path 1: Handle Abbreviations ---
+            // Check if the message is from you and is a text message.
             if (message.fromMe && message.body) {
                 const triggerText = message.body.trim();
                 const match = abbreviationCache.find(abbr => abbr.trigger === triggerText);
+                
+                // If a match is found, handle it and STOP.
                 if (match) {
-                    // Wait 1 second as requested, then edit the message.
+                    console.log(`[ABBR] Trigger found: "${triggerText}"`);
                     setTimeout(async () => {
                         try {
                             await message.edit(match.response);
-                            console.log(`[ABBR] Successfully expanded trigger: "${triggerText}"`);
+                            console.log(`[ABBR] Successfully expanded trigger.`);
                         } catch (editError) {
-                            console.error(`[ABBR-ERROR] Failed to edit message for trigger "${triggerText}":`, editError);
+                            console.error(`[ABBR-ERROR] Failed to edit message:`, editError);
                         }
-                    }, 1000);
-                    return; // Stop further processing if it's an abbreviation
+                    }, 1000); // 1-second delay
+                    return; // Exit the handler
                 }
             }
 
-            // --- INVOICE QUEUE LOGIC ---
+            // --- Path 2: Handle Incoming Invoices ---
+            // This code will ONLY run if the message was not an abbreviation.
             const chat = await message.getChat();
             if (chat.isGroup && message.hasMedia && !message.fromMe) {
                 console.log(`[QUEUE] Queuing incoming media from: ${chat.name}`);
@@ -170,12 +183,21 @@ const initializeWhatsApp = () => {
                 processQueue();
             }
         } catch (error) {
+            // Catch errors from getChat() or other initial processing
             console.error('[MESSAGE-HANDLER-ERROR] An error occurred:', error);
         }
     });
     
-    client.on('disconnected', (reason) => { console.log('Client was logged out or disconnected', reason); connectionStatus = 'disconnected'; });
-    client.on('auth_failure', msg => { console.error('AUTHENTICATION FAILURE', msg); connectionStatus = 'disconnected'; });
+    client.on('disconnected', (reason) => {
+        console.log('Client was logged out or disconnected', reason);
+        connectionStatus = 'disconnected';
+    });
+    
+    client.on('auth_failure', msg => {
+        console.error('AUTHENTICATION FAILURE', msg);
+        connectionStatus = 'disconnected';
+    });
+
     client.initialize();
 };
 
