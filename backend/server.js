@@ -12,6 +12,8 @@ const templateController = require('./controllers/templateController');
 const settingsController = require('./controllers/settingsController');
 const chavePixController = require('./controllers/chavePixController');
 const abbreviationController = require('./controllers/abbreviationController');
+const adminController = require('./controllers/adminController');
+
 
 
 
@@ -66,6 +68,10 @@ app.get('/api/abbreviations', authMiddleware, abbreviationController.getAll);
 app.post('/api/abbreviations', authMiddleware, abbreviationController.create);
 app.put('/api/abbreviations/:id', authMiddleware, abbreviationController.update);
 app.delete('/api/abbreviations/:id', authMiddleware, abbreviationController.delete);
+
+app.get('/api/admins', authMiddleware, adminController.getAllAdmins);
+app.post('/api/admins', authMiddleware, adminController.addAdmin);
+app.delete('/api/admins/:id', authMiddleware, adminController.deleteAdmin);
 
 const HOST = '0.0.0.0';
 const PORT = process.env.PORT || 5000;
