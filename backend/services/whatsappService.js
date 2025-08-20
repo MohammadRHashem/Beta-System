@@ -10,6 +10,7 @@ const dotenv = require('dotenv');
 let client;
 let qrCodeData;
 let connectionStatus = 'disconnected';
+let botId = null; // Variable to store our own ID
 
 const messageQueue = [];
 let isProcessing = false;
@@ -135,25 +136,15 @@ const processQueue = async () => {
 
 const initializeWhatsApp = () => {
     console.log('Initializing WhatsApp client...');
+    
     client = new Client({
-      authStrategy: new LocalAuth({ dataPath: "wwebjs_sessions" }),
-      puppeteer: {
-        headless: true,
-        args: [
-          "--no-sandbox",
-          "--disable-setuid-sandbox",
-          "--disable-dev-shm-usage",
-          "--disable-accelerated-2d-canvas",
-          "--no-first-run",
-          "--no-zygote",
-          "--single-process",
-          "--disable-gpu",
-        ],
-      },
-      qrMaxRetries: 10,
-      takeoverOnConflict: true,
-      takeoverTimeoutMs: 10000,
-      authTimeoutMs: 0,
+        authStrategy: new LocalAuth({ dataPath: 'wwebjs_sessions' }),
+        puppeteer: {
+            headless: true,
+            args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-accelerated-2d-canvas', '--no-first-run', '--no-zygote', '--single-process', '--disable-gpu']
+        },
+        qrMaxRetries: 10,
+        authTimeoutMs: 0
     });
     
     client.on('qr', async (qr) => {
@@ -166,18 +157,27 @@ const initializeWhatsApp = () => {
         console.log('Connection opened. Client is ready!');
         qrCodeData = null;
         connectionStatus = 'connected';
+        botId = client.info.wid._serialized;
+        console.log(`[AUTH] Bot ID identified as: ${botId}`);
         refreshAbbreviationCache();
     });
     
-    client.on('message', async (message) => {
-        // --- ADD "CATCH-ALL" LOGGING ---
-        // This log MUST appear for every single message the bot sees.
-        // If you don't see this, the problem is with the client connection itself.
-        console.log(`[MESSAGE_RECEIVED] From: ${message.from}, To: ${message.to}, fromMe: ${message.fromMe}, hasMedia: ${message.hasMedia}, Body: "${message.body.substring(0, 30)}..."`);
-        
+    client.on('message_create', async (message) => {
         try {
-            // --- Path 1: Handle Abbreviations ---
-            if (message.fromMe && message.body) {
+            // Quick exit for non-group messages to avoid unnecessary processing
+            if (!message.from.endsWith('@g.us')) {
+                return;
+            }
+
+            // --- THE DEFINITIVE FIX: Check the message author ---
+            // 'message.author' is the ID of the user who sent the message in the group.
+            // 'message.fromMe' is only true if this specific wweb.js client sent it.
+            const isMyMessage = message.author === botId || message.fromMe;
+            
+            console.log(`[MESSAGE_RECEIVED] Group: ${message.from}, Author: ${message.author}, IsMyMessage: ${isMyMessage}, HasMedia: ${message.hasMedia}`);
+
+            // --- Path 1: Handle Abbreviations (Sent by You) ---
+            if (isMyMessage && message.body) {
                 const triggerText = message.body.trim();
                 const match = abbreviationCache.find(abbr => abbr.trigger === triggerText);
                 
@@ -191,14 +191,12 @@ const initializeWhatsApp = () => {
                             console.error(`[ABBR-ERROR] Failed to edit message:`, editError);
                         }
                     }, 1000);
-                    return; // Explicitly stop processing here
+                    return; // Abbreviation handled, stop processing.
                 }
             }
 
-            // --- Path 2: Handle Incoming Invoices ---
-            // We use an 'else if' for a clear logical separation.
-            // This code will only run if the above 'if' block for abbreviations was false.
-            else if (message.hasMedia && !message.fromMe) {
+            // --- Path 2: Handle Incoming Invoices (Sent by Others) ---
+            else if (!isMyMessage && message.hasMedia) {
                 const chat = await message.getChat();
                 if (chat.isGroup) {
                     console.log(`[QUEUE] Queuing incoming media from: ${chat.name}`);
@@ -214,6 +212,7 @@ const initializeWhatsApp = () => {
     client.on('disconnected', (reason) => {
         console.log('Client was logged out or disconnected', reason);
         connectionStatus = 'disconnected';
+        botId = null; // Clear bot ID on disconnect
     });
     
     client.on('auth_failure', msg => {
