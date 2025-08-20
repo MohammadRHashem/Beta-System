@@ -5,11 +5,8 @@ import { io } from 'socket.io-client';
 import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
 
-// Import Layout Components
 import Sidebar from '../components/Sidebar';
 import StatusIndicator from '../components/StatusIndicator';
-
-// Import Page Components
 import BroadcasterPage from './BroadcasterPage';
 import AiForwardingPage from './AiForwardingPage';
 import GroupSettingsPage from './GroupSettingsPage';
@@ -72,21 +69,16 @@ const MainLayout = () => {
     const { logout } = useAuth();
     const pageName = location.pathname.replace('/', '').replace(/-/g, ' ') || 'broadcaster';
 
-    // Socket.io connection (now inside the protected layout)
     const socket = useRef(null);
     useEffect(() => {
         socket.current = io(API_URL, {
             path: "/socket.io/",
             transports: ['websocket', 'polling']
         });
-
         socket.current.on('connect', () => {
             console.log('Connected to WebSocket server with ID:', socket.current.id);
-            // This is passed down to BroadcasterPage via context or props if needed
         });
-
-        // Add other global socket listeners here if needed
-
+        socket.current.on('connect_error', (err) => console.error('WebSocket connection error:', err.message));
         return () => {
             socket.current.disconnect();
         };
@@ -114,7 +106,6 @@ const MainLayout = () => {
                 }
             }
         } catch (error) {
-            // The API interceptor will handle 401 errors (logout)
             console.error("Error checking status:", error);
         }
     }, [allGroups.length, fetchAllGroupsForConfig]);
@@ -127,26 +118,22 @@ const MainLayout = () => {
     
     const handleLogout = async () => {
         try {
-            // Inform the backend to disconnect the specific WA session if needed
-            // This endpoint might not be necessary if session is tied to JWT expiry
-            await api.post('/logout'); 
+            await api.post('/logout');
         } catch (error) {
             console.error('Error informing backend of logout:', error);
         } finally {
-            logout(); // This clears frontend state and token from AuthContext
+            logout();
         }
     };
 
     return (
         <AppLayout>
             <Sidebar />
-
             <ContentArea>
                 <Header>
                     <PageTitle>{pageName}</PageTitle>
                     <StatusIndicator status={status} onLogout={handleLogout} />
                 </Header>
-                
                 <PageContent>
                     {status === 'qr' ? (
                         <QRContainer>
@@ -167,7 +154,6 @@ const MainLayout = () => {
                                 path="/group-settings" 
                                 element={<GroupSettingsPage />} 
                             />
-                            {/* Redirect any other nested path to the broadcaster */}
                             <Route 
                                 path="*" 
                                 element={<Navigate to="/broadcaster" replace />} 

@@ -2,8 +2,69 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import styled from 'styled-components';
+import { FaWhatsapp } from 'react-icons/fa';
 
-const LoginContainer = styled.div` /* Add styles for your login form */ `;
+const AuthPageContainer = styled.div`
+    width: 100vw;
+    height: 100vh;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    background-color: ${({ theme }) => theme.background};
+`;
+
+const AuthFormContainer = styled.div`
+    width: 100%;
+    max-width: 400px;
+    padding: 2.5rem;
+    background: #fff;
+    border-radius: 8px;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+`;
+
+const Title = styled.h1`
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  font-size: 1.8rem;
+  color: ${({ theme }) => theme.primary};
+  margin-bottom: 2rem;
+  svg { color: ${({ theme }) => theme.secondary}; }
+`;
+
+const Form = styled.form`
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+`;
+
+const Input = styled.input`
+    padding: 0.8rem 1rem;
+    border: 1px solid ${({ theme }) => theme.border};
+    border-radius: 4px;
+    font-size: 1rem;
+`;
+
+const Button = styled.button`
+    padding: 0.8rem 1rem;
+    border: none;
+    background-color: ${({ theme }) => theme.primary};
+    color: white;
+    font-size: 1rem;
+    font-weight: bold;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background-color 0.2s;
+    &:hover { background-color: #081e35; }
+`;
+
+const ErrorMessage = styled.p`
+    color: ${({ theme }) => theme.error};
+    text-align: center;
+    margin-top: 1rem;
+    font-size: 0.9rem;
+`;
 
 const LoginPage = () => {
     const [username, setUsername] = useState('');
@@ -19,21 +80,22 @@ const LoginPage = () => {
             await login(username, password);
             navigate('/');
         } catch (err) {
-            setError(err.response?.data?.message || 'Failed to log in.');
+            setError(err.response?.data?.message || 'Failed to log in. Please check your credentials.');
         }
     };
 
     return (
-        <LoginContainer>
-            <h2>Login to Beta Suite</h2>
-            <form onSubmit={handleSubmit}>
-                <input type="text" value={username} onChange={e => setUsername(e.target.value)} placeholder="Username" required />
-                <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Password" required />
-                <button type="submit">Login</button>
-                {error && <p style={{color: 'red'}}>{error}</p>}
-            </form>
-            {/* Optional: Add a link to the register page */}
-        </LoginContainer>
+        <AuthPageContainer>
+            <AuthFormContainer>
+                <Title><FaWhatsapp /> Beta Suite</Title>
+                <Form onSubmit={handleSubmit}>
+                    <Input type="text" value={username} onChange={e => setUsername(e.target.value)} placeholder="Username" required />
+                    <Input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Password" required />
+                    <Button type="submit">Login</Button>
+                    {error && <ErrorMessage>{error}</ErrorMessage>}
+                </Form>
+            </AuthFormContainer>
+        </AuthPageContainer>
     );
 };
 
