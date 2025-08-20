@@ -11,7 +11,7 @@ import BroadcasterPage from "./BroadcasterPage";
 import AiForwardingPage from "./AiForwardingPage";
 import GroupSettingsPage from "./GroupSettingsPage";
 import ChavePixPage from "./ChavePixPage";
-import AbbreviationsPage from "./pages/AbbreviationsPage";
+import AbbreviationsPage from "./AbbreviationsPage";
 
 const AppLayout = styled.div`
   display: flex;
