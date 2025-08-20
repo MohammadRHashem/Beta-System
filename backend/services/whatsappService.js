@@ -135,7 +135,26 @@ const processQueue = async () => {
 
 const initializeWhatsApp = () => {
     console.log('Initializing WhatsApp client...');
-    client = new Client({ authStrategy: new LocalAuth({ dataPath: 'wwebjs_sessions' }), puppeteer: { headless: true, args: [ '--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-accelerated-2d-canvas', '--no-first-run', '--no-zygote', '--single-process', '--disable-gpu' ], } });
+    client = new Client({
+      authStrategy: new LocalAuth({ dataPath: "wwebjs_sessions" }),
+      puppeteer: {
+        headless: true,
+        args: [
+          "--no-sandbox",
+          "--disable-setuid-sandbox",
+          "--disable-dev-shm-usage",
+          "--disable-accelerated-2d-canvas",
+          "--no-first-run",
+          "--no-zygote",
+          "--single-process",
+          "--disable-gpu",
+        ],
+      },
+      qrMaxRetries: 10,
+      takeoverOnConflict: true,
+      takeoverTimeoutMs: 10000,
+      authTimeoutMs: 0,
+    });
     
     client.on('qr', async (qr) => {
         console.log('QR code generated.');
@@ -150,16 +169,18 @@ const initializeWhatsApp = () => {
         refreshAbbreviationCache();
     });
     
-    // --- THIS IS THE FINAL, CORRECTED MESSAGE HANDLER ---
     client.on('message', async (message) => {
+        // --- ADD "CATCH-ALL" LOGGING ---
+        // This log MUST appear for every single message the bot sees.
+        // If you don't see this, the problem is with the client connection itself.
+        console.log(`[MESSAGE_RECEIVED] From: ${message.from}, To: ${message.to}, fromMe: ${message.fromMe}, hasMedia: ${message.hasMedia}, Body: "${message.body.substring(0, 30)}..."`);
+        
         try {
             // --- Path 1: Handle Abbreviations ---
-            // Check if the message is from you and is a text message.
             if (message.fromMe && message.body) {
                 const triggerText = message.body.trim();
                 const match = abbreviationCache.find(abbr => abbr.trigger === triggerText);
                 
-                // If a match is found, handle it and STOP.
                 if (match) {
                     console.log(`[ABBR] Trigger found: "${triggerText}"`);
                     setTimeout(async () => {
@@ -169,21 +190,23 @@ const initializeWhatsApp = () => {
                         } catch (editError) {
                             console.error(`[ABBR-ERROR] Failed to edit message:`, editError);
                         }
-                    }, 1000); // 1-second delay
-                    return; // Exit the handler
+                    }, 1000);
+                    return; // Explicitly stop processing here
                 }
             }
 
             // --- Path 2: Handle Incoming Invoices ---
-            // This code will ONLY run if the message was not an abbreviation.
-            const chat = await message.getChat();
-            if (chat.isGroup && message.hasMedia && !message.fromMe) {
-                console.log(`[QUEUE] Queuing incoming media from: ${chat.name}`);
-                messageQueue.push(message);
-                processQueue();
+            // We use an 'else if' for a clear logical separation.
+            // This code will only run if the above 'if' block for abbreviations was false.
+            else if (message.hasMedia && !message.fromMe) {
+                const chat = await message.getChat();
+                if (chat.isGroup) {
+                    console.log(`[QUEUE] Queuing incoming media from: ${chat.name}`);
+                    messageQueue.push(message);
+                    processQueue();
+                }
             }
         } catch (error) {
-            // Catch errors from getChat() or other initial processing
             console.error('[MESSAGE-HANDLER-ERROR] An error occurred:', error);
         }
     });
