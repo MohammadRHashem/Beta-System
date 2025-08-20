@@ -11,6 +11,7 @@ import BroadcasterPage from "./BroadcasterPage";
 import AiForwardingPage from "./AiForwardingPage";
 import GroupSettingsPage from "./GroupSettingsPage";
 import ChavePixPage from "./ChavePixPage";
+import AbbreviationsPage from "./pages/AbbreviationsPage";
 
 const AppLayout = styled.div`
   display: flex;
@@ -160,6 +161,7 @@ const MainLayout = () => {
                   />
                 }
               />
+              <Route path="/abbreviations" element={<AbbreviationsPage />} />
               <Route
                 path="/ai-forwarding"
                 element={<AiForwardingPage allGroups={allGroups} />}

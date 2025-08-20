@@ -1,18 +1,18 @@
-import React from 'react';
-import { NavLink } from 'react-router-dom';
-import styled from 'styled-components';
-import { FaWhatsapp, FaBullhorn, FaRobot, FaCog, FaKey } from 'react-icons/fa';
+import React from "react";
+import { NavLink } from "react-router-dom";
+import styled from "styled-components";
+import { FaWhatsapp, FaBullhorn, FaRobot, FaCog, FaKey } from "react-icons/fa";
 
 const SidebarContainer = styled.nav`
-    width: 250px;
-    height: 100vh;
-    background-color: #ffffff;
-    padding: 1.5rem 0;
-    display: flex;
-    flex-direction: column;
-    border-right: 1px solid ${({ theme }) => theme.border};
-    flex-shrink: 0;
-    box-shadow: 0 0 15px rgba(0,0,0,0.03);
+  width: 250px;
+  height: 100vh;
+  background-color: #ffffff;
+  padding: 1.5rem 0;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid ${({ theme }) => theme.border};
+  flex-shrink: 0;
+  box-shadow: 0 0 15px rgba(0, 0, 0, 0.03);
 `;
 
 const Title = styled.h1`
@@ -59,27 +59,34 @@ const NavItem = styled(NavLink)`
 `;
 
 const Sidebar = () => {
-    return (
-        <SidebarContainer>
-            <Title><FaWhatsapp /> Beta Suite</Title>
-            <NavItem to="/broadcaster">
-                <FaBullhorn /> 
-                <span>Broadcaster</span>
-            </NavItem>
-            <NavItem to="/ai-forwarding">
-                <FaRobot />
-                <span>AI Forwarding</span>
-            </NavItem>
-            <NavItem to="/chave-pix">
-                <FaKey />
-                <span>Chave PIX</span>
-            </NavItem>
-            <NavItem to="/group-settings">
-                <FaCog />
-                <span>Group Settings</span>
-            </NavItem>
-        </SidebarContainer>
-    );
+  return (
+    <SidebarContainer>
+      <Title>
+        <FaWhatsapp /> Beta Suite
+      </Title>
+      <NavItem to="/broadcaster">
+        <FaBullhorn />
+        <span>Broadcaster</span>
+      </NavItem>
+      <NavItem to="/abbreviations">
+        <FaKeyboard />
+        <span>Abbreviations</span>
+      </NavItem>
+
+      <NavItem to="/ai-forwarding">
+        <FaRobot />
+        <span>AI Forwarding</span>
+      </NavItem>
+      <NavItem to="/chave-pix">
+        <FaKey />
+        <span>Chave PIX</span>
+      </NavItem>
+      <NavItem to="/group-settings">
+        <FaCog />
+        <span>Group Settings</span>
+      </NavItem>
+    </SidebarContainer>
+  );
 };
 
 export default Sidebar;

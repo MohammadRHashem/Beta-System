@@ -11,6 +11,8 @@ const batchController = require('./controllers/batchController');
 const templateController = require('./controllers/templateController');
 const settingsController = require('./controllers/settingsController');
 const chavePixController = require('./controllers/chavePixController');
+const abbreviationController = require('./controllers/abbreviationController');
+
 
 
 const app = express();
@@ -59,6 +61,11 @@ app.get('/api/chave-pix', authMiddleware, chavePixController.getAllKeys);
 app.post('/api/chave-pix', authMiddleware, chavePixController.createKey);
 app.put('/api/chave-pix/:id', authMiddleware, chavePixController.updateKey);
 app.delete('/api/chave-pix/:id', authMiddleware, chavePixController.deleteKey);
+
+app.get('/api/abbreviations', authMiddleware, abbreviationController.getAll);
+app.post('/api/abbreviations', authMiddleware, abbreviationController.create);
+app.put('/api/abbreviations/:id', authMiddleware, abbreviationController.update);
+app.delete('/api/abbreviations/:id', authMiddleware, abbreviationController.delete);
 
 const HOST = '0.0.0.0';
 const PORT = process.env.PORT || 5000;

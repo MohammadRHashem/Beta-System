@@ -14,6 +14,18 @@ let connectionStatus = 'disconnected';
 const messageQueue = [];
 let isProcessing = false;
 
+let abbreviationCache = [];
+const refreshAbbreviationCache = async () => {
+    try {
+        console.log('[CACHE] Refreshing abbreviations cache...');
+        const [abbreviations] = await pool.query('SELECT `trigger`, `response` FROM abbreviations');
+        abbreviationCache = abbreviations;
+        console.log(`[CACHE] Loaded ${abbreviationCache.length} abbreviations.`);
+    } catch (error) {
+        console.error('[CACHE-ERROR] Failed to refresh abbreviations cache:', error);
+    }
+};
+
 const processQueue = async () => {
     if (isProcessing || messageQueue.length === 0) {
         return;
@@ -126,10 +138,31 @@ const initializeWhatsApp = () => {
     console.log('Initializing WhatsApp client...');
     client = new Client({ authStrategy: new LocalAuth({ dataPath: 'wwebjs_sessions' }), puppeteer: { headless: true, args: [ '--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-accelerated-2d-canvas', '--no-first-run', '--no-zygote', '--single-process', '--disable-gpu' ], } });
     client.on('qr', async (qr) => { console.log('QR code generated.'); qrCodeData = await qrcode.toDataURL(qr); connectionStatus = 'qr'; });
-    client.on('ready', () => { console.log('Connection opened. Client is ready!'); qrCodeData = null; connectionStatus = 'connected'; });
+    client.on('ready', () => { console.log('Connection opened. Client is ready!'); qrCodeData = null; connectionStatus = 'connected'; refreshAbbreviationCache(); });
     
     client.on('message', async (message) => {
         try {
+            // --- ABBREVIATION LOGIC ---
+            // This runs IN PARALLEL and BEFORE the invoice queue logic.
+            // It must be fast.
+            if (message.fromMe && message.body) {
+                const triggerText = message.body.trim();
+                const match = abbreviationCache.find(abbr => abbr.trigger === triggerText);
+                if (match) {
+                    // Wait 1 second as requested, then edit the message.
+                    setTimeout(async () => {
+                        try {
+                            await message.edit(match.response);
+                            console.log(`[ABBR] Successfully expanded trigger: "${triggerText}"`);
+                        } catch (editError) {
+                            console.error(`[ABBR-ERROR] Failed to edit message for trigger "${triggerText}":`, editError);
+                        }
+                    }, 1000);
+                    return; // Stop further processing if it's an abbreviation
+                }
+            }
+
+            // --- INVOICE QUEUE LOGIC ---
             const chat = await message.getChat();
             if (chat.isGroup && message.hasMedia && !message.fromMe) {
                 console.log(`[QUEUE] Queuing incoming media from: ${chat.name}`);
@@ -137,7 +170,7 @@ const initializeWhatsApp = () => {
                 processQueue();
             }
         } catch (error) {
-            console.error('[MESSAGE-HANDLER-ERROR] Could not queue message:', error);
+            console.error('[MESSAGE-HANDLER-ERROR] An error occurred:', error);
         }
     });
     
@@ -239,4 +272,5 @@ module.exports = {
     getStatus,
     fetchAllGroups,
     broadcast,
+    refreshAbbreviationCache
 };
