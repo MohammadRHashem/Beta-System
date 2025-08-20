@@ -10,6 +10,8 @@ const whatsappController = require('./controllers/whatsappController');
 const batchController = require('./controllers/batchController');
 const templateController = require('./controllers/templateController');
 const settingsController = require('./controllers/settingsController');
+const chavePixController = require('./controllers/chavePixController');
+
 
 const app = express();
 const server = http.createServer(app);
@@ -52,6 +54,11 @@ app.get('/api/settings/forwarding', authMiddleware, settingsController.getForwar
 app.post('/api/settings/forwarding', authMiddleware, settingsController.createForwardingRule);
 app.get('/api/settings/groups', authMiddleware, settingsController.getGroupSettings);
 app.post('/api/settings/groups', authMiddleware, settingsController.updateGroupSetting);
+
+app.get('/api/chave-pix', authMiddleware, chavePixController.getAllKeys);
+app.post('/api/chave-pix', authMiddleware, chavePixController.createKey);
+app.put('/api/chave-pix/:id', authMiddleware, chavePixController.updateKey);
+app.delete('/api/chave-pix/:id', authMiddleware, chavePixController.deleteKey);
 
 const HOST = '0.0.0.0';
 const PORT = process.env.PORT || 5000;

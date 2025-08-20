@@ -1,7 +1,7 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
 import styled from 'styled-components';
-import { FaWhatsapp, FaBullhorn, FaRobot, FaCog } from 'react-icons/fa';
+import { FaWhatsapp, FaBullhorn, FaRobot, FaCog, FaKey } from 'react-icons/fa';
 
 const SidebarContainer = styled.nav`
     width: 250px;
@@ -69,6 +69,10 @@ const Sidebar = () => {
             <NavItem to="/ai-forwarding">
                 <FaRobot />
                 <span>AI Forwarding</span>
+            </NavItem>
+            <NavItem to="/chave-pix">
+                <FaKey />
+                <span>Chave PIX</span>
             </NavItem>
             <NavItem to="/group-settings">
                 <FaCog />
