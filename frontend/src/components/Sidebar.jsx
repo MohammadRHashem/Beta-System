@@ -1,7 +1,7 @@
 import React from "react";
 import { NavLink } from "react-router-dom";
 import styled from "styled-components";
-import { FaWhatsapp, FaBullhorn, FaRobot, FaCog, FaKey } from "react-icons/fa";
+import { FaWhatsapp, FaBullhorn, FaRobot, FaCog, FaKey, FaKeyboard } from "react-icons/fa";
 
 const SidebarContainer = styled.nav`
   width: 250px;
