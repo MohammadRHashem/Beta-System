@@ -4,7 +4,6 @@ const fs = require('fs/promises');
 const pool = require('../config/db');
 const path = require('path');
 const execa = require('execa');
-const os = require('os');
 const dotenv = require('dotenv');
 
 let client;
@@ -44,22 +43,33 @@ const processQueue = async () => {
         const tempFilePath = `/tmp/${message.id.id}.${media.mimetype.split('/')[1] || 'bin'}`;
         await fs.writeFile(tempFilePath, Buffer.from(media.data, 'base64'));
         
-        // --- FIX 5: CORRECT PATHS FOR THE NEW STRUCTURE ---
+        // --- THIS IS THE FINAL, CORRECTED LOGIC ---
         const pythonScriptsDir = path.join(__dirname, '..', 'python_scripts');
         const pythonExecutablePath = path.join(pythonScriptsDir, 'venv', 'bin', 'python3');
         const pythonScriptPath = path.join(pythonScriptsDir, 'main.py');
         
-        // Load the Python project's .env file
+        // 1. Explicitly load the Python project's .env file
         const pythonEnvPath = path.join(pythonScriptsDir, '.env');
         const pythonEnv = dotenv.config({ path: pythonEnvPath }).parsed;
+
+        if (!pythonEnv || !pythonEnv.GOOGLE_API_KEY) {
+            // This is a critical failure. We log it and stop.
+            console.error('[PROCESS-ERROR] Could not load GOOGLE_API_KEY from python_scripts/.env file. Halting processing for this message.');
+            await fs.unlink(tempFilePath); // Clean up
+            isProcessing = false;
+            processQueue();
+            return;
+        }
         
         let invoiceJson;
         try {
+            // 2. Execute the script with the correct working directory and injected environment
             const { stdout } = await execa(pythonExecutablePath, [pythonScriptPath, tempFilePath], {
-                env: pythonEnv 
+                cwd: pythonScriptsDir, // Set the working directory
+                env: pythonEnv       // Inject the API key
             });
             invoiceJson = JSON.parse(stdout);
-            console.log(`[PROCESS] Python script success. Invoice ID: ${invoiceJson.invoice_id}`);
+            console.log(`[PROCESS] Python script success. Invoice ID: ${invoiceJson.invoice_id || invoiceJson.transaction_id}`);
         } catch (pythonError) {
             console.error(`[PYTHON-ERROR] Script failed for media from ${chat.name}. Stderr:`, pythonError.stderr);
             await fs.unlink(tempFilePath);
@@ -70,8 +80,11 @@ const processQueue = async () => {
         
         await fs.unlink(tempFilePath);
 
-        if (!invoiceJson || !invoiceJson.invoice_id) {
-             console.log(`[PROCESS-INFO] Python script returned no valid invoice_id. Skipping forwarding/archiving for this file.`);
+        // Use the correct key from your python output
+        const invoiceIdentifier = invoiceJson.invoice_id || invoiceJson.transaction_id;
+
+        if (!invoiceIdentifier) {
+             console.log(`[PROCESS-INFO] Python script returned no valid invoice/transaction_id. Skipping forwarding/archiving.`);
              isProcessing = false;
              processQueue();
              return;
@@ -80,7 +93,7 @@ const processQueue = async () => {
         if (groupSettings.archiving_enabled) {
             await pool.query(
                `INSERT INTO invoices_all (invoice_id, source_group_jid, payment_method, invoice_date, invoice_time, amount, currency, sender_name, recipient_name, raw_json_data) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-               [invoiceJson.invoice_id, chat.id._serialized, invoiceJson.payment_method, invoiceJson.invoice_date, invoiceJson.invoice_time, invoiceJson.amount, invoiceJson.currency, invoiceJson.sender?.name, invoiceJson.recipient?.name, JSON.stringify(invoiceJson)]
+               [invoiceIdentifier, chat.id._serialized, invoiceJson.payment_method, invoiceJson.invoice_date, invoiceJson.invoice_time, invoiceJson.amount, invoiceJson.currency, invoiceJson.sender?.name, invoiceJson.recipient?.name, JSON.stringify(invoiceJson)]
            );
         }
 
@@ -95,21 +108,21 @@ const processQueue = async () => {
                 
                 if (groupSettings.forwarding_enabled) {
                     const mediaToForward = new MessageMedia(media.mimetype, media.data, media.filename);
-                    await client.sendMessage(rule.destination_group_jid, mediaToForward, { caption: `Invoice from: ${chat.name}\nID: ${invoiceJson.invoice_id}` });
+                    await client.sendMessage(rule.destination_group_jid, mediaToForward, { caption: `Invoice from: ${chat.name}\nID: ${invoiceIdentifier}` });
                     console.log(`[PROCESS] Forwarded media to: ${rule.destination_group_name}`);
                 }
 
                 if (groupSettings.archiving_enabled) {
-                    const { invoice_id, sender, recipient, amount } = invoiceJson;
-                    if (invoice_id && sender?.name && recipient?.name && amount) {
+                    const { sender, recipient, amount } = invoiceJson;
+                    if (invoiceIdentifier && sender?.name && recipient?.name && amount) {
                         await pool.query(
                             'INSERT INTO invoices_trkbit_approved (invoice_id, source_group_jid, sender_name, recipient_name, amount) VALUES (?, ?, ?, ?, ?)',
-                            [invoice_id, chat.id._serialized, sender.name, recipient.name, amount]
+                            [invoiceIdentifier, chat.id._serialized, sender.name, recipient.name, amount]
                         );
                     } else {
                          await pool.query(
                             'INSERT INTO invoices_trkbit_unapproved (invoice_id, source_group_jid, raw_json_data) VALUES (?, ?, ?)',
-                            [invoice_id, chat.id._serialized, JSON.stringify(invoiceJson)]
+                            [invoiceIdentifier, chat.id._serialized, JSON.stringify(invoiceJson)]
                         );
                     }
                 }
@@ -120,7 +133,7 @@ const processQueue = async () => {
         if (!ruleMatched && groupSettings.archiving_enabled) {
              await pool.query(
                 'INSERT INTO invoices_chave_pix (invoice_id, source_group_jid, raw_json_data) VALUES (?, ?, ?)',
-                [invoiceJson.invoice_id, chat.id._serialized, JSON.stringify(invoiceJson)]
+                [invoiceIdentifier, chat.id._serialized, JSON.stringify(invoiceJson)]
             );
         }
 
@@ -140,7 +153,7 @@ const initializeWhatsApp = () => {
     client.on('message', async (message) => {
         try {
             const chat = await message.getChat();
-            if (!chat.isGroup || !message.hasMedia || message.fromMe) { return; }
+            if (!chat.isGroup || !message.hasMedia || !message.fromMe) { return; }
             messageQueue.push(message);
             processQueue();
         } catch (error) {

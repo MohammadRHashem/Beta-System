@@ -4,3 +4,4 @@ frontend/node_modules/
 .env
 backend/python_scripts/venv
 backend/python_scripts/__pycache__
+backend/python_scripts/.env
