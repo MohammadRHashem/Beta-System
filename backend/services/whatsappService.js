@@ -160,7 +160,7 @@ const initializeWhatsApp = () => {
             // --- Path 1: Handle Abbreviations from ANY participant ---
             if (message.body) {
                 const triggerText = message.body.trim();
-                const match = abbreviationCache.find(abbr => abbr.trigger === triggerText);
+                const match = abbreviationCache.find(abbr => abbr.trigger == triggerText);
                 
                 if (match) {
                     console.log(`[ABBR] Trigger "${triggerText}" found in group "${chat.name}". Sending response.`);
