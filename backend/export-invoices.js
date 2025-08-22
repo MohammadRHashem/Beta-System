@@ -21,11 +21,30 @@ const exportInvoices = async () => {
         });
         console.log('Database connection successful.');
 
-        // 2. Fetch all data from the invoices table
-        console.log('Fetching all records from the "invoices" table...');
-        const [invoices] = await connection.query(
-            'SELECT * FROM invoices ORDER BY received_at ASC'
-        );
+        // 2. Fetch all data using a LEFT JOIN to get the group name
+        console.log('Fetching records from the "invoices" and "whatsapp_groups" tables...');
+        
+        // --- THIS IS THE MODIFIED QUERY ---
+        const query = `
+            SELECT 
+                i.id, 
+                i.transaction_id, 
+                i.sender_name, 
+                i.recipient_name, 
+                i.pix_key, 
+                i.amount, 
+                -- Use COALESCE to show the JID if the group name is not found
+                COALESCE(wg.group_name, i.source_group_jid) AS source_group_name,
+                i.received_at
+            FROM 
+                invoices AS i
+            LEFT JOIN 
+                whatsapp_groups AS wg ON i.source_group_jid = wg.group_jid
+            ORDER BY 
+                i.received_at ASC;
+        `;
+        
+        const [invoices] = await connection.query(query);
         console.log(`Found ${invoices.length} invoices to export.`);
 
         if (invoices.length === 0) {
@@ -45,7 +64,8 @@ const exportInvoices = async () => {
             { header: 'Recipient Name', key: 'recipient_name', width: 35 },
             { header: 'PIX Key', key: 'pix_key', width: 30 },
             { header: 'Amount', key: 'amount', width: 15, style: { numFmt: '#,##0.00' } },
-            { header: 'Source Group JID', key: 'source_group_jid', width: 30 },
+            // --- MODIFIED COLUMN HEADER ---
+            { header: 'Source Group', key: 'source_group_name', width: 30 },
             { header: 'Received At', key: 'received_at', width: 25, style: { numFmt: 'yyyy-mm-dd hh:mm:ss' } },
         ];
         
