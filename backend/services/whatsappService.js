@@ -13,11 +13,13 @@ let qrCodeData;
 let connectionStatus = 'disconnected';
 let abbreviationCache = [];
 
+// --- PERSISTENT QUEUE SETUP ---
 const redisConnection = { host: 'localhost', port: 6379, maxRetriesPerRequest: null };
 const invoiceQueue = new Queue('invoice-processing-queue', { connection: redisConnection });
 
-// --- THE WORKER THAT PROCESSES JOBS FROM THE QUEUE (CORRECTED) ---
+// --- THE WORKER THAT PROCESSES JOBS FROM THE QUEUE ---
 const invoiceWorker = new Worker('invoice-processing-queue', async (job) => {
+    // We need the client to be available to re-hydrate the message
     if (!client || connectionStatus !== 'connected') {
         throw new Error("WhatsApp client is not connected. Cannot process job.");
     }
@@ -26,11 +28,10 @@ const invoiceWorker = new Worker('invoice-processing-queue', async (job) => {
     const { messageId } = job.data;
     console.log(`[WORKER] Started processing job ${job.id} for message ID: ${messageId}`);
 
-    // --- THIS IS THE CRITICAL FIX ---
     // Fetch the full message object using its ID.
     const message = await client.getMessageById(messageId);
     if (!message) {
-        throw new Error(`Message with ID ${messageId} could not be found.`);
+        throw new Error(`Message with ID ${messageId} could not be found or was deleted.`);
     }
 
     try {
@@ -40,11 +41,13 @@ const invoiceWorker = new Worker('invoice-processing-queue', async (job) => {
         const groupSettings = settings[0] || { forwarding_enabled: true, archiving_enabled: true };
 
         if (!groupSettings.forwarding_enabled && !groupSettings.archiving_enabled) {
+            console.log(`[WORKER] Ignoring job ${job.id} from disabled group: ${chat.name}`);
             return; // Job is successful, but we did nothing.
         }
 
         const media = await message.downloadMedia();
         if (!media || !['image/jpeg', 'image/jpg', 'image/png', 'application/pdf'].includes(media.mimetype)) {
+            console.log(`[WORKER] Ignoring job ${job.id} with unsupported media type.`);
             return;
         }
 
@@ -67,11 +70,11 @@ const invoiceWorker = new Worker('invoice-processing-queue', async (job) => {
         try {
             const { stdout } = await execa(pythonExecutablePath, [pythonScriptPath, tempFilePath], { cwd: pythonScriptsDir, env: pythonEnv });
             invoiceJson = JSON.parse(stdout);
-            console.log(`[WORKER] Python script success. Transaction ID: ${invoiceJson.transaction_id}`);
+            console.log(`[WORKER] Python script success for job ${job.id}. Transaction ID: ${invoiceJson.transaction_id}`);
         } catch (pythonError) {
             console.error(`[WORKER-PYTHON-ERROR] Script failed for job ${job.id}. Stderr:`, pythonError.stderr);
             await fs.unlink(tempFilePath);
-            throw pythonError;
+            throw pythonError; // This will cause the job to fail and be retried by BullMQ
         }
         
         await fs.unlink(tempFilePath);
@@ -90,6 +93,7 @@ const invoiceWorker = new Worker('invoice-processing-queue', async (job) => {
                    `INSERT INTO invoices (transaction_id, sender_name, recipient_name, pix_key, amount, source_group_jid, received_at, raw_json_data) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
                    [invoiceIdentifier, sender.name, recipient.name, recipient.pix_key, amount, chat.id._serialized, receivedAt, JSON.stringify(invoiceJson)]
                 );
+                console.log(`[WORKER] Invoice ${invoiceIdentifier} from job ${job.id} saved to DB.`);
             }
         }
         
@@ -101,6 +105,7 @@ const invoiceWorker = new Worker('invoice-processing-queue', async (job) => {
                     if (recipientName.includes(rule.trigger_keyword.toLowerCase())) {
                         const mediaToForward = new MessageMedia(media.mimetype, media.data, media.filename);
                         await client.sendMessage(rule.destination_group_jid, mediaToForward, { caption: `Invoice from: ${chat.name}\nID: ${invoiceIdentifier}` });
+                        console.log(`[WORKER] Forwarded media for job ${job.id}.`);
                         break;
                     }
                 }
@@ -108,7 +113,7 @@ const invoiceWorker = new Worker('invoice-processing-queue', async (job) => {
         }
     } catch (error) {
         console.error(`[WORKER-ERROR] A critical error occurred while processing job ${job.id}:`, error);
-        throw error;
+        throw error; // Throwing the error tells BullMQ the job failed
     }
 }, { connection: redisConnection });
 
@@ -144,27 +149,50 @@ const initializeWhatsApp = () => {
         refreshAbbreviationCache();
     });
     
-    client.on('message', async (message) => {
+    // This is a private helper function to avoid code duplication
+    const handleAndQueueInvoice = async (message) => {
+        try {
+            // We do a pre-check here to avoid queueing unnecessary jobs
+            if (message.hasMedia && !message.fromMe) {
+                const chat = await message.getChat();
+                if (chat.isGroup) {
+                    await invoiceQueue.add('process-invoice', { messageId: message.id._serialized });
+                    console.log(`[QUEUE] Added media from "${chat.name}" to persistent queue. Msg ID: ${message.id._serialized}`);
+                }
+            }
+        } catch (error) {
+            console.error(`[HANDLER-ERROR] Could not queue invoice from message ${message.id._serialized}:`, error);
+        }
+    };
+
+    // --- CATCH OFFLINE MESSAGES RELIABLY ---
+    client.on('message_received', async (message) => {
+        console.log(`[OFFLINE_MESSAGE] Received offline message. fromMe: ${message.fromMe}, hasMedia: ${message.hasMedia}`);
+        await handleAndQueueInvoice(message);
+    });
+
+    // --- CATCH REAL-TIME MESSAGES ---
+    client.on('message_create', async (message) => {
         try {
             const chat = await message.getChat();
             if (!chat.isGroup) return;
 
+            // Path 1: Handle Abbreviations from ANY participant
             if (message.body) {
                 const triggerText = message.body.trim();
                 const match = abbreviationCache.find(abbr => abbr.trigger === triggerText);
                 if (match) {
+                    console.log(`[ABBR] Trigger "${triggerText}" found in group "${chat.name}".`);
                     await client.sendMessage(chat.id._serialized, match.response);
-                    return;
+                    return; // Abbreviation handled, stop.
                 }
             }
+            
+            // Path 2: Handle real-time invoices
+            await handleAndQueueInvoice(message);
 
-            if (message.hasMedia && !message.fromMe) {
-                // --- ADD THE MESSAGE ID TO THE PERSISTENT QUEUE ---
-                await invoiceQueue.add('process-invoice', { messageId: message.id._serialized });
-                console.log(`[QUEUE] Added incoming media from "${chat.name}" to persistent queue. Job for Msg ID: ${message.id._serialized}`);
-            }
         } catch (error) {
-            console.error('[MESSAGE-HANDLER-ERROR] An error occurred:', error);
+            console.error('[MESSAGE-HANDLER-ERROR] An error occurred in message_create:', error);
         }
     });
     
