@@ -13,15 +13,18 @@ let qrCodeData;
 let connectionStatus = 'disconnected';
 let abbreviationCache = [];
 
+// A cache to prevent processing duplicate message events, crucial for reliability
+const processedMessageCache = new Set();
+
 // --- PERSISTENT QUEUE SETUP ---
 const redisConnection = { host: 'localhost', port: 6379, maxRetriesPerRequest: null };
 const invoiceQueue = new Queue('invoice-processing-queue', { connection: redisConnection });
 
 // --- THE WORKER THAT PROCESSES JOBS FROM THE QUEUE ---
 const invoiceWorker = new Worker('invoice-processing-queue', async (job) => {
-    // We need the client to be available to re-hydrate the message
+    // We need the client to be available to process the job
     if (!client || connectionStatus !== 'connected') {
-        throw new Error("WhatsApp client is not connected. Cannot process job.");
+        throw new Error("WhatsApp client is not connected. Job will be retried.");
     }
     
     // The job now contains the unique message ID
@@ -31,7 +34,9 @@ const invoiceWorker = new Worker('invoice-processing-queue', async (job) => {
     // Fetch the full message object using its ID.
     const message = await client.getMessageById(messageId);
     if (!message) {
-        throw new Error(`Message with ID ${messageId} could not be found or was deleted.`);
+        // If the message was deleted before we could process it, we can't continue.
+        console.warn(`[WORKER] Message with ID ${messageId} could not be found or was deleted. Acknowledging job as complete.`);
+        return; // Return successfully to remove job from queue.
     }
 
     try {
@@ -42,7 +47,7 @@ const invoiceWorker = new Worker('invoice-processing-queue', async (job) => {
 
         if (!groupSettings.forwarding_enabled && !groupSettings.archiving_enabled) {
             console.log(`[WORKER] Ignoring job ${job.id} from disabled group: ${chat.name}`);
-            return; // Job is successful, but we did nothing.
+            return;
         }
 
         const media = await message.downloadMedia();
@@ -74,7 +79,7 @@ const invoiceWorker = new Worker('invoice-processing-queue', async (job) => {
         } catch (pythonError) {
             console.error(`[WORKER-PYTHON-ERROR] Script failed for job ${job.id}. Stderr:`, pythonError.stderr);
             await fs.unlink(tempFilePath);
-            throw pythonError; // This will cause the job to fail and be retried by BullMQ
+            throw pythonError;
         }
         
         await fs.unlink(tempFilePath);
@@ -88,11 +93,8 @@ const invoiceWorker = new Worker('invoice-processing-queue', async (job) => {
         if (groupSettings.archiving_enabled) {
             const { amount, sender, recipient } = invoiceJson;
             if (amount && sender?.name && recipient?.name) {
-                // --- THIS IS THE CRITICAL CHANGE ---
-                const originalDate = new Date(message.timestamp * 1000);
-                // Subtract 2 hours (2 * 60 minutes * 60 seconds * 1000 milliseconds)
-                const adjustedDate = new Date(originalDate.getTime() - (2 * 60 * 60 * 1000));
-
+                const receivedAt = new Date(message.timestamp * 1000);
+                const adjustedDate = new Date(receivedAt.getTime() - (2 * 60 * 60 * 1000));
                 await pool.query(
                    `INSERT INTO invoices (transaction_id, sender_name, recipient_name, pix_key, amount, source_group_jid, received_at, raw_json_data) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
                    [invoiceIdentifier, sender.name, recipient.name, recipient.pix_key, amount, chat.id._serialized, adjustedDate, JSON.stringify(invoiceJson)]
@@ -117,7 +119,7 @@ const invoiceWorker = new Worker('invoice-processing-queue', async (job) => {
         }
     } catch (error) {
         console.error(`[WORKER-ERROR] A critical error occurred while processing job ${job.id}:`, error);
-        throw error; // Throwing the error tells BullMQ the job failed
+        throw error;
     }
 }, { connection: redisConnection });
 
@@ -153,50 +155,40 @@ const initializeWhatsApp = () => {
         refreshAbbreviationCache();
     });
     
-    // This is a private helper function to avoid code duplication
-    const handleAndQueueInvoice = async (message) => {
+    client.on('message', async (message) => {
         try {
-            // We do a pre-check here to avoid queueing unnecessary jobs
-            if (message.hasMedia && !message.fromMe) {
-                const chat = await message.getChat();
-                if (chat.isGroup) {
-                    await invoiceQueue.add('process-invoice', { messageId: message.id._serialized });
-                    console.log(`[QUEUE] Added media from "${chat.name}" to persistent queue. Msg ID: ${message.id._serialized}`);
-                }
+            // 1. DEDUPLICATION CHECK
+            const messageId = message.id._serialized;
+            if (processedMessageCache.has(messageId)) {
+                console.log(`[DEDUPE] Ignoring already processed message ID: ${messageId}`);
+                return;
             }
-        } catch (error) {
-            console.error(`[HANDLER-ERROR] Could not queue invoice from message ${message.id._serialized}:`, error);
-        }
-    };
+            processedMessageCache.add(messageId);
+            setTimeout(() => {
+                processedMessageCache.delete(messageId);
+            }, 10 * 60 * 1000); // Clear from cache after 10 minutes
 
-    // --- CATCH OFFLINE MESSAGES RELIABLY ---
-    client.on('message_received', async (message) => {
-        console.log(`[OFFLINE_MESSAGE] Received offline message. fromMe: ${message.fromMe}, hasMedia: ${message.hasMedia}`);
-        await handleAndQueueInvoice(message);
-    });
-
-    // --- CATCH REAL-TIME MESSAGES ---
-    client.on('message_create', async (message) => {
-        try {
             const chat = await message.getChat();
             if (!chat.isGroup) return;
 
-            // Path 1: Handle Abbreviations from ANY participant
+            // 2. ABBREVIATION LOGIC
             if (message.body) {
                 const triggerText = message.body.trim();
                 const match = abbreviationCache.find(abbr => abbr.trigger === triggerText);
                 if (match) {
                     console.log(`[ABBR] Trigger "${triggerText}" found in group "${chat.name}".`);
                     await client.sendMessage(chat.id._serialized, match.response);
-                    return; // Abbreviation handled, stop.
+                    return;
                 }
             }
-            
-            // Path 2: Handle real-time invoices
-            await handleAndQueueInvoice(message);
 
+            // 3. INVOICE LOGIC
+            if (message.hasMedia && !message.fromMe) {
+                await invoiceQueue.add('process-invoice', { messageId: message.id._serialized });
+                console.log(`[QUEUE] Added media from "${chat.name}" to persistent queue. Msg ID: ${messageId}`);
+            }
         } catch (error) {
-            console.error('[MESSAGE-HANDLER-ERROR] An error occurred in message_create:', error);
+            console.error('[MESSAGE-HANDLER-ERROR] An error occurred:', error);
         }
     });
     
@@ -215,6 +207,7 @@ const initializeWhatsApp = () => {
 
 const getQR = () => qrCodeData;
 const getStatus = () => connectionStatus;
+
 const fetchAllGroups = async () => {
     if (connectionStatus !== 'connected') {
         throw new Error('WhatsApp is not connected.');
@@ -258,7 +251,7 @@ const broadcast = async (io, socketId, groupObjects, message) => {
             const chat = await client.getChatById(group.id);
             chat.sendStateTyping();
 
-            const typingDelay = 500;
+            const typingDelay = Math.floor(Math.random() * (2000 - 1000 + 1) + 1000);
             await new Promise(resolve => setTimeout(resolve, typingDelay));
 
             await client.sendMessage(group.id, message);
@@ -271,7 +264,7 @@ const broadcast = async (io, socketId, groupObjects, message) => {
                 message: `Successfully sent to "${group.name}".`
             });
 
-            const cooldownDelay = 2000;
+            const cooldownDelay = Math.floor(Math.random() * (6000 - 2500 + 1) + 2500);
             await new Promise(resolve => setTimeout(resolve, cooldownDelay));
 
         } catch (error) {
