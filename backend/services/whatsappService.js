@@ -88,10 +88,14 @@ const invoiceWorker = new Worker('invoice-processing-queue', async (job) => {
         if (groupSettings.archiving_enabled) {
             const { amount, sender, recipient } = invoiceJson;
             if (amount && sender?.name && recipient?.name) {
-                const receivedAt = new Date(message.timestamp * 1000);
+                // --- THIS IS THE CRITICAL CHANGE ---
+                const originalDate = new Date(message.timestamp * 1000);
+                // Subtract 2 hours (2 * 60 minutes * 60 seconds * 1000 milliseconds)
+                const adjustedDate = new Date(originalDate.getTime() - (2 * 60 * 60 * 1000));
+
                 await pool.query(
                    `INSERT INTO invoices (transaction_id, sender_name, recipient_name, pix_key, amount, source_group_jid, received_at, raw_json_data) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-                   [invoiceIdentifier, sender.name, recipient.name, recipient.pix_key, amount, chat.id._serialized, receivedAt, JSON.stringify(invoiceJson)]
+                   [invoiceIdentifier, sender.name, recipient.name, recipient.pix_key, amount, chat.id._serialized, adjustedDate, JSON.stringify(invoiceJson)]
                 );
                 console.log(`[WORKER] Invoice ${invoiceIdentifier} from job ${job.id} saved to DB.`);
             }
@@ -254,7 +258,7 @@ const broadcast = async (io, socketId, groupObjects, message) => {
             const chat = await client.getChatById(group.id);
             chat.sendStateTyping();
 
-            const typingDelay = Math.floor(Math.random() * (2000 - 1000 + 1) + 1000);
+            const typingDelay = 500;
             await new Promise(resolve => setTimeout(resolve, typingDelay));
 
             await client.sendMessage(group.id, message);
@@ -267,7 +271,7 @@ const broadcast = async (io, socketId, groupObjects, message) => {
                 message: `Successfully sent to "${group.name}".`
             });
 
-            const cooldownDelay = Math.floor(Math.random() * (6000 - 2500 + 1) + 2500);
+            const cooldownDelay = 2000;
             await new Promise(resolve => setTimeout(resolve, cooldownDelay));
 
         } catch (error) {

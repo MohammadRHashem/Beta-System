@@ -56,6 +56,8 @@ app.get('/api/settings/forwarding', authMiddleware, settingsController.getForwar
 app.post('/api/settings/forwarding', authMiddleware, settingsController.createForwardingRule);
 app.get('/api/settings/groups', authMiddleware, settingsController.getGroupSettings);
 app.post('/api/settings/groups', authMiddleware, settingsController.updateGroupSetting);
+app.put('/api/settings/forwarding/:id', authMiddleware, settingsController.updateForwardingRule);
+app.delete('/api/settings/forwarding/:id', authMiddleware, settingsController.deleteForwardingRule);
 
 app.get('/api/chave-pix', authMiddleware, chavePixController.getAllKeys);
 app.post('/api/chave-pix', authMiddleware, chavePixController.createKey);
