@@ -20,7 +20,6 @@ const invoiceQueue = new Queue('invoice-processing-queue', { connection: redisCo
 
 // --- THE WORKER THAT PROCESSES JOBS FROM THE QUEUE ---
 const invoiceWorker = new Worker('invoice-processing-queue', async (job) => {
-    // We need the client to be available to re-hydrate the message
     if (!client || connectionStatus !== 'connected') {
         throw new Error("WhatsApp client is not connected. Job will be retried.");
     }
@@ -28,7 +27,6 @@ const invoiceWorker = new Worker('invoice-processing-queue', async (job) => {
     const { messageId } = job.data;
     console.log(`[WORKER] Started processing job ${job.id} for message ID: ${messageId}`);
 
-    // Fetch the full message object using its ID.
     const message = await client.getMessageById(messageId);
     if (!message) {
         console.warn(`[WORKER] Message with ID ${messageId} could not be found or was deleted. Acknowledging job as complete.`);
@@ -117,7 +115,7 @@ const invoiceWorker = new Worker('invoice-processing-queue', async (job) => {
     } catch (error) {
         if (error.code === 'ER_DUP_ENTRY' && error.sqlMessage.includes('invoices.message_id')) {
             console.warn(`[WORKER] Invoice with message ID ${message.id._serialized} already exists in DB. Acknowledging job.`);
-            return; // This is a success, not an error.
+            return;
         }
         console.error(`[WORKER-ERROR] A critical error occurred while processing job ${job.id}:`, error);
         throw error;
@@ -139,68 +137,65 @@ const refreshAbbreviationCache = async () => {
     }
 };
 
-// --- THE RECONCILIATION WORKER ---
+let isReconciling = false;
 const reconcileMissedMessages = async () => {
-    if (connectionStatus !== 'connected') {
-        console.log('[RECONCILER] Skipping run because client is not connected.');
+    if (isReconciling) {
+        console.log('[RECONCILER] Skipping run as a reconciliation is already in progress.');
         return;
     }
-    console.log('[RECONCILER] Starting periodic check for missed messages...');
+    if (connectionStatus !== 'connected') {
+        return;
+    }
+    isReconciling = true;
+    console.log('[RECONCILER] Starting check for missed messages...');
     try {
         const chats = await client.getChats();
         const groups = chats.filter(chat => chat.isGroup);
 
         for (const group of groups) {
             const recentMessages = await group.fetchMessages({ limit: 20 });
-            const recentMessageIds = recentMessages.map(msg => msg.id._serialized);
+            if (recentMessages.length === 0) continue;
 
-            if (recentMessageIds.length === 0) continue;
+            const messageIdsToCheck = recentMessages.map(msg => msg.id._serialized);
 
-            // Now checks against the new `processed_messages` table
             const [processedRows] = await pool.query(
                 'SELECT message_id FROM processed_messages WHERE message_id IN (?)',
-                [recentMessageIds]
+                [messageIdsToCheck]
             );
             const processedIds = new Set(processedRows.map(r => r.message_id));
             
-            const missedMessageIds = recentMessageIds.filter(id => !processedIds.has(id));
+            const missedMessages = recentMessages.filter(msg => !processedIds.has(msg.id._serialized));
 
-            if (missedMessageIds.length > 0) {
-                console.log(`[RECONCILER] Found ${missedMessageIds.length} missed message(s) in "${group.name}". Processing them now.`);
-                for (const messageId of missedMessageIds) {
-                    const missedMessage = await client.getMessageById(messageId);
-                    if (missedMessage) {
-                        // Directly call the handler to ensure it's processed
-                        await handleMessage(missedMessage);
-                    }
+            if (missedMessages.length > 0) {
+                console.log(`[RECONCILER] Found ${missedMessages.length} missed message(s) in "${group.name}". Processing them now.`);
+                for (const message of missedMessages) {
+                    // Directly call the single, unified handler for each missed message
+                    await handleMessage(message);
                 }
             }
         }
     } catch (error) {
-        console.error('[RECONCILER-ERROR] An error occurred during the reconciliation task:', error);
+        console.error('[RECONCILER-ERROR] An error occurred:', error);
+    } finally {
+        isReconciling = false;
+        console.log('[RECONCILER] Finished check.');
     }
-    console.log('[RECONCILER] Finished check.');
 };
 
-// --- A SINGLE, UNIFIED MESSAGE HANDLER ---
 const handleMessage = async (message) => {
     try {
         const messageId = message.id._serialized;
 
-        // 1. DEDUPLICATION CHECK AGAINST DATABASE
         const [rows] = await pool.query('SELECT message_id FROM processed_messages WHERE message_id = ?', [messageId]);
         if (rows.length > 0) {
-            // This is not an error, just a duplicate event.
-            return;
+            return; // Already processed, stop here.
         }
 
-        // 2. MARK AS PROCESSED IMMEDIATELY
         await pool.query('INSERT INTO processed_messages (message_id) VALUES (?)', [messageId]);
 
         const chat = await message.getChat();
         if (!chat.isGroup) return;
 
-        // 3. ABBREVIATION LOGIC
         if (message.body) {
             const triggerText = message.body.trim();
             const match = abbreviationCache.find(abbr => abbr.trigger === triggerText);
@@ -211,10 +206,7 @@ const handleMessage = async (message) => {
             }
         }
 
-        // 4. INVOICE LOGIC
         if (message.hasMedia && !message.fromMe) {
-            // Use the messageId as the jobId to prevent duplicates if the Reconciler
-            // and this listener run at the exact same time. BullMQ will ignore the second add.
             await invoiceQueue.add('process-invoice', { messageId }, { jobId: messageId });
             console.log(`[QUEUE] Added media from "${chat.name}" to persistent queue. Msg ID: ${messageId}`);
         }
@@ -248,9 +240,8 @@ const initializeWhatsApp = () => {
         console.log('[RECONCILER] Self-healing reconciler scheduled to run every 3 minutes.');
     });
     
-    // --- SIMPLIFIED: LISTEN TO A SINGLE EVENT, CALL THE UNIFIED HANDLER ---
+    // Listen to a single, unified event stream
     client.on('message', handleMessage);
-    client.on('message_received', handleMessage);
     
     client.on('disconnected', (reason) => {
         console.log('Client was logged out or disconnected', reason);
@@ -311,7 +302,7 @@ const broadcast = async (io, socketId, groupObjects, message) => {
             const chat = await client.getChatById(group.id);
             chat.sendStateTyping();
 
-            const typingDelay = 400;
+            const typingDelay = 300;
             await new Promise(resolve => setTimeout(resolve, typingDelay));
 
             await client.sendMessage(group.id, message);
@@ -324,7 +315,7 @@ const broadcast = async (io, socketId, groupObjects, message) => {
                 message: `Successfully sent to "${group.name}".`
             });
 
-            const cooldownDelay = 1000;
+            const cooldownDelay = 1200;
             await new Promise(resolve => setTimeout(resolve, cooldownDelay));
 
         } catch (error) {
