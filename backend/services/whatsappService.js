@@ -14,15 +14,13 @@ let qrCodeData;
 let connectionStatus = 'disconnected';
 let abbreviationCache = [];
 
-// A cache to prevent processing duplicate message events in the real-time listener
-const processedMessageCache = new Set();
-
 // --- PERSISTENT QUEUE SETUP ---
 const redisConnection = { host: 'localhost', port: 6379, maxRetriesPerRequest: null };
 const invoiceQueue = new Queue('invoice-processing-queue', { connection: redisConnection });
 
 // --- THE WORKER THAT PROCESSES JOBS FROM THE QUEUE ---
 const invoiceWorker = new Worker('invoice-processing-queue', async (job) => {
+    // We need the client to be available to re-hydrate the message
     if (!client || connectionStatus !== 'connected') {
         throw new Error("WhatsApp client is not connected. Job will be retried.");
     }
@@ -30,6 +28,7 @@ const invoiceWorker = new Worker('invoice-processing-queue', async (job) => {
     const { messageId } = job.data;
     console.log(`[WORKER] Started processing job ${job.id} for message ID: ${messageId}`);
 
+    // Fetch the full message object using its ID.
     const message = await client.getMessageById(messageId);
     if (!message) {
         console.warn(`[WORKER] Message with ID ${messageId} could not be found or was deleted. Acknowledging job as complete.`);
@@ -116,9 +115,9 @@ const invoiceWorker = new Worker('invoice-processing-queue', async (job) => {
             }
         }
     } catch (error) {
-        if (error.code === 'ER_DUP_ENTRY') {
-            console.warn(`[WORKER] Invoice with message ID ${message.id._serialized} already exists in the database. Acknowledging job.`);
-            return;
+        if (error.code === 'ER_DUP_ENTRY' && error.sqlMessage.includes('invoices.message_id')) {
+            console.warn(`[WORKER] Invoice with message ID ${message.id._serialized} already exists in DB. Acknowledging job.`);
+            return; // This is a success, not an error.
         }
         console.error(`[WORKER-ERROR] A critical error occurred while processing job ${job.id}:`, error);
         throw error;
@@ -153,14 +152,13 @@ const reconcileMissedMessages = async () => {
 
         for (const group of groups) {
             const recentMessages = await group.fetchMessages({ limit: 20 });
-            const recentMessageIds = recentMessages
-                .filter(msg => msg.hasMedia && !msg.fromMe)
-                .map(msg => msg.id._serialized);
+            const recentMessageIds = recentMessages.map(msg => msg.id._serialized);
 
             if (recentMessageIds.length === 0) continue;
 
+            // Now checks against the new `processed_messages` table
             const [processedRows] = await pool.query(
-                'SELECT message_id FROM invoices WHERE message_id IN (?)',
+                'SELECT message_id FROM processed_messages WHERE message_id IN (?)',
                 [recentMessageIds]
             );
             const processedIds = new Set(processedRows.map(r => r.message_id));
@@ -168,9 +166,13 @@ const reconcileMissedMessages = async () => {
             const missedMessageIds = recentMessageIds.filter(id => !processedIds.has(id));
 
             if (missedMessageIds.length > 0) {
-                console.log(`[RECONCILER] Found ${missedMessageIds.length} missed message(s) in group "${group.name}". Queuing them now.`);
+                console.log(`[RECONCILER] Found ${missedMessageIds.length} missed message(s) in "${group.name}". Processing them now.`);
                 for (const messageId of missedMessageIds) {
-                    await invoiceQueue.add('process-invoice', { messageId }, { jobId: messageId });
+                    const missedMessage = await client.getMessageById(messageId);
+                    if (missedMessage) {
+                        // Directly call the handler to ensure it's processed
+                        await handleMessage(missedMessage);
+                    }
                 }
             }
         }
@@ -178,6 +180,51 @@ const reconcileMissedMessages = async () => {
         console.error('[RECONCILER-ERROR] An error occurred during the reconciliation task:', error);
     }
     console.log('[RECONCILER] Finished check.');
+};
+
+// --- A SINGLE, UNIFIED MESSAGE HANDLER ---
+const handleMessage = async (message) => {
+    try {
+        const messageId = message.id._serialized;
+
+        // 1. DEDUPLICATION CHECK AGAINST DATABASE
+        const [rows] = await pool.query('SELECT message_id FROM processed_messages WHERE message_id = ?', [messageId]);
+        if (rows.length > 0) {
+            // This is not an error, just a duplicate event.
+            return;
+        }
+
+        // 2. MARK AS PROCESSED IMMEDIATELY
+        await pool.query('INSERT INTO processed_messages (message_id) VALUES (?)', [messageId]);
+
+        const chat = await message.getChat();
+        if (!chat.isGroup) return;
+
+        // 3. ABBREVIATION LOGIC
+        if (message.body) {
+            const triggerText = message.body.trim();
+            const match = abbreviationCache.find(abbr => abbr.trigger === triggerText);
+            if (match) {
+                console.log(`[ABBR] Trigger "${triggerText}" found in group "${chat.name}".`);
+                await client.sendMessage(chat.id._serialized, match.response);
+                return;
+            }
+        }
+
+        // 4. INVOICE LOGIC
+        if (message.hasMedia && !message.fromMe) {
+            // Use the messageId as the jobId to prevent duplicates if the Reconciler
+            // and this listener run at the exact same time. BullMQ will ignore the second add.
+            await invoiceQueue.add('process-invoice', { messageId }, { jobId: messageId });
+            console.log(`[QUEUE] Added media from "${chat.name}" to persistent queue. Msg ID: ${messageId}`);
+        }
+    } catch (error) {
+        if (error.code === 'ER_DUP_ENTRY') {
+             console.log(`[DEDUPE] Race condition prevented duplicate processing for message ID: ${message.id._serialized}`);
+        } else {
+            console.error(`[MESSAGE-HANDLER-ERROR] An error occurred:`, error);
+        }
+    }
 };
 
 const initializeWhatsApp = () => {
@@ -201,39 +248,9 @@ const initializeWhatsApp = () => {
         console.log('[RECONCILER] Self-healing reconciler scheduled to run every 3 minutes.');
     });
     
-    client.on('message', async (message) => {
-        try {
-            const messageId = message.id._serialized;
-            if (processedMessageCache.has(messageId)) {
-                console.log(`[DEDUPE] Ignoring already processed message ID: ${messageId}`);
-                return;
-            }
-            processedMessageCache.add(messageId);
-            setTimeout(() => {
-                processedMessageCache.delete(messageId);
-            }, 10 * 60 * 1000);
-
-            const chat = await message.getChat();
-            if (!chat.isGroup) return;
-
-            if (message.body) {
-                const triggerText = message.body.trim();
-                const match = abbreviationCache.find(abbr => abbr.trigger === triggerText);
-                if (match) {
-                    console.log(`[ABBR] Trigger "${triggerText}" found in group "${chat.name}".`);
-                    await client.sendMessage(chat.id._serialized, match.response);
-                    return;
-                }
-            }
-
-            if (message.hasMedia && !message.fromMe) {
-                await invoiceQueue.add('process-invoice', { messageId }, { jobId: messageId });
-                console.log(`[QUEUE] Added media from "${chat.name}" to persistent queue. Msg ID: ${messageId}`);
-            }
-        } catch (error) {
-            console.error('[MESSAGE-HANDLER-ERROR] An error occurred:', error);
-        }
-    });
+    // --- SIMPLIFIED: LISTEN TO A SINGLE EVENT, CALL THE UNIFIED HANDLER ---
+    client.on('message', handleMessage);
+    client.on('message_received', handleMessage);
     
     client.on('disconnected', (reason) => {
         console.log('Client was logged out or disconnected', reason);
