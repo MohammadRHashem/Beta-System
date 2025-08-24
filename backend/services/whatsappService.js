@@ -197,8 +197,8 @@ const initializeWhatsApp = () => {
         refreshAbbreviationCache();
 
         reconcileMissedMessages(); 
-        cron.schedule('* * * * *', reconcileMissedMessages);
-        console.log('[RECONCILER] Self-healing reconciler scheduled to run every 1 minute.');
+        cron.schedule('*/3 * * * *', reconcileMissedMessages);
+        console.log('[RECONCILER] Self-healing reconciler scheduled to run every 3 minutes.');
     });
     
     client.on('message', async (message) => {
