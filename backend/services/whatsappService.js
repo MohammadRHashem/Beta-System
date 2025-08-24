@@ -14,7 +14,6 @@ let qrCodeData;
 let connectionStatus = 'disconnected';
 let abbreviationCache = [];
 
-// --- PERSISTENT QUEUE SETUP ---
 const redisConnection = { host: 'localhost', port: 6379, maxRetriesPerRequest: null };
 const invoiceQueue = new Queue('invoice-processing-queue', { connection: redisConnection });
 
@@ -24,9 +23,11 @@ const invoiceWorker = new Worker('invoice-processing-queue', async (job) => {
         throw new Error("WhatsApp client is not connected. Job will be retried.");
     }
     
-    const { messageId } = job.data;
+    // The job now contains the unique message ID and the pre-downloaded media data
+    const { messageId, mediaData } = job.data;
     console.log(`[WORKER] Started processing job ${job.id} for message ID: ${messageId}`);
 
+    // We still need the original message for chat info and timestamp
     const message = await client.getMessageById(messageId);
     if (!message) {
         console.warn(`[WORKER] Message with ID ${messageId} could not be found or was deleted. Acknowledging job as complete.`);
@@ -36,6 +37,8 @@ const invoiceWorker = new Worker('invoice-processing-queue', async (job) => {
     try {
         const chat = await message.getChat();
         
+        await pool.query('INSERT INTO processed_messages (message_id) VALUES (?) ON DUPLICATE KEY UPDATE message_id=message_id', [messageId]);
+        
         const [settings] = await pool.query('SELECT * FROM group_settings WHERE group_jid = ?', [chat.id._serialized]);
         const groupSettings = settings[0] || { forwarding_enabled: true, archiving_enabled: true };
 
@@ -43,16 +46,10 @@ const invoiceWorker = new Worker('invoice-processing-queue', async (job) => {
             console.log(`[WORKER] Ignoring job ${job.id} from disabled group: ${chat.name}`);
             return;
         }
-
-        const media = await message.downloadMedia();
-        if (!media || !['image/jpeg', 'image/jpg', 'image/png', 'application/pdf'].includes(media.mimetype)) {
-            console.log(`[WORKER] Ignoring job ${job.id} with unsupported media type.`);
-            return;
-        }
-
+        
         console.log(`[WORKER] Processing media from group: ${chat.name}`);
-        const tempFilePath = `/tmp/${message.id.id}.${media.mimetype.split('/')[1] || 'bin'}`;
-        await fs.writeFile(tempFilePath, Buffer.from(media.data, 'base64'));
+        const tempFilePath = `/tmp/${message.id.id}.${mediaData.mimetype.split('/')[1] || 'bin'}`;
+        await fs.writeFile(tempFilePath, Buffer.from(mediaData.data, 'base64'));
         
         const pythonScriptsDir = path.join(__dirname, '..', 'python_scripts');
         const pythonExecutablePath = path.join(pythonScriptsDir, 'venv', 'bin', 'python3');
@@ -69,7 +66,7 @@ const invoiceWorker = new Worker('invoice-processing-queue', async (job) => {
         try {
             const { stdout } = await execa(pythonExecutablePath, [pythonScriptPath, tempFilePath], { cwd: pythonScriptsDir, env: pythonEnv });
             invoiceJson = JSON.parse(stdout);
-            console.log(`[WORKER] Python script success for job ${job.id}.`);
+            console.log(`[WORKER] Python script success for job ${job.id}. Transaction ID: ${invoiceJson.transaction_id}`);
         } catch (pythonError) {
             console.error(`[WORKER-PYTHON-ERROR] Script failed for job ${job.id}. Stderr:`, pythonError.stderr);
             await fs.unlink(tempFilePath);
@@ -77,7 +74,7 @@ const invoiceWorker = new Worker('invoice-processing-queue', async (job) => {
         }
         
         await fs.unlink(tempFilePath);
-
+        
         const { amount, sender, recipient, transaction_id } = invoiceJson;
         const isInvoiceValid = amount && sender?.name && recipient?.name;
 
@@ -94,28 +91,30 @@ const invoiceWorker = new Worker('invoice-processing-queue', async (job) => {
             
             await pool.query(
                `INSERT INTO invoices (message_id, transaction_id, sender_name, recipient_name, pix_key, amount, source_group_jid, received_at, raw_json_data) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-               [message.id._serialized, invoiceIdentifier, sender.name, recipient.name, recipient.pix_key, amount, chat.id._serialized, adjustedDate, JSON.stringify(invoiceJson)]
+               [messageId, invoiceIdentifier, sender.name, recipient.name, recipient.pix_key, amount, chat.id._serialized, adjustedDate, JSON.stringify(invoiceJson)]
             );
             console.log(`[WORKER] Invoice from job ${job.id} saved to DB.`);
         }
         
         if (groupSettings.forwarding_enabled) {
-            const recipientName = recipient.name.toLowerCase() || '';
+            const recipientName = (recipient.name || '').toLowerCase().trim();
             if (recipientName) {
                 const [rules] = await pool.query('SELECT * FROM forwarding_rules');
                 for (const rule of rules) {
                     if (recipientName.includes(rule.trigger_keyword.toLowerCase())) {
-                        const mediaToForward = new MessageMedia(media.mimetype, media.data, media.filename);
+                        console.log(`[PROCESS] Matched forwarding rule "${rule.trigger_keyword}"`);
+                        // Use the media data from the job to reconstruct the MessageMedia object
+                        const mediaToForward = new MessageMedia(mediaData.mimetype, mediaData.data, mediaData.filename);
                         await client.sendMessage(rule.destination_group_jid, mediaToForward, { caption: `Invoice from: ${chat.name}\nID: ${invoiceIdentifier || 'N/A'}` });
-                        console.log(`[WORKER] Forwarded media for job ${job.id}.`);
+                        console.log(`[PROCESS] Forwarded media for job ${job.id}.`);
                         break;
                     }
                 }
             }
         }
     } catch (error) {
-        if (error.code === 'ER_DUP_ENTRY' && error.sqlMessage.includes('invoices.message_id')) {
-            console.warn(`[WORKER] Invoice with message ID ${message.id._serialized} already exists in DB. Acknowledging job.`);
+        if (error.code === 'ER_DUP_ENTRY') {
+            console.warn(`[WORKER] Invoice with message ID ${messageId} already exists in DB. Acknowledging job.`);
             return;
         }
         console.error(`[WORKER-ERROR] A critical error occurred while processing job ${job.id}:`, error);
@@ -140,13 +139,7 @@ const refreshAbbreviationCache = async () => {
 
 let isReconciling = false;
 const reconcileMissedMessages = async () => {
-    if (isReconciling) {
-        console.log('[RECONCILER] Skipping run as a reconciliation is already in progress.');
-        return;
-    }
-    if (connectionStatus !== 'connected') {
-        return;
-    }
+    if (isReconciling || connectionStatus !== 'connected') { return; }
     isReconciling = true;
     console.log('[RECONCILER] Starting check for missed messages...');
     try {
@@ -187,9 +180,7 @@ const handleMessage = async (message) => {
         const messageId = message.id._serialized;
 
         const [rows] = await pool.query('SELECT message_id FROM processed_messages WHERE message_id = ?', [messageId]);
-        if (rows.length > 0) {
-            return;
-        }
+        if (rows.length > 0) { return; }
 
         await pool.query('INSERT INTO processed_messages (message_id) VALUES (?) ON DUPLICATE KEY UPDATE message_id=message_id', [messageId]);
 
@@ -207,8 +198,20 @@ const handleMessage = async (message) => {
         }
 
         if (message.hasMedia && !message.fromMe) {
-            await invoiceQueue.add('process-invoice', { messageId }, { jobId: messageId });
-            console.log(`[QUEUE] Added media from "${chat.name}" to persistent queue. Msg ID: ${messageId}`);
+            // Download the media immediately to capture its state
+            const media = await message.downloadMedia();
+            if (media) {
+                // Pass a complete, self-contained data package to the queue
+                await invoiceQueue.add('process-invoice', { 
+                    messageId: messageId,
+                    mediaData: {
+                        mimetype: media.mimetype,
+                        data: media.data, // This is the base64 string
+                        filename: media.filename
+                    }
+                }, { jobId: messageId });
+                console.log(`[QUEUE] Added media from "${chat.name}" to persistent queue. Msg ID: ${messageId}`);
+            }
         }
     } catch (error) {
         if (error.code !== 'ER_DUP_ENTRY') {
@@ -232,7 +235,6 @@ const initializeWhatsApp = () => {
         qrCodeData = null;
         connectionStatus = 'connected';
         refreshAbbreviationCache();
-
         reconcileMissedMessages(); 
         cron.schedule('*/3 * * * *', reconcileMissedMessages);
         console.log('[RECONCILER] Self-healing reconciler scheduled to run every 3 minutes.');
@@ -299,7 +301,7 @@ const broadcast = async (io, socketId, groupObjects, message) => {
             const chat = await client.getChatById(group.id);
             chat.sendStateTyping();
 
-            const typingDelay = Math.floor(Math.random() * (2000 - 1000 + 1) + 1000);
+            const typingDelay = 400;
             await new Promise(resolve => setTimeout(resolve, typingDelay));
 
             await client.sendMessage(group.id, message);
@@ -312,7 +314,7 @@ const broadcast = async (io, socketId, groupObjects, message) => {
                 message: `Successfully sent to "${group.name}".`
             });
 
-            const cooldownDelay = Math.floor(Math.random() * (6000 - 2500 + 1) + 2500);
+            const cooldownDelay = 1000;
             await new Promise(resolve => setTimeout(resolve, cooldownDelay));
 
         } catch (error) {
