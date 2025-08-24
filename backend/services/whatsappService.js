@@ -7,13 +7,14 @@ const execa = require('execa');
 const os = require('os');
 const dotenv = require('dotenv');
 const { Queue, Worker } = require('bullmq');
+const cron = require('node-cron');
 
 let client;
 let qrCodeData;
 let connectionStatus = 'disconnected';
 let abbreviationCache = [];
 
-// A cache to prevent processing duplicate message events, crucial for reliability
+// A cache to prevent processing duplicate message events in the real-time listener
 const processedMessageCache = new Set();
 
 // --- PERSISTENT QUEUE SETUP ---
@@ -22,19 +23,15 @@ const invoiceQueue = new Queue('invoice-processing-queue', { connection: redisCo
 
 // --- THE WORKER THAT PROCESSES JOBS FROM THE QUEUE ---
 const invoiceWorker = new Worker('invoice-processing-queue', async (job) => {
-    // We need the client to be available to process the job
     if (!client || connectionStatus !== 'connected') {
         throw new Error("WhatsApp client is not connected. Job will be retried.");
     }
     
-    // The job now contains the unique message ID
     const { messageId } = job.data;
     console.log(`[WORKER] Started processing job ${job.id} for message ID: ${messageId}`);
 
-    // Fetch the full message object using its ID.
     const message = await client.getMessageById(messageId);
     if (!message) {
-        // If the message was deleted before we could process it, we can't continue.
         console.warn(`[WORKER] Message with ID ${messageId} could not be found or was deleted. Acknowledging job as complete.`);
         return; // Return successfully to remove job from queue.
     }
@@ -95,9 +92,10 @@ const invoiceWorker = new Worker('invoice-processing-queue', async (job) => {
             if (amount && sender?.name && recipient?.name) {
                 const receivedAt = new Date(message.timestamp * 1000);
                 const adjustedDate = new Date(receivedAt.getTime() - (2 * 60 * 60 * 1000));
+                
                 await pool.query(
-                   `INSERT INTO invoices (transaction_id, sender_name, recipient_name, pix_key, amount, source_group_jid, received_at, raw_json_data) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-                   [invoiceIdentifier, sender.name, recipient.name, recipient.pix_key, amount, chat.id._serialized, adjustedDate, JSON.stringify(invoiceJson)]
+                   `INSERT INTO invoices (message_id, transaction_id, sender_name, recipient_name, pix_key, amount, source_group_jid, received_at, raw_json_data) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                   [message.id._serialized, invoiceIdentifier, sender.name, recipient.name, recipient.pix_key, amount, chat.id._serialized, adjustedDate, JSON.stringify(invoiceJson)]
                 );
                 console.log(`[WORKER] Invoice ${invoiceIdentifier} from job ${job.id} saved to DB.`);
             }
@@ -118,6 +116,10 @@ const invoiceWorker = new Worker('invoice-processing-queue', async (job) => {
             }
         }
     } catch (error) {
+        if (error.code === 'ER_DUP_ENTRY') {
+            console.warn(`[WORKER] Invoice with message ID ${message.id._serialized} already exists in the database. Acknowledging job.`);
+            return;
+        }
         console.error(`[WORKER-ERROR] A critical error occurred while processing job ${job.id}:`, error);
         throw error;
     }
@@ -138,6 +140,46 @@ const refreshAbbreviationCache = async () => {
     }
 };
 
+// --- THE RECONCILIATION WORKER ---
+const reconcileMissedMessages = async () => {
+    if (connectionStatus !== 'connected') {
+        console.log('[RECONCILER] Skipping run because client is not connected.');
+        return;
+    }
+    console.log('[RECONCILER] Starting periodic check for missed messages...');
+    try {
+        const chats = await client.getChats();
+        const groups = chats.filter(chat => chat.isGroup);
+
+        for (const group of groups) {
+            const recentMessages = await group.fetchMessages({ limit: 20 });
+            const recentMessageIds = recentMessages
+                .filter(msg => msg.hasMedia && !msg.fromMe)
+                .map(msg => msg.id._serialized);
+
+            if (recentMessageIds.length === 0) continue;
+
+            const [processedRows] = await pool.query(
+                'SELECT message_id FROM invoices WHERE message_id IN (?)',
+                [recentMessageIds]
+            );
+            const processedIds = new Set(processedRows.map(r => r.message_id));
+            
+            const missedMessageIds = recentMessageIds.filter(id => !processedIds.has(id));
+
+            if (missedMessageIds.length > 0) {
+                console.log(`[RECONCILER] Found ${missedMessageIds.length} missed message(s) in group "${group.name}". Queuing them now.`);
+                for (const messageId of missedMessageIds) {
+                    await invoiceQueue.add('process-invoice', { messageId }, { jobId: messageId });
+                }
+            }
+        }
+    } catch (error) {
+        console.error('[RECONCILER-ERROR] An error occurred during the reconciliation task:', error);
+    }
+    console.log('[RECONCILER] Finished check.');
+};
+
 const initializeWhatsApp = () => {
     console.log('Initializing WhatsApp client...');
     client = new Client({ authStrategy: new LocalAuth({ dataPath: 'wwebjs_sessions' }), puppeteer: { headless: true, args: [ '--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-accelerated-2d-canvas', '--no-first-run', '--no-zygote', '--single-process', '--disable-gpu' ], }, qrMaxRetries: 10, authTimeoutMs: 0 });
@@ -153,11 +195,14 @@ const initializeWhatsApp = () => {
         qrCodeData = null;
         connectionStatus = 'connected';
         refreshAbbreviationCache();
+
+        reconcileMissedMessages(); 
+        cron.schedule('* * * * *', reconcileMissedMessages);
+        console.log('[RECONCILER] Self-healing reconciler scheduled to run every 1 minute.');
     });
     
     client.on('message', async (message) => {
         try {
-            // 1. DEDUPLICATION CHECK
             const messageId = message.id._serialized;
             if (processedMessageCache.has(messageId)) {
                 console.log(`[DEDUPE] Ignoring already processed message ID: ${messageId}`);
@@ -166,12 +211,11 @@ const initializeWhatsApp = () => {
             processedMessageCache.add(messageId);
             setTimeout(() => {
                 processedMessageCache.delete(messageId);
-            }, 10 * 60 * 1000); // Clear from cache after 10 minutes
+            }, 10 * 60 * 1000);
 
             const chat = await message.getChat();
             if (!chat.isGroup) return;
 
-            // 2. ABBREVIATION LOGIC
             if (message.body) {
                 const triggerText = message.body.trim();
                 const match = abbreviationCache.find(abbr => abbr.trigger === triggerText);
@@ -182,9 +226,8 @@ const initializeWhatsApp = () => {
                 }
             }
 
-            // 3. INVOICE LOGIC
             if (message.hasMedia && !message.fromMe) {
-                await invoiceQueue.add('process-invoice', { messageId: message.id._serialized });
+                await invoiceQueue.add('process-invoice', { messageId }, { jobId: messageId });
                 console.log(`[QUEUE] Added media from "${chat.name}" to persistent queue. Msg ID: ${messageId}`);
             }
         } catch (error) {
@@ -251,7 +294,7 @@ const broadcast = async (io, socketId, groupObjects, message) => {
             const chat = await client.getChatById(group.id);
             chat.sendStateTyping();
 
-            const typingDelay = Math.floor(Math.random() * (2000 - 1000 + 1) + 1000);
+            const typingDelay = 400;
             await new Promise(resolve => setTimeout(resolve, typingDelay));
 
             await client.sendMessage(group.id, message);
@@ -264,7 +307,7 @@ const broadcast = async (io, socketId, groupObjects, message) => {
                 message: `Successfully sent to "${group.name}".`
             });
 
-            const cooldownDelay = Math.floor(Math.random() * (6000 - 2500 + 1) + 2500);
+            const cooldownDelay = 1000;
             await new Promise(resolve => setTimeout(resolve, cooldownDelay));
 
         } catch (error) {
