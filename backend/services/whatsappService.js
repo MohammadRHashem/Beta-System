@@ -30,7 +30,7 @@ const invoiceWorker = new Worker('invoice-processing-queue', async (job) => {
     const message = await client.getMessageById(messageId);
     if (!message) {
         console.warn(`[WORKER] Message with ID ${messageId} could not be found or was deleted. Acknowledging job as complete.`);
-        return; // Return successfully to remove job from queue.
+        return;
     }
 
     try {
@@ -69,7 +69,7 @@ const invoiceWorker = new Worker('invoice-processing-queue', async (job) => {
         try {
             const { stdout } = await execa(pythonExecutablePath, [pythonScriptPath, tempFilePath], { cwd: pythonScriptsDir, env: pythonEnv });
             invoiceJson = JSON.parse(stdout);
-            console.log(`[WORKER] Python script success for job ${job.id}. Transaction ID: ${invoiceJson.transaction_id}`);
+            console.log(`[WORKER] Python script success for job ${job.id}.`);
         } catch (pythonError) {
             console.error(`[WORKER-PYTHON-ERROR] Script failed for job ${job.id}. Stderr:`, pythonError.stderr);
             await fs.unlink(tempFilePath);
@@ -77,35 +77,36 @@ const invoiceWorker = new Worker('invoice-processing-queue', async (job) => {
         }
         
         await fs.unlink(tempFilePath);
-        const invoiceIdentifier = invoiceJson.transaction_id;
 
-        if (!invoiceIdentifier) {
-             console.log(`[WORKER-INFO] Python script returned no valid transaction_id for job ${job.id}.`);
+        const { amount, sender, recipient, transaction_id } = invoiceJson;
+        const isInvoiceValid = amount && sender?.name && recipient?.name;
+
+        if (!isInvoiceValid) {
+             console.log(`[WORKER-INFO] OCR result did not meet requirements (amount, sender, recipient) for job ${job.id}. Skipping.`);
              return;
         }
+
+        const invoiceIdentifier = transaction_id;
         
         if (groupSettings.archiving_enabled) {
-            const { amount, sender, recipient } = invoiceJson;
-            if (amount && sender?.name && recipient?.name) {
-                const receivedAt = new Date(message.timestamp * 1000);
-                const adjustedDate = new Date(receivedAt.getTime() - (2 * 60 * 60 * 1000));
-                
-                await pool.query(
-                   `INSERT INTO invoices (message_id, transaction_id, sender_name, recipient_name, pix_key, amount, source_group_jid, received_at, raw_json_data) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-                   [message.id._serialized, invoiceIdentifier, sender.name, recipient.name, recipient.pix_key, amount, chat.id._serialized, adjustedDate, JSON.stringify(invoiceJson)]
-                );
-                console.log(`[WORKER] Invoice ${invoiceIdentifier} from job ${job.id} saved to DB.`);
-            }
+            const receivedAt = new Date(message.timestamp * 1000);
+            const adjustedDate = new Date(receivedAt.getTime() - (2 * 60 * 60 * 1000));
+            
+            await pool.query(
+               `INSERT INTO invoices (message_id, transaction_id, sender_name, recipient_name, pix_key, amount, source_group_jid, received_at, raw_json_data) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+               [message.id._serialized, invoiceIdentifier, sender.name, recipient.name, recipient.pix_key, amount, chat.id._serialized, adjustedDate, JSON.stringify(invoiceJson)]
+            );
+            console.log(`[WORKER] Invoice from job ${job.id} saved to DB.`);
         }
         
         if (groupSettings.forwarding_enabled) {
-            const recipientName = invoiceJson.recipient?.name?.toLowerCase() || '';
+            const recipientName = recipient.name.toLowerCase() || '';
             if (recipientName) {
                 const [rules] = await pool.query('SELECT * FROM forwarding_rules');
                 for (const rule of rules) {
                     if (recipientName.includes(rule.trigger_keyword.toLowerCase())) {
                         const mediaToForward = new MessageMedia(media.mimetype, media.data, media.filename);
-                        await client.sendMessage(rule.destination_group_jid, mediaToForward, { caption: `Invoice from: ${chat.name}\nID: ${invoiceIdentifier}` });
+                        await client.sendMessage(rule.destination_group_jid, mediaToForward, { caption: `Invoice from: ${chat.name}\nID: ${invoiceIdentifier || 'N/A'}` });
                         console.log(`[WORKER] Forwarded media for job ${job.id}.`);
                         break;
                     }
@@ -169,7 +170,6 @@ const reconcileMissedMessages = async () => {
             if (missedMessages.length > 0) {
                 console.log(`[RECONCILER] Found ${missedMessages.length} missed message(s) in "${group.name}". Processing them now.`);
                 for (const message of missedMessages) {
-                    // Directly call the single, unified handler for each missed message
                     await handleMessage(message);
                 }
             }
@@ -188,10 +188,10 @@ const handleMessage = async (message) => {
 
         const [rows] = await pool.query('SELECT message_id FROM processed_messages WHERE message_id = ?', [messageId]);
         if (rows.length > 0) {
-            return; // Already processed, stop here.
+            return;
         }
 
-        await pool.query('INSERT INTO processed_messages (message_id) VALUES (?)', [messageId]);
+        await pool.query('INSERT INTO processed_messages (message_id) VALUES (?) ON DUPLICATE KEY UPDATE message_id=message_id', [messageId]);
 
         const chat = await message.getChat();
         if (!chat.isGroup) return;
@@ -211,9 +211,7 @@ const handleMessage = async (message) => {
             console.log(`[QUEUE] Added media from "${chat.name}" to persistent queue. Msg ID: ${messageId}`);
         }
     } catch (error) {
-        if (error.code === 'ER_DUP_ENTRY') {
-             console.log(`[DEDUPE] Race condition prevented duplicate processing for message ID: ${message.id._serialized}`);
-        } else {
+        if (error.code !== 'ER_DUP_ENTRY') {
             console.error(`[MESSAGE-HANDLER-ERROR] An error occurred:`, error);
         }
     }
@@ -240,7 +238,6 @@ const initializeWhatsApp = () => {
         console.log('[RECONCILER] Self-healing reconciler scheduled to run every 3 minutes.');
     });
     
-    // Listen to a single, unified event stream
     client.on('message', handleMessage);
     
     client.on('disconnected', (reason) => {
@@ -302,7 +299,7 @@ const broadcast = async (io, socketId, groupObjects, message) => {
             const chat = await client.getChatById(group.id);
             chat.sendStateTyping();
 
-            const typingDelay = 300;
+            const typingDelay = Math.floor(Math.random() * (2000 - 1000 + 1) + 1000);
             await new Promise(resolve => setTimeout(resolve, typingDelay));
 
             await client.sendMessage(group.id, message);
@@ -315,7 +312,7 @@ const broadcast = async (io, socketId, groupObjects, message) => {
                 message: `Successfully sent to "${group.name}".`
             });
 
-            const cooldownDelay = 1200;
+            const cooldownDelay = Math.floor(Math.random() * (6000 - 2500 + 1) + 2500);
             await new Promise(resolve => setTimeout(resolve, cooldownDelay));
 
         } catch (error) {
