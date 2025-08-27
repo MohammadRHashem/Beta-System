@@ -9,6 +9,9 @@ const http = require('http');
 const authController = require('./controllers/authController');
 const whatsappController = require('./controllers/whatsappController');
 const batchController = require('./controllers/batchController');
+const templateController = require('./controllers/templateController');
+const settingsController = require('./controllers/settingsController');
+const chavePixController = require('./controllers/chavePixController');
 
 const app = express();
 const server = http.createServer(app);
