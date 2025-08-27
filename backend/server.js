@@ -5,6 +5,7 @@ const http = require('http');
 const { Server } = require("socket.io");
 const authMiddleware = require('./middleware/authMiddleware');
 const path = require('path');
+const fs = require('fs');
 
 // --- Controllers ---
 const authController = require('./controllers/authController');
@@ -82,7 +83,7 @@ app.get('/api/invoices/export', invoiceController.exportInvoices); // Use GET fo
 
 // Serve Frontend (for production build)
 const frontendPath = path.join(__dirname, '..', 'frontend', 'dist');
-if (fsSync.existsSync(frontendPath)) {
+if (fs.existsSync(frontendPath)) {
     console.log(`Serving frontend from: ${frontendPath}`);
     app.use(express.static(frontendPath));
     app.get('*', (req, res) => {
