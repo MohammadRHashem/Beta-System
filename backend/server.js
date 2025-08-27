@@ -6,6 +6,7 @@ console.log("--- RUNNING DEBUGGING SERVER V3 ---");
 require('dotenv').config();
 const express = require('express');
 const http = require('http');
+const authController = require('./controllers/authController');
 
 const app = express();
 const server = http.createServer(app);
