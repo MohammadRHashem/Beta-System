@@ -41,7 +41,7 @@ const StatusIndicator = ({ status, onLogout }) => {
         <StatusWrapper>
             <Dot status={status} />
             <StatusText>{status}</StatusText>
-            {status === 'connected' && <LogoutButton onClick={onLogout}>Logout</LogoutButton>}
+            {/* {status === 'connected' && <LogoutButton onClick={onLogout}>Logout</LogoutButton>} */}
         </StatusWrapper>
     );
 };
