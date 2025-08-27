@@ -4,7 +4,6 @@ import Modal from './Modal';
 import { createInvoice, updateInvoice } from '../services/api';
 import { formatUTCToSaoPauloInput, getCurrentSaoPauloForInput } from '../utils/dateFormatter';
 
-
 const Form = styled.form`
     display: grid;
     grid-template-columns: 1fr 1fr;
@@ -52,12 +51,10 @@ const InvoiceModal = ({ isOpen, onClose, invoice, onSave }) => {
     const [formData, setFormData] = useState({});
 
     useEffect(() => {
-        if (isOpen) { // Only run when modal opens
+        if (isOpen) {
             if (isEditMode) {
-                // When editing, convert the UTC time from the DB to SP time for the input
                 setFormData({ ...invoice, received_at: formatUTCToSaoPauloInput(invoice.received_at) });
             } else {
-                // When creating, get the current SP time for the input
                 setFormData({
                     sender_name: '', recipient_name: '', transaction_id: '',
                     pix_key: '', amount: '', credit: '', notes: '',
@@ -74,7 +71,6 @@ const InvoiceModal = ({ isOpen, onClose, invoice, onSave }) => {
     const handleSubmit = async (e) => {
         e.preventDefault();
         
-        // Convert empty strings for numbers to null
         const payload = {
             ...formData,
             amount: formData.amount === '' ? null : formData.amount,
@@ -98,7 +94,7 @@ const InvoiceModal = ({ isOpen, onClose, invoice, onSave }) => {
             <h2>{isEditMode ? 'Edit Invoice' : 'Add Manual Entry'}</h2>
             <Form onSubmit={handleSubmit}>
                 <InputGroup>
-                    <Label>Received At</Label>
+                    <Label>Received At (São Paulo Time)</Label>
                     <Input type="datetime-local" name="received_at" value={formData.received_at || ''} onChange={handleChange} required />
                 </InputGroup>
                 <InputGroup>
@@ -115,7 +111,7 @@ const InvoiceModal = ({ isOpen, onClose, invoice, onSave }) => {
                 </InputGroup>
                 <InputGroup>
                     <Label>Amount (Debit)</Label>
-                    <Input type="number" step="0.01" name="amount" value={formData.amount || ''} onChange={handleChange} placeholder="e.g., 150.50" />
+                    <Input type="text" name="amount" value={formData.amount || ''} onChange={handleChange} placeholder="e.g., 1,250.50" />
                 </InputGroup>
                 <InputGroup>
                     <Label>Credit</Label>

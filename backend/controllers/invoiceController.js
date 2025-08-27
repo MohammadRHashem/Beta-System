@@ -1,29 +1,19 @@
 const pool = require('../config/db');
 const { recalculateBalances } = require('../utils/balanceCalculator');
 const ExcelJS = require('exceljs');
-const { utcToZonedTime, format } = require('date-fns-tz');
+// THIS IS THE SINGLE, CORRECTED REQUIRE STATEMENT
+const { zonedTimeToUtc, utcToZonedTime, format } = require('date-fns-tz');
 const path = require('path');
 const fs = require('fs');
 const { parseFormattedCurrency } = require('../utils/currencyParser');
-const { zonedTimeToUtc, utcToZonedTime, format } = require('date-fns-tz');
 
 const SAO_PAULO_TZ = 'America/Sao_Paulo';
 
-// --- GET All Invoices with Filtering, Sorting, and Pagination ---
 exports.getAllInvoices = async (req, res) => {
     const {
-        page = 1,
-        limit = 50,
-        sortBy = 'received_at',
-        sortOrder = 'desc',
-        search = '',
-        dateFrom,
-        dateTo,
-        timeFrom,
-        timeTo,
-        sourceGroup,
-        recipientName,
-        reviewStatus, // 'only_review', 'hide_review'
+        page = 1, limit = 50, sortBy = 'received_at', sortOrder = 'desc',
+        search = '', dateFrom, dateTo, timeFrom, timeTo,
+        sourceGroup, recipientName, reviewStatus,
     } = req.query;
 
     const offset = (page - 1) * limit;
@@ -34,54 +24,30 @@ exports.getAllInvoices = async (req, res) => {
     `;
     const params = [];
 
-    // Search
     if (search) {
-        query += ` AND (
-            i.transaction_id LIKE ? OR 
-            i.sender_name LIKE ? OR 
-            i.recipient_name LIKE ? OR 
-            i.pix_key LIKE ? OR 
-            i.notes LIKE ?
-        )`;
+        query += ` AND (i.transaction_id LIKE ? OR i.sender_name LIKE ? OR i.recipient_name LIKE ? OR i.pix_key LIKE ? OR i.notes LIKE ?)`;
         const searchTerm = `%${search}%`;
         params.push(searchTerm, searchTerm, searchTerm, searchTerm, searchTerm);
     }
 
-    // Date Range
     if (dateFrom) {
-        // Combine date and time, default time to start of day
         const saoPauloDateTimeString = `${dateFrom}T${timeFrom || '00:00:00'}`;
-        // Convert the São Paulo time string to a UTC Date object for the query
         const utcDate = zonedTimeToUtc(saoPauloDateTimeString, SAO_PAULO_TZ);
         query += ' AND i.received_at >= ?';
         params.push(utcDate);
     }
     if (dateTo) {
-        // Combine date and time, default time to end of day
         const saoPauloDateTimeString = `${dateTo}T${timeTo || '23:59:59'}`;
-        // Convert the São Paulo time string to a UTC Date object
         const utcDate = zonedTimeToUtc(saoPauloDateTimeString, SAO_PAULO_TZ);
         query += ' AND i.received_at <= ?';
         params.push(utcDate);
     }
 
-    // Filters
-    if (sourceGroup) {
-        query += ' AND i.source_group_jid = ?';
-        params.push(sourceGroup);
-    }
-    if (recipientName) {
-        query += ' AND i.recipient_name = ?';
-        params.push(recipientName);
-    }
-
-    // Review Status
+    if (sourceGroup) { query += ' AND i.source_group_jid = ?'; params.push(sourceGroup); }
+    if (recipientName) { query += ' AND i.recipient_name = ?'; params.push(recipientName); }
     const reviewCondition = "(i.sender_name IS NULL OR i.sender_name = '' OR i.recipient_name IS NULL OR i.recipient_name = '' OR i.amount IS NULL OR i.amount = '')";
-    if (reviewStatus === 'only_review') {
-        query += ` AND ${reviewCondition}`;
-    } else if (reviewStatus === 'hide_review') {
-        query += ` AND NOT ${reviewCondition}`;
-    }
+    if (reviewStatus === 'only_review') { query += ` AND ${reviewCondition}`; }
+    if (reviewStatus === 'hide_review') { query += ` AND NOT ${reviewCondition}`; }
 
     try {
         const countQuery = `SELECT count(*) as total ${query}`;
@@ -110,7 +76,6 @@ exports.getAllInvoices = async (req, res) => {
     }
 };
 
-// --- Get unique recipient names for filter dropdown ---
 exports.getRecipientNames = async (req, res) => {
     try {
         const [recipients] = await pool.query(
@@ -123,12 +88,9 @@ exports.getRecipientNames = async (req, res) => {
     }
 };
 
-// --- CREATE a Manual Invoice/Entry ---
 exports.createInvoice = async (req, res) => {
     const { amount, credit, notes, received_at } = req.body;
     
-    // The incoming received_at string (e.g., "2025-08-28T10:30") is São Paulo time.
-    // We convert it to a true UTC Date object before saving.
     const receivedAtUTC = received_at ? zonedTimeToUtc(received_at, SAO_PAULO_TZ) : new Date();
 
     const connection = await pool.getConnection();
@@ -148,13 +110,14 @@ exports.createInvoice = async (req, res) => {
         res.status(201).json({ message: 'Invoice created successfully', id: result.insertId });
 
     } catch (error) {
-        // ... (error handling is unchanged) ...
+        await connection.rollback();
+        console.error('Error creating invoice:', error);
+        res.status(500).json({ message: 'Failed to create invoice.' });
     } finally {
         connection.release();
     }
 };
 
-// --- UPDATE an Invoice (TIMEZONE-AWARE) ---
 exports.updateInvoice = async (req, res) => {
     const { id } = req.params;
     const {
@@ -170,7 +133,6 @@ exports.updateInvoice = async (req, res) => {
         if (!oldInvoice) { throw new Error('Invoice not found'); }
         
         const oldTimestamp = new Date(oldInvoice.received_at);
-        // Convert the incoming São Paulo time string to a UTC Date object
         const newTimestampUTC = zonedTimeToUtc(received_at, SAO_PAULO_TZ);
         
         const startRecalcTimestamp = oldTimestamp < newTimestampUTC ? oldTimestamp : newTimestampUTC;

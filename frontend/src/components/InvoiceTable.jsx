@@ -116,20 +116,6 @@ const formatNumericCurrency = (value) => {
     }).format(num);
 };
 
-const formatDate = (dateString) => {
-    if (!dateString) return '';
-    try {
-        const date = new Date(dateString);
-        return date.toLocaleString('en-GB', {
-            year: 'numeric', month: '2-digit', day: '2-digit',
-            hour: '2-digit', minute: '2-digit', second: '2-digit',
-            hour12: false
-        }).replace(',', '');
-    } catch {
-        return '';
-    }
-};
-
 const SortIcon = ({ sort, columnKey }) => {
     if (sort.sortBy !== columnKey) return <FaSort />;
     if (sort.sortOrder === 'asc') return <FaSortUp />;
@@ -192,7 +178,6 @@ const InvoiceTable = ({ invoices, loading, sort, onSortChange, onEdit, paginatio
 
                         return (
                             <Tr key={inv.id} isDuplicate={isDuplicate} isDeleted={!!inv.is_deleted}>
-                                {/* === USE THE NEW FORMATTER HERE === */}
                                 <Td>{formatToSaoPaulo(inv.received_at)}</Td>
                                 <Td>{inv.transaction_id || ''}</Td>
                                 <Td className={needsReview && !inv.sender_name ? 'review' : ''}>
