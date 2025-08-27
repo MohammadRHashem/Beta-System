@@ -2,6 +2,7 @@ import React, { useMemo } from 'react';
 import styled, { css } from 'styled-components';
 import { FaEdit, FaTrashAlt, FaEye, FaSort, FaSortUp, FaSortDown } from 'react-icons/fa';
 import { deleteInvoice } from '../services/api';
+import { formatToSaoPaulo } from '../utils/dateFormatter';
 
 const TableWrapper = styled.div`
     background: #fff;
@@ -191,7 +192,8 @@ const InvoiceTable = ({ invoices, loading, sort, onSortChange, onEdit, paginatio
 
                         return (
                             <Tr key={inv.id} isDuplicate={isDuplicate} isDeleted={!!inv.is_deleted}>
-                                <Td>{formatDate(inv.received_at)}</Td>
+                                {/* === USE THE NEW FORMATTER HERE === */}
+                                <Td>{formatToSaoPaulo(inv.received_at)}</Td>
                                 <Td>{inv.transaction_id || ''}</Td>
                                 <Td className={needsReview && !inv.sender_name ? 'review' : ''}>
                                     {inv.sender_name || (needsReview ? 'REVIEW' : '')}

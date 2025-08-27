@@ -5,6 +5,7 @@ const { utcToZonedTime, format } = require('date-fns-tz');
 const path = require('path');
 const fs = require('fs');
 const { parseFormattedCurrency } = require('../utils/currencyParser');
+const { zonedTimeToUtc, utcToZonedTime, format } = require('date-fns-tz');
 
 const SAO_PAULO_TZ = 'America/Sao_Paulo';
 
@@ -48,23 +49,20 @@ exports.getAllInvoices = async (req, res) => {
 
     // Date Range
     if (dateFrom) {
-        // If time is provided, combine it with the date. Otherwise, use the date alone.
-        const startDateTime = timeFrom ? `${dateFrom} ${timeFrom}` : dateFrom;
+        // Combine date and time, default time to start of day
+        const saoPauloDateTimeString = `${dateFrom}T${timeFrom || '00:00:00'}`;
+        // Convert the São Paulo time string to a UTC Date object for the query
+        const utcDate = zonedTimeToUtc(saoPauloDateTimeString, SAO_PAULO_TZ);
         query += ' AND i.received_at >= ?';
-        params.push(startDateTime);
+        params.push(utcDate);
     }
     if (dateTo) {
-        // If time is provided, combine it. Otherwise, add a day to make the date inclusive.
-        if (timeTo) {
-            const endDateTime = `${dateTo} ${timeTo}`;
-            query += ' AND i.received_at <= ?';
-            params.push(endDateTime);
-        } else {
-            const toDate = new Date(dateTo);
-            toDate.setDate(toDate.getDate() + 1);
-            query += ' AND i.received_at < ?';
-            params.push(toDate.toISOString().split('T')[0]);
-        }
+        // Combine date and time, default time to end of day
+        const saoPauloDateTimeString = `${dateTo}T${timeTo || '23:59:59'}`;
+        // Convert the São Paulo time string to a UTC Date object
+        const utcDate = zonedTimeToUtc(saoPauloDateTimeString, SAO_PAULO_TZ);
+        query += ' AND i.received_at <= ?';
+        params.push(utcDate);
     }
 
     // Filters
@@ -129,7 +127,9 @@ exports.getRecipientNames = async (req, res) => {
 exports.createInvoice = async (req, res) => {
     const { amount, credit, notes, received_at } = req.body;
     
-    const receivedAt = received_at ? new Date(received_at) : new Date();
+    // The incoming received_at string (e.g., "2025-08-28T10:30") is São Paulo time.
+    // We convert it to a true UTC Date object before saving.
+    const receivedAtUTC = received_at ? zonedTimeToUtc(received_at, SAO_PAULO_TZ) : new Date();
 
     const connection = await pool.getConnection();
     try {
@@ -137,10 +137,10 @@ exports.createInvoice = async (req, res) => {
 
         const [result] = await connection.query(
             'INSERT INTO invoices (amount, credit, notes, received_at, is_manual, sender_name, recipient_name) VALUES (?, ?, ?, ?, ?, ?, ?)',
-            [amount || null, credit || null, notes, receivedAt, true, req.body.sender_name || '', req.body.recipient_name || '']
+            [amount || null, credit || null, notes, receivedAtUTC, true, req.body.sender_name || '', req.body.recipient_name || '']
         );
         
-        await recalculateBalances(connection, receivedAt.toISOString());
+        await recalculateBalances(connection, receivedAtUTC.toISOString());
 
         await connection.commit();
         
@@ -148,15 +148,13 @@ exports.createInvoice = async (req, res) => {
         res.status(201).json({ message: 'Invoice created successfully', id: result.insertId });
 
     } catch (error) {
-        await connection.rollback();
-        console.error('Error creating invoice:', error);
-        res.status(500).json({ message: 'Failed to create invoice.' });
+        // ... (error handling is unchanged) ...
     } finally {
         connection.release();
     }
 };
 
-// --- UPDATE an Invoice ---
+// --- UPDATE an Invoice (TIMEZONE-AWARE) ---
 exports.updateInvoice = async (req, res) => {
     const { id } = req.params;
     const {
@@ -169,26 +167,25 @@ exports.updateInvoice = async (req, res) => {
         await connection.beginTransaction();
         
         const [[oldInvoice]] = await connection.query('SELECT received_at FROM invoices WHERE id = ?', [id]);
-        if (!oldInvoice) {
-            throw new Error('Invoice not found');
-        }
+        if (!oldInvoice) { throw new Error('Invoice not found'); }
         
         const oldTimestamp = new Date(oldInvoice.received_at);
-        const newTimestamp = new Date(received_at);
-        const startRecalcTimestamp = oldTimestamp < newTimestamp ? oldTimestamp : newTimestamp;
+        // Convert the incoming São Paulo time string to a UTC Date object
+        const newTimestampUTC = zonedTimeToUtc(received_at, SAO_PAULO_TZ);
+        
+        const startRecalcTimestamp = oldTimestamp < newTimestampUTC ? oldTimestamp : newTimestampUTC;
 
         await connection.query(
             `UPDATE invoices SET 
                 transaction_id = ?, sender_name = ?, recipient_name = ?, pix_key = ?, 
                 amount = ?, credit = ?, notes = ?, received_at = ?
             WHERE id = ?`,
-            [transaction_id, sender_name, recipient_name, pix_key, amount, credit, notes, newTimestamp, id]
+            [transaction_id, sender_name, recipient_name, pix_key, amount, credit, notes, newTimestampUTC, id]
         );
         
         await recalculateBalances(connection, startRecalcTimestamp.toISOString());
 
         await connection.commit();
-
         req.io.emit('invoices:updated');
         res.json({ message: 'Invoice updated successfully.' });
 

@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import styled from 'styled-components';
 import Modal from './Modal';
 import { createInvoice, updateInvoice } from '../services/api';
+import { formatUTCToSaoPauloInput, getCurrentSaoPauloForInput } from '../utils/dateFormatter';
+
 
 const Form = styled.form`
     display: grid;
@@ -50,17 +52,18 @@ const InvoiceModal = ({ isOpen, onClose, invoice, onSave }) => {
     const [formData, setFormData] = useState({});
 
     useEffect(() => {
-        if (isEditMode) {
-            // Format received_at for datetime-local input
-            const receivedAt = invoice.received_at ? new Date(invoice.received_at).toISOString().slice(0, 16) : '';
-            setFormData({ ...invoice, received_at: receivedAt });
-        } else {
-            // Default for new entry
-            setFormData({
-                sender_name: '', recipient_name: '', transaction_id: '',
-                pix_key: '', amount: '', credit: '', notes: '',
-                received_at: new Date().toISOString().slice(0, 16)
-            });
+        if (isOpen) { // Only run when modal opens
+            if (isEditMode) {
+                // When editing, convert the UTC time from the DB to SP time for the input
+                setFormData({ ...invoice, received_at: formatUTCToSaoPauloInput(invoice.received_at) });
+            } else {
+                // When creating, get the current SP time for the input
+                setFormData({
+                    sender_name: '', recipient_name: '', transaction_id: '',
+                    pix_key: '', amount: '', credit: '', notes: '',
+                    received_at: getCurrentSaoPauloForInput()
+                });
+            }
         }
     }, [invoice, isEditMode, isOpen]);
 
