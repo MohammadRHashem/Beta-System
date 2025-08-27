@@ -3,7 +3,7 @@ prompt_2 = f"""
     Extract and return the following fields:
 
     - transaction_id: The ID looks like this: "E18189547202502171718GVpGtoyM2R3". It can include digits and uppercase/lowercase letters. However, be VERY careful: Return the ID **exactly as shown**. If not found, fallback to transaction_number.
-    - amount: The total transaction amount. **CRITICAL FORMATTING RULE**: The amount MUST be a string formatted with a comma (,) as the thousands separator and a period (.) as the decimal separator, with exactly two digits after decimal. For example: if amount is "four thousands two hundreds (4,200 or 4.200 or 4.200,00)" it should be "4,200.00" always in this format. same for "three hundreds and three (303 or 303,00)" it should be "303.00".
+    - amount: The total transaction amount (with no currency symbol). Example "6.790,00", display it as "6,790.00" in the JSON output. "357,00" should be displayed as "357.00".
     - sender: Information about the sender (issuer) of the payment.
         - name: The name of the sender (business or individual).
     - recipient: Information about the recipient (receiver) of the payment.
