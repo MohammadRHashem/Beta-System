@@ -1,0 +1,225 @@
+import React, { useMemo } from 'react';
+import styled, { css } from 'styled-components';
+import { FaEdit, FaTrashAlt, FaEye, FaSort, FaSortUp, FaSortDown } from 'react-icons/fa';
+import { deleteInvoice } from '../services/api';
+
+const TableWrapper = styled.div`
+    background: #fff;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    overflow-x: auto;
+`;
+
+const Table = styled.table`
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.9rem;
+`;
+
+const Th = styled.th`
+    padding: 0.8rem 1rem;
+    text-align: left;
+    background-color: ${({ theme }) => theme.background};
+    font-weight: 600;
+    cursor: ${({ sortable }) => sortable ? 'pointer' : 'default'};
+    white-space: nowrap;
+
+    &:hover {
+        background-color: ${({ theme, sortable }) => sortable && theme.border};
+    }
+`;
+
+const Tr = styled.tr`
+    border-bottom: 1px solid ${({ theme }) => theme.border};
+
+    &:last-child {
+        border-bottom: none;
+    }
+
+    ${({ isDuplicate }) => isDuplicate && css`
+        background-color: #fff0f0; /* Light Red */
+    `}
+    
+    ${({ isDeleted }) => isDeleted && css`
+        background-color: #f8f9fa;
+        color: #adb5bd;
+        text-decoration: line-through;
+    `}
+`;
+
+const Td = styled.td`
+    padding: 0.8rem 1rem;
+    vertical-align: middle;
+
+    &.actions {
+        display: flex;
+        gap: 1.2rem;
+        font-size: 1rem;
+        white-space: nowrap;
+        
+        svg, a {
+            cursor: pointer;
+            color: ${({ theme }) => theme.lightText};
+            &:hover { color: ${({ theme }) => theme.primary}; }
+        }
+    }
+    
+    &.currency {
+        text-align: right;
+        font-family: 'Courier New', Courier, monospace;
+        font-weight: 600;
+        white-space: nowrap;
+    }
+
+    &.review {
+        color: ${({ theme }) => theme.error};
+        font-weight: bold;
+    }
+`;
+
+const PaginationContainer = styled.div`
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1rem;
+    background: #fff;
+    border-top: 1px solid ${({ theme }) => theme.border};
+    border-radius: 0 0 8px 8px;
+`;
+
+const PageButton = styled.button`
+    padding: 0.5rem 1rem;
+    margin: 0 0.25rem;
+    border: 1px solid ${({ theme }) => theme.border};
+    background-color: ${({ disabled }) => disabled ? '#f8f9fa' : 'white'};
+    cursor: ${({ disabled }) => disabled ? 'not-allowed' : 'pointer'};
+    border-radius: 4px;
+    &:hover:not(:disabled) {
+        background-color: ${({ theme }) => theme.background};
+    }
+`;
+
+// Formats numeric values like credit and balance
+const formatNumericCurrency = (value) => {
+    if (value === null || value === undefined) return '';
+    const num = Number(value);
+    if (isNaN(num)) return '';
+    return new Intl.NumberFormat('en-US', {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+    }).format(num);
+};
+
+const formatDate = (dateString) => {
+    if (!dateString) return '';
+    try {
+        const date = new Date(dateString);
+        return date.toLocaleString('en-GB', {
+            year: 'numeric', month: '2-digit', day: '2-digit',
+            hour: '2-digit', minute: '2-digit', second: '2-digit',
+            hour12: false
+        }).replace(',', '');
+    } catch {
+        return '';
+    }
+};
+
+const SortIcon = ({ sort, columnKey }) => {
+    if (sort.sortBy !== columnKey) return <FaSort />;
+    if (sort.sortOrder === 'asc') return <FaSortUp />;
+    return <FaSortDown />;
+};
+
+const InvoiceTable = ({ invoices, loading, sort, onSortChange, onEdit, pagination, setPagination }) => {
+
+    const transactionIdCounts = useMemo(() => {
+        const counts = {};
+        invoices.forEach(inv => {
+            if (inv.transaction_id && !inv.is_manual) {
+                counts[inv.transaction_id] = (counts[inv.transaction_id] || 0) + 1;
+            }
+        });
+        return counts;
+    }, [invoices]);
+
+    const handleDelete = async (id) => {
+        if (window.confirm('Are you sure you want to permanently delete this invoice? This action cannot be undone.')) {
+            try {
+                await deleteInvoice(id);
+                // Refetch will be triggered by WebSocket event from the parent
+            } catch (error) {
+                alert('Failed to delete invoice.');
+            }
+        }
+    };
+    
+    const handleSort = (columnKey) => {
+        const isAsc = sort.sortBy === columnKey && sort.sortOrder === 'asc';
+        onSortChange({ sortBy: columnKey, sortOrder: isAsc ? 'desc' : 'asc' });
+    };
+
+    if (loading) return <p>Loading invoices...</p>;
+    if (!invoices.length) return <p>No invoices found for the selected criteria.</p>;
+
+    return (
+        <>
+        <TableWrapper>
+            <Table>
+                <thead>
+                    <tr>
+                        <Th sortable onClick={() => handleSort('received_at')}>
+                            Received At <SortIcon sort={sort} columnKey="received_at" />
+                        </Th>
+                        <Th>Transaction ID</Th>
+                        <Th>Sender</Th>
+                        <Th>Recipient</Th>
+                        <Th>Source Group</Th>
+                        <Th className="currency">Amount (Debit)</Th>
+                        <Th className="currency">Credit</Th>
+                        <Th className="currency">Balance</Th>
+                        <Th>Actions</Th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {invoices.map(inv => {
+                        const isDuplicate = inv.transaction_id && transactionIdCounts[inv.transaction_id] > 1;
+                        const needsReview = !inv.is_manual && (!inv.sender_name || !inv.recipient_name || !inv.amount);
+
+                        return (
+                            <Tr key={inv.id} isDuplicate={isDuplicate} isDeleted={inv.is_deleted}>
+                                <Td>{formatDate(inv.received_at)}</Td>
+                                <Td>{inv.transaction_id || ''}</Td>
+                                <Td>{inv.sender_name || ''}</Td>
+                                <Td>{inv.recipient_name || ''}</Td>
+                                <Td>{inv.source_group_name || inv.source_group_jid}</Td>
+                                <Td className={`currency ${needsReview ? 'review' : ''}`}>
+                                    {needsReview ? 'REVIEW' : (inv.amount || '')}
+                                </Td>
+                                <Td className="currency">{formatNumericCurrency(inv.credit)}</Td>
+                                <Td className="currency">{formatNumericCurrency(inv.balance)}</Td>
+                                <Td className="actions">
+                                    {inv.media_path && !inv.is_deleted && 
+                                        <a href={`/api/invoices/media/${inv.id}`} target="_blank" rel="noopener noreferrer" title="View Media">
+                                            <FaEye />
+                                        </a>}
+                                    <FaEdit onClick={() => onEdit(inv)} title="Edit" />
+                                    <FaTrashAlt onClick={() => handleDelete(inv.id)} title="Delete" />
+                                </Td>
+                            </Tr>
+                        );
+                    })}
+                </tbody>
+            </Table>
+        </TableWrapper>
+        <PaginationContainer>
+            <span>Page {pagination.currentPage} of {pagination.totalPages} ({pagination.totalRecords} records)</span>
+            <div>
+                 <PageButton onClick={() => setPagination(p => ({...p, page: p.page - 1}))} disabled={pagination.currentPage <= 1}>Previous</PageButton>
+                 <PageButton onClick={() => setPagination(p => ({...p, page: p.page + 1}))} disabled={pagination.currentPage >= pagination.totalPages}>Next</PageButton>
+            </div>
+        </PaginationContainer>
+        </>
+    );
+};
+
+export default InvoiceTable;

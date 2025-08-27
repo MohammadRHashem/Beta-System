@@ -4,7 +4,9 @@ const cors = require('cors');
 const http = require('http');
 const { Server } = require("socket.io");
 const authMiddleware = require('./middleware/authMiddleware');
+const path = require('path');
 
+// --- Controllers ---
 const authController = require('./controllers/authController');
 const whatsappController = require('./controllers/whatsappController');
 const batchController = require('./controllers/batchController');
@@ -12,8 +14,7 @@ const templateController = require('./controllers/templateController');
 const settingsController = require('./controllers/settingsController');
 const chavePixController = require('./controllers/chavePixController');
 const abbreviationController = require('./controllers/abbreviationController');
-
-
+const invoiceController = require('./controllers/invoiceController'); // New
 
 const app = express();
 const server = http.createServer(app);
@@ -24,54 +25,77 @@ app.use(express.json());
 app.use((req, res, next) => { req.io = io; next(); });
 
 io.on('connection', (socket) => {
-    console.log(`[Socket.io] A user connected with ID: ${socket.id}`);
-    socket.on('disconnect', () => { console.log(`[Socket.io] User disconnected with ID: ${socket.id}`); });
+    console.log(`[Socket.io] User connected: ${socket.id}`);
+    socket.on('disconnect', () => { console.log(`[Socket.io] User disconnected: ${socket.id}`); });
 });
 
-// --- PUBLIC AUTHENTICATION ROUTES ---
+// --- PUBLIC AUTH ROUTES ---
 app.post('/api/auth/register', authController.register);
 app.post('/api/auth/login', authController.login);
 
-// --- PROTECTED WHATSAPP ROUTES ---
-// Everything below this line requires a valid token
-app.get('/api/status', authMiddleware, whatsappController.getStatus);
-app.post('/api/logout', authMiddleware, whatsappController.logout);
-app.get('/api/groups', authMiddleware, whatsappController.getGroups);
-app.post('/api/groups/sync', authMiddleware, whatsappController.syncGroups);
-app.post('/api/broadcast', authMiddleware, whatsappController.broadcastMessage);
+// --- PROTECTED ROUTES ---
+app.use(authMiddleware); // Apply middleware to all routes below
 
-// --- PROTECTED BATCH & TEMPLATE ROUTES ---
-app.get('/api/batches', authMiddleware, batchController.getAllBatches);
-app.get('/api/batches/:id', authMiddleware, batchController.getGroupIdsByBatch);
-app.post('/api/batches', authMiddleware, batchController.createBatch);
-app.put('/api/batches/:id', authMiddleware, batchController.updateBatch);
-app.delete('/api/batches/:id', authMiddleware, batchController.deleteBatch);
-app.get('/api/templates', authMiddleware, templateController.getAllTemplates);
-app.post('/api/templates', authMiddleware, templateController.createTemplate);
-app.put('/api/templates/:id', authMiddleware, templateController.updateTemplate);
-app.delete('/api/templates/:id', authMiddleware, templateController.deleteTemplate);
+// WhatsApp & Broadcasting
+app.get('/api/status', whatsappController.getStatus);
+app.post('/api/logout', whatsappController.logout);
+app.get('/api/groups', whatsappController.getGroups);
+app.post('/api/groups/sync', whatsappController.syncGroups);
+app.post('/api/broadcast', whatsappController.broadcastMessage);
 
-// --- PROTECTED SETTINGS ROUTES ---
-app.get('/api/settings/forwarding', authMiddleware, settingsController.getForwardingRules);
-app.post('/api/settings/forwarding', authMiddleware, settingsController.createForwardingRule);
-app.get('/api/settings/groups', authMiddleware, settingsController.getGroupSettings);
-app.post('/api/settings/groups', authMiddleware, settingsController.updateGroupSetting);
-app.put('/api/settings/forwarding/:id', authMiddleware, settingsController.updateForwardingRule);
-app.delete('/api/settings/forwarding/:id', authMiddleware, settingsController.deleteForwardingRule);
+// Batches & Templates
+app.get('/api/batches', batchController.getAllBatches);
+app.get('/api/batches/:id', batchController.getGroupIdsByBatch);
+app.post('/api/batches', batchController.createBatch);
+app.put('/api/batches/:id', batchController.updateBatch);
+app.delete('/api/batches/:id', batchController.deleteBatch);
+app.get('/api/templates', templateController.getAllTemplates);
+app.post('/api/templates', templateController.createTemplate);
+app.put('/api/templates/:id', templateController.updateTemplate);
+app.delete('/api/templates/:id', templateController.deleteTemplate);
 
-app.get('/api/chave-pix', authMiddleware, chavePixController.getAllKeys);
-app.post('/api/chave-pix', authMiddleware, chavePixController.createKey);
-app.put('/api/chave-pix/:id', authMiddleware, chavePixController.updateKey);
-app.delete('/api/chave-pix/:id', authMiddleware, chavePixController.deleteKey);
+// Settings, PIX, Abbreviations
+app.get('/api/settings/forwarding', settingsController.getForwardingRules);
+app.post('/api/settings/forwarding', settingsController.createForwardingRule);
+app.put('/api/settings/forwarding/:id', settingsController.updateForwardingRule);
+app.delete('/api/settings/forwarding/:id', settingsController.deleteForwardingRule);
+app.get('/api/settings/groups', settingsController.getGroupSettings);
+app.post('/api/settings/groups', settingsController.updateGroupSetting);
+app.get('/api/chave-pix', chavePixController.getAllKeys);
+app.post('/api/chave-pix', chavePixController.createKey);
+app.put('/api/chave-pix/:id', chavePixController.updateKey);
+app.delete('/api/chave-pix/:id', chavePixController.deleteKey);
+app.get('/api/abbreviations', abbreviationController.getAll);
+app.post('/api/abbreviations', abbreviationController.create);
+app.put('/api/abbreviations/:id', abbreviationController.update);
+app.delete('/api/abbreviations/:id', abbreviationController.delete);
 
-app.get('/api/abbreviations', authMiddleware, abbreviationController.getAll);
-app.post('/api/abbreviations', authMiddleware, abbreviationController.create);
-app.put('/api/abbreviations/:id', authMiddleware, abbreviationController.update);
-app.delete('/api/abbreviations/:id', authMiddleware, abbreviationController.delete);
+// --- NEW INVOICE ROUTES ---
+app.get('/api/invoices', invoiceController.getAllInvoices);
+app.get('/api/invoices/recipients', invoiceController.getRecipientNames);
+app.post('/api/invoices', invoiceController.createInvoice);
+app.put('/api/invoices/:id', invoiceController.updateInvoice);
+app.delete('/api/invoices/:id', invoiceController.deleteInvoice);
+app.get('/api/invoices/media/:id', invoiceController.getInvoiceMedia);
+app.get('/api/invoices/export', invoiceController.exportInvoices); // Use GET for easy link access
+
+
+// Serve Frontend (for production build)
+const frontendPath = path.join(__dirname, '..', 'frontend', 'dist');
+if (fsSync.existsSync(frontendPath)) {
+    console.log(`Serving frontend from: ${frontendPath}`);
+    app.use(express.static(frontendPath));
+    app.get('*', (req, res) => {
+        res.sendFile(path.resolve(frontendPath, 'index.html'));
+    });
+}
+
 
 const HOST = '0.0.0.0';
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, HOST, () => {
     console.log(`Server is running on http://${HOST}:${PORT}`);
-    whatsappController.init();
+    // Pass the io instance to the whatsapp service
+    const whatsappService = require('./services/whatsappService');
+    whatsappService.init(io);
 });

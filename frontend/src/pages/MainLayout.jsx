@@ -12,6 +12,7 @@ import AiForwardingPage from "./AiForwardingPage";
 import GroupSettingsPage from "./GroupSettingsPage";
 import ChavePixPage from "./ChavePixPage";
 import AbbreviationsPage from "./AbbreviationsPage";
+import InvoicesPage from "./InvoicesPage";
 
 const AppLayout = styled.div`
   display: flex;
@@ -68,31 +69,35 @@ const QRContainer = styled.div`
 const API_URL = "https://beta.hashemlabs.dev";
 
 const MainLayout = () => {
-  const [status, setStatus] = useState("disconnected");
-  const [qrCode, setQrCode] = useState(null);
-  const [allGroups, setAllGroups] = useState([]);
+    const [status, setStatus] = useState("disconnected");
+    const [qrCode, setQrCode] = useState(null);
+    const [allGroups, setAllGroups] = useState([]);
 
-  const location = useLocation();
-  const { logout } = useAuth();
-  const pageName =
-    location.pathname.replace("/", "").replace(/-/g, " ") || "broadcaster";
+    const location = useLocation();
+    const { logout } = useAuth();
+    const pageName = location.pathname.replace("/", "").replace(/-/g, " ") || "invoices";
 
-  const socket = useRef(null);
-  useEffect(() => {
-    socket.current = io(API_URL, {
-      path: "/socket.io/",
-      transports: ["websocket", "polling"],
-    });
-    socket.current.on("connect", () => {
-      console.log("Connected to WebSocket server with ID:", socket.current.id);
-    });
-    socket.current.on("connect_error", (err) =>
-      console.error("WebSocket connection error:", err.message)
-    );
-    return () => {
-      socket.current.disconnect();
-    };
-  }, []);
+    const socket = useRef(null);
+    useEffect(() => {
+        const token = localStorage.getItem('authToken');
+        if (!socket.current && token) {
+            socket.current = io(API_URL, {
+                path: "/socket.io/",
+                transports: ["websocket", "polling"],
+                auth: { token }
+            });
+            socket.current.on("connect", () => {
+                console.log("Connected to WebSocket server:", socket.current.id);
+            });
+            socket.current.on("connect_error", (err) =>
+                console.error("WebSocket connection error:", err.message)
+            );
+        }
+        return () => {
+            socket.current?.disconnect();
+            socket.current = null;
+        };
+    }, []);
 
   const fetchAllGroupsForConfig = useCallback(async () => {
     try {
@@ -121,10 +126,10 @@ const MainLayout = () => {
   }, [allGroups.length, fetchAllGroupsForConfig]);
 
   useEffect(() => {
-    checkStatus();
-    const interval = setInterval(checkStatus, 5000);
-    return () => clearInterval(interval);
-  }, [checkStatus]);
+        checkStatus();
+        const interval = setInterval(checkStatus, 5000);
+        return () => clearInterval(interval);
+    }, [checkStatus]);
 
   const handleLogout = async () => {
     try {
@@ -137,47 +142,46 @@ const MainLayout = () => {
   };
 
   return (
-    <AppLayout>
-      <Sidebar />
-      <ContentArea>
-        <Header>
-          <PageTitle>{pageName}</PageTitle>
-          <StatusIndicator status={status} onLogout={handleLogout} />
-        </Header>
-        <PageContent>
-          {status === "qr" ? (
-            <QRContainer>
-              <h2>Scan to Connect WhatsApp API...</h2>
-              {qrCode && <img src={qrCode} alt="QR Code" />}
-            </QRContainer>
-          ) : (
-            <Routes>
-              <Route
-                path="/broadcaster"
-                element={
-                  <BroadcasterPage
-                    allGroups={allGroups}
-                    socket={socket.current}
-                  />
-                }
-              />
-              <Route path="/abbreviations" element={<AbbreviationsPage />} />
-              <Route
-                path="/ai-forwarding"
-                element={<AiForwardingPage allGroups={allGroups} />}
-              />
-              <Route path="/chave-pix" element={<ChavePixPage />} />
-              <Route path="/group-settings" element={<GroupSettingsPage />} />
-              <Route
-                path="*"
-                element={<Navigate to="/broadcaster" replace />}
-              />
-            </Routes>
-          )}
-        </PageContent>
-      </ContentArea>
-    </AppLayout>
-  );
+        <AppLayout>
+            <Sidebar />
+            <ContentArea>
+                <Header>
+                    <PageTitle>{pageName}</PageTitle>
+                    <StatusIndicator status={status} onLogout={handleLogout} />
+                </Header>
+                <PageContent>
+                    {status === "qr" ? (
+                        <QRContainer>
+                            <h2>Scan to Connect WhatsApp...</h2>
+                            {qrCode && <img src={qrCode} alt="QR Code" />}
+                        </QRContainer>
+                    ) : (
+                        <Routes>
+                            <Route
+                                path="/invoices"
+                                element={<InvoicesPage allGroups={allGroups} socket={socket.current} />}
+                            />
+                            <Route
+                                path="/broadcaster"
+                                element={<BroadcasterPage allGroups={allGroups} />}
+                            />
+                            <Route path="/abbreviations" element={<AbbreviationsPage />} />
+                            <Route
+                                path="/ai-forwarding"
+                                element={<AiForwardingPage allGroups={allGroups} />}
+                            />
+                            <Route path="/chave-pix" element={<ChavePixPage />} />
+                            <Route
+                                path="*"
+                                element={<Navigate to="/invoices" replace />}
+                            />
+                            <Route path="/group-settings" element={<GroupSettingsPage />} />
+                        </Routes>
+                    )}
+                </PageContent>
+            </ContentArea>
+        </AppLayout>
+    );
 };
 
 export default MainLayout;

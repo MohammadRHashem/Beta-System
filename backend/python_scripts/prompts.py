@@ -3,7 +3,7 @@ prompt_2 = f"""
     Extract and return the following fields:
 
     - transaction_id: The ID looks like this: "E18189547202502171718GVpGtoyM2R3". It can include digits and uppercase/lowercase letters. However, be VERY careful: Return the ID **exactly as shown**. If not found, fallback to transaction_number.
-    - amount: The total transaction amount in the specified currency.
+    - amount: The total transaction amount. **CRITICAL FORMATTING RULE**: The amount MUST be a string formatted with a comma (,) as the thousands separator and a period (.) as the decimal separator, with exactly two decimal places. For example: "4,200.00" or "303.00".
     - sender: Information about the sender (issuer) of the payment.
         - name: The name of the sender (business or individual).
     - recipient: Information about the recipient (receiver) of the payment.
@@ -50,7 +50,7 @@ prompt_2 = f"""
       "payment_method": "Pix",
       "invoice_date": "17/5/2025",
       "invoice_time": "14:19:17",
-      "amount": "6.790,00",
+      "amount": "6,790.00",
       "currency": "R$",
       "sender": {{
         "name": "M.DE PONTES CLEMENTINO CELULARES",
