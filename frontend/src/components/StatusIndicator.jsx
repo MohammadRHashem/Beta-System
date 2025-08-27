@@ -36,7 +36,7 @@ const LogoutButton = styled.button`
   }
 `;
 
-const StatusIndicator = ({ status, onLogout }) => {
+const StatusIndicator = ({ status }) => {
     return (
         <StatusWrapper>
             <Dot status={status} />
