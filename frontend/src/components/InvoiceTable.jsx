@@ -37,14 +37,18 @@ const Tr = styled.tr`
     }
 
     ${({ isDuplicate }) => isDuplicate && css`
-        background-color: #fff0f0; /* Light Red */
+        background-color: #fff0f0; /* Light Red for duplicates */
     `}
     
+    /* ================================================================= */
+    /* == THIS IS THE CSS RULE FOR DELETED INVOICES == */
+    /* It applies a gray background, lighter text, and a strikethrough. */
     ${({ isDeleted }) => isDeleted && css`
         background-color: #f8f9fa;
         color: #adb5bd;
         text-decoration: line-through;
     `}
+    /* ================================================================= */
 `;
 
 const Td = styled.td`
@@ -183,17 +187,29 @@ const InvoiceTable = ({ invoices, loading, sort, onSortChange, onEdit, paginatio
                 <tbody>
                     {invoices.map(inv => {
                         const isDuplicate = inv.transaction_id && transactionIdCounts[inv.transaction_id] > 1;
+
+                        // =================================================================
+                        // == THIS IS THE MODIFIED "REVIEW" LOGIC ==
+                        // It now correctly flags an invoice for review if the sender is missing,
+                        // even though the backend will still process it.
                         const needsReview = !inv.is_manual && (!inv.sender_name || !inv.recipient_name || !inv.amount);
+                        // =================================================================
 
                         return (
-                            <Tr key={inv.id} isDuplicate={isDuplicate} isDeleted={inv.is_deleted}>
+                            // The `isDeleted` prop receives the value from inv.is_deleted (0 or 1).
+                            // The styled-component `Tr` will apply the styles when this value is 1 (truthy).
+                            <Tr key={inv.id} isDuplicate={isDuplicate} isDeleted={!!inv.is_deleted}>
                                 <Td>{formatDate(inv.received_at)}</Td>
                                 <Td>{inv.transaction_id || ''}</Td>
-                                <Td>{inv.sender_name || ''}</Td>
-                                <Td>{inv.recipient_name || ''}</Td>
+                                <Td className={needsReview && !inv.sender_name ? 'review' : ''}>
+                                    {inv.sender_name || (needsReview ? 'REVIEW' : '')}
+                                </Td>
+                                <Td className={needsReview && !inv.recipient_name ? 'review' : ''}>
+                                    {inv.recipient_name || (needsReview ? 'REVIEW' : '')}
+                                </Td>
                                 <Td>{inv.source_group_name || inv.source_group_jid}</Td>
-                                <Td className={`currency ${needsReview ? 'review' : ''}`}>
-                                    {needsReview ? 'REVIEW' : (inv.amount || '')}
+                                <Td className={`currency ${needsReview && !inv.amount ? 'review' : ''}`}>
+                                    {inv.amount || (needsReview ? 'REVIEW' : '')}
                                 </Td>
                                 <Td className="currency">{formatNumericCurrency(inv.credit)}</Td>
                                 <Td className="currency">{formatNumericCurrency(inv.balance)}</Td>

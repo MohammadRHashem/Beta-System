@@ -87,10 +87,12 @@ const invoiceWorker = new Worker('invoice-processing-queue', async (job) => {
         }
 
         const { amount, sender, recipient, transaction_id } = invoiceJson;
-        const isInvoiceValid = amount && sender?.name && recipient?.name;
+        
+        // Relaxed validation: We now require only amount and recipient name to process the invoice.
+        const isInvoiceValid = amount && recipient?.name;
 
         if (!isInvoiceValid) {
-             console.log(`[WORKER-INFO] OCR result invalid for job ${job.id}. Skipping.`);
+             console.log(`[WORKER-INFO] OCR result did not meet requirements (amount, recipient) for job ${job.id}. Skipping.`);
              await fs.unlink(tempFilePath);
              await connection.commit();
              return;
@@ -105,11 +107,10 @@ const invoiceWorker = new Worker('invoice-processing-queue', async (job) => {
 
             const receivedAt = new Date(message.timestamp * 1000);
 
-            // Save the 'amount' string directly from the AI, as requested.
             await connection.query(
                `INSERT INTO invoices (message_id, transaction_id, sender_name, recipient_name, pix_key, amount, source_group_jid, received_at, raw_json_data, media_path) 
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-               [messageId, transaction_id, sender.name, recipient.name, recipient.pix_key, amount, chat.id._serialized, receivedAt, JSON.stringify(invoiceJson), finalMediaPath]
+               [messageId, transaction_id, sender?.name, recipient.name, recipient.pix_key, amount, chat.id._serialized, receivedAt, JSON.stringify(invoiceJson), finalMediaPath]
             );
 
             await recalculateBalances(connection, receivedAt.toISOString());
@@ -235,7 +236,8 @@ const handleMessage = async (message) => {
 };
 
 const handleMessageRevoke = async (message, revoked_msg) => {
-    const messageId = revoked_msg ? revoked_msg.id._serialized : null;
+    // 'revoked_msg' can be null if the message is old, so we also check 'message'
+    const messageId = revoked_msg ? revoked_msg.id._serialized : message.id._serialized;
     if (!messageId) return;
 
     console.log(`[DELETE] Message ${messageId} was deleted.`);
@@ -260,7 +262,24 @@ const handleMessageRevoke = async (message, revoked_msg) => {
 const initializeWhatsApp = (socketIoInstance) => {
     io = socketIoInstance;
     console.log('Initializing WhatsApp client...');
-    client = new Client({ authStrategy: new LocalAuth({ dataPath: 'wwebjs_sessions' }), puppeteer: { headless: true, args: [ '--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-accelerated-2d-canvas', '--no-first-run', '--no-zygote', '--single-process', '--disable-gpu' ], }, qrMaxRetries: 10, authTimeoutMs: 0 });
+    client = new Client({ 
+        authStrategy: new LocalAuth({ dataPath: 'wwebjs_sessions' }), 
+        puppeteer: { 
+            headless: true, 
+            args: [ 
+                '--no-sandbox', 
+                '--disable-setuid-sandbox', 
+                '--disable-dev-shm-usage', 
+                '--disable-accelerated-2d-canvas', 
+                '--no-first-run', 
+                '--no-zygote', 
+                '--single-process', // Maybe this is needed on some servers
+                '--disable-gpu' 
+            ], 
+        }, 
+        qrMaxRetries: 10, 
+        authTimeoutMs: 0 
+    });
     
     client.on('qr', async (qr) => {
         console.log('QR code generated.');

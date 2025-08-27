@@ -8,7 +8,8 @@ prompt_2 = f"""
         - name: The name of the sender (business or individual).
     - recipient: Information about the recipient (receiver) of the payment.
         - name: The name of the recipient (business or individual).
-    sometimes th sender and reciever can be swapped, if you find "Trkbit" or "Trkbit Tecnologia E Informacao Ltda" or "TRKBIT TECNOLOGIA E INFORMACAO LTDA	", as sender name, regardless of case sensitivity, it is the recipient.
+    sometimes the sender and reciever can be swapped, if you find "Trkbit" or "Trkbit Tecnologia E Informacao Ltda" or "TRKBIT TECNOLOGIA E INFORMACAO LTDA	", as sender name, regardless of case sensitivity, it is the recipient.
+    if you find "trkbit" (regardless of case sensitivity) in the image in any place, and you cannot find the recipient name, set recipient name to "TRKBIT".
     - additional_data: Any extra data related to the transaction.
     - image_type: Classify the image into one of the following types based on its visual context:
         - replay: A photo of another screen (like a phone or tablet) displaying a receipt only. Look for indicators such as phone, screen borders, hands holding a device, or double screen brightness.
