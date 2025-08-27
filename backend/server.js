@@ -5,7 +5,7 @@ const http = require('http');
 const { Server } = require("socket.io");
 const authMiddleware = require('./middleware/authMiddleware');
 const path = require('path');
-const fs = require('fs'); // Correctly import the 'fs' module
+const fs = require('fs'); // Import the 'fs' module
 
 // --- Controllers ---
 const authController = require('./controllers/authController');
@@ -46,64 +46,43 @@ app.post('/api/groups/sync', whatsappController.syncGroups);
 app.post('/api/broadcast', whatsappController.broadcastMessage);
 
 // --- Batches ---
-app.route('/api/batches')
-    .get(batchController.getAllBatches)
-    .post(batchController.createBatch);
-
-app.route('/api/batches/:id')
-    .get(batchController.getGroupIdsByBatch)
-    .put(batchController.updateBatch)
-    .delete(batchController.deleteBatch);
+app.get('/api/batches', batchController.getAllBatches);
+app.post('/api/batches', batchController.createBatch);
+app.get('/api/batches/:id', batchController.getGroupIdsByBatch);
+app.put('/api/batches/:id', batchController.updateBatch);
+app.delete('/api/batches/:id', batchController.deleteBatch);
 
 // --- Templates ---
-app.route('/api/templates')
-    .get(templateController.getAllTemplates)
-    .post(templateController.createTemplate);
-
-app.route('/api/templates/:id')
-    .put(templateController.updateTemplate)
-    .delete(templateController.deleteTemplate);
+app.get('/api/templates', templateController.getAllTemplates);
+app.post('/api/templates', templateController.createTemplate);
+app.put('/api/templates/:id', templateController.updateTemplate);
+app.delete('/api/templates/:id', templateController.deleteTemplate);
 
 // --- Settings ---
-app.route('/api/settings/forwarding')
-    .get(settingsController.getForwardingRules)
-    .post(settingsController.createForwardingRule);
-
-app.route('/api/settings/forwarding/:id')
-    .put(settingsController.updateForwardingRule)
-    .delete(settingsController.deleteForwardingRule);
-
+app.get('/api/settings/forwarding', settingsController.getForwardingRules);
+app.post('/api/settings/forwarding', settingsController.createForwardingRule);
+app.put('/api/settings/forwarding/:id', settingsController.updateForwardingRule);
+app.delete('/api/settings/forwarding/:id', settingsController.deleteForwardingRule);
 app.get('/api/settings/groups', settingsController.getGroupSettings);
 app.post('/api/settings/groups', settingsController.updateGroupSetting);
 
-
 // --- Chave PIX ---
-app.route('/api/chave-pix')
-    .get(chavePixController.getAllKeys)
-    .post(chavePixController.createKey);
-
-app.route('/api/chave-pix/:id')
-    .put(chavePixController.updateKey)
-    .delete(chavePixController.deleteKey);
+app.get('/api/chave-pix', chavePixController.getAllKeys);
+app.post('/api/chave-pix', chavePixController.createKey);
+app.put('/api/chave-pix/:id', chavePixController.updateKey);
+app.delete('/api/chave-pix/:id', chavePixController.deleteKey);
 
 // --- Abbreviations ---
-app.route('/api/abbreviations')
-    .get(abbreviationController.getAll)
-    .post(abbreviationController.create);
-
-app.route('/api/abbreviations/:id')
-    .put(abbreviationController.update)
-    .delete(abbreviationController.delete);
+app.get('/api/abbreviations', abbreviationController.getAll);
+app.post('/api/abbreviations', abbreviationController.create);
+app.put('/api/abbreviations/:id', abbreviationController.update);
+app.delete('/api/abbreviations/:id', abbreviationController.delete);
 
 // --- Invoices ---
-app.route('/api/invoices')
-    .get(invoiceController.getAllInvoices)
-    .post(invoiceController.createInvoice);
-    
-app.route('/api/invoices/:id')
-    .put(invoiceController.updateInvoice)
-    .delete(invoiceController.deleteInvoice);
-
+app.get('/api/invoices', invoiceController.getAllInvoices);
+app.post('/api/invoices', invoiceController.createInvoice);
+app.put('/api/invoices/:id', invoiceController.updateInvoice);
+app.delete('/api/invoices/:id', invoiceController.deleteInvoice);
 app.get('/api/invoices/recipients', invoiceController.getRecipientNames);
 app.get('/api/invoices/export', invoiceController.exportInvoices);
 app.get('/api/invoices/media/:id', invoiceController.getInvoiceMedia);
@@ -123,7 +102,6 @@ const HOST = '0.0.0.0';
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, HOST, () => {
     console.log(`Server is running on http://${HOST}:${PORT}`);
-    // Pass the io instance to the whatsapp service for real-time events
     const whatsappService = require('./services/whatsappService');
     whatsappService.init(io);
 });
