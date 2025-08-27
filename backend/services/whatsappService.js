@@ -32,7 +32,7 @@ const invoiceWorker = new Worker('invoice-processing-queue', async (job) => {
     }
     
     const { messageId } = job.data;
-    console.log(`[WORKER] Started processing job ${job.id} for message ID: ${messageId}`);
+    console.log(`[WORKER] Started processing job for message ID: ${messageId}`);
 
     const message = await client.getMessageById(messageId);
     if (!message) {
@@ -91,7 +91,7 @@ const invoiceWorker = new Worker('invoice-processing-queue', async (job) => {
         const isInvoiceValid = amount && recipient?.name;
 
         if (!isInvoiceValid) {
-             console.log(`[WORKER-INFO] OCR result did not meet requirements (amount, recipient) for job ${job.id}. Skipping.`);
+             console.log(`[WORKER-INFO] OCR result did not meet requirements (amount, recipient) for job ${messageId}. Skipping.`);
              await fs.unlink(tempFilePath);
              await connection.commit();
              return;
@@ -106,14 +106,26 @@ const invoiceWorker = new Worker('invoice-processing-queue', async (job) => {
 
             const receivedAt = new Date(message.timestamp * 1000);
 
+            // Check if a "tombstone" exists for this message ID, indicating it was deleted before processing.
+            const [tombstoneRows] = await connection.query('SELECT message_id FROM deleted_message_ids WHERE message_id = ?', [messageId]);
+            const wasDeletedBeforeProcessing = tombstoneRows.length > 0;
+            if (wasDeletedBeforeProcessing) {
+                console.log(`[WORKER] Message ${messageId} was deleted before it was processed. Saving as 'is_deleted=1'.`);
+            }
+
             await connection.query(
-               `INSERT INTO invoices (message_id, transaction_id, sender_name, recipient_name, pix_key, amount, source_group_jid, received_at, raw_json_data, media_path) 
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-               [messageId, transaction_id, sender?.name, recipient.name, recipient.pix_key, amount, chat.id._serialized, receivedAt, JSON.stringify(invoiceJson), finalMediaPath]
+               `INSERT INTO invoices (message_id, transaction_id, sender_name, recipient_name, pix_key, amount, source_group_jid, received_at, raw_json_data, media_path, is_deleted) 
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+               [messageId, transaction_id, sender?.name, recipient.name, recipient.pix_key, amount, chat.id._serialized, receivedAt, JSON.stringify(invoiceJson), finalMediaPath, wasDeletedBeforeProcessing]
             );
 
+            if (wasDeletedBeforeProcessing) {
+                // The tombstone has served its purpose, remove it.
+                await connection.query('DELETE FROM deleted_message_ids WHERE message_id = ?', [messageId]);
+            }
+
             await recalculateBalances(connection, receivedAt.toISOString());
-            console.log(`[WORKER] Invoice from job ${job.id} saved to DB.`);
+            console.log(`[WORKER] Invoice from job ${messageId} saved to DB.`);
         } else {
              await fs.unlink(tempFilePath);
         }
@@ -141,7 +153,7 @@ const invoiceWorker = new Worker('invoice-processing-queue', async (job) => {
             console.warn(`[WORKER] Duplicate entry for message ID ${messageId}. Acknowledging job.`);
             return;
         }
-        console.error(`[WORKER-ERROR] Critical error processing job ${job.id}:`, error);
+        console.error(`[WORKER-ERROR] Critical error processing job ${messageId}:`, error);
         throw error;
     } finally {
         connection.release();
@@ -149,7 +161,7 @@ const invoiceWorker = new Worker('invoice-processing-queue', async (job) => {
 }, { connection: redisConnection });
 
 invoiceWorker.on('failed', (job, err) => {
-    console.error(`[QUEUE] Job ${job.id} failed with error: ${err.message}`);
+    console.error(`[QUEUE] Job ${job?.id} failed with error: ${err.message}`);
 });
 
 const refreshAbbreviationCache = async () => {
@@ -234,45 +246,35 @@ const handleMessage = async (message) => {
 };
 
 const handleMessageRevoke = async (message, revoked_msg) => {
-    // This function now uses a multi-layered approach to find the ID.
-    // 1. Try the `revoked_msg` object first (if it exists).
-    // 2. Fallback to the `protocolMessageKey` on the notification message.
-    // 3. As a last resort, check the internal `_data` property which is often reliable.
     const deletedMessageId = revoked_msg?.id?._serialized 
                            || message.protocolMessageKey?.id 
                            || message._data?.protocolMessage?.key?.id 
                            || null;
 
     if (!deletedMessageId) {
-        // This log should no longer appear.
-        console.warn('[DELETE] Could not determine the ID of the deleted message. This is a rare event. Skipping.');
+        console.warn('[DELETE] Could not determine ID of deleted message. Skipping.');
         return;
     }
-
-    console.log(`[DELETE] Message with ID ${deletedMessageId} was revoked.`);
+    console.log(`[DELETE] Revoke event for message ID: ${deletedMessageId}`);
 
     try {
-        const [[invoice]] = await pool.query('SELECT id, media_path FROM invoices WHERE message_id = ?', [deletedMessageId]);
+        // First, try to update the invoice directly if it already exists
+        const [updateResult] = await pool.query('UPDATE invoices SET is_deleted = 1 WHERE message_id = ?', [deletedMessageId]);
 
-        if (invoice) {
-            console.log(`[DELETE] Found matching invoice with ID: ${invoice.id}. Marking as deleted.`);
-            
-            await pool.query('UPDATE invoices SET is_deleted = 1 WHERE id = ?', [invoice.id]);
-
-            if (invoice.media_path && fsSync.existsSync(invoice.media_path)) {
-                await fs.unlink(invoice.media_path);
-                console.log(`[DELETE] Deleted associated media file: ${invoice.media_path}`);
-            }
-            
-            if (io) {
-                io.emit('invoices:updated');
-                console.log('[DELETE] Emitted "invoices:updated" event to all clients.');
-            }
+        if (updateResult.affectedRows > 0) {
+            // Success! The invoice was already in the DB.
+            console.log(`[DELETE] Found and marked invoice as deleted for message ID: ${deletedMessageId}`);
+            if (io) io.emit('invoices:updated');
         } else {
-            console.log(`[DELETE] No invoice found in the database for message ID: ${deletedMessageId}`);
+            // The invoice was not in the DB (race condition). Leave a tombstone.
+            console.log(`[DELETE] No invoice found. Creating tombstone for message ID: ${deletedMessageId}`);
+            await pool.query(
+                'INSERT INTO deleted_message_ids (message_id) VALUES (?) ON DUPLICATE KEY UPDATE message_id=message_id',
+                [deletedMessageId]
+            );
         }
     } catch (error) {
-        console.error(`[DELETE-ERROR] Failed to process message deletion for ${deletedMessageId}:`, error);
+        console.error(`[DELETE-ERROR] Failed to process revoke for ${deletedMessageId}:`, error);
     }
 };
 
