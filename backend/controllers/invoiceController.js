@@ -18,6 +18,8 @@ exports.getAllInvoices = async (req, res) => {
         search = '',
         dateFrom,
         dateTo,
+        timeFrom,
+        timeTo,
         sourceGroup,
         recipientName,
         reviewStatus, // 'only_review', 'hide_review'
@@ -46,14 +48,23 @@ exports.getAllInvoices = async (req, res) => {
 
     // Date Range
     if (dateFrom) {
+        // If time is provided, combine it with the date. Otherwise, use the date alone.
+        const startDateTime = timeFrom ? `${dateFrom} ${timeFrom}` : dateFrom;
         query += ' AND i.received_at >= ?';
-        params.push(dateFrom);
+        params.push(startDateTime);
     }
     if (dateTo) {
-        const toDate = new Date(dateTo);
-        toDate.setDate(toDate.getDate() + 1);
-        query += ' AND i.received_at < ?';
-        params.push(toDate.toISOString().split('T')[0]);
+        // If time is provided, combine it. Otherwise, add a day to make the date inclusive.
+        if (timeTo) {
+            const endDateTime = `${dateTo} ${timeTo}`;
+            query += ' AND i.received_at <= ?';
+            params.push(endDateTime);
+        } else {
+            const toDate = new Date(dateTo);
+            toDate.setDate(toDate.getDate() + 1);
+            query += ' AND i.received_at < ?';
+            params.push(toDate.toISOString().split('T')[0]);
+        }
     }
 
     // Filters

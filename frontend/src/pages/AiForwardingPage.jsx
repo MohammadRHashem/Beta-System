@@ -4,6 +4,7 @@ import api from '../services/api';
 import Modal from '../components/Modal';
 import SearchableSelect from '../components/SearchableSelect'; // Import our new component
 import { FaEdit, FaTrash } from 'react-icons/fa';
+import ComboBox from '../components/ComboBox'; // Import the new component
 
 const PageContainer = styled.div`
     display: flex;
@@ -171,13 +172,13 @@ const AiForwardingPage = ({ allGroups }) => {
                             />
                         </InputGroup>
                         <InputGroup>
-                            <Label>Destination Group</Label>
-                            <SearchableSelect 
+                        <Label>Destination Group</Label>
+                            {/* === REPLACE SearchableSelect WITH ComboBox === */}
+                            <ComboBox 
                                 options={allGroups}
                                 value={destination}
                                 onChange={(e) => setDestination(e.target.value)}
-                                placeholder="Select a destination"
-                                searchPlaceholder="Search for a group..."
+                                placeholder="Search & select a group..."
                             />
                         </InputGroup>
                         <Button type="submit">Add Rule</Button>

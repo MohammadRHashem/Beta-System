@@ -7,7 +7,7 @@ const FilterContainer = styled.div`
     border-radius: 8px;
     box-shadow: 0 2px 4px rgba(0,0,0,0.05);
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
     gap: 1rem;
     align-items: flex-end;
 `;
@@ -61,39 +61,35 @@ const InvoiceFilter = ({ filters, onFilterChange, allGroups, recipientNames }) =
     const handleClear = () => {
         onFilterChange({
             search: '', dateFrom: '', dateTo: '',
+            timeFrom: '', timeTo: '', // Also clear time fields
             sourceGroup: '', recipientName: '', reviewStatus: '',
         });
     };
+
 
     return (
         <FilterContainer>
             <InputGroup>
                 <Label>Search</Label>
-                <Input
-                    name="search"
-                    type="text"
-                    placeholder="Transaction ID, name, notes..."
-                    value={filters.search}
-                    onChange={handleChange}
-                />
+                <Input name="search" type="text" value={filters.search} onChange={handleChange} />
             </InputGroup>
             <InputGroup>
                 <Label>From Date</Label>
-                <Input
-                    name="dateFrom"
-                    type="date"
-                    value={filters.dateFrom}
-                    onChange={handleChange}
-                />
+                <Input name="dateFrom" type="date" value={filters.dateFrom} onChange={handleChange} />
+            </InputGroup>
+            {/* === NEW TIME FROM FIELD === */}
+            <InputGroup>
+                <Label>From Time</Label>
+                <Input name="timeFrom" type="time" value={filters.timeFrom} onChange={handleChange} />
             </InputGroup>
             <InputGroup>
                 <Label>To Date</Label>
-                <Input
-                    name="dateTo"
-                    type="date"
-                    value={filters.dateTo}
-                    onChange={handleChange}
-                />
+                <Input name="dateTo" type="date" value={filters.dateTo} onChange={handleChange} />
+            </InputGroup>
+            {/* === NEW TIME TO FIELD === */}
+            <InputGroup>
+                <Label>To Time</Label>
+                <Input name="timeTo" type="time" value={filters.timeTo} onChange={handleChange} />
             </InputGroup>
             <InputGroup>
                 <Label>Source Group</Label>

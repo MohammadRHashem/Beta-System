@@ -234,24 +234,29 @@ const handleMessage = async (message) => {
 };
 
 const handleMessageRevoke = async (message, revoked_msg) => {
-    // The most reliable way to get the ID of the *deleted* message is from the notification's metadata.
-    const deletedMessageId = message.protocolMessageKey ? message.protocolMessageKey.id : null;
+    // This function now uses a multi-layered approach to find the ID.
+    // 1. Try the `revoked_msg` object first (if it exists).
+    // 2. Fallback to the `protocolMessageKey` on the notification message.
+    // 3. As a last resort, check the internal `_data` property which is often reliable.
+    const deletedMessageId = revoked_msg?.id?._serialized 
+                           || message.protocolMessageKey?.id 
+                           || message._data?.protocolMessage?.key?.id 
+                           || null;
 
     if (!deletedMessageId) {
-        console.warn('[DELETE] Could not determine the ID of the deleted message. Skipping.');
+        // This log should no longer appear.
+        console.warn('[DELETE] Could not determine the ID of the deleted message. This is a rare event. Skipping.');
         return;
     }
 
     console.log(`[DELETE] Message with ID ${deletedMessageId} was revoked.`);
 
     try {
-        // Now, we use the correct ID to find the invoice in the database.
         const [[invoice]] = await pool.query('SELECT id, media_path FROM invoices WHERE message_id = ?', [deletedMessageId]);
 
         if (invoice) {
             console.log(`[DELETE] Found matching invoice with ID: ${invoice.id}. Marking as deleted.`);
             
-            // This UPDATE will now execute correctly.
             await pool.query('UPDATE invoices SET is_deleted = 1 WHERE id = ?', [invoice.id]);
 
             if (invoice.media_path && fsSync.existsSync(invoice.media_path)) {
@@ -259,13 +264,11 @@ const handleMessageRevoke = async (message, revoked_msg) => {
                 console.log(`[DELETE] Deleted associated media file: ${invoice.media_path}`);
             }
             
-            // This will now trigger and force the frontend to refresh.
             if (io) {
                 io.emit('invoices:updated');
                 console.log('[DELETE] Emitted "invoices:updated" event to all clients.');
             }
         } else {
-            // This log is helpful for debugging if a deleted message was not an invoice.
             console.log(`[DELETE] No invoice found in the database for message ID: ${deletedMessageId}`);
         }
     } catch (error) {
