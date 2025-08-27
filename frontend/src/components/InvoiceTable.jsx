@@ -31,24 +31,26 @@ const Th = styled.th`
 
 const Tr = styled.tr`
     border-bottom: 1px solid ${({ theme }) => theme.border};
+    transition: background-color 0.3s ease;
 
     &:last-child {
         border-bottom: none;
     }
 
     ${({ isDuplicate }) => isDuplicate && css`
-        background-color: #fff0f0; /* Light Red for duplicates */
+        background-color: #fff0f0;
     `}
     
-    /* ================================================================= */
-    /* == THIS IS THE CSS RULE FOR DELETED INVOICES == */
-    /* It applies a gray background, lighter text, and a strikethrough. */
     ${({ isDeleted }) => isDeleted && css`
-        background-color: #f8f9fa;
-        color: #adb5bd;
+        background-color: #e9ecef !important;
+        color: #6c757d;
         text-decoration: line-through;
+        
+        .actions svg, .actions a {
+            color: #adb5bd;
+            cursor: not-allowed;
+        }
     `}
-    /* ================================================================= */
 `;
 
 const Td = styled.td`
@@ -103,7 +105,6 @@ const PageButton = styled.button`
     }
 `;
 
-// Formats numeric values like credit and balance
 const formatNumericCurrency = (value) => {
     if (value === null || value === undefined) return '';
     const num = Number(value);
@@ -150,7 +151,6 @@ const InvoiceTable = ({ invoices, loading, sort, onSortChange, onEdit, paginatio
         if (window.confirm('Are you sure you want to permanently delete this invoice? This action cannot be undone.')) {
             try {
                 await deleteInvoice(id);
-                // Refetch will be triggered by WebSocket event from the parent
             } catch (error) {
                 alert('Failed to delete invoice.');
             }
@@ -187,17 +187,9 @@ const InvoiceTable = ({ invoices, loading, sort, onSortChange, onEdit, paginatio
                 <tbody>
                     {invoices.map(inv => {
                         const isDuplicate = inv.transaction_id && transactionIdCounts[inv.transaction_id] > 1;
-
-                        // =================================================================
-                        // == THIS IS THE MODIFIED "REVIEW" LOGIC ==
-                        // It now correctly flags an invoice for review if the sender is missing,
-                        // even though the backend will still process it.
                         const needsReview = !inv.is_manual && (!inv.sender_name || !inv.recipient_name || !inv.amount);
-                        // =================================================================
 
                         return (
-                            // The `isDeleted` prop receives the value from inv.is_deleted (0 or 1).
-                            // The styled-component `Tr` will apply the styles when this value is 1 (truthy).
                             <Tr key={inv.id} isDuplicate={isDuplicate} isDeleted={!!inv.is_deleted}>
                                 <Td>{formatDate(inv.received_at)}</Td>
                                 <Td>{inv.transaction_id || ''}</Td>
@@ -218,8 +210,8 @@ const InvoiceTable = ({ invoices, loading, sort, onSortChange, onEdit, paginatio
                                         <a href={`/api/invoices/media/${inv.id}`} target="_blank" rel="noopener noreferrer" title="View Media">
                                             <FaEye />
                                         </a>}
-                                    <FaEdit onClick={() => onEdit(inv)} title="Edit" />
-                                    <FaTrashAlt onClick={() => handleDelete(inv.id)} title="Delete" />
+                                    {!inv.is_deleted && <FaEdit onClick={() => onEdit(inv)} title="Edit" />}
+                                    {!inv.is_deleted && <FaTrashAlt onClick={() => handleDelete(inv.id)} title="Delete" />}
                                 </Td>
                             </Tr>
                         );

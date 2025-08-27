@@ -88,7 +88,6 @@ const invoiceWorker = new Worker('invoice-processing-queue', async (job) => {
 
         const { amount, sender, recipient, transaction_id } = invoiceJson;
         
-        // Relaxed validation: We now require only amount and recipient name to process the invoice.
         const isInvoiceValid = amount && recipient?.name;
 
         if (!isInvoiceValid) {
@@ -116,7 +115,7 @@ const invoiceWorker = new Worker('invoice-processing-queue', async (job) => {
             await recalculateBalances(connection, receivedAt.toISOString());
             console.log(`[WORKER] Invoice from job ${job.id} saved to DB.`);
         } else {
-             await fs.unlink(tempFilePath); // clean up if not archiving
+             await fs.unlink(tempFilePath);
         }
         
         if (groupSettings.forwarding_enabled) {
@@ -127,7 +126,6 @@ const invoiceWorker = new Worker('invoice-processing-queue', async (job) => {
                     if (recipientNameLower.includes(rule.trigger_keyword.toLowerCase())) {
                         const mediaToForward = new MessageMedia(media.mimetype, media.data, media.filename);
                         await client.sendMessage(rule.destination_group_jid, mediaToForward);
-                        console.log(`[PROCESS] Forwarded media for job ${job.id}.`);
                         break;
                     }
                 }
@@ -144,7 +142,7 @@ const invoiceWorker = new Worker('invoice-processing-queue', async (job) => {
             return;
         }
         console.error(`[WORKER-ERROR] Critical error processing job ${job.id}:`, error);
-        throw error; // Let BullMQ handle retry
+        throw error;
     } finally {
         connection.release();
     }
@@ -236,26 +234,42 @@ const handleMessage = async (message) => {
 };
 
 const handleMessageRevoke = async (message, revoked_msg) => {
-    // 'revoked_msg' can be null if the message is old, so we also check 'message'
-    const messageId = revoked_msg ? revoked_msg.id._serialized : message.id._serialized;
-    if (!messageId) return;
+    // The most reliable way to get the ID of the *deleted* message is from the notification's metadata.
+    const deletedMessageId = message.protocolMessageKey ? message.protocolMessageKey.id : null;
 
-    console.log(`[DELETE] Message ${messageId} was deleted.`);
-    
+    if (!deletedMessageId) {
+        console.warn('[DELETE] Could not determine the ID of the deleted message. Skipping.');
+        return;
+    }
+
+    console.log(`[DELETE] Message with ID ${deletedMessageId} was revoked.`);
+
     try {
-        const [[invoice]] = await pool.query('SELECT id, media_path FROM invoices WHERE message_id = ?', [messageId]);
-        
+        // Now, we use the correct ID to find the invoice in the database.
+        const [[invoice]] = await pool.query('SELECT id, media_path FROM invoices WHERE message_id = ?', [deletedMessageId]);
+
         if (invoice) {
+            console.log(`[DELETE] Found matching invoice with ID: ${invoice.id}. Marking as deleted.`);
+            
+            // This UPDATE will now execute correctly.
             await pool.query('UPDATE invoices SET is_deleted = 1 WHERE id = ?', [invoice.id]);
 
             if (invoice.media_path && fsSync.existsSync(invoice.media_path)) {
                 await fs.unlink(invoice.media_path);
-                console.log(`[DELETE] Deleted media file: ${invoice.media_path}`);
+                console.log(`[DELETE] Deleted associated media file: ${invoice.media_path}`);
             }
-            if (io) io.emit('invoices:updated');
+            
+            // This will now trigger and force the frontend to refresh.
+            if (io) {
+                io.emit('invoices:updated');
+                console.log('[DELETE] Emitted "invoices:updated" event to all clients.');
+            }
+        } else {
+            // This log is helpful for debugging if a deleted message was not an invoice.
+            console.log(`[DELETE] No invoice found in the database for message ID: ${deletedMessageId}`);
         }
     } catch (error) {
-        console.error(`[DELETE-ERROR] Failed to process message deletion for ${messageId}:`, error);
+        console.error(`[DELETE-ERROR] Failed to process message deletion for ${deletedMessageId}:`, error);
     }
 };
 
@@ -273,7 +287,7 @@ const initializeWhatsApp = (socketIoInstance) => {
                 '--disable-accelerated-2d-canvas', 
                 '--no-first-run', 
                 '--no-zygote', 
-                '--single-process', // Maybe this is needed on some servers
+                '--single-process',
                 '--disable-gpu' 
             ], 
         }, 
