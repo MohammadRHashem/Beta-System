@@ -12,6 +12,7 @@ const batchController = require('./controllers/batchController');
 const templateController = require('./controllers/templateController');
 const settingsController = require('./controllers/settingsController');
 const chavePixController = require('./controllers/chavePixController');
+const abbreviationController = require('./controllers/abbreviationController');
 
 const app = express();
 const server = http.createServer(app);
