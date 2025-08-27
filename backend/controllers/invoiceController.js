@@ -50,7 +50,6 @@ exports.getAllInvoices = async (req, res) => {
         params.push(dateFrom);
     }
     if (dateTo) {
-        // Add a day to make the 'to' date inclusive
         const toDate = new Date(dateTo);
         toDate.setDate(toDate.getDate() + 1);
         query += ' AND i.received_at < ?';
