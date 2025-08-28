@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import styled from 'styled-components';
 import Modal from './Modal';
 import { createInvoice, updateInvoice } from '../services/api';
-import { formatUTCToSaoPauloInput, getCurrentSaoPauloForInput } from '../utils/dateFormatter';
+import { getSaoPauloInputTimeFromUTC, getCurrentTimeForInput } from '../utils/dateFormatter';
 
 const Form = styled.form`
     display: grid;
@@ -54,26 +54,24 @@ const InvoiceModal = ({ isOpen, onClose, invoice, invoices, insertAtIndex, onSav
     useEffect(() => {
         if (isOpen) {
             if (isEditMode) {
-                setFormData({ ...invoice, received_at: formatUTCToSaoPauloInput(invoice.received_at) });
+                setFormData({ ...invoice, received_at: getSaoPauloInputTimeFromUTC(invoice.received_at) });
             } else if (isInsertMode) {
                 const prevInvoice = invoices[insertAtIndex - 1];
                 const nextInvoice = invoices[insertAtIndex];
-                
                 const startTime = prevInvoice ? new Date(prevInvoice.received_at).getTime() : new Date().getTime() - 60000;
                 const endTime = nextInvoice ? new Date(nextInvoice.received_at).getTime() : new Date().getTime();
-
                 const midTime = new Date(startTime + (endTime - startTime) / 2);
                 
                 setFormData({
                     sender_name: '', recipient_name: '', transaction_id: '',
                     pix_key: '', amount: '', credit: '', notes: '',
-                    received_at: formatUTCToSaoPauloInput(midTime.toISOString())
+                    received_at: getSaoPauloInputTimeFromUTC(midTime.toISOString())
                 });
             } else {
                 setFormData({
                     sender_name: '', recipient_name: '', transaction_id: '',
                     pix_key: '', amount: '', credit: '', notes: '',
-                    received_at: getCurrentSaoPauloForInput()
+                    received_at: getCurrentTimeForInput()
                 });
             }
         }

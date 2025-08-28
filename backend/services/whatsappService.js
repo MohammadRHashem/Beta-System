@@ -176,15 +176,24 @@ const reconcileMissedMessages = async () => {
     if (isReconciling || connectionStatus !== 'connected') { return; }
     isReconciling = true;
     console.log('[RECONCILER] Starting aggressive check for missed messages...');
+
+    // ESTABLISH A 24-HOUR CUTOFF POINT
+    const cutoffTimestamp = Math.floor((Date.now() - 24 * 60 * 60 * 1000) / 1000);
+    console.log(`[RECONCILER] Ignoring any messages received before: ${new Date(cutoffTimestamp * 1000).toISOString()}`);
+
     try {
         const chats = await client.getChats();
         const groups = chats.filter(chat => chat.isGroup);
 
         for (const group of groups) {
-            const recentMessages = await group.fetchMessages({ limit: 50 }); // Increased lookback
+            const recentMessages = await group.fetchMessages({ limit: 50 }); 
             if (recentMessages.length === 0) continue;
 
-            const messageIdsToCheck = recentMessages.map(msg => msg.id._serialized);
+            // Filter out messages older than 24 hours
+            const messagesWithinWindow = recentMessages.filter(msg => msg.timestamp >= cutoffTimestamp);
+            if (messagesWithinWindow.length === 0) continue;
+            
+            const messageIdsToCheck = messagesWithinWindow.map(msg => msg.id._serialized);
 
             const [processedRows] = await pool.query(
                 'SELECT message_id FROM processed_messages WHERE message_id IN (?)',
@@ -192,10 +201,10 @@ const reconcileMissedMessages = async () => {
             );
             const processedIds = new Set(processedRows.map(r => r.message_id));
             
-            const missedMessages = recentMessages.filter(msg => !processedIds.has(msg.id._serialized));
+            const missedMessages = messagesWithinWindow.filter(msg => !processedIds.has(msg.id._serialized));
 
             if (missedMessages.length > 0) {
-                console.log(`[RECONCILER] Found ${missedMessages.length} missed message(s) in "${group.name}". Processing them now.`);
+                console.log(`[RECONCILER] Found ${missedMessages.length} missed message(s) in "${group.name}" within the last 24 hours. Processing them now.`);
                 for (const message of missedMessages) {
                     await handleMessage(message);
                 }
@@ -307,7 +316,7 @@ const initializeWhatsApp = (socketIoInstance) => {
         qrCodeData = null;
         connectionStatus = 'connected';
         refreshAbbreviationCache();
-        cron.schedule('* * * * *', reconcileMissedMessages); // Run every minute for stability
+        cron.schedule('* * * * *', reconcileMissedMessages); // Run every minute
         console.log('[RECONCILER] Self-healing reconciler scheduled to run every minute.');
     });
     

@@ -2,7 +2,7 @@ import React, { useMemo } from 'react';
 import styled, { css } from 'styled-components';
 import { viewInvoiceMedia, deleteInvoice } from '../services/api';
 import { FaEdit, FaTrashAlt, FaEye, FaSort, FaSortUp, FaSortDown, FaPlus } from 'react-icons/fa';
-import { formatToSaoPaulo } from '../utils/dateFormatter';
+import { formatUTCToSaoPaulo } from '../utils/dateFormatter'; // Import the new formatter
 
 const TableWrapper = styled.div`
     background: #fff;
@@ -189,7 +189,7 @@ const InvoiceTable = ({ invoices, loading, sort, onSortChange, onEdit, paginatio
             <Table>
                 <thead>
                     <tr>
-                        <Th style={{paddingLeft: '30px'}}>Received At</Th>
+                        <Th style={{paddingLeft: '30px'}}>Received At (São Paulo)</Th>
                         <Th>Transaction ID</Th>
                         <Th>Sender</Th>
                         <Th>Recipient</Th>
@@ -211,7 +211,7 @@ const InvoiceTable = ({ invoices, loading, sort, onSortChange, onEdit, paginatio
                                     <AddBetweenButton onClick={() => onEdit(null, index)} title="Insert new entry here">
                                         <FaPlus size={12} />
                                     </AddBetweenButton>
-                                    {formatToSaoPaulo(inv.received_at)}
+                                    {formatUTCToSaoPaulo(inv.received_at)}
                                 </Td>
                                 <Td>{inv.transaction_id || ''}</Td>
                                 <Td className={needsReview && !inv.sender_name ? 'review' : ''}>
