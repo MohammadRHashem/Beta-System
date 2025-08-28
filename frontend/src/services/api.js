@@ -1,8 +1,6 @@
 import axios from 'axios';
 
-const apiClient = axios.create({
-    baseURL: '/api'
-});
+const apiClient = axios.create({ baseURL: '/api' });
 
 apiClient.interceptors.request.use(config => {
     const token = localStorage.getItem('authToken');
@@ -24,7 +22,7 @@ apiClient.interceptors.response.use(
     }
 );
 
-// Batch & Template Endpoints (no changes)
+// Batch & Template Endpoints
 export const getBatches = () => apiClient.get('/batches');
 export const getGroupIdsForBatch = (batchId) => apiClient.get(`/batches/${batchId}`);
 export const createBatch = (data) => apiClient.post('/batches', data);
@@ -35,19 +33,39 @@ export const createTemplate = (data) => apiClient.post('/templates', data);
 export const updateTemplate = (id, data) => apiClient.put(`/templates/${id}`, data);
 export const deleteTemplate = (id) => apiClient.delete(`/templates/${id}`);
 
-// --- NEW INVOICE ENDPOINTS ---
+// Protected file downloads
+const downloadFile = async (url, params) => {
+    const { data } = await apiClient.get(url, { params, responseType: 'blob' });
+    return data;
+};
+
+const triggerBrowserDownload = (blob, filename) => {
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.URL.revokeObjectURL(url);
+};
+
+// Invoice Endpoints
 export const getInvoices = (params) => apiClient.get('/invoices', { params });
 export const getRecipientNames = () => apiClient.get('/invoices/recipients');
 export const createInvoice = (data) => apiClient.post('/invoices', data);
 export const updateInvoice = (id, data) => apiClient.put(`/invoices/${id}`, data);
 export const deleteInvoice = (id) => apiClient.delete(`/invoices/${id}`);
 
-// Note: Exporting is handled via a direct link or window.open, not an axios call,
-// because we need the browser to handle the file download.
-export const getExportUrl = (params) => {
-    const query = new URLSearchParams(params).toString();
-    return `/api/invoices/export?${query}`;
+export const viewInvoiceMedia = async (id) => {
+    const blob = await downloadFile(`/invoices/media/${id}`);
+    const url = window.URL.createObjectURL(blob);
+    window.open(url, '_blank');
 };
 
+export const exportInvoices = async (params) => {
+    const blob = await downloadFile('/invoices/export', params);
+    triggerBrowserDownload(blob, 'invoices.xlsx');
+};
 
 export default apiClient;

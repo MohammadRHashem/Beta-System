@@ -1,7 +1,7 @@
 import React, { useMemo } from 'react';
 import styled, { css } from 'styled-components';
-import { FaEdit, FaTrashAlt, FaEye, FaSort, FaSortUp, FaSortDown } from 'react-icons/fa';
-import { deleteInvoice } from '../services/api';
+import { viewInvoiceMedia, deleteInvoice } from '../services/api';
+import { FaEdit, FaTrashAlt, FaEye, FaSort, FaSortUp, FaSortDown, FaPlus } from 'react-icons/fa';
 import { formatToSaoPaulo } from '../utils/dateFormatter';
 
 const TableWrapper = styled.div`
@@ -24,13 +24,10 @@ const Th = styled.th`
     font-weight: 600;
     cursor: ${({ sortable }) => sortable ? 'pointer' : 'default'};
     white-space: nowrap;
-
-    &:hover {
-        background-color: ${({ theme, sortable }) => sortable && theme.border};
-    }
 `;
 
 const Tr = styled.tr`
+    position: relative;
     border-bottom: 1px solid ${({ theme }) => theme.border};
     transition: background-color 0.3s ease;
 
@@ -81,6 +78,31 @@ const Td = styled.td`
     &.review {
         color: ${({ theme }) => theme.error};
         font-weight: bold;
+    }
+`;
+
+const AddBetweenButton = styled.button`
+    position: absolute;
+    left: -20px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    background-color: ${({ theme }) => theme.secondary};
+    color: white;
+    border: 2px solid white;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+    z-index: 5;
+
+    ${Tr}:hover & {
+        opacity: 1;
     }
 `;
 
@@ -149,6 +171,15 @@ const InvoiceTable = ({ invoices, loading, sort, onSortChange, onEdit, paginatio
         onSortChange({ sortBy: columnKey, sortOrder: isAsc ? 'desc' : 'asc' });
     };
 
+    const handleViewMedia = async (id) => {
+        try {
+            await viewInvoiceMedia(id);
+        } catch (error) {
+            console.error("Failed to open media:", error);
+            alert("Could not load media file. It may have been deleted.");
+        }
+    };
+
     if (loading) return <p>Loading invoices...</p>;
     if (!invoices.length) return <p>No invoices found for the selected criteria.</p>;
 
@@ -158,9 +189,7 @@ const InvoiceTable = ({ invoices, loading, sort, onSortChange, onEdit, paginatio
             <Table>
                 <thead>
                     <tr>
-                        <Th sortable onClick={() => handleSort('received_at')}>
-                            Received At <SortIcon sort={sort} columnKey="received_at" />
-                        </Th>
+                        <Th style={{paddingLeft: '30px'}}>Received At</Th>
                         <Th>Transaction ID</Th>
                         <Th>Sender</Th>
                         <Th>Recipient</Th>
@@ -172,13 +201,18 @@ const InvoiceTable = ({ invoices, loading, sort, onSortChange, onEdit, paginatio
                     </tr>
                 </thead>
                 <tbody>
-                    {invoices.map(inv => {
+                    {invoices.map((inv, index) => {
                         const isDuplicate = inv.transaction_id && transactionIdCounts[inv.transaction_id] > 1;
                         const needsReview = !inv.is_manual && (!inv.sender_name || !inv.recipient_name || !inv.amount);
 
                         return (
                             <Tr key={inv.id} isDuplicate={isDuplicate} isDeleted={!!inv.is_deleted}>
-                                <Td>{formatToSaoPaulo(inv.received_at)}</Td>
+                                <Td>
+                                    <AddBetweenButton onClick={() => onEdit(null, index)} title="Insert new entry here">
+                                        <FaPlus size={12} />
+                                    </AddBetweenButton>
+                                    {formatToSaoPaulo(inv.received_at)}
+                                </Td>
                                 <Td>{inv.transaction_id || ''}</Td>
                                 <Td className={needsReview && !inv.sender_name ? 'review' : ''}>
                                     {inv.sender_name || (needsReview ? 'REVIEW' : '')}
@@ -194,9 +228,7 @@ const InvoiceTable = ({ invoices, loading, sort, onSortChange, onEdit, paginatio
                                 <Td className="currency">{formatNumericCurrency(inv.balance)}</Td>
                                 <Td className="actions">
                                     {inv.media_path && !inv.is_deleted && 
-                                        <a href={`/api/invoices/media/${inv.id}`} target="_blank" rel="noopener noreferrer" title="View Media">
-                                            <FaEye />
-                                        </a>}
+                                        <FaEye onClick={() => handleViewMedia(inv.id)} title="View Media" />}
                                     {!inv.is_deleted && <FaEdit onClick={() => onEdit(inv)} title="Edit" />}
                                     {!inv.is_deleted && <FaTrashAlt onClick={() => handleDelete(inv.id)} title="Delete" />}
                                 </Td>

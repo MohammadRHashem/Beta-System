@@ -13,7 +13,10 @@ exports.getAllInvoices = async (req, res) => {
     const {
         page = 1, limit = 50, sortBy = 'received_at', sortOrder = 'desc',
         search = '', dateFrom, dateTo, timeFrom, timeTo,
-        sourceGroup, recipientName, reviewStatus,
+        sourceGroups,
+        recipientNames,
+        reviewStatus,
+        status,
     } = req.query;
 
     const offset = (page - 1) * limit;
@@ -43,11 +46,30 @@ exports.getAllInvoices = async (req, res) => {
         params.push(utcDate);
     }
 
-    if (sourceGroup) { query += ' AND i.source_group_jid = ?'; params.push(sourceGroup); }
-    if (recipientName) { query += ' AND i.recipient_name = ?'; params.push(recipientName); }
+    if (sourceGroups && sourceGroups.length > 0) {
+        query += ` AND i.source_group_jid IN (?)`;
+        params.push(sourceGroups);
+    }
+
+    if (recipientNames && recipientNames.length > 0) {
+        query += ` AND i.recipient_name IN (?)`;
+        params.push(recipientNames);
+    }
+    
     const reviewCondition = "(i.sender_name IS NULL OR i.sender_name = '' OR i.recipient_name IS NULL OR i.recipient_name = '' OR i.amount IS NULL OR i.amount = '')";
-    if (reviewStatus === 'only_review') { query += ` AND ${reviewCondition}`; }
-    if (reviewStatus === 'hide_review') { query += ` AND NOT ${reviewCondition}`; }
+    if (reviewStatus === 'only_review') {
+        query += ` AND ${reviewCondition}`;
+    } else if (reviewStatus === 'hide_review') {
+        query += ` AND NOT ${reviewCondition}`;
+    }
+
+    if (status === 'only_deleted') {
+        query += ' AND i.is_deleted = 1';
+    } else if (status === 'only_duplicates') {
+        query += ` AND i.transaction_id IS NOT NULL AND i.transaction_id != '' AND i.transaction_id IN (
+            SELECT transaction_id FROM invoices WHERE transaction_id IS NOT NULL AND transaction_id != '' GROUP BY transaction_id HAVING COUNT(*) > 1
+        )`;
+    }
 
     try {
         const countQuery = `SELECT count(*) as total ${query}`;
@@ -163,7 +185,6 @@ exports.updateInvoice = async (req, res) => {
     }
 };
 
-// --- DELETE an Invoice ---
 exports.deleteInvoice = async (req, res) => {
     const { id } = req.params;
     const connection = await pool.getConnection();
@@ -196,7 +217,6 @@ exports.deleteInvoice = async (req, res) => {
     }
 };
 
-// --- SERVE Media File for an Invoice ---
 exports.getInvoiceMedia = async (req, res) => {
     try {
         const { id } = req.params;
@@ -218,7 +238,6 @@ exports.getInvoiceMedia = async (req, res) => {
     }
 };
 
-// --- EXPORT Invoices to Excel ---
 exports.exportInvoices = async (req, res) => {
     const {
         search = '', dateFrom, dateTo, sourceGroup, recipientName, reviewStatus

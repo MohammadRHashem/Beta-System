@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import styled from 'styled-components';
 import { useAuth } from '../context/AuthContext';
-import api, { getInvoices, getRecipientNames, getExportUrl } from '../services/api';
+import { getInvoices, getRecipientNames, exportInvoices } from '../services/api';
 import { FaPlus, FaFileExcel } from 'react-icons/fa';
 import InvoiceFilter from '../components/InvoiceFilter';
 import InvoiceTable from '../components/InvoiceTable';
@@ -55,12 +55,11 @@ const InvoicesPage = ({ allGroups, socket }) => {
     const [pagination, setPagination] = useState({ page: 1, limit: 50, totalPages: 1 });
     
     const [filters, setFilters] = useState({
-        search: '',
-        dateFrom: '',
-        dateTo: '',
-        sourceGroup: '',
-        recipientName: '',
+        search: '', dateFrom: '', dateTo: '', timeFrom: '', timeTo: '',
+        sourceGroups: [],
+        recipientNames: [],
         reviewStatus: '',
+        status: '',
     });
 
     const [sort, setSort] = useState({ sortBy: 'received_at', sortOrder: 'desc' });
@@ -68,6 +67,7 @@ const InvoicesPage = ({ allGroups, socket }) => {
     
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingInvoice, setEditingInvoice] = useState(null);
+    const [insertAtIndex, setInsertAtIndex] = useState(null);
 
     const fetchInvoices = useCallback(async () => {
         setLoading(true);
@@ -78,8 +78,7 @@ const InvoicesPage = ({ allGroups, socket }) => {
                 page: pagination.page,
                 limit: pagination.limit,
             };
-            // Remove empty filters
-            Object.keys(params).forEach(key => !params[key] && delete params[key]);
+            Object.keys(params).forEach(key => (!params[key] || params[key].length === 0) && delete params[key]);
 
             const { data } = await getInvoices(params);
             setInvoices(data.invoices);
@@ -91,32 +90,37 @@ const InvoicesPage = ({ allGroups, socket }) => {
         }
     }, [filters, sort, pagination.page, pagination.limit]);
 
-    // Initial data fetch and WebSocket listener setup
     useEffect(() => {
         if (isAuthenticated) {
             fetchInvoices();
-            
+        }
+    }, [fetchInvoices, isAuthenticated]);
+
+    useEffect(() => {
+        if (isAuthenticated) {
             const fetchFilterData = async () => {
                 const { data: recipients } = await getRecipientNames();
                 setRecipientNames(recipients);
             };
             fetchFilterData();
+        }
+    }, [isAuthenticated]);
 
+    useEffect(() => {
+        if (isAuthenticated && socket) {
             const handleInvoiceUpdate = () => {
                 console.log('Received invoices:updated event, refetching...');
                 fetchInvoices();
             };
-            
-            socket?.on('invoices:updated', handleInvoiceUpdate);
-
+            socket.on('invoices:updated', handleInvoiceUpdate);
             return () => {
-                socket?.off('invoices:updated', handleInvoiceUpdate);
+                socket.off('invoices:updated', handleInvoiceUpdate);
             };
         }
-    }, [isAuthenticated, fetchInvoices, socket]);
+    }, [isAuthenticated, socket, fetchInvoices]);
 
     const handleFilterChange = (newFilters) => {
-        setPagination(prev => ({ ...prev, page: 1 })); // Reset to first page on filter change
+        setPagination(prev => ({ ...prev, page: 1 }));
         setFilters(newFilters);
     };
     
@@ -124,26 +128,31 @@ const InvoicesPage = ({ allGroups, socket }) => {
         setSort(newSort);
     };
 
-    const handleExport = () => {
+    const handleExport = async () => {
         const params = { ...filters, ...sort };
-        Object.keys(params).forEach(key => !params[key] && delete params[key]);
-        const url = getExportUrl(params);
-        window.open(url, '_blank');
+        Object.keys(params).forEach(key => (!params[key] || params[key].length === 0) && delete params[key]);
+        try {
+            await exportInvoices(params);
+        } catch (error) {
+            console.error("Failed to export invoices:", error);
+            alert("Failed to export invoices.");
+        }
     };
     
-    const openModal = (invoice = null) => {
+    const openModal = (invoice = null, index = null) => {
         setEditingInvoice(invoice);
+        setInsertAtIndex(index);
         setIsModalOpen(true);
     };
 
     const closeModal = () => {
         setEditingInvoice(null);
+        setInsertAtIndex(null);
         setIsModalOpen(false);
     };
 
     const onSave = () => {
         closeModal();
-        // The websocket event will trigger a refetch
     };
 
     return (
@@ -179,6 +188,8 @@ const InvoicesPage = ({ allGroups, socket }) => {
                 isOpen={isModalOpen}
                 onClose={closeModal}
                 invoice={editingInvoice}
+                invoices={invoices}
+                insertAtIndex={insertAtIndex}
                 onSave={onSave}
             />
         </>

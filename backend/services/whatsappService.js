@@ -36,7 +36,7 @@ const invoiceWorker = new Worker('invoice-processing-queue', async (job) => {
 
     const message = await client.getMessageById(messageId);
     if (!message) {
-        console.warn(`[WORKER] Message ${messageId} not found. Acknowledging job.`);
+        console.warn(`[WORKER] Message ${messageId} not found, likely deleted before worker started. Acknowledging job.`);
         return;
     }
 
@@ -45,21 +45,40 @@ const invoiceWorker = new Worker('invoice-processing-queue', async (job) => {
         await connection.beginTransaction();
 
         const chat = await message.getChat();
-        
         await connection.query('INSERT INTO processed_messages (message_id) VALUES (?) ON DUPLICATE KEY UPDATE message_id=message_id', [messageId]);
+
+        // DEFINITIVE FIX: CHECK FOR TOMBSTONE BEFORE ANY OTHER ACTION
+        const [tombstoneRows] = await connection.query('SELECT message_id FROM deleted_message_ids WHERE message_id = ?', [messageId]);
+        if (tombstoneRows.length > 0) {
+            console.log(`[WORKER] Message ${messageId} was deleted before processing. Creating 'ghost invoice'.`);
+            const receivedAt = new Date(message.timestamp * 1000);
+            
+            // Insert a minimal record to represent the deleted invoice.
+            await connection.query(
+               `INSERT INTO invoices (message_id, source_group_jid, received_at, is_deleted, notes) 
+                VALUES (?, ?, ?, ?, ?)`,
+               [messageId, chat.id._serialized, receivedAt, true, 'Message deleted before processing.']
+            );
+            
+            await connection.query('DELETE FROM deleted_message_ids WHERE message_id = ?', [messageId]);
+            await connection.commit();
+            if (io) io.emit('invoices:updated');
+            return; // Stop processing immediately.
+        }
+
+        // --- REGULAR PROCESSING (if not deleted) ---
         
         const [settings] = await connection.query('SELECT * FROM group_settings WHERE group_jid = ?', [chat.id._serialized]);
         const groupSettings = settings[0] || { forwarding_enabled: true, archiving_enabled: true };
 
         if (!groupSettings.forwarding_enabled && !groupSettings.archiving_enabled) {
-            console.log(`[WORKER] Ignoring job from disabled group: ${chat.name}`);
             await connection.commit();
             return;
         }
 
         const media = await message.downloadMedia();
         if (!media) {
-            console.warn(`[WORKER] Failed to download media for ${messageId}.`);
+            console.warn(`[WORKER] Failed to download media for ${messageId}. This can happen if it was deleted during processing.`);
             await connection.commit();
             return;
         }
@@ -72,29 +91,19 @@ const invoiceWorker = new Worker('invoice-processing-queue', async (job) => {
         const pythonScriptPath = path.join(pythonScriptsDir, 'main.py');
         const pythonEnv = dotenv.config({ path: path.join(pythonScriptsDir, '.env') }).parsed;
 
-        if (!pythonEnv || !pythonEnv.GOOGLE_API_KEY) {
-            throw new Error('Could not load GOOGLE_API_KEY.');
-        }
-
+        if (!pythonEnv || !pythonEnv.GOOGLE_API_KEY) throw new Error('Could not load GOOGLE_API_KEY.');
+        
         let invoiceJson;
         try {
             const { stdout } = await execa(pythonExecutablePath, [pythonScriptPath, tempFilePath], { cwd: pythonScriptsDir, env: pythonEnv });
             invoiceJson = JSON.parse(stdout);
         } catch (pythonError) {
-            console.error(`[WORKER-PYTHON-ERROR] Script failed. Stderr:`, pythonError.stderr);
-            await fs.unlink(tempFilePath);
-            throw pythonError;
+            await fs.unlink(tempFilePath); throw pythonError;
         }
 
         const { amount, sender, recipient, transaction_id } = invoiceJson;
-        
-        const isInvoiceValid = amount && recipient?.name;
-
-        if (!isInvoiceValid) {
-             console.log(`[WORKER-INFO] OCR result did not meet requirements (amount, recipient) for job ${messageId}. Skipping.`);
-             await fs.unlink(tempFilePath);
-             await connection.commit();
-             return;
+        if (!(amount && recipient?.name)) {
+             await fs.unlink(tempFilePath); await connection.commit(); return;
         }
         
         let finalMediaPath = null;
@@ -106,23 +115,11 @@ const invoiceWorker = new Worker('invoice-processing-queue', async (job) => {
 
             const receivedAt = new Date(message.timestamp * 1000);
 
-            // Check if a "tombstone" exists for this message ID, indicating it was deleted before processing.
-            const [tombstoneRows] = await connection.query('SELECT message_id FROM deleted_message_ids WHERE message_id = ?', [messageId]);
-            const wasDeletedBeforeProcessing = tombstoneRows.length > 0;
-            if (wasDeletedBeforeProcessing) {
-                console.log(`[WORKER] Message ${messageId} was deleted before it was processed. Saving as 'is_deleted=1'.`);
-            }
-
             await connection.query(
                `INSERT INTO invoices (message_id, transaction_id, sender_name, recipient_name, pix_key, amount, source_group_jid, received_at, raw_json_data, media_path, is_deleted) 
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-               [messageId, transaction_id, sender?.name, recipient.name, recipient.pix_key, amount, chat.id._serialized, receivedAt, JSON.stringify(invoiceJson), finalMediaPath, wasDeletedBeforeProcessing]
+               [messageId, transaction_id, sender?.name, recipient.name, recipient.pix_key, amount, chat.id._serialized, receivedAt, JSON.stringify(invoiceJson), finalMediaPath, false] // is_deleted is false here
             );
-
-            if (wasDeletedBeforeProcessing) {
-                // The tombstone has served its purpose, remove it.
-                await connection.query('DELETE FROM deleted_message_ids WHERE message_id = ?', [messageId]);
-            }
 
             await recalculateBalances(connection, receivedAt.toISOString());
             console.log(`[WORKER] Invoice from job ${messageId} saved to DB.`);
@@ -150,7 +147,6 @@ const invoiceWorker = new Worker('invoice-processing-queue', async (job) => {
     } catch (error) {
         await connection.rollback();
         if (error.code === 'ER_DUP_ENTRY') {
-            console.warn(`[WORKER] Duplicate entry for message ID ${messageId}. Acknowledging job.`);
             return;
         }
         console.error(`[WORKER-ERROR] Critical error processing job ${messageId}:`, error);
@@ -179,13 +175,13 @@ let isReconciling = false;
 const reconcileMissedMessages = async () => {
     if (isReconciling || connectionStatus !== 'connected') { return; }
     isReconciling = true;
-    console.log('[RECONCILER] Starting check for missed messages...');
+    console.log('[RECONCILER] Starting aggressive check for missed messages...');
     try {
         const chats = await client.getChats();
         const groups = chats.filter(chat => chat.isGroup);
 
         for (const group of groups) {
-            const recentMessages = await group.fetchMessages({ limit: 20 });
+            const recentMessages = await group.fetchMessages({ limit: 50 }); // Increased lookback
             if (recentMessages.length === 0) continue;
 
             const messageIdsToCheck = recentMessages.map(msg => msg.id._serialized);
@@ -228,15 +224,19 @@ const handleMessage = async (message) => {
             const triggerText = message.body.trim();
             const match = abbreviationCache.find(abbr => abbr.trigger === triggerText);
             if (match) {
-                console.log(`[ABBR] Trigger "${triggerText}" found in group "${chat.name}".`);
                 await client.sendMessage(chat.id._serialized, match.response);
                 return;
             }
         }
 
         if (message.hasMedia && !message.fromMe) {
-            await invoiceQueue.add('process-invoice', { messageId }, { jobId: messageId });
-            console.log(`[QUEUE] Added media from "${chat.name}" to queue. Msg ID: ${messageId}`);
+            try {
+                await invoiceQueue.add('process-invoice', { messageId }, { jobId: messageId });
+                console.log(`[QUEUE] Added media from "${chat.name}" to queue. Msg ID: ${messageId}`);
+            } catch (queueError) {
+                console.error(`[QUEUE-ERROR] Failed to add message ${messageId} to the queue:`, queueError);
+                await pool.query('DELETE FROM processed_messages WHERE message_id = ?', [messageId]);
+            }
         }
     } catch (error) {
         if (error.code !== 'ER_DUP_ENTRY') {
@@ -252,21 +252,17 @@ const handleMessageRevoke = async (message, revoked_msg) => {
                            || null;
 
     if (!deletedMessageId) {
-        console.warn('[DELETE] Could not determine ID of deleted message. Skipping.');
         return;
     }
     console.log(`[DELETE] Revoke event for message ID: ${deletedMessageId}`);
 
     try {
-        // First, try to update the invoice directly if it already exists
         const [updateResult] = await pool.query('UPDATE invoices SET is_deleted = 1 WHERE message_id = ?', [deletedMessageId]);
 
         if (updateResult.affectedRows > 0) {
-            // Success! The invoice was already in the DB.
-            console.log(`[DELETE] Found and marked invoice as deleted for message ID: ${deletedMessageId}`);
+            console.log(`[DELETE] Found and marked existing invoice as deleted for message ID: ${deletedMessageId}`);
             if (io) io.emit('invoices:updated');
         } else {
-            // The invoice was not in the DB (race condition). Leave a tombstone.
             console.log(`[DELETE] No invoice found. Creating tombstone for message ID: ${deletedMessageId}`);
             await pool.query(
                 'INSERT INTO deleted_message_ids (message_id) VALUES (?) ON DUPLICATE KEY UPDATE message_id=message_id',
@@ -311,9 +307,8 @@ const initializeWhatsApp = (socketIoInstance) => {
         qrCodeData = null;
         connectionStatus = 'connected';
         refreshAbbreviationCache();
-        reconcileMissedMessages(); 
-        cron.schedule('*/5 * * * *', reconcileMissedMessages);
-        console.log('[RECONCILER] Self-healing reconciler scheduled to run every 5 minutes.');
+        cron.schedule('* * * * *', reconcileMissedMessages); // Run every minute for stability
+        console.log('[RECONCILER] Self-healing reconciler scheduled to run every minute.');
     });
     
     client.on('message', handleMessage);

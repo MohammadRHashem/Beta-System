@@ -1,5 +1,6 @@
 import { format } from 'date-fns';
-import { utcToZonedTime } from 'date-fns-tz';
+// THIS IS THE CORRECTED IMPORT SYNTAX FOR VITE/ESM
+import { utcToZonedTime } from 'date-fns-tz/utcToZonedTime';
 
 const SAO_PAULO_TZ = 'America/Sao_Paulo';
 
@@ -30,8 +31,7 @@ export function formatUTCToSaoPauloInput(utcDateString) {
     if (!utcDateString) return '';
     const date = new Date(utcDateString);
     const zonedDate = utcToZonedTime(date, SAO_PAULO_TZ);
-    // format 'u' gives YYYY-MM-DD, 'HH:mm' gives the time.
-    return `${format(zonedDate, 'u', { timeZone: SAO_PAULO_TZ }).split(' ')[0]}T${format(zonedDate, 'HH:mm', { timeZone: SAO_PAULO_TZ })}`;
+    return format(zonedDate, "yyyy-MM-dd'T'HH:mm", { timeZone: SAO_PAULO_TZ });
 }
 
 
@@ -41,6 +41,6 @@ export function formatUTCToSaoPauloInput(utcDateString) {
  */
 export function getCurrentSaoPauloForInput() {
     const now = new Date();
-    const zonedDate = utcToZonedTime(now, SAO_PAULO_TZ);
-    return `${format(zonedDate, 'u', { timeZone: SAO_PAULO_TZ }).split(' ')[0]}T${format(zonedDate, 'HH:mm', { timeZone: SAO_PAULO_TZ })}`;
+    // We don't need to convert here, just format 'now' with the target timezone
+    return format(now, "yyyy-MM-dd'T'HH:mm", { timeZone: SAO_PAULO_TZ });
 }

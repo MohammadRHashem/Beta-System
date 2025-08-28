@@ -1,5 +1,6 @@
 import React from 'react';
 import styled from 'styled-components';
+import Select from 'react-select';
 
 const FilterContainer = styled.div`
     background: #fff;
@@ -7,7 +8,7 @@ const FilterContainer = styled.div`
     border-radius: 8px;
     box-shadow: 0 2px 4px rgba(0,0,0,0.05);
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
     gap: 1rem;
     align-items: flex-end;
 `;
@@ -30,14 +31,6 @@ const Input = styled.input`
     font-size: 0.9rem;
 `;
 
-const Select = styled.select`
-    padding: 0.6rem;
-    border: 1px solid ${({ theme }) => theme.border};
-    border-radius: 4px;
-    font-size: 0.9rem;
-    background: white;
-`;
-
 const ClearButton = styled.button`
     padding: 0.6rem 1rem;
     border: 1px solid ${({ theme }) => theme.lightText};
@@ -52,7 +45,23 @@ const ClearButton = styled.button`
     }
 `;
 
+const selectStyles = {
+  control: (provided) => ({
+    ...provided,
+    minHeight: '40px',
+  }),
+  menu: (provided) => ({
+    ...provided,
+    zIndex: 20
+  })
+};
+
 const InvoiceFilter = ({ filters, onFilterChange, allGroups, recipientNames }) => {
+
+    const handleMultiChange = (name, selectedOptions) => {
+        const values = selectedOptions ? selectedOptions.map(opt => opt.value) : [];
+        onFilterChange({ ...filters, [name]: values });
+    };
 
     const handleChange = (e) => {
         onFilterChange({ ...filters, [e.target.name]: e.target.value });
@@ -60,12 +69,14 @@ const InvoiceFilter = ({ filters, onFilterChange, allGroups, recipientNames }) =
     
     const handleClear = () => {
         onFilterChange({
-            search: '', dateFrom: '', dateTo: '',
-            timeFrom: '', timeTo: '', // Also clear time fields
-            sourceGroup: '', recipientName: '', reviewStatus: '',
+            search: '', dateFrom: '', dateTo: '', timeFrom: '', timeTo: '',
+            sourceGroups: [], recipientNames: [],
+            reviewStatus: '', status: '',
         });
     };
 
+    const groupOptions = allGroups.map(g => ({ value: g.id, label: g.name }));
+    const recipientOptions = recipientNames.map(name => ({ value: name, label: name }));
 
     return (
         <FilterContainer>
@@ -77,7 +88,6 @@ const InvoiceFilter = ({ filters, onFilterChange, allGroups, recipientNames }) =
                 <Label>From Date</Label>
                 <Input name="dateFrom" type="date" value={filters.dateFrom} onChange={handleChange} />
             </InputGroup>
-            {/* === NEW TIME FROM FIELD === */}
             <InputGroup>
                 <Label>From Time</Label>
                 <Input name="timeFrom" type="time" value={filters.timeFrom} onChange={handleChange} />
@@ -86,33 +96,51 @@ const InvoiceFilter = ({ filters, onFilterChange, allGroups, recipientNames }) =
                 <Label>To Date</Label>
                 <Input name="dateTo" type="date" value={filters.dateTo} onChange={handleChange} />
             </InputGroup>
-            {/* === NEW TIME TO FIELD === */}
             <InputGroup>
                 <Label>To Time</Label>
                 <Input name="timeTo" type="time" value={filters.timeTo} onChange={handleChange} />
             </InputGroup>
+
             <InputGroup>
-                <Label>Source Group</Label>
-                <Select name="sourceGroup" value={filters.sourceGroup} onChange={handleChange}>
-                    <option value="">All Groups</option>
-                    {allGroups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
-                </Select>
+                <Label>Source Groups</Label>
+                <Select
+                    isMulti
+                    options={groupOptions}
+                    styles={selectStyles}
+                    onChange={(opts) => handleMultiChange('sourceGroups', opts)}
+                    value={groupOptions.filter(opt => filters.sourceGroups.includes(opt.value))}
+                />
             </InputGroup>
+
             <InputGroup>
-                <Label>Recipient Name</Label>
-                <Select name="recipientName" value={filters.recipientName} onChange={handleChange}>
-                    <option value="">All Recipients</option>
-                    {recipientNames.map(name => <option key={name} value={name}>{name}</option>)}
-                </Select>
+                <Label>Recipient Names</Label>
+                <Select
+                    isMulti
+                    options={recipientOptions}
+                    styles={selectStyles}
+                    onChange={(opts) => handleMultiChange('recipientNames', opts)}
+                    value={recipientOptions.filter(opt => filters.recipientNames.includes(opt.value))}
+                />
             </InputGroup>
+
             <InputGroup>
                 <Label>Review Status</Label>
-                <Select name="reviewStatus" value={filters.reviewStatus} onChange={handleChange}>
+                <select name="reviewStatus" value={filters.reviewStatus} onChange={handleChange} style={{height: '40px', border: '1px solid hsl(0, 0%, 80%)', borderRadius: '4px'}}>
                     <option value="">Show All</option>
                     <option value="only_review">Show Only To Be Reviewed</option>
                     <option value="hide_review">Hide "To Be Reviewed"</option>
-                </Select>
+                </select>
             </InputGroup>
+            
+            <InputGroup>
+                <Label>Other Status</Label>
+                <select name="status" value={filters.status} onChange={handleChange} style={{height: '40px', border: '1px solid hsl(0, 0%, 80%)', borderRadius: '4px'}}>
+                    <option value="">Show All</option>
+                    <option value="only_deleted">Show Only Deleted</option>
+                    <option value="only_duplicates">Show Only Duplicates</option>
+                </select>
+            </InputGroup>
+
             <ClearButton onClick={handleClear}>Clear Filters</ClearButton>
         </FilterContainer>
     );

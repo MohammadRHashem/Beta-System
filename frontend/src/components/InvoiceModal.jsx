@@ -46,14 +46,29 @@ const Button = styled.button`
     font-weight: bold;
 `;
 
-const InvoiceModal = ({ isOpen, onClose, invoice, onSave }) => {
+const InvoiceModal = ({ isOpen, onClose, invoice, invoices, insertAtIndex, onSave }) => {
     const isEditMode = !!invoice;
+    const isInsertMode = insertAtIndex !== null;
     const [formData, setFormData] = useState({});
 
     useEffect(() => {
         if (isOpen) {
             if (isEditMode) {
                 setFormData({ ...invoice, received_at: formatUTCToSaoPauloInput(invoice.received_at) });
+            } else if (isInsertMode) {
+                const prevInvoice = invoices[insertAtIndex - 1];
+                const nextInvoice = invoices[insertAtIndex];
+                
+                const startTime = prevInvoice ? new Date(prevInvoice.received_at).getTime() : new Date().getTime() - 60000;
+                const endTime = nextInvoice ? new Date(nextInvoice.received_at).getTime() : new Date().getTime();
+
+                const midTime = new Date(startTime + (endTime - startTime) / 2);
+                
+                setFormData({
+                    sender_name: '', recipient_name: '', transaction_id: '',
+                    pix_key: '', amount: '', credit: '', notes: '',
+                    received_at: formatUTCToSaoPauloInput(midTime.toISOString())
+                });
             } else {
                 setFormData({
                     sender_name: '', recipient_name: '', transaction_id: '',
@@ -62,7 +77,7 @@ const InvoiceModal = ({ isOpen, onClose, invoice, onSave }) => {
                 });
             }
         }
-    }, [invoice, isEditMode, isOpen]);
+    }, [invoice, invoices, insertAtIndex, isEditMode, isInsertMode, isOpen]);
 
     const handleChange = (e) => {
         setFormData({ ...formData, [e.target.name]: e.target.value });
@@ -91,7 +106,7 @@ const InvoiceModal = ({ isOpen, onClose, invoice, onSave }) => {
 
     return (
         <Modal isOpen={isOpen} onClose={onClose}>
-            <h2>{isEditMode ? 'Edit Invoice' : 'Add Manual Entry'}</h2>
+            <h2>{isEditMode ? 'Edit Invoice' : 'Add New Entry'}</h2>
             <Form onSubmit={handleSubmit}>
                 <InputGroup>
                     <Label>Received At (São Paulo Time)</Label>

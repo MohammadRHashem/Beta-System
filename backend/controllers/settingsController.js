@@ -2,8 +2,9 @@ const pool = require('../config/db');
 
 // --- Forwarding Rules ---
 exports.getForwardingRules = async (req, res) => {
+    const userId = req.user.id;
     try {
-        const [rules] = await pool.query('SELECT * FROM forwarding_rules');
+        const [rules] = await pool.query('SELECT * FROM forwarding_rules WHERE user_id = ?', [userId]);
         res.json(rules);
     } catch (error) {
         res.status(500).json({ message: 'Failed to fetch rules.' });
@@ -11,11 +12,12 @@ exports.getForwardingRules = async (req, res) => {
 };
 
 exports.createForwardingRule = async (req, res) => {
+    const userId = req.user.id;
     const { trigger_keyword, destination_group_jid, destination_group_name } = req.body;
     try {
         await pool.query(
-            'INSERT INTO forwarding_rules (trigger_keyword, destination_group_jid, destination_group_name) VALUES (?, ?, ?)',
-            [trigger_keyword, destination_group_jid, destination_group_name]
+            'INSERT INTO forwarding_rules (user_id, trigger_keyword, destination_group_jid, destination_group_name) VALUES (?, ?, ?, ?)',
+            [userId, trigger_keyword, destination_group_jid, destination_group_name]
         );
         res.status(201).json({ message: 'Rule created successfully.' });
     } catch (error) {
@@ -69,8 +71,6 @@ exports.deleteForwardingRule = async (req, res) => {
 // --- Group Settings ---
 exports.getGroupSettings = async (req, res) => {
     try {
-        // We do a LEFT JOIN to ensure all groups from whatsapp_groups are listed,
-        // even if they don't have a settings entry yet (we'll use defaults).
         const [groups] = await pool.query(`
             SELECT 
                 wg.group_jid, 
