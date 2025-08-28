@@ -1,7 +1,7 @@
 const pool = require('../config/db');
 const { recalculateBalances } = require('../utils/balanceCalculator');
 const ExcelJS = require('exceljs');
-// THIS IS THE SINGLE, CORRECTED REQUIRE STATEMENT
+// THIS IS THE SINGLE, CORRECT REQUIRE STATEMENT FOR THE BACKEND
 const { zonedTimeToUtc, utcToZonedTime, format } = require('date-fns-tz');
 const path = require('path');
 const fs = require('fs');
