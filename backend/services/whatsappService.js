@@ -4,7 +4,7 @@ const fs = require('fs/promises');
 const fsSync = require('fs');
 const pool = require('../config/db');
 const path = require('path');
-const execa = require('execa');
+// execa is no longer required at the top
 const os = require('os');
 const dotenv = require('dotenv');
 const { Queue, Worker } = require('bullmq');
@@ -20,13 +20,16 @@ let io; // To hold the socket.io instance
 const redisConnection = { host: 'localhost', port: 6379, maxRetriesPerRequest: null };
 const invoiceQueue = new Queue('invoice-processing-queue', { connection: redisConnection });
 
-// Ensure media archive directory exists
 const MEDIA_ARCHIVE_DIR = path.join(__dirname, '..', 'media_archive');
 if (!fsSync.existsSync(MEDIA_ARCHIVE_DIR)) {
     fsSync.mkdirSync(MEDIA_ARCHIVE_DIR, { recursive: true });
 }
 
 const invoiceWorker = new Worker('invoice-processing-queue', async (job) => {
+    // === DEFINITIVE FIX: DYNAMICALLY IMPORT EXECA AS AN ESM MODULE ===
+    const { execa } = await import('execa');
+    // =================================================================
+
     if (!client || connectionStatus !== 'connected') {
         throw new Error("WhatsApp client is not connected. Job will be retried.");
     }
@@ -47,13 +50,11 @@ const invoiceWorker = new Worker('invoice-processing-queue', async (job) => {
         const chat = await message.getChat();
         await connection.query('INSERT INTO processed_messages (message_id) VALUES (?) ON DUPLICATE KEY UPDATE message_id=message_id', [messageId]);
 
-        // DEFINITIVE FIX: CHECK FOR TOMBSTONE BEFORE ANY OTHER ACTION
         const [tombstoneRows] = await connection.query('SELECT message_id FROM deleted_message_ids WHERE message_id = ?', [messageId]);
         if (tombstoneRows.length > 0) {
             console.log(`[WORKER] Message ${messageId} was deleted before processing. Creating 'ghost invoice'.`);
             const receivedAt = new Date(message.timestamp * 1000);
             
-            // Insert a minimal record to represent the deleted invoice.
             await connection.query(
                `INSERT INTO invoices (message_id, source_group_jid, received_at, is_deleted, notes) 
                 VALUES (?, ?, ?, ?, ?)`,
@@ -63,11 +64,9 @@ const invoiceWorker = new Worker('invoice-processing-queue', async (job) => {
             await connection.query('DELETE FROM deleted_message_ids WHERE message_id = ?', [messageId]);
             await connection.commit();
             if (io) io.emit('invoices:updated');
-            return; // Stop processing immediately.
+            return;
         }
 
-        // --- REGULAR PROCESSING (if not deleted) ---
-        
         const [settings] = await connection.query('SELECT * FROM group_settings WHERE group_jid = ?', [chat.id._serialized]);
         const groupSettings = settings[0] || { forwarding_enabled: true, archiving_enabled: true };
 
@@ -95,10 +94,13 @@ const invoiceWorker = new Worker('invoice-processing-queue', async (job) => {
         
         let invoiceJson;
         try {
+            // This call will now work correctly.
             const { stdout } = await execa(pythonExecutablePath, [pythonScriptPath, tempFilePath], { cwd: pythonScriptsDir, env: pythonEnv });
             invoiceJson = JSON.parse(stdout);
         } catch (pythonError) {
-            await fs.unlink(tempFilePath); throw pythonError;
+            console.error(`[WORKER-PYTHON-ERROR] Script failed for job ${job.id}. Stderr:`, pythonError.stderr);
+            await fs.unlink(tempFilePath); 
+            throw pythonError;
         }
 
         const { amount, sender, recipient, transaction_id } = invoiceJson;
@@ -118,7 +120,7 @@ const invoiceWorker = new Worker('invoice-processing-queue', async (job) => {
             await connection.query(
                `INSERT INTO invoices (message_id, transaction_id, sender_name, recipient_name, pix_key, amount, source_group_jid, received_at, raw_json_data, media_path, is_deleted) 
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-               [messageId, transaction_id, sender?.name, recipient.name, recipient.pix_key, amount, chat.id._serialized, receivedAt, JSON.stringify(invoiceJson), finalMediaPath, false] // is_deleted is false here
+               [messageId, transaction_id, sender?.name, recipient.name, recipient.pix_key, amount, chat.id._serialized, receivedAt, JSON.stringify(invoiceJson), finalMediaPath, false]
             );
 
             await recalculateBalances(connection, receivedAt.toISOString());
@@ -177,7 +179,6 @@ const reconcileMissedMessages = async () => {
     isReconciling = true;
     console.log('[RECONCILER] Starting aggressive check for missed messages...');
 
-    // ESTABLISH A 24-HOUR CUTOFF POINT
     const cutoffTimestamp = Math.floor((Date.now() - 24 * 60 * 60 * 1000) / 1000);
     console.log(`[RECONCILER] Ignoring any messages received before: ${new Date(cutoffTimestamp * 1000).toISOString()}`);
 
@@ -189,7 +190,6 @@ const reconcileMissedMessages = async () => {
             const recentMessages = await group.fetchMessages({ limit: 50 }); 
             if (recentMessages.length === 0) continue;
 
-            // Filter out messages older than 24 hours
             const messagesWithinWindow = recentMessages.filter(msg => msg.timestamp >= cutoffTimestamp);
             if (messagesWithinWindow.length === 0) continue;
             
