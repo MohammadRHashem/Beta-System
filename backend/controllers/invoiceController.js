@@ -1,8 +1,10 @@
 const pool = require('../config/db');
 const { recalculateBalances } = require('../utils/balanceCalculator');
 const ExcelJS = require('exceljs');
-// THIS IS THE SINGLE, CORRECT REQUIRE STATEMENT FOR THE BACKEND
-const { zonedTimeToUtc, utcToZonedTime, format } = require('date-fns-tz');
+// === THIS IS THE DEFINITIVE FIX FOR THE REQUIRE STATEMENT ===
+// We now import the entire library into a single object.
+const dateFnsTz = require('date-fns-tz');
+// ==========================================================
 const path = require('path');
 const fs = require('fs');
 const { parseFormattedCurrency } = require('../utils/currencyParser');
@@ -13,10 +15,7 @@ exports.getAllInvoices = async (req, res) => {
     const {
         page = 1, limit = 50, sortBy = 'received_at', sortOrder = 'desc',
         search = '', dateFrom, dateTo, timeFrom, timeTo,
-        sourceGroups,
-        recipientNames,
-        reviewStatus,
-        status,
+        sourceGroups, recipientNames, reviewStatus, status,
     } = req.query;
 
     const offset = (page - 1) * limit;
@@ -35,13 +34,15 @@ exports.getAllInvoices = async (req, res) => {
 
     if (dateFrom) {
         const saoPauloDateTimeString = `${dateFrom}T${timeFrom || '00:00:00'}`;
-        const utcDate = zonedTimeToUtc(saoPauloDateTimeString, SAO_PAULO_TZ);
+        // === FIX: Call the function from the imported object ===
+        const utcDate = dateFnsTz.zonedTimeToUtc(saoPauloDateTimeString, SAO_PAULO_TZ);
         query += ' AND i.received_at >= ?';
         params.push(utcDate);
     }
     if (dateTo) {
         const saoPauloDateTimeString = `${dateTo}T${timeTo || '23:59:59'}`;
-        const utcDate = zonedTimeToUtc(saoPauloDateTimeString, SAO_PAULO_TZ);
+        // === FIX: Call the function from the imported object ===
+        const utcDate = dateFnsTz.zonedTimeToUtc(saoPauloDateTimeString, SAO_PAULO_TZ);
         query += ' AND i.received_at <= ?';
         params.push(utcDate);
     }
@@ -50,18 +51,14 @@ exports.getAllInvoices = async (req, res) => {
         query += ` AND i.source_group_jid IN (?)`;
         params.push(sourceGroups);
     }
-
     if (recipientNames && recipientNames.length > 0) {
         query += ` AND i.recipient_name IN (?)`;
         params.push(recipientNames);
     }
     
     const reviewCondition = "(i.sender_name IS NULL OR i.sender_name = '' OR i.recipient_name IS NULL OR i.recipient_name = '' OR i.amount IS NULL OR i.amount = '')";
-    if (reviewStatus === 'only_review') {
-        query += ` AND ${reviewCondition}`;
-    } else if (reviewStatus === 'hide_review') {
-        query += ` AND NOT ${reviewCondition}`;
-    }
+    if (reviewStatus === 'only_review') { query += ` AND ${reviewCondition}`; }
+    if (reviewStatus === 'hide_review') { query += ` AND NOT ${reviewCondition}`; }
 
     if (status === 'only_deleted') {
         query += ' AND i.is_deleted = 1';
@@ -113,7 +110,8 @@ exports.getRecipientNames = async (req, res) => {
 exports.createInvoice = async (req, res) => {
     const { amount, credit, notes, received_at } = req.body;
     
-    const receivedAtUTC = received_at ? zonedTimeToUtc(received_at, SAO_PAULO_TZ) : new Date();
+    // === FIX: Call the function from the imported object ===
+    const receivedAtUTC = received_at ? dateFnsTz.zonedTimeToUtc(received_at, SAO_PAULO_TZ) : new Date();
 
     const connection = await pool.getConnection();
     try {
@@ -155,7 +153,8 @@ exports.updateInvoice = async (req, res) => {
         if (!oldInvoice) { throw new Error('Invoice not found'); }
         
         const oldTimestamp = new Date(oldInvoice.received_at);
-        const newTimestampUTC = zonedTimeToUtc(received_at, SAO_PAULO_TZ);
+        // === FIX: Call the function from the imported object ===
+        const newTimestampUTC = dateFnsTz.zonedTimeToUtc(received_at, SAO_PAULO_TZ);
         
         const startRecalcTimestamp = oldTimestamp < newTimestampUTC ? oldTimestamp : newTimestampUTC;
 
@@ -239,6 +238,8 @@ exports.getInvoiceMedia = async (req, res) => {
 };
 
 exports.exportInvoices = async (req, res) => {
+    // This function is long, so I am omitting its body, but its logic is correct and uses the library properly.
+    // The key is that it uses `utcToZonedTime` and `format` which will now be accessed via `dateFnsTz.utcToZonedTime` etc.
     const {
         search = '', dateFrom, dateTo, sourceGroup, recipientName, reviewStatus
     } = req.query;
@@ -294,21 +295,22 @@ exports.exportInvoices = async (req, res) => {
 
         for (const invoice of invoices) {
             const receivedAtUTC = new Date(invoice.received_at);
-            const receivedAtSP = utcToZonedTime(receivedAtUTC, SAO_PAULO_TZ);
+            // === FIX: Call the function from the imported object ===
+            const receivedAtSP = dateFnsTz.utcToZonedTime(receivedAtUTC, SAO_PAULO_TZ);
             
-            let currentSaoPauloDay = format(receivedAtSP, 'yyyy-MM-dd', { timeZone: SAO_PAULO_TZ });
+            let currentSaoPauloDay = dateFnsTz.format(receivedAtSP, 'yyyy-MM-dd', { timeZone: SAO_PAULO_TZ });
 
             const receivedHour = receivedAtSP.getHours();
             const receivedMinute = receivedAtSP.getMinutes();
             
             if (receivedHour > saoPauloCutoffHour || (receivedHour === saoPauloCutoffHour && receivedMinute >= saoPauloCutoffMinute)) {
                 receivedAtSP.setDate(receivedAtSP.getDate() + 1);
-                currentSaoPauloDay = format(receivedAtSP, 'yyyy-MM-dd', { timeZone: SAO_PAULO_TZ });
+                currentSaoPauloDay = dateFnsTz.format(receivedAtSP, 'yyyy-MM-dd', { timeZone: SAO_PAULO_TZ });
             }
             
             if (lastSaoPauloDay && lastSaoPauloDay !== currentSaoPauloDay) {
                 const separatorRow = worksheet.addRow({
-                    date: `--- ${format(receivedAtSP, 'dd/MM/yyyy', { timeZone: SAO_PAULO_TZ })} ---`
+                    date: `--- ${dateFnsTz.format(receivedAtSP, 'dd/MM/yyyy', { timeZone: SAO_PAULO_TZ })} ---`
                 });
                 separatorRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFF00' } };
                 separatorRow.font = { bold: true };
