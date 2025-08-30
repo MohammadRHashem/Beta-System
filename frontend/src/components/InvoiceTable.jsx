@@ -2,7 +2,27 @@ import React, { useMemo } from 'react';
 import styled, { css } from 'styled-components';
 import { viewInvoiceMedia, deleteInvoice } from '../services/api';
 import { FaEdit, FaTrashAlt, FaEye, FaSort, FaSortUp, FaSortDown, FaPlus } from 'react-icons/fa';
-import { formatUTCToSaoPaulo } from '../utils/dateFormatter'; // Import the new formatter
+
+// NATIVE JAVASCRIPT DATE FORMATTER FOR SÃO PAULO
+const formatSaoPauloDateTime = (utcDateString) => {
+    if (!utcDateString) return '';
+    try {
+        const date = new Date(utcDateString);
+        // This will format the UTC date into a São Paulo string, regardless of the user's browser setting.
+        return new Intl.DateTimeFormat('pt-BR', {
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit',
+            hour12: false,
+            timeZone: 'America/Sao_Paulo'
+        }).format(date).replace(',', ''); // remove comma between date and time
+    } catch (e) {
+        return 'Invalid Date';
+    }
+};
 
 const TableWrapper = styled.div`
     background: #fff;
@@ -211,7 +231,7 @@ const InvoiceTable = ({ invoices, loading, sort, onSortChange, onEdit, paginatio
                                     <AddBetweenButton onClick={() => onEdit(null, index)} title="Insert new entry here">
                                         <FaPlus size={12} />
                                     </AddBetweenButton>
-                                    {formatUTCToSaoPaulo(inv.received_at)}
+                                    {formatSaoPauloDateTime(inv.received_at)}
                                 </Td>
                                 <Td>{inv.transaction_id || ''}</Td>
                                 <Td className={needsReview && !inv.sender_name ? 'review' : ''}>

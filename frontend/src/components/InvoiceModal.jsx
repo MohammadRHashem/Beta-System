@@ -2,7 +2,12 @@ import React, { useState, useEffect } from 'react';
 import styled from 'styled-components';
 import Modal from './Modal';
 import { createInvoice, updateInvoice } from '../services/api';
-import { getSaoPauloInputTimeFromUTC, getCurrentTimeForInput } from '../utils/dateFormatter';
+
+// NATIVE JAVASCRIPT HELPER TO FORMAT DATE FOR <input type="datetime-local">
+const formatForInput = (date) => {
+    const pad = (num) => num.toString().padStart(2, '0');
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+};
 
 const Form = styled.form`
     display: grid;
@@ -54,7 +59,10 @@ const InvoiceModal = ({ isOpen, onClose, invoice, invoices, insertAtIndex, onSav
     useEffect(() => {
         if (isOpen) {
             if (isEditMode) {
-                setFormData({ ...invoice, received_at: getSaoPauloInputTimeFromUTC(invoice.received_at) });
+                // When editing, the 'received_at' from the DB is a UTC string.
+                // We create a Date object from it, which the input will display correctly
+                // in the user's local timezone. The backend will interpret this as São Paulo time.
+                setFormData({ ...invoice, received_at: formatForInput(new Date(invoice.received_at)) });
             } else if (isInsertMode) {
                 const prevInvoice = invoices[insertAtIndex - 1];
                 const nextInvoice = invoices[insertAtIndex];
@@ -65,13 +73,14 @@ const InvoiceModal = ({ isOpen, onClose, invoice, invoices, insertAtIndex, onSav
                 setFormData({
                     sender_name: '', recipient_name: '', transaction_id: '',
                     pix_key: '', amount: '', credit: '', notes: '',
-                    received_at: getSaoPauloInputTimeFromUTC(midTime.toISOString())
+                    received_at: formatForInput(midTime)
                 });
             } else {
+                // For a new entry, just use the current browser time. The backend will treat it as São Paulo time.
                 setFormData({
                     sender_name: '', recipient_name: '', transaction_id: '',
                     pix_key: '', amount: '', credit: '', notes: '',
-                    received_at: getCurrentTimeForInput()
+                    received_at: formatForInput(new Date())
                 });
             }
         }

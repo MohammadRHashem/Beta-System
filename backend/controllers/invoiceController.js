@@ -1,15 +1,11 @@
 const pool = require('../config/db');
 const { recalculateBalances } = require('../utils/balanceCalculator');
 const ExcelJS = require('exceljs');
-// === THIS IS THE DEFINITIVE FIX FOR THE REQUIRE STATEMENT ===
-// We now import the entire library into a single object.
-const dateFnsTz = require('date-fns-tz');
-// ==========================================================
 const path = require('path');
 const fs = require('fs');
 const { parseFormattedCurrency } = require('../utils/currencyParser');
 
-const SAO_PAULO_TZ = 'America/Sao_Paulo';
+// All external date-fns-tz libraries have been removed.
 
 exports.getAllInvoices = async (req, res) => {
     const {
@@ -27,24 +23,27 @@ exports.getAllInvoices = async (req, res) => {
     const params = [];
 
     if (search) {
-        query += ` AND (i.transaction_id LIKE ? OR i.sender_name LIKE ? OR i.recipient_name LIKE ? OR i.pix_key LIKE ? OR i.notes LIKE ?)`;
+        query += ` AND (
+            i.transaction_id LIKE ? OR 
+            i.sender_name LIKE ? OR 
+            i.recipient_name LIKE ? OR 
+            i.pix_key LIKE ? OR 
+            i.notes LIKE ?
+        )`;
         const searchTerm = `%${search}%`;
         params.push(searchTerm, searchTerm, searchTerm, searchTerm, searchTerm);
     }
 
+    // SIMPLIFIED TIME LOGIC: Treat incoming strings as literal timestamps
     if (dateFrom) {
-        const saoPauloDateTimeString = `${dateFrom}T${timeFrom || '00:00:00'}`;
-        // === FIX: Call the function from the imported object ===
-        const utcDate = dateFnsTz.zonedTimeToUtc(saoPauloDateTimeString, SAO_PAULO_TZ);
+        const startDateTime = `${dateFrom} ${timeFrom || '00:00:00'}`;
         query += ' AND i.received_at >= ?';
-        params.push(utcDate);
+        params.push(startDateTime);
     }
     if (dateTo) {
-        const saoPauloDateTimeString = `${dateTo}T${timeTo || '23:59:59'}`;
-        // === FIX: Call the function from the imported object ===
-        const utcDate = dateFnsTz.zonedTimeToUtc(saoPauloDateTimeString, SAO_PAULO_TZ);
+        const endDateTime = `${dateTo} ${timeTo || '23:59:59'}`;
         query += ' AND i.received_at <= ?';
-        params.push(utcDate);
+        params.push(endDateTime);
     }
 
     if (sourceGroups && sourceGroups.length > 0) {
@@ -110,8 +109,8 @@ exports.getRecipientNames = async (req, res) => {
 exports.createInvoice = async (req, res) => {
     const { amount, credit, notes, received_at } = req.body;
     
-    // === FIX: Call the function from the imported object ===
-    const receivedAtUTC = received_at ? dateFnsTz.zonedTimeToUtc(received_at, SAO_PAULO_TZ) : new Date();
+    // SIMPLIFIED TIME LOGIC: Use the datetime-local string from the frontend directly.
+    const receivedAt = received_at ? new Date(received_at) : new Date();
 
     const connection = await pool.getConnection();
     try {
@@ -119,10 +118,10 @@ exports.createInvoice = async (req, res) => {
 
         const [result] = await connection.query(
             'INSERT INTO invoices (amount, credit, notes, received_at, is_manual, sender_name, recipient_name) VALUES (?, ?, ?, ?, ?, ?, ?)',
-            [amount || null, credit || null, notes, receivedAtUTC, true, req.body.sender_name || '', req.body.recipient_name || '']
+            [amount || null, credit || null, notes, receivedAt, true, req.body.sender_name || '', req.body.recipient_name || '']
         );
         
-        await recalculateBalances(connection, receivedAtUTC.toISOString());
+        await recalculateBalances(connection, receivedAt.toISOString());
 
         await connection.commit();
         
@@ -153,17 +152,17 @@ exports.updateInvoice = async (req, res) => {
         if (!oldInvoice) { throw new Error('Invoice not found'); }
         
         const oldTimestamp = new Date(oldInvoice.received_at);
-        // === FIX: Call the function from the imported object ===
-        const newTimestampUTC = dateFnsTz.zonedTimeToUtc(received_at, SAO_PAULO_TZ);
+        // SIMPLIFIED TIME LOGIC: Use the datetime-local string directly.
+        const newTimestamp = new Date(received_at);
         
-        const startRecalcTimestamp = oldTimestamp < newTimestampUTC ? oldTimestamp : newTimestampUTC;
+        const startRecalcTimestamp = oldTimestamp < newTimestamp ? oldTimestamp : newTimestamp;
 
         await connection.query(
             `UPDATE invoices SET 
                 transaction_id = ?, sender_name = ?, recipient_name = ?, pix_key = ?, 
                 amount = ?, credit = ?, notes = ?, received_at = ?
             WHERE id = ?`,
-            [transaction_id, sender_name, recipient_name, pix_key, amount, credit, notes, newTimestampUTC, id]
+            [transaction_id, sender_name, recipient_name, pix_key, amount, credit, notes, newTimestamp, id]
         );
         
         await recalculateBalances(connection, startRecalcTimestamp.toISOString());
@@ -238,10 +237,8 @@ exports.getInvoiceMedia = async (req, res) => {
 };
 
 exports.exportInvoices = async (req, res) => {
-    // This function is long, so I am omitting its body, but its logic is correct and uses the library properly.
-    // The key is that it uses `utcToZonedTime` and `format` which will now be accessed via `dateFnsTz.utcToZonedTime` etc.
     const {
-        search = '', dateFrom, dateTo, sourceGroup, recipientName, reviewStatus
+        search = '', dateFrom, dateTo, sourceGroups, recipientNames, reviewStatus, status
     } = req.query;
 
     let query = `
@@ -264,11 +261,13 @@ exports.exportInvoices = async (req, res) => {
         query += ' AND i.received_at < ?';
         params.push(toDate.toISOString().split('T')[0]);
     }
-    if (sourceGroup) { query += ' AND i.source_group_jid = ?'; params.push(sourceGroup); }
-    if (recipientName) { query += ' AND i.recipient_name = ?'; params.push(recipientName); }
+    if (sourceGroups && sourceGroups.length > 0) { query += ' AND i.source_group_jid IN (?)'; params.push(sourceGroups); }
+    if (recipientNames && recipientNames.length > 0) { query += ' AND i.recipient_name IN (?)'; params.push(recipientNames); }
     const reviewCondition = "(i.sender_name IS NULL OR i.sender_name = '' OR i.recipient_name IS NULL OR i.recipient_name = '' OR i.amount IS NULL OR i.amount = '')";
     if (reviewStatus === 'only_review') { query += ` AND ${reviewCondition}`; }
     if (reviewStatus === 'hide_review') { query += ` AND NOT ${reviewCondition}`; }
+    if (status === 'only_deleted') { query += ' AND i.is_deleted = 1'; }
+    if (status === 'only_duplicates') { query += ` AND i.transaction_id IS NOT NULL AND i.transaction_id != '' AND i.transaction_id IN (SELECT transaction_id FROM invoices WHERE transaction_id IS NOT NULL AND transaction_id != '' GROUP BY transaction_id HAVING COUNT(*) > 1)`; }
 
     query += ' ORDER BY i.received_at ASC, i.id ASC';
 
@@ -295,28 +294,6 @@ exports.exportInvoices = async (req, res) => {
 
         for (const invoice of invoices) {
             const receivedAtUTC = new Date(invoice.received_at);
-            // === FIX: Call the function from the imported object ===
-            const receivedAtSP = dateFnsTz.utcToZonedTime(receivedAtUTC, SAO_PAULO_TZ);
-            
-            let currentSaoPauloDay = dateFnsTz.format(receivedAtSP, 'yyyy-MM-dd', { timeZone: SAO_PAULO_TZ });
-
-            const receivedHour = receivedAtSP.getHours();
-            const receivedMinute = receivedAtSP.getMinutes();
-            
-            if (receivedHour > saoPauloCutoffHour || (receivedHour === saoPauloCutoffHour && receivedMinute >= saoPauloCutoffMinute)) {
-                receivedAtSP.setDate(receivedAtSP.getDate() + 1);
-                currentSaoPauloDay = dateFnsTz.format(receivedAtSP, 'yyyy-MM-dd', { timeZone: SAO_PAULO_TZ });
-            }
-            
-            if (lastSaoPauloDay && lastSaoPauloDay !== currentSaoPauloDay) {
-                const separatorRow = worksheet.addRow({
-                    date: `--- ${dateFnsTz.format(receivedAtSP, 'dd/MM/yyyy', { timeZone: SAO_PAULO_TZ })} ---`
-                });
-                separatorRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFF00' } };
-                separatorRow.font = { bold: true };
-                worksheet.mergeCells(`A${separatorRow.number}:E${separatorRow.number}`);
-                separatorRow.getCell('A').alignment = { horizontal: 'center' };
-            }
             
             const description = invoice.is_manual 
                 ? invoice.notes 
@@ -329,8 +306,6 @@ exports.exportInvoices = async (req, res) => {
                 credit: invoice.credit ? parseFloat(invoice.credit) : null,
                 balance: invoice.balance ? parseFloat(invoice.balance) : null
             });
-
-            lastSaoPauloDay = currentSaoPauloDay;
         }
 
         res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
