@@ -11,7 +11,7 @@ const WiderModalContent = styled.div`
   padding: 2rem;
   border-radius: 8px;
   width: 90%;
-  max-width: 700px; /* Increased max-width */
+  max-width: 700px;
   position: relative;
   box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
 `;
@@ -108,6 +108,7 @@ const InvoiceModal = ({ isOpen, onClose, invoice, invoices, insertAtIndex, onSav
                 // == THE DEFINITIVE BUG FIX IS HERE ==
                 // We now robustly check if `invoice.received_at` is a valid string.
                 if (invoice && invoice.received_at && typeof invoice.received_at === 'string') {
+                    // Example string: "2025-08-31 15:11:12"
                     const dateTimeParts = invoice.received_at.split(' ');
                     if (dateTimeParts.length === 2) {
                         const datePart = dateTimeParts[0];
@@ -116,10 +117,9 @@ const InvoiceModal = ({ isOpen, onClose, invoice, invoices, insertAtIndex, onSav
                         const [year, month, day] = datePart.split('-');
                         const [hour, minute, second] = timePart.split(':');
 
-                        // Final check to ensure all parts are valid
                         if (year && month && day && hour && minute && second) {
                             setDateTime({ year, month, day, hour, minute, second });
-                            datePartsFound = true; // Mark that we successfully parsed the date
+                            datePartsFound = true;
                         }
                     }
                 }
@@ -127,10 +127,6 @@ const InvoiceModal = ({ isOpen, onClose, invoice, invoices, insertAtIndex, onSav
                 
             }
             
-            // This block now serves as a fallback for EVERYTHING:
-            // - "Add New Entry" mode
-            // - "Insert Between" mode
-            // - "Edit" mode where the date was missing or corrupt
             if (!datePartsFound) {
                 if (isInsertMode) {
                     const prevInvoice = invoices[insertAtIndex - 1];
@@ -139,7 +135,6 @@ const InvoiceModal = ({ isOpen, onClose, invoice, invoices, insertAtIndex, onSav
                     const endTime = nextInvoice ? new Date(nextInvoice.received_at).getTime() : new Date().getTime();
                     initialDate = new Date(startTime + (endTime - startTime) / 2);
                 } else {
-                    // Use current time for new entries OR as a safe fallback for corrupted edit data
                     initialDate = new Date();
                 }
 
@@ -194,7 +189,6 @@ const InvoiceModal = ({ isOpen, onClose, invoice, invoices, insertAtIndex, onSav
     };
 
     return (
-        // The Modal component now correctly uses the maxWidth prop
         <Modal isOpen={isOpen} onClose={onClose} maxWidth="700px">
             <h2>{isEditMode ? 'Edit Invoice' : 'Add New Entry'}</h2>
             <Form onSubmit={handleSubmit}>
