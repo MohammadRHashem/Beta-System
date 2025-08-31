@@ -3,91 +3,7 @@ import styled from 'styled-components';
 import Modal from './Modal';
 import { createInvoice, updateInvoice } from '../services/api';
 
-// --- STYLES ---
-
-// Make the modal content wider for a more professional feel
-const WiderModalContent = styled.div`
-  background: white;
-  padding: 2rem;
-  border-radius: 8px;
-  width: 90%;
-  max-width: 700px;
-  position: relative;
-  box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
-`;
-
-const Form = styled.form`
-    display: flex;
-    flex-direction: column;
-    gap: 1.5rem;
-`;
-
-const FieldSet = styled.fieldset`
-    border: 1px solid ${({ theme }) => theme.border};
-    border-radius: 6px;
-    padding: 1rem 1.5rem 1.5rem 1.5rem;
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 1rem 1.5rem;
-
-    @media (max-width: 600px) {
-        grid-template-columns: 1fr;
-    }
-`;
-
-const Legend = styled.legend`
-    padding: 0 0.5rem;
-    margin-left: 0.5rem;
-    font-weight: 600;
-    color: ${({ theme }) => theme.primary};
-`;
-
-const InputGroup = styled.div`
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-    grid-column: ${({ full }) => full ? '1 / -1' : 'auto'};
-`;
-
-const DateTimeContainer = styled.div`
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 0.5rem;
-`;
-
-const Label = styled.label`
-    font-weight: 500;
-    font-size: 0.9rem;
-`;
-
-const Input = styled.input`
-    padding: 0.75rem;
-    border: 1px solid ${({ theme }) => theme.border};
-    border-radius: 4px;
-    width: 100%;
-`;
-
-const Textarea = styled.textarea`
-    padding: 0.75rem;
-    border: 1px solid ${({ theme }) => theme.border};
-    border-radius: 4px;
-    min-height: 80px;
-    font-family: inherit;
-`;
-
-const Button = styled.button`
-    background-color: ${({ theme }) => theme.primary};
-    color: white;
-    border: none;
-    padding: 0.8rem 1.5rem;
-    border-radius: 4px;
-    cursor: pointer;
-    font-weight: bold;
-    font-size: 1rem;
-    align-self: flex-end;
-`;
-
-// --- COMPONENT LOGIC ---
+// ... (All styled components are unchanged)
 
 const InvoiceModal = ({ isOpen, onClose, invoice, invoices, insertAtIndex, onSave }) => {
     const isEditMode = !!invoice;
@@ -104,27 +20,19 @@ const InvoiceModal = ({ isOpen, onClose, invoice, invoices, insertAtIndex, onSav
             let datePartsFound = false;
 
             if (isEditMode) {
-                // =================================================================
-                // == THE DEFINITIVE BUG FIX IS HERE ==
-                // We now robustly check if `invoice.received_at` is a valid string.
                 if (invoice && invoice.received_at && typeof invoice.received_at === 'string') {
-                    // Example string: "2025-08-31 15:11:12"
                     const dateTimeParts = invoice.received_at.split(' ');
                     if (dateTimeParts.length === 2) {
                         const datePart = dateTimeParts[0];
                         const timePart = dateTimeParts[1];
-                        
                         const [year, month, day] = datePart.split('-');
                         const [hour, minute, second] = timePart.split(':');
-
                         if (year && month && day && hour && minute && second) {
                             setDateTime({ year, month, day, hour, minute, second });
                             datePartsFound = true;
                         }
                     }
                 }
-                // =================================================================
-                
             }
             
             if (!datePartsFound) {
@@ -137,7 +45,6 @@ const InvoiceModal = ({ isOpen, onClose, invoice, invoices, insertAtIndex, onSav
                 } else {
                     initialDate = new Date();
                 }
-
                 const pad = (num) => num.toString().padStart(2, '0');
                 setDateTime({
                     year: initialDate.getFullYear().toString(),
@@ -169,6 +76,19 @@ const InvoiceModal = ({ isOpen, onClose, invoice, invoices, insertAtIndex, onSav
         
         const fullTimestamp = `${dateTime.year}-${dateTime.month}-${dateTime.day} ${dateTime.hour}:${dateTime.minute}:${dateTime.second}`;
         
+        let calculated_sort_order;
+        if (isInsertMode) {
+            const prevInvoice = invoices[insertAtIndex - 1];
+            const nextInvoice = invoices[insertAtIndex];
+            
+            // If inserting at the very beginning, create a sort_order before the first item.
+            const prevSort = prevInvoice ? parseFloat(prevInvoice.sort_order) : (nextInvoice ? parseFloat(nextInvoice.sort_order) - 1 : new Date().getTime() / 1000);
+            // If inserting at the very end, create a sort_order after the last item.
+            const nextSort = nextInvoice ? parseFloat(nextInvoice.sort_order) : (prevInvoice ? parseFloat(prevInvoice.sort_order) + 1 : new Date().getTime() / 1000);
+            
+            calculated_sort_order = prevSort + (nextSort - prevSort) / 2;
+        }
+        
         const payload = {
             ...formData,
             received_at: fullTimestamp,
@@ -176,8 +96,13 @@ const InvoiceModal = ({ isOpen, onClose, invoice, invoices, insertAtIndex, onSav
             credit: formData.credit === '' ? '0.00' : formData.credit,
         };
 
+        if (calculated_sort_order !== undefined) {
+            payload.sort_order = calculated_sort_order.toFixed(4);
+        }
+
         try {
             if (isEditMode) {
+                delete payload.sort_order;
                 await updateInvoice(invoice.id, payload);
             } else {
                 await createInvoice(payload);

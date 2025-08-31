@@ -1,12 +1,13 @@
 const pool = require('../config/db');
 const { recalculateBalances } = require('../utils/balanceCalculator');
+const ExcelJS = require('exceljs');
 const path = require('path');
 const fs = require('fs');
 const { parseFormattedCurrency } = require('../utils/currencyParser');
 
 exports.getAllInvoices = async (req, res) => {
     const {
-        page = 1, limit = 50, sortBy = 'received_at', sortOrder = 'desc',
+        page = 1, limit = 50, sortOrder = 'desc', // Note: sortBy is removed from client
         search = '', dateFrom, dateTo, timeFrom, timeTo,
         sourceGroups, recipientNames, reviewStatus, status,
     } = req.query;
@@ -48,18 +49,11 @@ exports.getAllInvoices = async (req, res) => {
     const reviewCondition = "(i.sender_name IS NULL OR i.sender_name = '' OR i.recipient_name IS NULL OR i.recipient_name = '' OR i.amount IS NULL OR i.amount = '')";
     if (reviewStatus === 'only_review') { query += ` AND ${reviewCondition}`; }
     if (reviewStatus === 'hide_review') { query += ` AND NOT ${reviewCondition}`; }
+    if (status === 'only_deleted') { query += ' AND i.is_deleted = 1'; }
+    if (status === 'only_duplicates') { query += ` AND i.transaction_id IS NOT NULL AND i.transaction_id != '' AND i.transaction_id IN (SELECT transaction_id FROM invoices WHERE transaction_id IS NOT NULL AND transaction_id != '' GROUP BY transaction_id HAVING COUNT(*) > 1)`; }
 
-    if (status === 'only_deleted') {
-        query += ' AND i.is_deleted = 1';
-    } else if (status === 'only_duplicates') {
-        query += ` AND i.transaction_id IS NOT NULL AND i.transaction_id != '' AND i.transaction_id IN (
-            SELECT transaction_id FROM invoices WHERE transaction_id IS NOT NULL AND transaction_id != '' GROUP BY transaction_id HAVING COUNT(*) > 1
-        )`;
-    }
-
-    const orderByClause = sortBy === 'amount'
-        ? `CAST(REPLACE(i.amount, ',', '') AS DECIMAL(15,2)) ${sortOrder === 'asc' ? 'ASC' : 'DESC'}`
-        : `${pool.escapeId(sortBy)} ${sortOrder === 'asc' ? 'ASC' : 'DESC'}`;
+    // DEFINITIVE SORTING FIX: Always sort by the sort_order column.
+    const orderByClause = `i.sort_order ${sortOrder === 'asc' ? 'ASC' : 'DESC'}`;
 
     try {
         const countQuery = `SELECT count(*) as total ${query}`;
@@ -72,12 +66,7 @@ exports.getAllInvoices = async (req, res) => {
         `;
         const finalParams = [...params, parseInt(limit), parseInt(offset)];
         const [invoices] = await pool.query(dataQuery, finalParams);
-        res.json({
-            invoices,
-            totalPages: Math.ceil(total / limit),
-            currentPage: parseInt(page),
-            totalRecords: total,
-        });
+        res.json({ invoices, totalPages: Math.ceil(total / limit), currentPage: parseInt(page), totalRecords: total });
     } catch (error) {
         console.error('Error fetching invoices:', error);
         res.status(500).json({ message: 'Failed to fetch invoices.' });
@@ -97,26 +86,26 @@ exports.getRecipientNames = async (req, res) => {
 };
 
 exports.createInvoice = async (req, res) => {
-    const { amount, credit, notes, received_at, sender_name, recipient_name, transaction_id, pix_key } = req.body;
+    const { amount, credit, notes, received_at, sender_name, recipient_name, transaction_id, pix_key, sort_order } = req.body;
     
-    // DEFINITIVE FIX: The received_at is now a pure "YYYY-MM-DD HH:mm:ss" string from the frontend.
-    // We save it directly. No `new Date()`.
-    const receivedAtForDb = received_at;
-
+    const receivedAt = new Date(received_at);
     const connection = await pool.getConnection();
+
     try {
         await connection.beginTransaction();
 
         const creditValue = (credit === null || credit === undefined || credit === '') ? '0.00' : credit;
         const amountValue = (amount === null || amount === undefined || amount === '') ? '0.00' : amount;
 
+        // If sort_order isn't provided (simple "Add Entry"), create one from the timestamp.
+        const final_sort_order = sort_order ? sort_order : (receivedAt.getTime() / 1000).toFixed(4);
+
         const [result] = await connection.query(
-            'INSERT INTO invoices (amount, credit, notes, received_at, is_manual, sender_name, recipient_name, transaction_id, pix_key) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-            [amountValue, creditValue, notes, receivedAtForDb, true, sender_name || '', recipient_name || '', transaction_id || null, pix_key || null]
+            `INSERT INTO invoices (amount, credit, notes, received_at, sort_order, is_manual, sender_name, recipient_name, transaction_id, pix_key) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [amountValue, creditValue, notes, receivedAt, final_sort_order, true, sender_name || '', recipient_name || '', transaction_id || null, pix_key || null]
         );
         
-        // recalculateBalances needs an ISO string for safety, so we create a Date object just for it.
-        await recalculateBalances(connection, new Date(receivedAtForDb).toISOString());
+        await recalculateBalances(connection, receivedAt.toISOString());
         await connection.commit();
         req.io.emit('invoices:updated');
         res.status(201).json({ message: 'Invoice created successfully', id: result.insertId });

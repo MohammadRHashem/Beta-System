@@ -1,18 +1,20 @@
 import React, { useMemo } from 'react';
 import styled, { css } from 'styled-components';
 import { viewInvoiceMedia, deleteInvoice } from '../services/api';
-import { FaEdit, FaTrashAlt, FaEye, FaSort, FaSortUp, FaSortDown, FaPlus } from 'react-icons/fa';
+import { FaEdit, FaTrashAlt, FaEye, FaPlus } from 'react-icons/fa';
 
-// DEFINITIVE TIMEZONE FIX: Simple string formatter, no timezone logic.
 const formatDisplayDateTime = (dbDateString) => {
     if (!dbDateString) return '';
     try {
-        // The database string is already the correct GMT-05:00 time.
-        // Example: "2025-08-31T12:19:03.000Z"
-        const trimmed = dbDateString.slice(0, 19);
-        const [datePart, timePart] = trimmed.split('T');
-        const [year, month, day] = datePart.split('-');
-        return `${day}/${month}/${year} ${timePart}`;
+        const date = new Date(dbDateString);
+        const pad = (num) => num.toString().padStart(2, '0');
+        const day = pad(date.getDate());
+        const month = pad(date.getMonth() + 1);
+        const year = date.getFullYear();
+        const hours = pad(date.getHours());
+        const minutes = pad(date.getMinutes());
+        const seconds = pad(date.getSeconds());
+        return `${day}/${month}/${year} ${hours}:${minutes}:${seconds}`;
     } catch (e) {
         return 'Invalid Date String';
     }
@@ -206,11 +208,10 @@ const InvoiceTable = ({ invoices, loading, sort, onSortChange, onEdit, paginatio
                 </thead>
                 <tbody>
                     {invoices.map((inv, index) => {
-                        const isDuplicate = inv.transaction_id && transactionIdCounts[inv.transaction_id] > 1;
                         const needsReview = !inv.is_manual && (!inv.sender_name || !inv.recipient_name || !inv.amount);
 
                         return (
-                            <Tr key={inv.id} isDuplicate={isDuplicate} isDeleted={!!inv.is_deleted}>
+                            <Tr key={inv.id} isDeleted={!!inv.is_deleted}>
                                 <Td>
                                     <AddBetweenButton onClick={() => onEdit(null, index)} title="Insert new entry here">
                                         <FaPlus size={12} />
@@ -218,21 +219,14 @@ const InvoiceTable = ({ invoices, loading, sort, onSortChange, onEdit, paginatio
                                     {formatDisplayDateTime(inv.received_at)}
                                 </Td>
                                 <Td>{inv.transaction_id || ''}</Td>
-                                <Td className={needsReview && !inv.sender_name ? 'review' : ''}>
-                                    {inv.sender_name || (needsReview ? 'REVIEW' : '')}
-                                </Td>
-                                <Td className={needsReview && !inv.recipient_name ? 'review' : ''}>
-                                    {inv.recipient_name || (needsReview ? 'REVIEW' : '')}
-                                </Td>
+                                <Td>{inv.sender_name || (needsReview ? 'REVIEW' : '')}</Td>
+                                <Td>{inv.recipient_name || (needsReview ? 'REVIEW' : '')}</Td>
                                 <Td>{inv.source_group_name || ''}</Td>
-                                <Td className={`currency ${needsReview && inv.amount === '0.00' ? 'review' : ''}`}>
-                                    {inv.amount || ''}
-                                </Td>
+                                <Td className={`currency`}>{inv.amount || ''}</Td>
                                 <Td className="currency">{inv.credit || ''}</Td>
                                 <Td className="currency">{inv.balance || ''}</Td>
                                 <Td className="actions">
-                                    {inv.media_path && !inv.is_deleted && 
-                                        <FaEye onClick={() => handleViewMedia(inv.id)} title="View Media" />}
+                                    {inv.media_path && !inv.is_deleted && <FaEye onClick={() => handleViewMedia(inv.id)} title="View Media" />}
                                     {!inv.is_deleted && <FaEdit onClick={() => onEdit(inv)} title="Edit" />}
                                     {!inv.is_deleted && <FaTrashAlt onClick={() => handleDelete(inv.id)} title="Delete" />}
                                 </Td>

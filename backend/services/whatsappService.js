@@ -44,9 +44,6 @@ const invoiceWorker = new Worker(
 
     const message = await client.getMessageById(messageId);
     if (!message) {
-      console.warn(
-        `[WORKER] Message ${messageId} not found, likely deleted before worker started. Acknowledging job.`
-      );
       return;
     }
 
@@ -66,14 +63,21 @@ const invoiceWorker = new Worker(
       );
       if (tombstoneRows.length > 0) {
         const utcDate = new Date(message.timestamp * 1000);
-        const saoPauloDate = new Date(utcDate.getTime() - 180 * 60 * 1000);
+        const gmtMinus5Date = new Date(utcDate.getTime() - 300 * 60 * 1000);
+        const sortOrder = parseFloat(
+          `${message.timestamp}.${String(message._data?.t || "0")
+            .slice(-4)
+            .padStart(4, "0")}`
+        );
+
         await connection.query(
-          `INSERT INTO invoices (message_id, source_group_jid, received_at, is_deleted, notes) 
-                VALUES (?, ?, ?, ?, ?)`,
+          `INSERT INTO invoices (message_id, source_group_jid, received_at, sort_order, is_deleted, notes) 
+                VALUES (?, ?, ?, ?, ?, ?)`,
           [
             messageId,
             chat.id._serialized,
-            saoPauloDate,
+            gmtMinus5Date,
+            sortOrder,
             true,
             "Message deleted before processing.",
           ]
@@ -107,9 +111,6 @@ const invoiceWorker = new Worker(
 
       const media = await message.downloadMedia();
       if (!media) {
-        console.warn(
-          `[WORKER] Failed to download media for ${messageId}. This can happen if it was deleted during processing.`
-        );
         await connection.commit();
         return;
       }
@@ -164,13 +165,20 @@ const invoiceWorker = new Worker(
         finalMediaPath = path.join(MEDIA_ARCHIVE_DIR, archiveFileName);
         await fs.rename(tempFilePath, finalMediaPath);
 
-        // DEFINITIVE TIMEZONE FIX: Convert UTC timestamp to São Paulo time before saving.
         const utcDate = new Date(message.timestamp * 1000);
-        const saoPauloDate = new Date(utcDate.getTime() - 180 * 60 * 1000);
+        const gmtMinus5Date = new Date(utcDate.getTime() - 300 * 60 * 1000);
+
+        // DEFINITIVE SORT_ORDER FIX: Combine timestamp with a high-precision internal number.
+        const sequenceNumber = message._data?.t || message.timestamp;
+        const sortOrder = parseFloat(
+          `${message.timestamp}.${String(sequenceNumber)
+            .slice(-4)
+            .padStart(4, "0")}`
+        );
 
         await connection.query(
-          `INSERT INTO invoices (message_id, transaction_id, sender_name, recipient_name, pix_key, amount, source_group_jid, received_at, raw_json_data, media_path, is_deleted) 
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          `INSERT INTO invoices (message_id, transaction_id, sender_name, recipient_name, pix_key, amount, source_group_jid, received_at, sort_order, raw_json_data, media_path, is_deleted) 
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             messageId,
             transaction_id,
@@ -179,15 +187,18 @@ const invoiceWorker = new Worker(
             recipient.pix_key,
             amount,
             chat.id._serialized,
-            saoPauloDate,
+            gmtMinus5Date,
+            sortOrder,
             JSON.stringify(invoiceJson),
             finalMediaPath,
             false,
           ]
         );
 
-        await recalculateBalances(connection, saoPauloDate.toISOString());
-        console.log(`[WORKER] Invoice from job ${messageId} saved to DB.`);
+        await recalculateBalances(connection, gmtMinus5Date.toISOString());
+        console.log(
+          `[WORKER] Invoice from job ${messageId} saved to DB with sort_order ${sortOrder}.`
+        );
       } else {
         await fs.unlink(tempFilePath);
       }
