@@ -88,24 +88,31 @@ exports.getRecipientNames = async (req, res) => {
 exports.createInvoice = async (req, res) => {
     const { amount, credit, notes, received_at, sender_name, recipient_name, transaction_id, pix_key, sort_order } = req.body;
     
-    const receivedAt = new Date(received_at);
-    const connection = await pool.getConnection();
+    // The received_at is a "YYYY-MM-DD HH:mm:ss" string from the frontend.
+    const receivedAtForDb = received_at;
 
+    const connection = await pool.getConnection();
     try {
         await connection.beginTransaction();
 
         const creditValue = (credit === null || credit === undefined || credit === '') ? '0.00' : credit;
         const amountValue = (amount === null || amount === undefined || amount === '') ? '0.00' : amount;
 
-        // If sort_order isn't provided (simple "Add Entry"), create one from the timestamp.
-        const final_sort_order = sort_order ? sort_order : (receivedAt.getTime() / 1000).toFixed(4);
+        // =================================================================
+        // == THE DEFINITIVE BUG FIX IS HERE ==
+        // If a specific sort_order wasn't provided (i.e., this is a simple "Add Entry"),
+        // we create a valid number from the timestamp string.
+        const final_sort_order = sort_order 
+            ? sort_order 
+            : (new Date(receivedAtForDb).getTime() / 1000).toFixed(4);
+        // =================================================================
 
         const [result] = await connection.query(
             `INSERT INTO invoices (amount, credit, notes, received_at, sort_order, is_manual, sender_name, recipient_name, transaction_id, pix_key) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [amountValue, creditValue, notes, receivedAt, final_sort_order, true, sender_name || '', recipient_name || '', transaction_id || null, pix_key || null]
+            [amountValue, creditValue, notes, receivedAtForDb, final_sort_order, true, sender_name || '', recipient_name || '', transaction_id || null, pix_key || null]
         );
         
-        await recalculateBalances(connection, receivedAt.toISOString());
+        await recalculateBalances(connection, new Date(receivedAtForDb).toISOString());
         await connection.commit();
         req.io.emit('invoices:updated');
         res.status(201).json({ message: 'Invoice created successfully', id: result.insertId });
@@ -130,7 +137,6 @@ exports.updateInvoice = async (req, res) => {
         if (!oldInvoice) { throw new Error('Invoice not found'); }
         
         const oldTimestamp = new Date(oldInvoice.received_at);
-        // DEFINITIVE FIX: Use the pure string from the frontend directly.
         const newTimestampForDb = received_at;
         const startRecalcTimestamp = oldTimestamp < new Date(newTimestampForDb) ? oldTimestamp : new Date(newTimestampForDb);
 
