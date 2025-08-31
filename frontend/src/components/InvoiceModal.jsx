@@ -4,9 +4,30 @@ import Modal from './Modal';
 import { createInvoice, updateInvoice } from '../services/api';
 
 const Form = styled.form`
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem; /* Increased gap between fieldsets */
+`;
+
+const FieldSet = styled.fieldset`
+    border: 1px solid ${({ theme }) => theme.border};
+    border-radius: 6px;
+    padding: 1rem;
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 1rem;
+
+    /* Responsive layout for smaller screens */
+    @media (max-width: 600px) {
+        grid-template-columns: 1fr;
+    }
+`;
+
+const Legend = styled.legend`
+    padding: 0 0.5rem;
+    margin-left: 0.5rem;
+    font-weight: 600;
+    color: ${({ theme }) => theme.primary};
 `;
 
 const InputGroup = styled.div`
@@ -16,16 +37,15 @@ const InputGroup = styled.div`
     grid-column: ${({ full }) => full ? '1 / -1' : 'auto'};
 `;
 
-// Container for all the date/time inputs
 const DateTimeContainer = styled.div`
     display: grid;
     grid-template-columns: repeat(3, 1fr);
     gap: 0.5rem;
-    grid-column: 1 / -1; /* Span full width */
 `;
 
 const Label = styled.label`
     font-weight: 500;
+    font-size: 0.9rem;
 `;
 
 const Input = styled.input`
@@ -44,7 +64,6 @@ const Textarea = styled.textarea`
 `;
 
 const Button = styled.button`
-    grid-column: 1 / -1;
     background-color: ${({ theme }) => theme.primary};
     color: white;
     border: none;
@@ -52,15 +71,14 @@ const Button = styled.button`
     border-radius: 4px;
     cursor: pointer;
     font-weight: bold;
+    font-size: 1rem;
 `;
 
 const InvoiceModal = ({ isOpen, onClose, invoice, invoices, insertAtIndex, onSave }) => {
     const isEditMode = !!invoice;
     const isInsertMode = insertAtIndex !== null;
     
-    // State for the main form data
     const [formData, setFormData] = useState({});
-    // SEPARATE state for each part of the date and time
     const [dateTime, setDateTime] = useState({
         year: '', month: '', day: '', hour: '', minute: '', second: ''
     });
@@ -81,7 +99,6 @@ const InvoiceModal = ({ isOpen, onClose, invoice, invoices, insertAtIndex, onSav
                 initialDate = new Date();
             }
 
-            // Deconstruct the initial date into parts for the state
             const pad = (num) => num.toString().padStart(2, '0');
             setDateTime({
                 year: initialDate.getFullYear().toString(),
@@ -110,7 +127,6 @@ const InvoiceModal = ({ isOpen, onClose, invoice, invoices, insertAtIndex, onSav
     const handleSubmit = async (e) => {
         e.preventDefault();
         
-        // DEFINITIVE FIX: Manually construct the pure 'YYYY-MM-DD HH:mm:ss' string.
         const fullTimestamp = `${dateTime.year}-${dateTime.month}-${dateTime.day} ${dateTime.hour}:${dateTime.minute}:${dateTime.second}`;
         
         const payload = {
@@ -136,48 +152,59 @@ const InvoiceModal = ({ isOpen, onClose, invoice, invoices, insertAtIndex, onSav
         <Modal isOpen={isOpen} onClose={onClose}>
             <h2>{isEditMode ? 'Edit Invoice' : 'Add New Entry'}</h2>
             <Form onSubmit={handleSubmit}>
-                <InputGroup full>
-                    <Label>Received At (GMT-05:00)</Label>
+
+                <FieldSet>
+                    <Legend>Date & Time</Legend>
                     <DateTimeContainer>
                         <Input type="number" name="day" placeholder="DD" value={dateTime.day} onChange={handleDateTimeChange} />
                         <Input type="number" name="month" placeholder="MM" value={dateTime.month} onChange={handleDateTimeChange} />
                         <Input type="number" name="year" placeholder="YYYY" value={dateTime.year} onChange={handleDateTimeChange} />
+                    </DateTimeContainer>
+                    <DateTimeContainer>
                         <Input type="number" name="hour" placeholder="HH" value={dateTime.hour} onChange={handleDateTimeChange} />
                         <Input type="number" name="minute" placeholder="MM" value={dateTime.minute} onChange={handleDateTimeChange} />
                         <Input type="number" name="second" placeholder="SS" value={dateTime.second} onChange={handleDateTimeChange} />
                     </DateTimeContainer>
-                </InputGroup>
+                </FieldSet>
 
-                <InputGroup>
-                    <Label>Transaction ID</Label>
-                    <Input type="text" name="transaction_id" value={formData.transaction_id || ''} onChange={handleChange} />
-                </InputGroup>
-                <br />
-                <InputGroup>
-                    <Label>Sender Name</Label>
-                    <Input type="text" name="sender_name" value={formData.sender_name || ''} onChange={handleChange} />
-                </InputGroup>
-                <InputGroup>
-                    <Label>Recipient Name</Label>
-                    <Input type="text" name="recipient_name" value={formData.recipient_name || ''} onChange={handleChange} />
-                </InputGroup>
-                <br />
-                <InputGroup>
-                    <Label>Amount (Debit)</Label>
-                    <Input type="text" name="amount" value={formData.amount || ''} onChange={handleChange} placeholder="e.g., 1,250.00" />
-                </InputGroup>
-                <InputGroup>
-                    <Label>Credit</Label>
-                    <Input type="text" name="credit" value={formData.credit || ''} onChange={handleChange} placeholder="e.g., 50.00" />
-                </InputGroup>
-                <InputGroup full>
-                    <Label>PIX Key</Label>
-                    <Input type="text" name="pix_key" value={formData.pix_key || ''} onChange={handleChange} />
-                </InputGroup>
-                <InputGroup full>
-                    <Label>Notes</Label>
-                    <Textarea name="notes" value={formData.notes || ''} onChange={handleChange} />
-                </InputGroup>
+                <FieldSet>
+                    <InputGroup>
+                        <Label>Sender Name</Label>
+                        <Input type="text" name="sender_name" value={formData.sender_name || ''} onChange={handleChange} />
+                    </InputGroup>
+                    <InputGroup>
+                        <Label>Recipient Name</Label>
+                        <Input type="text" name="recipient_name" value={formData.recipient_name || ''} onChange={handleChange} />
+                    </InputGroup>
+                    <InputGroup full>
+                        <Label>Transaction ID</Label>
+                        <Input type="text" name="transaction_id" value={formData.transaction_id || ''} onChange={handleChange} />
+                    </InputGroup>
+                </FieldSet>
+
+                <FieldSet>
+                    <InputGroup>
+                        <Label>Amount (Debit)</Label>
+                        <Input type="text" name="amount" value={formData.amount || ''} onChange={handleChange} placeholder="e.g., 1,250.00" />
+                    </InputGroup>
+                    <InputGroup>
+                        <Label>Credit</Label>
+                        <Input type="text" name="credit" value={formData.credit || ''} onChange={handleChange} placeholder="e.g., 50.00" />
+                    </InputGroup>
+                </FieldSet>
+                
+                <FieldSet>
+                    <Legend>Additional Info</Legend>
+                    <InputGroup>
+                        <Label>PIX Key</Label>
+                        <Input type="text" name="pix_key" value={formData.pix_key || ''} onChange={handleChange} />
+                    </InputGroup>
+                    <InputGroup>
+                        <Label>Notes</Label>
+                        <Textarea name="notes" value={formData.notes || ''} onChange={handleChange} />
+                    </InputGroup>
+                </FieldSet>
+
                 <Button type="submit">Save Changes</Button>
             </Form>
         </Modal>
