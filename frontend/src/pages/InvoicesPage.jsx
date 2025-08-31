@@ -152,14 +152,11 @@ const InvoicesPage = ({ allGroups, socket }) => {
         }
     };
 
-    const closeModal = () => {
+    const closeAllModals = () => {
+        setIsInvoiceModalOpen(false);
         setEditingInvoice(null);
-        setInsertAtIndex(null);
-        setIsModalOpen(false);
-    };
-
-    const onSave = () => {
-        closeModal();
+        setIsInsertModalOpen(false);
+        setInsertAfterId(null);
     };
 
     return (
@@ -172,14 +169,12 @@ const InvoicesPage = ({ allGroups, socket }) => {
                         <Button primary onClick={() => openEditModal(null)}><FaPlus /> Add Entry</Button>
                     </Actions>
                 </Header>
-
                 <InvoiceFilter
                     filters={filters}
                     onFilterChange={handleFilterChange}
                     allGroups={allGroups}
                     recipientNames={recipientNames}
                 />
-
                 <InvoiceTable
                     invoices={invoices}
                     loading={loading}
@@ -192,16 +187,16 @@ const InvoicesPage = ({ allGroups, socket }) => {
             
             <InvoiceModal
                 isOpen={isInvoiceModalOpen}
-                onClose={closeModal}
+                onClose={closeAllModals}
+                onSave={closeAllModals}
                 invoice={editingInvoice}
-                onSave={closeModal}
             />
 
             <InsertTransactionModal
                 isOpen={isInsertModalOpen}
-                onClose={closeModal}
+                onClose={closeAllModals}
+                onSave={closeAllModals}
                 insertAfterId={insertAfterId}
-                onSave={closeModal}
             />
         </>
     );

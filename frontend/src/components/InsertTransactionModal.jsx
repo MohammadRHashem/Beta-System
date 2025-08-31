@@ -58,20 +58,13 @@ const Button = styled.button`
 
 const InsertTransactionModal = ({ isOpen, onClose, insertAfterId, onSave }) => {
     const [formData, setFormData] = useState({
-        sender_name: '',
-        recipient_name: '',
-        amount: '',
-        credit: ''
+        sender_name: '', recipient_name: '', amount: '', credit: ''
     });
 
-    // Reset form when the modal opens
     useEffect(() => {
         if (isOpen) {
             setFormData({
-                sender_name: '',
-                recipient_name: '',
-                amount: '',
-                credit: ''
+                sender_name: '', recipient_name: '', amount: '', credit: ''
             });
         }
     }, [isOpen]);
@@ -85,15 +78,15 @@ const InsertTransactionModal = ({ isOpen, onClose, insertAfterId, onSave }) => {
         
         const payload = {
             ...formData,
-            insertAfterId: insertAfterId, // Pass the ID to insert after
+            insertAfterId: insertAfterId,
             amount: formData.amount || '0.00',
             credit: formData.credit || '0.00',
-            // received_at is intentionally left null
         };
 
         try {
             await createInvoice(payload);
-            onSave();
+            // DEFINITIVE FIX: Call onSave() only AFTER the API call succeeds.
+            onSave(); 
         } catch (error) {
             alert(`Error: ${error.response?.data?.message || 'Failed to insert transaction.'}`);
         }
@@ -104,6 +97,7 @@ const InsertTransactionModal = ({ isOpen, onClose, insertAfterId, onSave }) => {
             <h2>Insert Transaction</h2>
             <Form onSubmit={handleSubmit}>
                 <FieldSet>
+                    <Legend>Parties</Legend>
                     <InputGroup>
                         <Label>Sender Name</Label>
                         <Input type="text" name="sender_name" value={formData.sender_name} onChange={handleChange} />
@@ -115,6 +109,7 @@ const InsertTransactionModal = ({ isOpen, onClose, insertAfterId, onSave }) => {
                 </FieldSet>
 
                 <FieldSet>
+                    <Legend>Financials</Legend>
                     <InputGroup>
                         <Label>Amount (Debit)</Label>
                         <Input type="text" name="amount" value={formData.amount} onChange={handleChange} placeholder="e.g., 1,250.00" />

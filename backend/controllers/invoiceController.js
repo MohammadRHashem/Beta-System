@@ -101,6 +101,7 @@ exports.createInvoice = async (req, res) => {
         insertAfterId 
     } = req.body;
     
+    // received_at is optional for "insert between" entries.
     const receivedAt = received_at ? new Date(received_at) : null;
 
     const connection = await pool.getConnection();
@@ -110,23 +111,38 @@ exports.createInvoice = async (req, res) => {
         let final_sort_order;
 
         if (insertAfterId) {
+            console.log(`[SORT] Received request to insert after ID: ${insertAfterId}`);
             if (insertAfterId === 'START') {
                 const [[{ min_sort }]] = await connection.query('SELECT MIN(sort_order) as min_sort FROM invoices');
-                final_sort_order = min_sort ? min_sort - 10000 : new Date().getTime();
+                final_sort_order = min_sort ? min_sort - 10000 : new Date().getTime(); // Subtract 10 seconds
+                console.log(`[SORT] Inserting at START. New sort_order: ${final_sort_order}`);
             } else {
                 const [[prevInvoice]] = await connection.query('SELECT sort_order FROM invoices WHERE id = ?', [insertAfterId]);
-                if (!prevInvoice) throw new Error('Previous invoice for sorting not found.');
+                if (!prevInvoice) {
+                    throw new Error(`Previous invoice for sorting (ID: ${insertAfterId}) not found.`);
+                }
+                const prevSort = BigInt(prevInvoice.sort_order);
+                console.log(`[SORT] Found previous invoice sort_order: ${prevSort}`);
 
-                const [[nextInvoice]] = await connection.query('SELECT sort_order FROM invoices WHERE sort_order > ? ORDER BY sort_order ASC LIMIT 1', [prevInvoice.sort_order]);
+                const [[nextInvoice]] = await connection.query('SELECT sort_order FROM invoices WHERE sort_order > ? ORDER BY sort_order ASC LIMIT 1', [prevSort]);
                 
-                const prevSort = prevInvoice.sort_order;
-                const nextSort = nextInvoice ? nextInvoice.sort_order : prevSort + 10000;
+                let nextSort;
+                if (nextInvoice) {
+                    nextSort = BigInt(nextInvoice.sort_order);
+                    console.log(`[SORT] Found next invoice sort_order: ${nextSort}`);
+                } else {
+                    nextSort = prevSort + BigInt(10000); // Add 10 seconds if it's the last item
+                    console.log(`[SORT] No next invoice found. Creating new sort_order at the end: ${nextSort}`);
+                }
 
-                final_sort_order = Math.floor(prevSort + (nextSort - prevSort) / 2);
+                // Use BigInt for calculation to prevent precision errors
+                final_sort_order = (prevSort + nextSort) / BigInt(2);
+                console.log(`[SORT] Calculated midpoint sort_order: ${final_sort_order}`);
             }
         } else {
             if (!receivedAt) throw new Error("A timestamp is required for a new standard entry.");
             final_sort_order = receivedAt.getTime();
+            console.log(`[SORT] Standard entry. Creating sort_order from timestamp: ${final_sort_order}`);
         }
 
         const creditValue = (credit === null || credit === undefined || credit === '') ? '0.00' : credit;
