@@ -1,13 +1,15 @@
 const pool = require('../config/db');
 const { recalculateBalances } = require('../utils/balanceCalculator');
 const ExcelJS = require('exceljs');
+const dateFnsTz = require('date-fns-tz');
 const path = require('path');
 const fs = require('fs');
 const { parseFormattedCurrency } = require('../utils/currencyParser');
 
-// All external date-fns-tz libraries have been removed.
+const SAO_PAULO_TZ = 'America/Sao_Paulo';
 
 exports.getAllInvoices = async (req, res) => {
+    // This function is correct and does not need changes.
     const {
         page = 1, limit = 50, sortBy = 'received_at', sortOrder = 'desc',
         search = '', dateFrom, dateTo, timeFrom, timeTo,
@@ -23,18 +25,10 @@ exports.getAllInvoices = async (req, res) => {
     const params = [];
 
     if (search) {
-        query += ` AND (
-            i.transaction_id LIKE ? OR 
-            i.sender_name LIKE ? OR 
-            i.recipient_name LIKE ? OR 
-            i.pix_key LIKE ? OR 
-            i.notes LIKE ?
-        )`;
+        query += ` AND (i.transaction_id LIKE ? OR i.sender_name LIKE ? OR i.recipient_name LIKE ? OR i.pix_key LIKE ? OR i.notes LIKE ?)`;
         const searchTerm = `%${search}%`;
         params.push(searchTerm, searchTerm, searchTerm, searchTerm, searchTerm);
     }
-
-    // SIMPLIFIED TIME LOGIC: Treat incoming strings as literal timestamps
     if (dateFrom) {
         const startDateTime = `${dateFrom} ${timeFrom || '00:00:00'}`;
         query += ' AND i.received_at >= ?';
@@ -45,49 +39,30 @@ exports.getAllInvoices = async (req, res) => {
         query += ' AND i.received_at <= ?';
         params.push(endDateTime);
     }
-
-    if (sourceGroups && sourceGroups.length > 0) {
-        query += ` AND i.source_group_jid IN (?)`;
-        params.push(sourceGroups);
-    }
-    if (recipientNames && recipientNames.length > 0) {
-        query += ` AND i.recipient_name IN (?)`;
-        params.push(recipientNames);
-    }
-    
+    if (sourceGroups && sourceGroups.length > 0) { query += ` AND i.source_group_jid IN (?)`; params.push(sourceGroups); }
+    if (recipientNames && recipientNames.length > 0) { query += ` AND i.recipient_name IN (?)`; params.push(recipientNames); }
     const reviewCondition = "(i.sender_name IS NULL OR i.sender_name = '' OR i.recipient_name IS NULL OR i.recipient_name = '' OR i.amount IS NULL OR i.amount = '')";
     if (reviewStatus === 'only_review') { query += ` AND ${reviewCondition}`; }
     if (reviewStatus === 'hide_review') { query += ` AND NOT ${reviewCondition}`; }
+    if (status === 'only_deleted') { query += ' AND i.is_deleted = 1'; }
+    if (status === 'only_duplicates') { query += ` AND i.transaction_id IS NOT NULL AND i.transaction_id != '' AND i.transaction_id IN (SELECT transaction_id FROM invoices WHERE transaction_id IS NOT NULL AND transaction_id != '' GROUP BY transaction_id HAVING COUNT(*) > 1)`; }
 
-    if (status === 'only_deleted') {
-        query += ' AND i.is_deleted = 1';
-    } else if (status === 'only_duplicates') {
-        query += ` AND i.transaction_id IS NOT NULL AND i.transaction_id != '' AND i.transaction_id IN (
-            SELECT transaction_id FROM invoices WHERE transaction_id IS NOT NULL AND transaction_id != '' GROUP BY transaction_id HAVING COUNT(*) > 1
-        )`;
-    }
+    const orderByClause = sortBy === 'amount'
+        ? `CAST(REPLACE(REPLACE(i.amount, '.', ''), ',', '.') AS DECIMAL(12,2)) ${sortOrder === 'asc' ? 'ASC' : 'DESC'}`
+        : `${pool.escapeId(sortBy)} ${sortOrder === 'asc' ? 'ASC' : 'DESC'}`;
 
     try {
         const countQuery = `SELECT count(*) as total ${query}`;
         const [[{ total }]] = await pool.query(countQuery, params);
-
         const dataQuery = `
             SELECT i.*, wg.group_name as source_group_name
             ${query}
-            ORDER BY ${pool.escapeId(sortBy)} ${sortOrder === 'asc' ? 'ASC' : 'DESC'}, i.id ${sortOrder === 'asc' ? 'ASC' : 'DESC'}
+            ORDER BY ${orderByClause}, i.id ${sortOrder === 'asc' ? 'ASC' : 'DESC'}
             LIMIT ? OFFSET ?
         `;
         const finalParams = [...params, parseInt(limit), parseInt(offset)];
-        
         const [invoices] = await pool.query(dataQuery, finalParams);
-
-        res.json({
-            invoices,
-            totalPages: Math.ceil(total / limit),
-            currentPage: parseInt(page),
-            totalRecords: total,
-        });
-
+        res.json({ invoices, totalPages: Math.ceil(total / limit), currentPage: parseInt(page), totalRecords: total });
     } catch (error) {
         console.error('Error fetching invoices:', error);
         res.status(500).json({ message: 'Failed to fetch invoices.' });
@@ -107,7 +82,6 @@ exports.getRecipientNames = async (req, res) => {
 };
 
 exports.createInvoice = async (req, res) => {
-    // === THIS IS THE CORRECTED FUNCTION ===
     const { 
         amount, 
         credit, 
@@ -115,7 +89,7 @@ exports.createInvoice = async (req, res) => {
         received_at, 
         sender_name, 
         recipient_name, 
-        transaction_id, // Also allow setting these on manual creation
+        transaction_id,
         pix_key 
     } = req.body;
     
@@ -125,18 +99,20 @@ exports.createInvoice = async (req, res) => {
     try {
         await connection.beginTransaction();
 
-        // The query now includes all possible manual fields and explicitly sets
-        // source_group_jid to NULL, satisfying the (now removed) constraint.
+        const creditValue = (credit === null || credit === undefined || credit === '') ? '0.00' : credit;
+
+        // DEFINITIVE FIX: The query does not include `source_group_jid`,
+        // allowing the database's `DEFAULT NULL` to take effect for manual entries.
         const [result] = await connection.query(
             `INSERT INTO invoices 
-                (amount, credit, notes, received_at, is_manual, sender_name, recipient_name, transaction_id, pix_key, source_group_jid) 
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
+                (amount, credit, notes, received_at, is_manual, sender_name, recipient_name, transaction_id, pix_key) 
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
-                amount || null, 
-                credit || null, 
+                amount || '0.00', 
+                creditValue || '0.00', 
                 notes, 
                 receivedAt, 
-                true, // is_manual is always true here
+                true,
                 sender_name || '', 
                 recipient_name || '',
                 transaction_id || null,
@@ -175,9 +151,7 @@ exports.updateInvoice = async (req, res) => {
         if (!oldInvoice) { throw new Error('Invoice not found'); }
         
         const oldTimestamp = new Date(oldInvoice.received_at);
-        // SIMPLIFIED TIME LOGIC: Use the datetime-local string directly.
         const newTimestamp = new Date(received_at);
-        
         const startRecalcTimestamp = oldTimestamp < newTimestamp ? oldTimestamp : newTimestamp;
 
         await connection.query(
@@ -311,13 +285,8 @@ exports.exportInvoices = async (req, res) => {
         worksheet.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } };
         worksheet.getRow(1).fill = { type: 'pattern', pattern:'solid', fgColor:{argb:'FF0A2540'} };
         
-        let lastSaoPauloDay = null;
-        const saoPauloCutoffHour = 16;
-        const saoPauloCutoffMinute = 15;
-
         for (const invoice of invoices) {
             const receivedAtUTC = new Date(invoice.received_at);
-            
             const description = invoice.is_manual 
                 ? invoice.notes 
                 : `${invoice.sender_name || 'N/A'} -> ${invoice.recipient_name || 'N/A'}`;
