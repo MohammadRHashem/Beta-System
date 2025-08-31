@@ -3,30 +3,22 @@ import styled, { css } from 'styled-components';
 import { viewInvoiceMedia, deleteInvoice } from '../services/api';
 import { FaEdit, FaTrashAlt, FaEye, FaSort, FaSortUp, FaSortDown, FaPlus } from 'react-icons/fa';
 
-// NATIVE JAVASCRIPT DATE FORMATTER
-const formatDisplayDateTime = (dbDateString) => {
+const formatSaoPauloDateTime = (dbDateString) => {
     if (!dbDateString) return '';
     try {
-        // The database string is like "2025-08-31T12:19:03.000Z".
-        // This is the pure São Paulo time. We will treat it as a string.
-        
-        // 1. Slice to remove the milliseconds and 'Z'.
-        const trimmed = dbDateString.slice(0, 19);
-        // Result: "2025-08-31T12:19:03"
-
-        // 2. Split into date and time parts.
-        const [datePart, timePart] = trimmed.split('T');
-        // Result: datePart="2025-08-31", timePart="12:19:03"
-        
-        // 3. Split the date part and reassemble in dd/mm/yyyy format.
-        const [year, month, day] = datePart.split('-');
-        // Result: year="2025", month="08", day="31"
-        
-        // 4. Combine them into the final, correct string.
-        return `${day}/${month}/${year} ${timePart}`;
+        const date = new Date(dbDateString);
+        return new Intl.DateTimeFormat('pt-BR', {
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit',
+            hour12: false,
+            timeZone: 'America/Sao_Paulo'
+        }).format(date).replace(',', '');
     } catch (e) {
-        // This will only happen if the database string is corrupted.
-        return 'Invalid Date String';
+        return 'Invalid Date';
     }
 };
 
@@ -55,7 +47,7 @@ const Th = styled.th`
 const Tr = styled.tr`
     position: relative;
     border-bottom: 1px solid ${({ theme }) => theme.border};
-    transition: background-color: 0.3s ease;
+    transition: background-color 0.3s ease;
 
     &:last-child {
         border-bottom: none;
@@ -154,15 +146,8 @@ const PageButton = styled.button`
     }
 `;
 
-const formatNumericCurrency = (value) => {
-    if (value === null || value === undefined) return '';
-    const num = Number(value);
-    if (isNaN(num)) return '';
-    return new Intl.NumberFormat('pt-BR', {
-        minimumFractionDigits: 2,
-        maximumFractionDigits: 2,
-    }).format(num);
-};
+// THIS FAULTY FUNCTION IS NOW REMOVED
+// const formatNumericCurrency = (value) => { ... };
 
 const SortIcon = ({ sort, columnKey }) => {
     if (sort.sortBy !== columnKey) return <FaSort />;
@@ -220,9 +205,9 @@ const InvoiceTable = ({ invoices, loading, sort, onSortChange, onEdit, paginatio
                         <Th>Sender</Th>
                         <Th>Recipient</Th>
                         <Th>Source Group</Th>
-                        <Th className="currency">Amount (Debit)</Th>
-                        <Th className="currency">Credit</Th>
-                        <Th className="currency">Balance</Th>
+                        <Th className="currency" sortable onClick={() => handleSort('amount')}>Amount (Debit)</Th>
+                        <Th className="currency" sortable onClick={() => handleSort('credit')}>Credit</Th>
+                        <Th className="currency" sortable onClick={() => handleSort('balance')}>Balance</Th>
                         <Th>Actions</Th>
                     </tr>
                 </thead>
@@ -237,7 +222,7 @@ const InvoiceTable = ({ invoices, loading, sort, onSortChange, onEdit, paginatio
                                     <AddBetweenButton onClick={() => onEdit(null, index)} title="Insert new entry here">
                                         <FaPlus size={12} />
                                     </AddBetweenButton>
-                                    {formatDisplayDateTime(inv.received_at)}
+                                    {formatSaoPauloDateTime(inv.received_at)}
                                 </Td>
                                 <Td>{inv.transaction_id || ''}</Td>
                                 <Td className={needsReview && !inv.sender_name ? 'review' : ''}>
@@ -248,10 +233,11 @@ const InvoiceTable = ({ invoices, loading, sort, onSortChange, onEdit, paginatio
                                 </Td>
                                 <Td>{inv.source_group_name || ''}</Td>
                                 <Td className={`currency ${needsReview && !inv.amount ? 'review' : ''}`}>
-                                    {inv.amount || (needsReview ? 'REVIEW' : '')}
+                                    {inv.amount || ''}
                                 </Td>
-                                <Td className="currency">{formatNumericCurrency(inv.credit)}</Td>
-                                <Td className="currency">{formatNumericCurrency(inv.balance)}</Td>
+                                {/* DEFINITIVE FIX: Display the raw strings directly from the database */}
+                                <Td className="currency">{inv.credit || ''}</Td>
+                                <Td className="currency">{inv.balance || ''}</Td>
                                 <Td className="actions">
                                     {inv.media_path && !inv.is_deleted && 
                                         <FaEye onClick={() => handleViewMedia(inv.id)} title="View Media" />}
