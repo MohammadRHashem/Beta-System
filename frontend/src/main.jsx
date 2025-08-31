@@ -5,6 +5,7 @@ import App from './App';
 import { AuthProvider } from './context/AuthContext';
 import { GlobalStyles, theme } from './GlobalStyles';
 import { ThemeProvider } from 'styled-components';
+import 'react-datepicker/dist/react-datepicker.css';
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>

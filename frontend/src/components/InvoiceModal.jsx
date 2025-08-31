@@ -2,17 +2,8 @@ import React, { useState, useEffect } from 'react';
 import styled from 'styled-components';
 import Modal from './Modal';
 import { createInvoice, updateInvoice } from '../services/api';
-
-// NATIVE JAVASCRIPT HELPER TO FORMAT DATE FOR <input type="datetime-local">
-const formatForInput = (date) => {
-    const pad = (num) => num.toString().padStart(2, '0');
-    const year = date.getFullYear();
-    const month = pad(date.getMonth() + 1);
-    const day = pad(date.getDate());
-    const hours = pad(date.getHours());
-    const minutes = pad(date.getMinutes());
-    return `${year}-${month}-${day}T${hours}:${minutes}`;
-};
+// === NEW IMPORTS FOR THE PROFESSIONAL DATE PICKER ===
+import DatePicker from 'react-datepicker';
 
 const Form = styled.form`
     display: grid;
@@ -25,6 +16,19 @@ const InputGroup = styled.div`
     flex-direction: column;
     gap: 0.5rem;
     grid-column: ${({ full }) => full ? '1 / -1' : 'auto'};
+
+    /* Styling for react-datepicker input */
+    .react-datepicker-wrapper {
+        width: 100%;
+    }
+    .react-datepicker__input-container input {
+        width: 100%;
+        padding: 0.75rem;
+        border: 1px solid ${({ theme }) => theme.border};
+        border-radius: 4px;
+        font-family: inherit;
+        font-size: 1rem; /* Match other inputs */
+    }
 `;
 
 const Label = styled.label`
@@ -59,34 +63,38 @@ const Button = styled.button`
 const InvoiceModal = ({ isOpen, onClose, invoice, invoices, insertAtIndex, onSave }) => {
     const isEditMode = !!invoice;
     const isInsertMode = insertAtIndex !== null;
+    
+    // The state for the date picker MUST be a native Date object, not a string.
+    const [receivedAtDate, setReceivedAtDate] = useState(new Date());
     const [formData, setFormData] = useState({});
 
     useEffect(() => {
         if (isOpen) {
+            let initialDate;
+
             if (isEditMode) {
-                // When editing, the 'received_at' from the DB is already the correct GMT-05:00 time.
-                // We create a Date object from it, which the input will display correctly.
-                setFormData({ ...invoice, received_at: formatForInput(new Date(invoice.received_at)) });
+                // When editing, create a Date object from the invoice's stored timestamp.
+                initialDate = new Date(invoice.received_at);
+                setFormData(invoice);
             } else if (isInsertMode) {
                 const prevInvoice = invoices[insertAtIndex - 1];
                 const nextInvoice = invoices[insertAtIndex];
                 const startTime = prevInvoice ? new Date(prevInvoice.received_at).getTime() : new Date().getTime() - 60000;
                 const endTime = nextInvoice ? new Date(nextInvoice.received_at).getTime() : new Date().getTime();
-                const midTime = new Date(startTime + (endTime - startTime) / 2);
-                
+                initialDate = new Date(startTime + (endTime - startTime) / 2);
                 setFormData({
                     sender_name: '', recipient_name: '', transaction_id: '',
-                    pix_key: '', amount: '0.00', credit: '0.00', notes: '',
-                    received_at: formatForInput(midTime)
+                    pix_key: '', amount: '0.00', credit: '0.00', notes: ''
                 });
             } else {
-                // For a new entry, just use the current browser time.
+                // For a new entry, default to the current time.
+                initialDate = new Date();
                 setFormData({
                     sender_name: '', recipient_name: '', transaction_id: '',
-                    pix_key: '', amount: '0.00', credit: '0.00', notes: '',
-                    received_at: formatForInput(new Date())
+                    pix_key: '', amount: '0.00', credit: '0.00', notes: ''
                 });
             }
+            setReceivedAtDate(initialDate);
         }
     }, [invoice, invoices, insertAtIndex, isEditMode, isInsertMode, isOpen]);
 
@@ -97,8 +105,10 @@ const InvoiceModal = ({ isOpen, onClose, invoice, invoices, insertAtIndex, onSav
     const handleSubmit = async (e) => {
         e.preventDefault();
         
+        // Convert the Date object back to an ISO string, which the backend's `new Date()` can parse perfectly.
         const payload = {
             ...formData,
+            received_at: receivedAtDate.toISOString(),
             amount: formData.amount === '' ? '0.00' : formData.amount,
             credit: formData.credit === '' ? '0.00' : formData.credit,
         };
@@ -119,10 +129,21 @@ const InvoiceModal = ({ isOpen, onClose, invoice, invoices, insertAtIndex, onSav
         <Modal isOpen={isOpen} onClose={onClose}>
             <h2>{isEditMode ? 'Edit Invoice' : 'Add New Entry'}</h2>
             <Form onSubmit={handleSubmit}>
-                <InputGroup>
+                <InputGroup full>
                     <Label>Received At (GMT-05:00)</Label>
-                    <Input type="datetime-local" name="received_at" value={formData.received_at || ''} onChange={handleChange} required />
+                    {/* === THE NEW, PROFESSIONAL DATE PICKER === */}
+                    <DatePicker
+                        selected={receivedAtDate}
+                        onChange={(date) => setReceivedAtDate(date)}
+                        showTimeSelect
+                        timeFormat="HH:mm:ss"
+                        timeIntervals={15} // For the minute dropdown
+                        timeCaption="Time"
+                        dateFormat="dd/MM/yyyy HH:mm:ss" // How the date is displayed in the input
+                        required
+                    />
                 </InputGroup>
+
                 <InputGroup>
                     <Label>Transaction ID</Label>
                     <Input type="text" name="transaction_id" value={formData.transaction_id || ''} onChange={handleChange} />
