@@ -102,8 +102,11 @@ exports.getRecipientNames = async (req, res) => {
 exports.createInvoice = async (req, res) => {
     const { amount, credit, notes, received_at, sender_name, recipient_name, transaction_id, pix_key } = req.body;
     
-    // DEFINITIVE FIX: Format the date into the required MySQL DATETIME format.
-    const receivedAtForDb = formatForMySQL(received_at || new Date());
+    // DEFINITIVE FIX:
+    // The `received_at` from the frontend is ALREADY a string in the format "YYYY-MM-DDTHH:mm".
+    // We will use it DIRECTLY. No more `new Date()`. The mysql2 driver can handle this format.
+    // We only create a new Date if one isn't provided at all.
+    const receivedAtForDb = received_at || formatForMySQL(new Date());
 
     const connection = await pool.getConnection();
     try {
@@ -117,7 +120,7 @@ exports.createInvoice = async (req, res) => {
             [amountValue, creditValue, notes, receivedAtForDb, true, sender_name || '', recipient_name || '', transaction_id || null, pix_key || null]
         );
         
-        // recalculateBalances needs an ISO string, so we create a new Date object from the input.
+        // recalculateBalances needs an ISO string for safety, so we create the Date object here.
         await recalculateBalances(connection, new Date(receivedAtForDb).toISOString());
         await connection.commit();
         req.io.emit('invoices:updated');
@@ -143,10 +146,8 @@ exports.updateInvoice = async (req, res) => {
         if (!oldInvoice) { throw new Error('Invoice not found'); }
         
         const oldTimestamp = new Date(oldInvoice.received_at);
-
-        // DEFINITIVE FIX: Format the incoming date into the required MySQL DATETIME format.
-        const newTimestampForDb = formatForMySQL(received_at);
-        
+        // DEFINITIVE FIX: Use the `received_at` string directly.
+        const newTimestampForDb = received_at;
         const startRecalcTimestamp = oldTimestamp < new Date(newTimestampForDb) ? oldTimestamp : new Date(newTimestampForDb);
 
         const amountValue = (amount === null || amount === undefined || amount === '') ? '0.00' : amount;
