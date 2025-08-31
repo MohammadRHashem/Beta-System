@@ -107,18 +107,41 @@ exports.getRecipientNames = async (req, res) => {
 };
 
 exports.createInvoice = async (req, res) => {
-    const { amount, credit, notes, received_at } = req.body;
+    // === THIS IS THE CORRECTED FUNCTION ===
+    const { 
+        amount, 
+        credit, 
+        notes, 
+        received_at, 
+        sender_name, 
+        recipient_name, 
+        transaction_id, // Also allow setting these on manual creation
+        pix_key 
+    } = req.body;
     
-    // SIMPLIFIED TIME LOGIC: Use the datetime-local string from the frontend directly.
     const receivedAt = received_at ? new Date(received_at) : new Date();
 
     const connection = await pool.getConnection();
     try {
         await connection.beginTransaction();
 
+        // The query now includes all possible manual fields and explicitly sets
+        // source_group_jid to NULL, satisfying the (now removed) constraint.
         const [result] = await connection.query(
-            'INSERT INTO invoices (amount, credit, notes, received_at, is_manual, sender_name, recipient_name) VALUES (?, ?, ?, ?, ?, ?, ?)',
-            [amount || null, credit || null, notes, receivedAt, true, req.body.sender_name || '', req.body.recipient_name || '']
+            `INSERT INTO invoices 
+                (amount, credit, notes, received_at, is_manual, sender_name, recipient_name, transaction_id, pix_key, source_group_jid) 
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
+            [
+                amount || null, 
+                credit || null, 
+                notes, 
+                receivedAt, 
+                true, // is_manual is always true here
+                sender_name || '', 
+                recipient_name || '',
+                transaction_id || null,
+                pix_key || null
+            ]
         );
         
         await recalculateBalances(connection, receivedAt.toISOString());
