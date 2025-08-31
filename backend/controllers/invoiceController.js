@@ -35,19 +35,33 @@ exports.getAllInvoices = async (req, res) => {
         query += ' AND i.received_at <= ?';
         params.push(endDateTime);
     }
-    if (sourceGroups && sourceGroups.length > 0) { query += ` AND i.source_group_jid IN (?)`; params.push(sourceGroups); }
-    if (recipientNames && recipientNames.length > 0) { query += ` AND i.recipient_name IN (?)`; params.push(recipientNames); }
+    if (sourceGroups && sourceGroups.length > 0) {
+        query += ` AND i.source_group_jid IN (?)`;
+        params.push(sourceGroups);
+    }
+    if (recipientNames && recipientNames.length > 0) {
+        query += ` AND i.recipient_name IN (?)`;
+        params.push(recipientNames);
+    }
+    
     const reviewCondition = "(i.sender_name IS NULL OR i.sender_name = '' OR i.recipient_name IS NULL OR i.recipient_name = '' OR i.amount IS NULL OR i.amount = '0.00')";
-    if (reviewStatus === 'only_review') { query += ` AND ${reviewCondition}`; }
-    if (reviewStatus === 'hide_review') { query += ` AND NOT ${reviewCondition}`; }
-    if (status === 'only_deleted') { query += ' AND i.is_deleted = 1'; }
-    if (status === 'only_duplicates') { query += ` AND i.transaction_id IS NOT NULL AND i.transaction_id != '' AND i.transaction_id IN (SELECT transaction_id FROM invoices WHERE transaction_id IS NOT NULL AND transaction_id != '' GROUP BY transaction_id HAVING COUNT(*) > 1)`; }
+    if (reviewStatus === 'only_review') {
+        query += ` AND ${reviewCondition}`;
+    } else if (reviewStatus === 'hide_review') {
+        query += ` AND NOT ${reviewCondition}`;
+    }
+    if (status === 'only_deleted') {
+        query += ' AND i.is_deleted = 1';
+    } else if (status === 'only_duplicates') {
+        query += ` AND i.transaction_id IS NOT NULL AND i.transaction_id != '' AND i.transaction_id IN (SELECT transaction_id FROM invoices WHERE transaction_id IS NOT NULL AND transaction_id != '' GROUP BY transaction_id HAVING COUNT(*) > 1)`;
+    }
 
     const orderByClause = `i.sort_order ${sortOrder === 'asc' ? 'ASC' : 'DESC'}`;
 
     try {
         const countQuery = `SELECT count(*) as total ${query}`;
         const [[{ total }]] = await pool.query(countQuery, params);
+
         const dataQuery = `
             SELECT i.*, wg.group_name as source_group_name
             ${query}
@@ -56,7 +70,12 @@ exports.getAllInvoices = async (req, res) => {
         `;
         const finalParams = [...params, parseInt(limit), parseInt(offset)];
         const [invoices] = await pool.query(dataQuery, finalParams);
-        res.json({ invoices, totalPages: Math.ceil(total / limit), currentPage: parseInt(page), totalRecords: total });
+        res.json({
+            invoices,
+            totalPages: Math.ceil(total / limit),
+            currentPage: parseInt(page),
+            totalRecords: total,
+        });
     } catch (error) {
         console.error('Error fetching invoices:', error);
         res.status(500).json({ message: 'Failed to fetch invoices.' });
@@ -76,30 +95,38 @@ exports.getRecipientNames = async (req, res) => {
 };
 
 exports.createInvoice = async (req, res) => {
-    const { amount, credit, notes, received_at, sender_name, recipient_name, transaction_id, pix_key, insertAfterId } = req.body;
+    const { 
+        amount, credit, notes, received_at, 
+        sender_name, recipient_name, transaction_id, pix_key, 
+        insertAfterId 
+    } = req.body;
     
-    const receivedAt = new Date(received_at);
-    const connection = await pool.getConnection();
+    const receivedAt = received_at ? new Date(received_at) : null;
 
+    const connection = await pool.getConnection();
     try {
         await connection.beginTransaction();
 
         let final_sort_order;
+
         if (insertAfterId) {
             if (insertAfterId === 'START') {
                 const [[{ min_sort }]] = await connection.query('SELECT MIN(sort_order) as min_sort FROM invoices');
-                final_sort_order = min_sort ? min_sort - 10000 : receivedAt.getTime();
+                final_sort_order = min_sort ? min_sort - 10000 : new Date().getTime();
             } else {
                 const [[prevInvoice]] = await connection.query('SELECT sort_order FROM invoices WHERE id = ?', [insertAfterId]);
                 if (!prevInvoice) throw new Error('Previous invoice for sorting not found.');
+
                 const [[nextInvoice]] = await connection.query('SELECT sort_order FROM invoices WHERE sort_order > ? ORDER BY sort_order ASC LIMIT 1', [prevInvoice.sort_order]);
+                
                 const prevSort = prevInvoice.sort_order;
                 const nextSort = nextInvoice ? nextInvoice.sort_order : prevSort + 10000;
+
                 final_sort_order = Math.floor(prevSort + (nextSort - prevSort) / 2);
             }
         } else {
-            const [[{ max_sort }]] = await connection.query('SELECT MAX(sort_order) as max_sort FROM invoices');
-            final_sort_order = max_sort ? max_sort + 10000 : receivedAt.getTime();
+            if (!receivedAt) throw new Error("A timestamp is required for a new standard entry.");
+            final_sort_order = receivedAt.getTime();
         }
 
         const creditValue = (credit === null || credit === undefined || credit === '') ? '0.00' : credit;
@@ -110,7 +137,9 @@ exports.createInvoice = async (req, res) => {
             [amountValue, creditValue, notes, receivedAt, final_sort_order, true, sender_name || '', recipient_name || '', transaction_id || null, pix_key || null]
         );
         
-        await recalculateBalances(connection, receivedAt.toISOString());
+        const recalcStartTime = receivedAt || new Date();
+        await recalculateBalances(connection, recalcStartTime.toISOString());
+        
         await connection.commit();
         req.io.emit('invoices:updated');
         res.status(201).json({ message: 'Invoice created successfully', id: result.insertId });
@@ -125,33 +154,43 @@ exports.createInvoice = async (req, res) => {
 
 exports.updateInvoice = async (req, res) => {
     const { id } = req.params;
-    const { transaction_id, sender_name, recipient_name, pix_key, amount, credit, notes, received_at } = req.body;
-    const connection = await pool.getConnection();
+    const {
+        transaction_id, sender_name, recipient_name, pix_key, amount,
+        credit, notes, received_at
+    } = req.body;
 
+    const connection = await pool.getConnection();
     try {
         await connection.beginTransaction();
+        
         const [[oldInvoice]] = await connection.query('SELECT received_at FROM invoices WHERE id = ?', [id]);
         if (!oldInvoice) { throw new Error('Invoice not found'); }
         
         const oldTimestamp = new Date(oldInvoice.received_at);
-        const newTimestamp = new Date(received_at);
+        const newTimestamp = received_at ? new Date(received_at) : null;
         const startRecalcTimestamp = oldTimestamp < newTimestamp ? oldTimestamp : newTimestamp;
 
         const amountValue = (amount === null || amount === undefined || amount === '') ? '0.00' : amount;
         const creditValue = (credit === null || credit === undefined || credit === '') ? '0.00' : credit;
 
         await connection.query(
-            `UPDATE invoices SET transaction_id = ?, sender_name = ?, recipient_name = ?, pix_key = ?, amount = ?, credit = ?, notes = ?, received_at = ? WHERE id = ?`,
+            `UPDATE invoices SET 
+                transaction_id = ?, sender_name = ?, recipient_name = ?, pix_key = ?, 
+                amount = ?, credit = ?, notes = ?, received_at = ?
+            WHERE id = ?`,
             [transaction_id, sender_name, recipient_name, pix_key, amountValue, creditValue, notes, newTimestamp, id]
         );
         
         await recalculateBalances(connection, startRecalcTimestamp.toISOString());
+        
         await connection.commit();
         req.io.emit('invoices:updated');
         res.json({ message: 'Invoice updated successfully.' });
     } catch (error) {
         await connection.rollback();
-        if (error.message === 'Invoice not found') { return res.status(404).json({ message: 'Invoice not found.' }); }
+        if (error.message === 'Invoice not found') {
+            return res.status(404).json({ message: 'Invoice not found.' });
+        }
         console.error('Error updating invoice:', error);
         res.status(500).json({ message: 'Failed to update invoice.' });
     } finally {
@@ -239,13 +278,13 @@ exports.exportInvoices = async (req, res) => {
     }
     if (sourceGroups && sourceGroups.length > 0) { query += ' AND i.source_group_jid IN (?)'; params.push(sourceGroups); }
     if (recipientNames && recipientNames.length > 0) { query += ' AND i.recipient_name IN (?)'; params.push(recipientNames); }
-    const reviewCondition = "(i.sender_name IS NULL OR i.sender_name = '' OR i.recipient_name IS NULL OR i.recipient_name = '' OR i.amount IS NULL OR i.amount = '')";
+    const reviewCondition = "(i.sender_name IS NULL OR i.sender_name = '' OR i.recipient_name IS NULL OR i.recipient_name = '' OR i.amount IS NULL OR i.amount = '0.00')";
     if (reviewStatus === 'only_review') { query += ` AND ${reviewCondition}`; }
     if (reviewStatus === 'hide_review') { query += ` AND NOT ${reviewCondition}`; }
     if (status === 'only_deleted') { query += ' AND i.is_deleted = 1'; }
     if (status === 'only_duplicates') { query += ` AND i.transaction_id IS NOT NULL AND i.transaction_id != '' AND i.transaction_id IN (SELECT transaction_id FROM invoices WHERE transaction_id IS NOT NULL AND transaction_id != '' GROUP BY transaction_id HAVING COUNT(*) > 1)`; }
 
-    query += ' ORDER BY i.received_at ASC, i.id ASC';
+    query += ' ORDER BY i.sort_order ASC, i.id ASC';
 
     try {
         const [invoices] = await pool.query(query, params);
@@ -254,7 +293,7 @@ exports.exportInvoices = async (req, res) => {
         const worksheet = workbook.addWorksheet('Invoices');
 
         worksheet.columns = [
-            { header: 'Date', key: 'date', width: 20 },
+            { header: 'Date', key: 'date', width: 20, style: { numFmt: 'yyyy-mm-dd hh:mm:ss' } },
             { header: 'Description', key: 'description', width: 40 },
             { header: 'Debit', key: 'debit', width: 15, style: { numFmt: '#,##0.00' } },
             { header: 'Credit', key: 'credit', width: 15, style: { numFmt: '#,##0.00' } },
@@ -265,17 +304,16 @@ exports.exportInvoices = async (req, res) => {
         worksheet.getRow(1).fill = { type: 'pattern', pattern:'solid', fgColor:{argb:'FF0A2540'} };
         
         for (const invoice of invoices) {
-            const receivedAtUTC = new Date(invoice.received_at);
             const description = invoice.is_manual 
                 ? invoice.notes 
                 : `${invoice.sender_name || 'N/A'} -> ${invoice.recipient_name || 'N/A'}`;
                 
             worksheet.addRow({
-                date: receivedAtUTC,
+                date: invoice.received_at ? new Date(invoice.received_at) : null,
                 description: description,
                 debit: invoice.amount ? parseFormattedCurrency(invoice.amount) : null,
-                credit: invoice.credit ? parseFloat(invoice.credit) : null,
-                balance: invoice.balance ? parseFloat(invoice.balance) : null
+                credit: invoice.credit ? parseFormattedCurrency(invoice.credit) : null,
+                balance: invoice.balance ? parseFormattedCurrency(invoice.balance) : null
             });
         }
 

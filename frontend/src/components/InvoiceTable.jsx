@@ -193,7 +193,7 @@ const InvoiceTable = ({ invoices, loading, onEdit, pagination, setPagination }) 
                         return (
                             <Tr key={inv.id} isDuplicate={isDuplicate} isDeleted={!!inv.is_deleted}>
                                 <Td>
-                                    <AddBetweenButton onClick={() => onEdit(null, index)} title="Insert new entry here">
+                                    <AddBetweenButton onClick={() => onInsert(index)} title="Insert new entry here">
                                         <FaPlus size={12} />
                                     </AddBetweenButton>
                                     {formatDisplayDateTime(inv.received_at)}
@@ -207,7 +207,7 @@ const InvoiceTable = ({ invoices, loading, onEdit, pagination, setPagination }) 
                                 <Td className="currency">{inv.balance || ''}</Td>
                                 <Td className="actions">
                                     {inv.media_path && !inv.is_deleted && <FaEye onClick={() => handleViewMedia(inv.id)} title="View Media" />}
-                                    {!inv.is_deleted && <FaEdit onClick={() => onEdit(inv)} title="Edit" />}
+                                    <FaEdit onClick={() => onEdit(inv)} title="Edit" />
                                     {!inv.is_deleted && <FaTrashAlt onClick={() => handleDelete(inv.id)} title="Delete" />}
                                 </Td>
                             </Tr>
