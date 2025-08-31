@@ -154,12 +154,16 @@ const InvoiceModal = ({ isOpen, onClose, invoice, invoices, insertAtIndex, onSav
             <Form onSubmit={handleSubmit}>
 
                 <FieldSet>
-                    <Legend>Date & Time</Legend>
+                    <Legend>Date</Legend>
                     <DateTimeContainer>
                         <Input type="number" name="day" placeholder="DD" value={dateTime.day} onChange={handleDateTimeChange} />
                         <Input type="number" name="month" placeholder="MM" value={dateTime.month} onChange={handleDateTimeChange} />
                         <Input type="number" name="year" placeholder="YYYY" value={dateTime.year} onChange={handleDateTimeChange} />
                     </DateTimeContainer>
+                </FieldSet>
+
+                <FieldSet>
+                    <Legend>Time</Legend>
                     <DateTimeContainer>
                         <Input type="number" name="hour" placeholder="HH" value={dateTime.hour} onChange={handleDateTimeChange} />
                         <Input type="number" name="minute" placeholder="MM" value={dateTime.minute} onChange={handleDateTimeChange} />
