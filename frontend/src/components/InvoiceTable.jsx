@@ -7,20 +7,26 @@ import { FaEdit, FaTrashAlt, FaEye, FaSort, FaSortUp, FaSortDown, FaPlus } from 
 const formatDisplayDateTime = (dbDateString) => {
     if (!dbDateString) return '';
     try {
-        // The string from the DB is already the correct SP time.
-        // We just re-format it nicely.
-        const date = new Date(dbDateString);
-        return new Intl.DateTimeFormat('pt-BR', {
-            year: 'numeric',
-            month: '2-digit',
-            day: '2-digit',
-            hour: '2-digit',
-            minute: '2-digit',
-            second: '2-digit',
-            hour12: false
-        }).format(date).replace(',', '');
+        // The database string is like "2025-08-31T12:19:03.000Z".
+        // This is the pure São Paulo time. We will treat it as a string.
+        
+        // 1. Slice to remove the milliseconds and 'Z'.
+        const trimmed = dbDateString.slice(0, 19);
+        // Result: "2025-08-31T12:19:03"
+
+        // 2. Split into date and time parts.
+        const [datePart, timePart] = trimmed.split('T');
+        // Result: datePart="2025-08-31", timePart="12:19:03"
+        
+        // 3. Split the date part and reassemble in dd/mm/yyyy format.
+        const [year, month, day] = datePart.split('-');
+        // Result: year="2025", month="08", day="31"
+        
+        // 4. Combine them into the final, correct string.
+        return `${day}/${month}/${year} ${timePart}`;
     } catch (e) {
-        return 'Invalid Date';
+        // This will only happen if the database string is corrupted.
+        return 'Invalid Date String';
     }
 };
 
