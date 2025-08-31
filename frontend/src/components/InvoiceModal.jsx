@@ -2,8 +2,6 @@ import React, { useState, useEffect } from 'react';
 import styled from 'styled-components';
 import Modal from './Modal';
 import { createInvoice, updateInvoice } from '../services/api';
-// === NEW IMPORTS FOR THE PROFESSIONAL DATE PICKER ===
-import DatePicker from 'react-datepicker';
 
 const Form = styled.form`
     display: grid;
@@ -16,19 +14,14 @@ const InputGroup = styled.div`
     flex-direction: column;
     gap: 0.5rem;
     grid-column: ${({ full }) => full ? '1 / -1' : 'auto'};
+`;
 
-    /* Styling for react-datepicker input */
-    .react-datepicker-wrapper {
-        width: 100%;
-    }
-    .react-datepicker__input-container input {
-        width: 100%;
-        padding: 0.75rem;
-        border: 1px solid ${({ theme }) => theme.border};
-        border-radius: 4px;
-        font-family: inherit;
-        font-size: 1rem; /* Match other inputs */
-    }
+// Container for all the date/time inputs
+const DateTimeContainer = styled.div`
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0.5rem;
+    grid-column: 1 / -1; /* Span full width */
 `;
 
 const Label = styled.label`
@@ -39,6 +32,7 @@ const Input = styled.input`
     padding: 0.75rem;
     border: 1px solid ${({ theme }) => theme.border};
     border-radius: 4px;
+    width: 100%;
 `;
 
 const Textarea = styled.textarea`
@@ -64,37 +58,44 @@ const InvoiceModal = ({ isOpen, onClose, invoice, invoices, insertAtIndex, onSav
     const isEditMode = !!invoice;
     const isInsertMode = insertAtIndex !== null;
     
-    // The state for the date picker MUST be a native Date object, not a string.
-    const [receivedAtDate, setReceivedAtDate] = useState(new Date());
+    // State for the main form data
     const [formData, setFormData] = useState({});
+    // SEPARATE state for each part of the date and time
+    const [dateTime, setDateTime] = useState({
+        year: '', month: '', day: '', hour: '', minute: '', second: ''
+    });
 
     useEffect(() => {
         if (isOpen) {
             let initialDate;
 
             if (isEditMode) {
-                // When editing, create a Date object from the invoice's stored timestamp.
                 initialDate = new Date(invoice.received_at);
-                setFormData(invoice);
             } else if (isInsertMode) {
                 const prevInvoice = invoices[insertAtIndex - 1];
                 const nextInvoice = invoices[insertAtIndex];
                 const startTime = prevInvoice ? new Date(prevInvoice.received_at).getTime() : new Date().getTime() - 60000;
                 const endTime = nextInvoice ? new Date(nextInvoice.received_at).getTime() : new Date().getTime();
                 initialDate = new Date(startTime + (endTime - startTime) / 2);
-                setFormData({
-                    sender_name: '', recipient_name: '', transaction_id: '',
-                    pix_key: '', amount: '0.00', credit: '0.00', notes: ''
-                });
             } else {
-                // For a new entry, default to the current time.
                 initialDate = new Date();
-                setFormData({
-                    sender_name: '', recipient_name: '', transaction_id: '',
-                    pix_key: '', amount: '0.00', credit: '0.00', notes: ''
-                });
             }
-            setReceivedAtDate(initialDate);
+
+            // Deconstruct the initial date into parts for the state
+            const pad = (num) => num.toString().padStart(2, '0');
+            setDateTime({
+                year: initialDate.getFullYear().toString(),
+                month: pad(initialDate.getMonth() + 1),
+                day: pad(initialDate.getDate()),
+                hour: pad(initialDate.getHours()),
+                minute: pad(initialDate.getMinutes()),
+                second: pad(initialDate.getSeconds())
+            });
+
+            setFormData(isEditMode ? invoice : {
+                sender_name: '', recipient_name: '', transaction_id: '',
+                pix_key: '', amount: '0.00', credit: '0.00', notes: ''
+            });
         }
     }, [invoice, invoices, insertAtIndex, isEditMode, isInsertMode, isOpen]);
 
@@ -102,13 +103,19 @@ const InvoiceModal = ({ isOpen, onClose, invoice, invoices, insertAtIndex, onSav
         setFormData({ ...formData, [e.target.name]: e.target.value });
     };
 
+    const handleDateTimeChange = (e) => {
+        setDateTime({ ...dateTime, [e.target.name]: e.target.value });
+    };
+
     const handleSubmit = async (e) => {
         e.preventDefault();
         
-        // Convert the Date object back to an ISO string, which the backend's `new Date()` can parse perfectly.
+        // DEFINITIVE FIX: Manually construct the pure 'YYYY-MM-DD HH:mm:ss' string.
+        const fullTimestamp = `${dateTime.year}-${dateTime.month}-${dateTime.day} ${dateTime.hour}:${dateTime.minute}:${dateTime.second}`;
+        
         const payload = {
             ...formData,
-            received_at: receivedAtDate.toISOString(),
+            received_at: fullTimestamp,
             amount: formData.amount === '' ? '0.00' : formData.amount,
             credit: formData.credit === '' ? '0.00' : formData.credit,
         };
@@ -131,17 +138,14 @@ const InvoiceModal = ({ isOpen, onClose, invoice, invoices, insertAtIndex, onSav
             <Form onSubmit={handleSubmit}>
                 <InputGroup full>
                     <Label>Received At (GMT-05:00)</Label>
-                    {/* === THE NEW, PROFESSIONAL DATE PICKER === */}
-                    <DatePicker
-                        selected={receivedAtDate}
-                        onChange={(date) => setReceivedAtDate(date)}
-                        showTimeSelect
-                        timeFormat="HH:mm:ss"
-                        timeIntervals={15} // For the minute dropdown
-                        timeCaption="Time"
-                        dateFormat="dd/MM/yyyy HH:mm:ss" // How the date is displayed in the input
-                        required
-                    />
+                    <DateTimeContainer>
+                        <Input type="number" name="day" placeholder="DD" value={dateTime.day} onChange={handleDateTimeChange} />
+                        <Input type="number" name="month" placeholder="MM" value={dateTime.month} onChange={handleDateTimeChange} />
+                        <Input type="number" name="year" placeholder="YYYY" value={dateTime.year} onChange={handleDateTimeChange} />
+                        <Input type="number" name="hour" placeholder="HH" value={dateTime.hour} onChange={handleDateTimeChange} />
+                        <Input type="number" name="minute" placeholder="MM" value={dateTime.minute} onChange={handleDateTimeChange} />
+                        <Input type="number" name="second" placeholder="SS" value={dateTime.second} onChange={handleDateTimeChange} />
+                    </DateTimeContainer>
                 </InputGroup>
 
                 <InputGroup>

@@ -1,11 +1,8 @@
 const pool = require('../config/db');
 const { recalculateBalances } = require('../utils/balanceCalculator');
-const ExcelJS = require('exceljs');
 const path = require('path');
 const fs = require('fs');
 const { parseFormattedCurrency } = require('../utils/currencyParser');
-const { formatForMySQL } = require('../utils/dateFormatter');
-
 
 exports.getAllInvoices = async (req, res) => {
     const {
@@ -102,11 +99,9 @@ exports.getRecipientNames = async (req, res) => {
 exports.createInvoice = async (req, res) => {
     const { amount, credit, notes, received_at, sender_name, recipient_name, transaction_id, pix_key } = req.body;
     
-    // DEFINITIVE FIX:
-    // The `received_at` from the frontend is ALREADY a string in the format "YYYY-MM-DDTHH:mm".
-    // We will use it DIRECTLY. No more `new Date()`. The mysql2 driver can handle this format.
-    // We only create a new Date if one isn't provided at all.
-    const receivedAtForDb = received_at || formatForMySQL(new Date());
+    // DEFINITIVE FIX: The received_at is now a pure "YYYY-MM-DD HH:mm:ss" string from the frontend.
+    // We save it directly. No `new Date()`.
+    const receivedAtForDb = received_at;
 
     const connection = await pool.getConnection();
     try {
@@ -120,7 +115,7 @@ exports.createInvoice = async (req, res) => {
             [amountValue, creditValue, notes, receivedAtForDb, true, sender_name || '', recipient_name || '', transaction_id || null, pix_key || null]
         );
         
-        // recalculateBalances needs an ISO string for safety, so we create the Date object here.
+        // recalculateBalances needs an ISO string for safety, so we create a Date object just for it.
         await recalculateBalances(connection, new Date(receivedAtForDb).toISOString());
         await connection.commit();
         req.io.emit('invoices:updated');
@@ -146,7 +141,7 @@ exports.updateInvoice = async (req, res) => {
         if (!oldInvoice) { throw new Error('Invoice not found'); }
         
         const oldTimestamp = new Date(oldInvoice.received_at);
-        // DEFINITIVE FIX: Use the `received_at` string directly.
+        // DEFINITIVE FIX: Use the pure string from the frontend directly.
         const newTimestampForDb = received_at;
         const startRecalcTimestamp = oldTimestamp < new Date(newTimestampForDb) ? oldTimestamp : new Date(newTimestampForDb);
 
