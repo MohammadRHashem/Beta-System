@@ -29,7 +29,7 @@ const recalculateBalances = async (connection, startTimeISO) => {
             const credit = parseFormattedCurrency(invoice.credit);
             currentBalance = currentBalance + debit - credit;
 
-            // Convert the numeric result BACK to a formatted string for storage.
+            // Convert the numeric result BACK to the correct "1,250.00" string format for storage.
             const formattedBalance = formatNumberToCustomCurrency(currentBalance);
 
             // Save the formatted string to the VARCHAR balance column.

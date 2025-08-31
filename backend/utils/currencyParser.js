@@ -11,7 +11,7 @@ function parseFormattedCurrency(value) {
     if (typeof value === 'number') {
         return value;
     }
-    // Remove all comma separators, then parse as a float.
+    // Remove all comma separators (the thousands separator) and then parse as a float.
     const numericString = String(value).replace(/,/g, '');
     const number = parseFloat(numericString);
 
@@ -19,10 +19,10 @@ function parseFormattedCurrency(value) {
 }
 
 /**
- * Formats a number back into your required currency string format.
+ * Formats a number into your required currency string format (e.g., 1250.5 -> "1,250.50").
  * This is our "formatter" for saving calculation results.
  * @param {number} value The number to format.
- * @returns {string} The formatted currency string (e.g., "1,250.00").
+ * @returns {string} The formatted currency string.
  */
 function formatNumberToCustomCurrency(value) {
     if (value === null || value === undefined) return '';
