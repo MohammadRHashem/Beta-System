@@ -134,7 +134,7 @@ const PageButton = styled.button`
     }
 `;
 
-const InvoiceTable = ({ invoices, loading, onEdit, pagination, setPagination }) => {
+const InvoiceTable = ({ invoices, loading, onInsert, onEdit, pagination, setPagination }) => {
 
     const transactionIdCounts = useMemo(() => {
         const counts = {};
