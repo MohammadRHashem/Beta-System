@@ -7,21 +7,12 @@ import { FaEdit, FaTrashAlt, FaEye, FaSort, FaSortUp, FaSortDown, FaPlus } from 
 const formatSaoPauloDateTime = (utcDateString) => {
     if (!utcDateString) return '';
     try {
-        const date = new Date(utcDateString);
-        // This will format the UTC date into a São Paulo string, regardless of the user's browser setting.
         return new Intl.DateTimeFormat('pt-BR', {
-            year: 'numeric',
-            month: '2-digit',
-            day: '2-digit',
-            hour: '2-digit',
-            minute: '2-digit',
-            second: '2-digit',
-            hour12: false,
-            timeZone: 'America/Sao_Paulo'
-        }).format(date).replace(',', ''); // remove comma between date and time
-    } catch (e) {
-        return 'Invalid Date';
-    }
+            year: 'numeric', month: '2-digit', day: '2-digit',
+            hour: '2-digit', minute: '2-digit', second: '2-digit',
+            hour12: false, timeZone: 'America/Sao_Paulo'
+        }).format(new Date(utcDateString)).replace(',', '');
+    } catch (e) { return 'Invalid Date'; }
 };
 
 const TableWrapper = styled.div`
@@ -214,38 +205,27 @@ const InvoiceTable = ({ invoices, loading, sort, onSortChange, onEdit, paginatio
                         <Th>Sender</Th>
                         <Th>Recipient</Th>
                         <Th>Source Group</Th>
-                        <Th className="currency">Amount (Debit)</Th>
-                        <Th className="currency">Credit</Th>
-                        <Th className="currency">Balance</Th>
+                        <Th className="currency" sortable onClick={() => handleSort('amount')}>Amount (Debit)</Th>
+                        <Th className="currency" sortable onClick={() => handleSort('credit')}>Credit</Th>
+                        <Th className="currency" sortable onClick={() => handleSort('balance')}>Balance</Th>
                         <Th>Actions</Th>
                     </tr>
                 </thead>
                 <tbody>
                     {invoices.map((inv, index) => {
-                        const isDuplicate = inv.transaction_id && transactionIdCounts[inv.transaction_id] > 1;
                         const needsReview = !inv.is_manual && (!inv.sender_name || !inv.recipient_name || !inv.amount);
 
                         return (
-                            <Tr key={inv.id} isDuplicate={isDuplicate} isDeleted={!!inv.is_deleted}>
-                                <Td>
-                                    <AddBetweenButton onClick={() => onEdit(null, index)} title="Insert new entry here">
-                                        <FaPlus size={12} />
-                                    </AddBetweenButton>
-                                    {formatSaoPauloDateTime(inv.received_at)}
-                                </Td>
+                            <Tr key={inv.id} isDeleted={!!inv.is_deleted}>
+                                <Td>{formatSaoPauloDateTime(inv.received_at)}</Td>
                                 <Td>{inv.transaction_id || ''}</Td>
-                                <Td className={needsReview && !inv.sender_name ? 'review' : ''}>
-                                    {inv.sender_name || (needsReview ? 'REVIEW' : '')}
-                                </Td>
-                                <Td className={needsReview && !inv.recipient_name ? 'review' : ''}>
-                                    {inv.recipient_name || (needsReview ? 'REVIEW' : '')}
-                                </Td>
-                                <Td>{inv.source_group_name || inv.source_group_jid}</Td>
-                                <Td className={`currency ${needsReview && !inv.amount ? 'review' : ''}`}>
-                                    {inv.amount || (needsReview ? 'REVIEW' : '')}
-                                </Td>
-                                <Td className="currency">{formatNumericCurrency(inv.credit)}</Td>
-                                <Td className="currency">{formatNumericCurrency(inv.balance)}</Td>
+                                <Td>{inv.sender_name || (needsReview ? 'REVIEW' : '')}</Td>
+                                <Td>{inv.recipient_name || (needsReview ? 'REVIEW' : '')}</Td>
+                                <Td>{inv.source_group_name || ''}</Td>
+                                {/* DEFINITIVE FIX: Display the raw strings directly from the database */}
+                                <Td className={`currency`}>{inv.amount || (needsReview ? 'REVIEW' : '')}</Td>
+                                <Td className="currency">{inv.credit || ''}</Td>
+                                <Td className="currency">{inv.balance || ''}</Td>
                                 <Td className="actions">
                                     {inv.media_path && !inv.is_deleted && 
                                         <FaEye onClick={() => handleViewMedia(inv.id)} title="View Media" />}

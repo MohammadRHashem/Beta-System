@@ -1,5 +1,5 @@
 const pool = require('../config/db');
-const { parseFormattedCurrency } = require('./currencyParser');
+const { parseFormattedCurrency, formatNumberToCustomCurrency } = require('./currencyParser');
 
 /**
  * Recalculates the balance for all invoices starting from a specific timestamp.
@@ -14,7 +14,8 @@ const recalculateBalances = async (connection, startTimeISO) => {
         );
         let currentBalance = 0.00;
         if (previousInvoices.length > 0) {
-            currentBalance = parseFloat(previousInvoices[0].balance || 0);
+            // The balance is a string, so we must parse it to a number to start.
+            currentBalance = parseFormattedCurrency(previousInvoices[0].balance);
         }
 
         const [invoicesToUpdate] = await connection.execute(
@@ -23,14 +24,18 @@ const recalculateBalances = async (connection, startTimeISO) => {
         );
 
         for (const invoice of invoicesToUpdate) {
-            // Use the parser for the 'amount' string
+            // Convert both VARCHAR amounts to numbers for calculation.
             const debit = parseFormattedCurrency(invoice.amount); 
-            const credit = parseFloat(invoice.credit || 0);
+            const credit = parseFormattedCurrency(invoice.credit);
             currentBalance = currentBalance + debit - credit;
 
+            // Convert the numeric result BACK to a formatted string for storage.
+            const formattedBalance = formatNumberToCustomCurrency(currentBalance);
+
+            // Save the formatted string to the VARCHAR balance column.
             await connection.execute(
                 `UPDATE invoices SET balance = ? WHERE id = ?`,
-                [currentBalance, invoice.id]
+                [formattedBalance, invoice.id]
             );
         }
         console.log(`[BALANCE_CALC] Recalculation complete.`);

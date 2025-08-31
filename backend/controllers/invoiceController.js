@@ -9,7 +9,6 @@ const { parseFormattedCurrency } = require('../utils/currencyParser');
 const SAO_PAULO_TZ = 'America/Sao_Paulo';
 
 exports.getAllInvoices = async (req, res) => {
-    // This function is correct and does not need changes.
     const {
         page = 1, limit = 50, sortBy = 'received_at', sortOrder = 'desc',
         search = '', dateFrom, dateTo, timeFrom, timeTo,
@@ -47,8 +46,10 @@ exports.getAllInvoices = async (req, res) => {
     if (status === 'only_deleted') { query += ' AND i.is_deleted = 1'; }
     if (status === 'only_duplicates') { query += ` AND i.transaction_id IS NOT NULL AND i.transaction_id != '' AND i.transaction_id IN (SELECT transaction_id FROM invoices WHERE transaction_id IS NOT NULL AND transaction_id != '' GROUP BY transaction_id HAVING COUNT(*) > 1)`; }
 
-    const orderByClause = sortBy === 'amount'
-        ? `CAST(REPLACE(REPLACE(i.amount, '.', ''), ',', '.') AS DECIMAL(12,2)) ${sortOrder === 'asc' ? 'ASC' : 'DESC'}`
+    // DEFINITIVE FIX FOR SORTING VARCHAR COLUMNS AS NUMBERS
+    const sortableNumericColumns = ['amount', 'credit', 'balance'];
+    const orderByClause = sortableNumericColumns.includes(sortBy)
+        ? `CAST(REPLACE(i.${sortBy}, ',', '') AS DECIMAL(15,2)) ${sortOrder === 'asc' ? 'ASC' : 'DESC'}`
         : `${pool.escapeId(sortBy)} ${sortOrder === 'asc' ? 'ASC' : 'DESC'}`;
 
     try {
@@ -82,51 +83,24 @@ exports.getRecipientNames = async (req, res) => {
 };
 
 exports.createInvoice = async (req, res) => {
-    const { 
-        amount, 
-        credit, 
-        notes, 
-        received_at, 
-        sender_name, 
-        recipient_name, 
-        transaction_id,
-        pix_key 
-    } = req.body;
+    const { amount, credit, notes, received_at, sender_name, recipient_name, transaction_id, pix_key } = req.body;
     
     const receivedAt = received_at ? new Date(received_at) : new Date();
-
     const connection = await pool.getConnection();
+
     try {
         await connection.beginTransaction();
 
-        const creditValue = (credit === null || credit === undefined || credit === '') ? '0.00' : credit;
-
-        // DEFINITIVE FIX: The query does not include `source_group_jid`,
-        // allowing the database's `DEFAULT NULL` to take effect for manual entries.
+        // The backend now saves the raw strings from the frontend directly.
         const [result] = await connection.query(
-            `INSERT INTO invoices 
-                (amount, credit, notes, received_at, is_manual, sender_name, recipient_name, transaction_id, pix_key) 
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [
-                amount || '0.00', 
-                creditValue || '0.00', 
-                notes, 
-                receivedAt, 
-                true,
-                sender_name || '', 
-                recipient_name || '',
-                transaction_id || null,
-                pix_key || null
-            ]
+            `INSERT INTO invoices (amount, credit, notes, received_at, is_manual, sender_name, recipient_name, transaction_id, pix_key) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [amount || null, credit || null, notes, receivedAt, true, sender_name || '', recipient_name || '', transaction_id || null, pix_key || null]
         );
         
         await recalculateBalances(connection, receivedAt.toISOString());
-
         await connection.commit();
-        
         req.io.emit('invoices:updated');
         res.status(201).json({ message: 'Invoice created successfully', id: result.insertId });
-
     } catch (error) {
         await connection.rollback();
         console.error('Error creating invoice:', error);
@@ -138,12 +112,9 @@ exports.createInvoice = async (req, res) => {
 
 exports.updateInvoice = async (req, res) => {
     const { id } = req.params;
-    const {
-        transaction_id, sender_name, recipient_name, pix_key, amount,
-        credit, notes, received_at
-    } = req.body;
-
+    const { transaction_id, sender_name, recipient_name, pix_key, amount, credit, notes, received_at } = req.body;
     const connection = await pool.getConnection();
+
     try {
         await connection.beginTransaction();
         
@@ -154,25 +125,19 @@ exports.updateInvoice = async (req, res) => {
         const newTimestamp = new Date(received_at);
         const startRecalcTimestamp = oldTimestamp < newTimestamp ? oldTimestamp : newTimestamp;
 
+        // The backend now updates with the raw strings from the frontend directly.
         await connection.query(
-            `UPDATE invoices SET 
-                transaction_id = ?, sender_name = ?, recipient_name = ?, pix_key = ?, 
-                amount = ?, credit = ?, notes = ?, received_at = ?
-            WHERE id = ?`,
+            `UPDATE invoices SET transaction_id = ?, sender_name = ?, recipient_name = ?, pix_key = ?, amount = ?, credit = ?, notes = ?, received_at = ? WHERE id = ?`,
             [transaction_id, sender_name, recipient_name, pix_key, amount, credit, notes, newTimestamp, id]
         );
         
         await recalculateBalances(connection, startRecalcTimestamp.toISOString());
-
         await connection.commit();
         req.io.emit('invoices:updated');
         res.json({ message: 'Invoice updated successfully.' });
-
     } catch (error) {
         await connection.rollback();
-        if (error.message === 'Invoice not found') {
-            return res.status(404).json({ message: 'Invoice not found.' });
-        }
+        if (error.message === 'Invoice not found') { return res.status(404).json({ message: 'Invoice not found.' }); }
         console.error('Error updating invoice:', error);
         res.status(500).json({ message: 'Failed to update invoice.' });
     } finally {
