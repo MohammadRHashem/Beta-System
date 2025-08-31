@@ -95,25 +95,24 @@ exports.createInvoice = async (req, res) => {
     const { amount, credit, notes, received_at, sender_name, recipient_name, transaction_id, pix_key } = req.body;
     
     const receivedAt = received_at ? new Date(received_at) : new Date();
-
     const connection = await pool.getConnection();
+
     try {
         await connection.beginTransaction();
 
+        // DEFINITIVE FIX: If amount or credit are empty/null, store the string "0.00" to match the DB default.
+        const amountValue = (amount === null || amount === undefined || amount === '') ? '0.00' : amount;
         const creditValue = (credit === null || credit === undefined || credit === '') ? '0.00' : credit;
 
         const [result] = await connection.query(
             `INSERT INTO invoices (amount, credit, notes, received_at, is_manual, sender_name, recipient_name, transaction_id, pix_key) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [amount || null, creditValue, notes, receivedAt, true, sender_name || '', recipient_name || '', transaction_id || null, pix_key || null]
+            [amountValue, creditValue, notes, receivedAt, true, sender_name || '', recipient_name || '', transaction_id || null, pix_key || null]
         );
         
         await recalculateBalances(connection, receivedAt.toISOString());
-
         await connection.commit();
-        
         req.io.emit('invoices:updated');
         res.status(201).json({ message: 'Invoice created successfully', id: result.insertId });
-
     } catch (error) {
         await connection.rollback();
         console.error('Error creating invoice:', error);
@@ -125,12 +124,9 @@ exports.createInvoice = async (req, res) => {
 
 exports.updateInvoice = async (req, res) => {
     const { id } = req.params;
-    const {
-        transaction_id, sender_name, recipient_name, pix_key, amount,
-        credit, notes, received_at
-    } = req.body;
-
+    const { transaction_id, sender_name, recipient_name, pix_key, amount, credit, notes, received_at } = req.body;
     const connection = await pool.getConnection();
+
     try {
         await connection.beginTransaction();
         
@@ -141,24 +137,22 @@ exports.updateInvoice = async (req, res) => {
         const newTimestamp = new Date(received_at);
         const startRecalcTimestamp = oldTimestamp < newTimestamp ? oldTimestamp : newTimestamp;
 
+        // DEFINITIVE FIX: If amount or credit are empty/null, store the string "0.00".
+        const amountValue = (amount === null || amount === undefined || amount === '') ? '0.00' : amount;
         const creditValue = (credit === null || credit === undefined || credit === '') ? '0.00' : credit;
 
         await connection.query(
             `UPDATE invoices SET transaction_id = ?, sender_name = ?, recipient_name = ?, pix_key = ?, amount = ?, credit = ?, notes = ?, received_at = ? WHERE id = ?`,
-            [transaction_id, sender_name, recipient_name, pix_key, amount, creditValue, notes, newTimestamp, id]
+            [transaction_id, sender_name, recipient_name, pix_key, amountValue, creditValue, notes, newTimestamp, id]
         );
         
         await recalculateBalances(connection, startRecalcTimestamp.toISOString());
-
         await connection.commit();
         req.io.emit('invoices:updated');
         res.json({ message: 'Invoice updated successfully.' });
-
     } catch (error) {
         await connection.rollback();
-        if (error.message === 'Invoice not found') {
-            return res.status(404).json({ message: 'Invoice not found.' });
-        }
+        if (error.message === 'Invoice not found') { return res.status(404).json({ message: 'Invoice not found.' }); }
         console.error('Error updating invoice:', error);
         res.status(500).json({ message: 'Failed to update invoice.' });
     } finally {

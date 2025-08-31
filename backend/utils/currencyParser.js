@@ -19,15 +19,20 @@ function parseFormattedCurrency(value) {
 }
 
 /**
- * Formats a number into your required currency string format (e.g., 1250.5 -> "1,250.50").
+ * Formats a number into your required USA currency string format (e.g., 1250.5 -> "1,250.50").
  * This is our "formatter" for saving calculation results.
  * @param {number} value The number to format.
  * @returns {string} The formatted currency string.
  */
 function formatNumberToCustomCurrency(value) {
-    if (value === null || value === undefined) return '';
+    if (value === null || value === undefined) {
+        // Return the required default string instead of an empty one
+        return '0.00';
+    }
     const num = Number(value);
-    if (isNaN(num)) return '';
+    if (isNaN(num)) {
+        return '0.00';
+    }
     // Use 'en-US' locale as it provides the exact "1,250.00" format you want.
     return new Intl.NumberFormat('en-US', {
         minimumFractionDigits: 2,
