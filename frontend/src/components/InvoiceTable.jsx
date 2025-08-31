@@ -3,16 +3,25 @@ import styled, { css } from 'styled-components';
 import { viewInvoiceMedia, deleteInvoice } from '../services/api';
 import { FaEdit, FaTrashAlt, FaEye, FaSort, FaSortUp, FaSortDown, FaPlus } from 'react-icons/fa';
 
-// NATIVE JAVASCRIPT DATE FORMATTER FOR SÃO PAULO
-const formatSaoPauloDateTime = (utcDateString) => {
-    if (!utcDateString) return '';
+// NATIVE JAVASCRIPT DATE FORMATTER
+const formatDisplayDateTime = (dbDateString) => {
+    if (!dbDateString) return '';
     try {
+        // The string from the DB is already the correct SP time.
+        // We just re-format it nicely.
+        const date = new Date(dbDateString);
         return new Intl.DateTimeFormat('pt-BR', {
-            year: 'numeric', month: '2-digit', day: '2-digit',
-            hour: '2-digit', minute: '2-digit', second: '2-digit',
-            hour12: false, timeZone: 'America/Sao_Paulo'
-        }).format(new Date(utcDateString)).replace(',', '');
-    } catch (e) { return 'Invalid Date'; }
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit',
+            hour12: false
+        }).format(date).replace(',', '');
+    } catch (e) {
+        return 'Invalid Date';
+    }
 };
 
 const TableWrapper = styled.div`
@@ -40,7 +49,7 @@ const Th = styled.th`
 const Tr = styled.tr`
     position: relative;
     border-bottom: 1px solid ${({ theme }) => theme.border};
-    transition: background-color 0.3s ease;
+    transition: background-color: 0.3s ease;
 
     &:last-child {
         border-bottom: none;
@@ -143,7 +152,7 @@ const formatNumericCurrency = (value) => {
     if (value === null || value === undefined) return '';
     const num = Number(value);
     if (isNaN(num)) return '';
-    return new Intl.NumberFormat('en-US', {
+    return new Intl.NumberFormat('pt-BR', {
         minimumFractionDigits: 2,
         maximumFractionDigits: 2,
     }).format(num);
@@ -205,27 +214,38 @@ const InvoiceTable = ({ invoices, loading, sort, onSortChange, onEdit, paginatio
                         <Th>Sender</Th>
                         <Th>Recipient</Th>
                         <Th>Source Group</Th>
-                        <Th className="currency" sortable onClick={() => handleSort('amount')}>Amount (Debit)</Th>
-                        <Th className="currency" sortable onClick={() => handleSort('credit')}>Credit</Th>
-                        <Th className="currency" sortable onClick={() => handleSort('balance')}>Balance</Th>
+                        <Th className="currency">Amount (Debit)</Th>
+                        <Th className="currency">Credit</Th>
+                        <Th className="currency">Balance</Th>
                         <Th>Actions</Th>
                     </tr>
                 </thead>
                 <tbody>
                     {invoices.map((inv, index) => {
+                        const isDuplicate = inv.transaction_id && transactionIdCounts[inv.transaction_id] > 1;
                         const needsReview = !inv.is_manual && (!inv.sender_name || !inv.recipient_name || !inv.amount);
 
                         return (
-                            <Tr key={inv.id} isDeleted={!!inv.is_deleted}>
-                                <Td>{formatSaoPauloDateTime(inv.received_at)}</Td>
+                            <Tr key={inv.id} isDuplicate={isDuplicate} isDeleted={!!inv.is_deleted}>
+                                <Td>
+                                    <AddBetweenButton onClick={() => onEdit(null, index)} title="Insert new entry here">
+                                        <FaPlus size={12} />
+                                    </AddBetweenButton>
+                                    {formatDisplayDateTime(inv.received_at)}
+                                </Td>
                                 <Td>{inv.transaction_id || ''}</Td>
-                                <Td>{inv.sender_name || (needsReview ? 'REVIEW' : '')}</Td>
-                                <Td>{inv.recipient_name || (needsReview ? 'REVIEW' : '')}</Td>
+                                <Td className={needsReview && !inv.sender_name ? 'review' : ''}>
+                                    {inv.sender_name || (needsReview ? 'REVIEW' : '')}
+                                </Td>
+                                <Td className={needsReview && !inv.recipient_name ? 'review' : ''}>
+                                    {inv.recipient_name || (needsReview ? 'REVIEW' : '')}
+                                </Td>
                                 <Td>{inv.source_group_name || ''}</Td>
-                                {/* DEFINITIVE FIX: Display the raw strings directly from the database */}
-                                <Td className={`currency`}>{inv.amount || (needsReview ? 'REVIEW' : '')}</Td>
-                                <Td className="currency">{inv.credit || ''}</Td>
-                                <Td className="currency">{inv.balance || ''}</Td>
+                                <Td className={`currency ${needsReview && !inv.amount ? 'review' : ''}`}>
+                                    {inv.amount || (needsReview ? 'REVIEW' : '')}
+                                </Td>
+                                <Td className="currency">{formatNumericCurrency(inv.credit)}</Td>
+                                <Td className="currency">{formatNumericCurrency(inv.balance)}</Td>
                                 <Td className="actions">
                                     {inv.media_path && !inv.is_deleted && 
                                         <FaEye onClick={() => handleViewMedia(inv.id)} title="View Media" />}
