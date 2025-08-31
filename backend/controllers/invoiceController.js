@@ -4,6 +4,8 @@ const ExcelJS = require('exceljs');
 const path = require('path');
 const fs = require('fs');
 const { parseFormattedCurrency } = require('../utils/currencyParser');
+const { formatForMySQL } = require('../utils/dateFormatter');
+
 
 exports.getAllInvoices = async (req, res) => {
     const {
@@ -100,22 +102,23 @@ exports.getRecipientNames = async (req, res) => {
 exports.createInvoice = async (req, res) => {
     const { amount, credit, notes, received_at, sender_name, recipient_name, transaction_id, pix_key } = req.body;
     
-    // DEFINITIVE FIX: Treat `received_at` as a pure string.
-    // The mysql2 driver will correctly format it for the DATETIME column.
-    const receivedAt = received_at || new Date(); // Fallback to now if not provided
+    // DEFINITIVE FIX: Format the date into the required MySQL DATETIME format.
+    const receivedAtForDb = formatForMySQL(received_at || new Date());
 
     const connection = await pool.getConnection();
     try {
         await connection.beginTransaction();
+
         const creditValue = (credit === null || credit === undefined || credit === '') ? '0.00' : credit;
         const amountValue = (amount === null || amount === undefined || amount === '') ? '0.00' : amount;
 
         const [result] = await connection.query(
             'INSERT INTO invoices (amount, credit, notes, received_at, is_manual, sender_name, recipient_name, transaction_id, pix_key) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-            [amountValue, creditValue, notes, receivedAt, true, sender_name || '', recipient_name || '', transaction_id || null, pix_key || null]
+            [amountValue, creditValue, notes, receivedAtForDb, true, sender_name || '', recipient_name || '', transaction_id || null, pix_key || null]
         );
         
-        await recalculateBalances(connection, new Date(receivedAt).toISOString());
+        // recalculateBalances needs an ISO string, so we create a new Date object from the input.
+        await recalculateBalances(connection, new Date(receivedAtForDb).toISOString());
         await connection.commit();
         req.io.emit('invoices:updated');
         res.status(201).json({ message: 'Invoice created successfully', id: result.insertId });
@@ -131,8 +134,8 @@ exports.createInvoice = async (req, res) => {
 exports.updateInvoice = async (req, res) => {
     const { id } = req.params;
     const { transaction_id, sender_name, recipient_name, pix_key, amount, credit, notes, received_at } = req.body;
-
     const connection = await pool.getConnection();
+
     try {
         await connection.beginTransaction();
         
@@ -140,16 +143,18 @@ exports.updateInvoice = async (req, res) => {
         if (!oldInvoice) { throw new Error('Invoice not found'); }
         
         const oldTimestamp = new Date(oldInvoice.received_at);
-        // DEFINITIVE FIX: Treat `received_at` as a pure string.
-        const newTimestamp = received_at;
-        const startRecalcTimestamp = oldTimestamp < new Date(newTimestamp) ? oldTimestamp : new Date(newTimestamp);
+
+        // DEFINITIVE FIX: Format the incoming date into the required MySQL DATETIME format.
+        const newTimestampForDb = formatForMySQL(received_at);
+        
+        const startRecalcTimestamp = oldTimestamp < new Date(newTimestampForDb) ? oldTimestamp : new Date(newTimestampForDb);
 
         const amountValue = (amount === null || amount === undefined || amount === '') ? '0.00' : amount;
         const creditValue = (credit === null || credit === undefined || credit === '') ? '0.00' : credit;
 
         await connection.query(
             `UPDATE invoices SET transaction_id = ?, sender_name = ?, recipient_name = ?, pix_key = ?, amount = ?, credit = ?, notes = ?, received_at = ? WHERE id = ?`,
-            [transaction_id, sender_name, recipient_name, pix_key, amountValue, creditValue, notes, newTimestamp, id]
+            [transaction_id, sender_name, recipient_name, pix_key, amountValue, creditValue, notes, newTimestampForDb, id]
         );
         
         await recalculateBalances(connection, startRecalcTimestamp.toISOString());
@@ -158,9 +163,7 @@ exports.updateInvoice = async (req, res) => {
         res.json({ message: 'Invoice updated successfully.' });
     } catch (error) {
         await connection.rollback();
-        if (error.message === 'Invoice not found') {
-            return res.status(404).json({ message: 'Invoice not found.' });
-        }
+        if (error.message === 'Invoice not found') { return res.status(404).json({ message: 'Invoice not found.' }); }
         console.error('Error updating invoice:', error);
         res.status(500).json({ message: 'Failed to update invoice.' });
     } finally {
