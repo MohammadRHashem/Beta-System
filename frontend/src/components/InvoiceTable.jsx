@@ -3,22 +3,18 @@ import styled, { css } from 'styled-components';
 import { viewInvoiceMedia, deleteInvoice } from '../services/api';
 import { FaEdit, FaTrashAlt, FaEye, FaSort, FaSortUp, FaSortDown, FaPlus } from 'react-icons/fa';
 
-const formatSaoPauloDateTime = (dbDateString) => {
+// DEFINITIVE TIMEZONE FIX: Simple string formatter, no timezone logic.
+const formatDisplayDateTime = (dbDateString) => {
     if (!dbDateString) return '';
     try {
-        const date = new Date(dbDateString);
-        return new Intl.DateTimeFormat('pt-BR', {
-            year: 'numeric',
-            month: '2-digit',
-            day: '2-digit',
-            hour: '2-digit',
-            minute: '2-digit',
-            second: '2-digit',
-            hour12: false,
-            timeZone: 'America/Sao_Paulo'
-        }).format(date).replace(',', '');
+        // The database string is already the correct GMT-05:00 time.
+        // Example: "2025-08-31T12:19:03.000Z"
+        const trimmed = dbDateString.slice(0, 19);
+        const [datePart, timePart] = trimmed.split('T');
+        const [year, month, day] = datePart.split('-');
+        return `${day}/${month}/${year} ${timePart}`;
     } catch (e) {
-        return 'Invalid Date';
+        return 'Invalid Date String';
     }
 };
 
@@ -146,9 +142,6 @@ const PageButton = styled.button`
     }
 `;
 
-// THIS FAULTY FUNCTION IS NOW REMOVED
-// const formatNumericCurrency = (value) => { ... };
-
 const SortIcon = ({ sort, columnKey }) => {
     if (sort.sortBy !== columnKey) return <FaSort />;
     if (sort.sortOrder === 'asc') return <FaSortUp />;
@@ -200,14 +193,14 @@ const InvoiceTable = ({ invoices, loading, sort, onSortChange, onEdit, paginatio
             <Table>
                 <thead>
                     <tr>
-                        <Th style={{paddingLeft: '30px'}}>Received At (São Paulo)</Th>
+                        <Th style={{paddingLeft: '30px'}}>Received At (GMT-05:00)</Th>
                         <Th>Transaction ID</Th>
                         <Th>Sender</Th>
                         <Th>Recipient</Th>
                         <Th>Source Group</Th>
-                        <Th className="currency" sortable onClick={() => handleSort('amount')}>Amount (Debit)</Th>
-                        <Th className="currency" sortable onClick={() => handleSort('credit')}>Credit</Th>
-                        <Th className="currency" sortable onClick={() => handleSort('balance')}>Balance</Th>
+                        <Th className="currency">Amount (Debit)</Th>
+                        <Th className="currency">Credit</Th>
+                        <Th className="currency">Balance</Th>
                         <Th>Actions</Th>
                     </tr>
                 </thead>
@@ -222,7 +215,7 @@ const InvoiceTable = ({ invoices, loading, sort, onSortChange, onEdit, paginatio
                                     <AddBetweenButton onClick={() => onEdit(null, index)} title="Insert new entry here">
                                         <FaPlus size={12} />
                                     </AddBetweenButton>
-                                    {formatSaoPauloDateTime(inv.received_at)}
+                                    {formatDisplayDateTime(inv.received_at)}
                                 </Td>
                                 <Td>{inv.transaction_id || ''}</Td>
                                 <Td className={needsReview && !inv.sender_name ? 'review' : ''}>
@@ -232,10 +225,9 @@ const InvoiceTable = ({ invoices, loading, sort, onSortChange, onEdit, paginatio
                                     {inv.recipient_name || (needsReview ? 'REVIEW' : '')}
                                 </Td>
                                 <Td>{inv.source_group_name || ''}</Td>
-                                <Td className={`currency ${needsReview && !inv.amount ? 'review' : ''}`}>
+                                <Td className={`currency ${needsReview && inv.amount === '0.00' ? 'review' : ''}`}>
                                     {inv.amount || ''}
                                 </Td>
-                                {/* DEFINITIVE FIX: Display the raw strings directly from the database */}
                                 <Td className="currency">{inv.credit || ''}</Td>
                                 <Td className="currency">{inv.balance || ''}</Td>
                                 <Td className="actions">

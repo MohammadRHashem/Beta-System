@@ -1,12 +1,9 @@
 const pool = require('../config/db');
 const { recalculateBalances } = require('../utils/balanceCalculator');
 const ExcelJS = require('exceljs');
-const dateFnsTz = require('date-fns-tz');
 const path = require('path');
 const fs = require('fs');
 const { parseFormattedCurrency } = require('../utils/currencyParser');
-
-const SAO_PAULO_TZ = 'America/Sao_Paulo';
 
 exports.getAllInvoices = async (req, res) => {
     const {
@@ -52,13 +49,17 @@ exports.getAllInvoices = async (req, res) => {
     const reviewCondition = "(i.sender_name IS NULL OR i.sender_name = '' OR i.recipient_name IS NULL OR i.recipient_name = '' OR i.amount IS NULL OR i.amount = '')";
     if (reviewStatus === 'only_review') { query += ` AND ${reviewCondition}`; }
     if (reviewStatus === 'hide_review') { query += ` AND NOT ${reviewCondition}`; }
-    if (status === 'only_deleted') { query += ' AND i.is_deleted = 1'; }
-    if (status === 'only_duplicates') { query += ` AND i.transaction_id IS NOT NULL AND i.transaction_id != '' AND i.transaction_id IN (SELECT transaction_id FROM invoices WHERE transaction_id IS NOT NULL AND transaction_id != '' GROUP BY transaction_id HAVING COUNT(*) > 1)`; }
 
-    // DEFINITIVE FIX FOR SORTING VARCHAR COLUMNS AS NUMBERS
-    const sortableNumericColumns = ['amount', 'credit', 'balance'];
-    const orderByClause = sortableNumericColumns.includes(sortBy)
-        ? `CAST(REPLACE(i.${sortBy}, ',', '') AS DECIMAL(15,2)) ${sortOrder === 'asc' ? 'ASC' : 'DESC'}`
+    if (status === 'only_deleted') {
+        query += ' AND i.is_deleted = 1';
+    } else if (status === 'only_duplicates') {
+        query += ` AND i.transaction_id IS NOT NULL AND i.transaction_id != '' AND i.transaction_id IN (
+            SELECT transaction_id FROM invoices WHERE transaction_id IS NOT NULL AND transaction_id != '' GROUP BY transaction_id HAVING COUNT(*) > 1
+        )`;
+    }
+
+    const orderByClause = sortBy === 'amount'
+        ? `CAST(REPLACE(i.amount, ',', '') AS DECIMAL(15,2)) ${sortOrder === 'asc' ? 'ASC' : 'DESC'}`
         : `${pool.escapeId(sortBy)} ${sortOrder === 'asc' ? 'ASC' : 'DESC'}`;
 
     try {
@@ -72,7 +73,12 @@ exports.getAllInvoices = async (req, res) => {
         `;
         const finalParams = [...params, parseInt(limit), parseInt(offset)];
         const [invoices] = await pool.query(dataQuery, finalParams);
-        res.json({ invoices, totalPages: Math.ceil(total / limit), currentPage: parseInt(page), totalRecords: total });
+        res.json({
+            invoices,
+            totalPages: Math.ceil(total / limit),
+            currentPage: parseInt(page),
+            totalRecords: total,
+        });
     } catch (error) {
         console.error('Error fetching invoices:', error);
         res.status(500).json({ message: 'Failed to fetch invoices.' });
@@ -94,22 +100,22 @@ exports.getRecipientNames = async (req, res) => {
 exports.createInvoice = async (req, res) => {
     const { amount, credit, notes, received_at, sender_name, recipient_name, transaction_id, pix_key } = req.body;
     
-    const receivedAt = received_at ? new Date(received_at) : new Date();
-    const connection = await pool.getConnection();
+    // DEFINITIVE FIX: Treat `received_at` as a pure string.
+    // The mysql2 driver will correctly format it for the DATETIME column.
+    const receivedAt = received_at || new Date(); // Fallback to now if not provided
 
+    const connection = await pool.getConnection();
     try {
         await connection.beginTransaction();
-
-        // DEFINITIVE FIX: If amount or credit are empty/null, store the string "0.00" to match the DB default.
-        const amountValue = (amount === null || amount === undefined || amount === '') ? '0.00' : amount;
         const creditValue = (credit === null || credit === undefined || credit === '') ? '0.00' : credit;
+        const amountValue = (amount === null || amount === undefined || amount === '') ? '0.00' : amount;
 
         const [result] = await connection.query(
-            `INSERT INTO invoices (amount, credit, notes, received_at, is_manual, sender_name, recipient_name, transaction_id, pix_key) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            'INSERT INTO invoices (amount, credit, notes, received_at, is_manual, sender_name, recipient_name, transaction_id, pix_key) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
             [amountValue, creditValue, notes, receivedAt, true, sender_name || '', recipient_name || '', transaction_id || null, pix_key || null]
         );
         
-        await recalculateBalances(connection, receivedAt.toISOString());
+        await recalculateBalances(connection, new Date(receivedAt).toISOString());
         await connection.commit();
         req.io.emit('invoices:updated');
         res.status(201).json({ message: 'Invoice created successfully', id: result.insertId });
@@ -125,8 +131,8 @@ exports.createInvoice = async (req, res) => {
 exports.updateInvoice = async (req, res) => {
     const { id } = req.params;
     const { transaction_id, sender_name, recipient_name, pix_key, amount, credit, notes, received_at } = req.body;
-    const connection = await pool.getConnection();
 
+    const connection = await pool.getConnection();
     try {
         await connection.beginTransaction();
         
@@ -134,10 +140,10 @@ exports.updateInvoice = async (req, res) => {
         if (!oldInvoice) { throw new Error('Invoice not found'); }
         
         const oldTimestamp = new Date(oldInvoice.received_at);
-        const newTimestamp = new Date(received_at);
-        const startRecalcTimestamp = oldTimestamp < newTimestamp ? oldTimestamp : newTimestamp;
+        // DEFINITIVE FIX: Treat `received_at` as a pure string.
+        const newTimestamp = received_at;
+        const startRecalcTimestamp = oldTimestamp < new Date(newTimestamp) ? oldTimestamp : new Date(newTimestamp);
 
-        // DEFINITIVE FIX: If amount or credit are empty/null, store the string "0.00".
         const amountValue = (amount === null || amount === undefined || amount === '') ? '0.00' : amount;
         const creditValue = (credit === null || credit === undefined || credit === '') ? '0.00' : credit;
 
@@ -152,7 +158,9 @@ exports.updateInvoice = async (req, res) => {
         res.json({ message: 'Invoice updated successfully.' });
     } catch (error) {
         await connection.rollback();
-        if (error.message === 'Invoice not found') { return res.status(404).json({ message: 'Invoice not found.' }); }
+        if (error.message === 'Invoice not found') {
+            return res.status(404).json({ message: 'Invoice not found.' });
+        }
         console.error('Error updating invoice:', error);
         res.status(500).json({ message: 'Failed to update invoice.' });
     } finally {

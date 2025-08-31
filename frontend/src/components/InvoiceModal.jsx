@@ -6,7 +6,12 @@ import { createInvoice, updateInvoice } from '../services/api';
 // NATIVE JAVASCRIPT HELPER TO FORMAT DATE FOR <input type="datetime-local">
 const formatForInput = (date) => {
     const pad = (num) => num.toString().padStart(2, '0');
-    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+    const year = date.getFullYear();
+    const month = pad(date.getMonth() + 1);
+    const day = pad(date.getDate());
+    const hours = pad(date.getHours());
+    const minutes = pad(date.getMinutes());
+    return `${year}-${month}-${day}T${hours}:${minutes}`;
 };
 
 const Form = styled.form`
@@ -59,9 +64,8 @@ const InvoiceModal = ({ isOpen, onClose, invoice, invoices, insertAtIndex, onSav
     useEffect(() => {
         if (isOpen) {
             if (isEditMode) {
-                // When editing, the 'received_at' from the DB is a UTC string.
-                // We create a Date object from it, which the input will display correctly
-                // in the user's local timezone. The backend will interpret this as São Paulo time.
+                // When editing, the 'received_at' from the DB is already the correct GMT-05:00 time.
+                // We create a Date object from it, which the input will display correctly.
                 setFormData({ ...invoice, received_at: formatForInput(new Date(invoice.received_at)) });
             } else if (isInsertMode) {
                 const prevInvoice = invoices[insertAtIndex - 1];
@@ -72,14 +76,14 @@ const InvoiceModal = ({ isOpen, onClose, invoice, invoices, insertAtIndex, onSav
                 
                 setFormData({
                     sender_name: '', recipient_name: '', transaction_id: '',
-                    pix_key: '', amount: '', credit: '', notes: '',
+                    pix_key: '', amount: '0.00', credit: '0.00', notes: '',
                     received_at: formatForInput(midTime)
                 });
             } else {
-                // For a new entry, just use the current browser time. The backend will treat it as São Paulo time.
+                // For a new entry, just use the current browser time.
                 setFormData({
                     sender_name: '', recipient_name: '', transaction_id: '',
-                    pix_key: '', amount: '', credit: '', notes: '',
+                    pix_key: '', amount: '0.00', credit: '0.00', notes: '',
                     received_at: formatForInput(new Date())
                 });
             }
@@ -95,8 +99,8 @@ const InvoiceModal = ({ isOpen, onClose, invoice, invoices, insertAtIndex, onSav
         
         const payload = {
             ...formData,
-            amount: formData.amount === '' ? null : formData.amount,
-            credit: formData.credit === '' ? null : formData.credit,
+            amount: formData.amount === '' ? '0.00' : formData.amount,
+            credit: formData.credit === '' ? '0.00' : formData.credit,
         };
 
         try {
@@ -116,7 +120,7 @@ const InvoiceModal = ({ isOpen, onClose, invoice, invoices, insertAtIndex, onSav
             <h2>{isEditMode ? 'Edit Invoice' : 'Add New Entry'}</h2>
             <Form onSubmit={handleSubmit}>
                 <InputGroup>
-                    <Label>Received At (São Paulo Time)</Label>
+                    <Label>Received At (GMT-05:00)</Label>
                     <Input type="datetime-local" name="received_at" value={formData.received_at || ''} onChange={handleChange} required />
                 </InputGroup>
                 <InputGroup>
@@ -133,11 +137,11 @@ const InvoiceModal = ({ isOpen, onClose, invoice, invoices, insertAtIndex, onSav
                 </InputGroup>
                 <InputGroup>
                     <Label>Amount (Debit)</Label>
-                    <Input type="text" name="amount" value={formData.amount || ''} onChange={handleChange} placeholder="e.g., 1,250.50" />
+                    <Input type="text" name="amount" value={formData.amount || ''} onChange={handleChange} placeholder="e.g., 1,250.00" />
                 </InputGroup>
                 <InputGroup>
                     <Label>Credit</Label>
-                    <Input type="number" step="0.01" name="credit" value={formData.credit || ''} onChange={handleChange} placeholder="e.g., 10.00" />
+                    <Input type="text" name="credit" value={formData.credit || ''} onChange={handleChange} placeholder="e.g., 50.00" />
                 </InputGroup>
                 <InputGroup full>
                     <Label>PIX Key</Label>
