@@ -18,12 +18,14 @@ const ModalOverlay = styled.div`
   transition: opacity 0.3s ease, visibility 0.3s ease;
 `;
 
+// DEFINITIVE UI FIX: The ModalContent now accepts a `maxWidth` prop.
+// If no prop is given, it defaults to 500px.
 const ModalContent = styled.div`
   background: white;
   padding: 2rem;
   border-radius: 8px;
   width: 90%;
-  max-width: 500px;
+  max-width: ${({ maxWidth }) => maxWidth || '500px'};
   position: relative;
   box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
 `;
@@ -39,12 +41,12 @@ const CloseButton = styled.button`
   color: ${({ theme }) => theme.lightText};
 `;
 
-const Modal = ({ isOpen, onClose, children }) => {
+const Modal = ({ isOpen, onClose, children, maxWidth }) => {
   if (!isOpen) return null;
 
   return (
     <ModalOverlay isOpen={isOpen} onClick={onClose}>
-      <ModalContent onClick={(e) => e.stopPropagation()}>
+      <ModalContent maxWidth={maxWidth} onClick={(e) => e.stopPropagation()}>
         <CloseButton onClick={onClose}><IoMdClose /></CloseButton>
         {children}
       </ModalContent>
