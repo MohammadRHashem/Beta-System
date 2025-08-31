@@ -7,7 +7,7 @@ const { parseFormattedCurrency } = require('../utils/currencyParser');
 
 exports.getAllInvoices = async (req, res) => {
     const {
-        page = 1, limit = 50, sortOrder = 'desc', // Note: sortBy is removed from client
+        page = 1, limit = 50, sortOrder = 'desc',
         search = '', dateFrom, dateTo, timeFrom, timeTo,
         sourceGroups, recipientNames, reviewStatus, status,
     } = req.query;
@@ -25,7 +25,6 @@ exports.getAllInvoices = async (req, res) => {
         const searchTerm = `%${search}%`;
         params.push(searchTerm, searchTerm, searchTerm, searchTerm, searchTerm);
     }
-
     if (dateFrom) {
         const startDateTime = `${dateFrom} ${timeFrom || '00:00:00'}`;
         query += ' AND i.received_at >= ?';
@@ -36,23 +35,14 @@ exports.getAllInvoices = async (req, res) => {
         query += ' AND i.received_at <= ?';
         params.push(endDateTime);
     }
-
-    if (sourceGroups && sourceGroups.length > 0) {
-        query += ` AND i.source_group_jid IN (?)`;
-        params.push(sourceGroups);
-    }
-    if (recipientNames && recipientNames.length > 0) {
-        query += ` AND i.recipient_name IN (?)`;
-        params.push(recipientNames);
-    }
-    
-    const reviewCondition = "(i.sender_name IS NULL OR i.sender_name = '' OR i.recipient_name IS NULL OR i.recipient_name = '' OR i.amount IS NULL OR i.amount = '')";
+    if (sourceGroups && sourceGroups.length > 0) { query += ` AND i.source_group_jid IN (?)`; params.push(sourceGroups); }
+    if (recipientNames && recipientNames.length > 0) { query += ` AND i.recipient_name IN (?)`; params.push(recipientNames); }
+    const reviewCondition = "(i.sender_name IS NULL OR i.sender_name = '' OR i.recipient_name IS NULL OR i.recipient_name = '' OR i.amount IS NULL OR i.amount = '0.00')";
     if (reviewStatus === 'only_review') { query += ` AND ${reviewCondition}`; }
     if (reviewStatus === 'hide_review') { query += ` AND NOT ${reviewCondition}`; }
     if (status === 'only_deleted') { query += ' AND i.is_deleted = 1'; }
     if (status === 'only_duplicates') { query += ` AND i.transaction_id IS NOT NULL AND i.transaction_id != '' AND i.transaction_id IN (SELECT transaction_id FROM invoices WHERE transaction_id IS NOT NULL AND transaction_id != '' GROUP BY transaction_id HAVING COUNT(*) > 1)`; }
 
-    // DEFINITIVE SORTING FIX: Always sort by the sort_order column.
     const orderByClause = `i.sort_order ${sortOrder === 'asc' ? 'ASC' : 'DESC'}`;
 
     try {
@@ -86,33 +76,41 @@ exports.getRecipientNames = async (req, res) => {
 };
 
 exports.createInvoice = async (req, res) => {
-    const { amount, credit, notes, received_at, sender_name, recipient_name, transaction_id, pix_key, sort_order } = req.body;
+    const { amount, credit, notes, received_at, sender_name, recipient_name, transaction_id, pix_key, insertAfterId } = req.body;
     
-    // The received_at is a "YYYY-MM-DD HH:mm:ss" string from the frontend.
-    const receivedAtForDb = received_at;
-
+    const receivedAt = new Date(received_at);
     const connection = await pool.getConnection();
+
     try {
         await connection.beginTransaction();
+
+        let final_sort_order;
+        if (insertAfterId) {
+            if (insertAfterId === 'START') {
+                const [[{ min_sort }]] = await connection.query('SELECT MIN(sort_order) as min_sort FROM invoices');
+                final_sort_order = min_sort ? min_sort - 10000 : receivedAt.getTime();
+            } else {
+                const [[prevInvoice]] = await connection.query('SELECT sort_order FROM invoices WHERE id = ?', [insertAfterId]);
+                if (!prevInvoice) throw new Error('Previous invoice for sorting not found.');
+                const [[nextInvoice]] = await connection.query('SELECT sort_order FROM invoices WHERE sort_order > ? ORDER BY sort_order ASC LIMIT 1', [prevInvoice.sort_order]);
+                const prevSort = prevInvoice.sort_order;
+                const nextSort = nextInvoice ? nextInvoice.sort_order : prevSort + 10000;
+                final_sort_order = Math.floor(prevSort + (nextSort - prevSort) / 2);
+            }
+        } else {
+            const [[{ max_sort }]] = await connection.query('SELECT MAX(sort_order) as max_sort FROM invoices');
+            final_sort_order = max_sort ? max_sort + 10000 : receivedAt.getTime();
+        }
 
         const creditValue = (credit === null || credit === undefined || credit === '') ? '0.00' : credit;
         const amountValue = (amount === null || amount === undefined || amount === '') ? '0.00' : amount;
 
-        // =================================================================
-        // == THE DEFINITIVE BUG FIX IS HERE ==
-        // If a specific sort_order wasn't provided (i.e., this is a simple "Add Entry"),
-        // we create a valid number from the timestamp string.
-        const final_sort_order = sort_order 
-            ? sort_order 
-            : (new Date(receivedAtForDb).getTime() / 1000).toFixed(4);
-        // =================================================================
-
         const [result] = await connection.query(
             `INSERT INTO invoices (amount, credit, notes, received_at, sort_order, is_manual, sender_name, recipient_name, transaction_id, pix_key) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [amountValue, creditValue, notes, receivedAtForDb, final_sort_order, true, sender_name || '', recipient_name || '', transaction_id || null, pix_key || null]
+            [amountValue, creditValue, notes, receivedAt, final_sort_order, true, sender_name || '', recipient_name || '', transaction_id || null, pix_key || null]
         );
         
-        await recalculateBalances(connection, new Date(receivedAtForDb).toISOString());
+        await recalculateBalances(connection, receivedAt.toISOString());
         await connection.commit();
         req.io.emit('invoices:updated');
         res.status(201).json({ message: 'Invoice created successfully', id: result.insertId });
@@ -132,20 +130,19 @@ exports.updateInvoice = async (req, res) => {
 
     try {
         await connection.beginTransaction();
-        
         const [[oldInvoice]] = await connection.query('SELECT received_at FROM invoices WHERE id = ?', [id]);
         if (!oldInvoice) { throw new Error('Invoice not found'); }
         
         const oldTimestamp = new Date(oldInvoice.received_at);
-        const newTimestampForDb = received_at;
-        const startRecalcTimestamp = oldTimestamp < new Date(newTimestampForDb) ? oldTimestamp : new Date(newTimestampForDb);
+        const newTimestamp = new Date(received_at);
+        const startRecalcTimestamp = oldTimestamp < newTimestamp ? oldTimestamp : newTimestamp;
 
         const amountValue = (amount === null || amount === undefined || amount === '') ? '0.00' : amount;
         const creditValue = (credit === null || credit === undefined || credit === '') ? '0.00' : credit;
 
         await connection.query(
             `UPDATE invoices SET transaction_id = ?, sender_name = ?, recipient_name = ?, pix_key = ?, amount = ?, credit = ?, notes = ?, received_at = ? WHERE id = ?`,
-            [transaction_id, sender_name, recipient_name, pix_key, amountValue, creditValue, notes, newTimestampForDb, id]
+            [transaction_id, sender_name, recipient_name, pix_key, amountValue, creditValue, notes, newTimestamp, id]
         );
         
         await recalculateBalances(connection, startRecalcTimestamp.toISOString());

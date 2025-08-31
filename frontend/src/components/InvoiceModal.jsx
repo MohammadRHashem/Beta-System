@@ -3,7 +3,15 @@ import styled from 'styled-components';
 import Modal from './Modal';
 import { createInvoice, updateInvoice } from '../services/api';
 
-// --- STYLES ---
+const WiderModalContent = styled.div`
+  background: white;
+  padding: 2rem;
+  border-radius: 8px;
+  width: 90%;
+  max-width: 700px;
+  position: relative;
+  box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+`;
 
 const Form = styled.form`
     display: flex;
@@ -18,7 +26,6 @@ const FieldSet = styled.fieldset`
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 1rem 1.5rem;
-
     @media (max-width: 600px) {
         grid-template-columns: 1fr;
     }
@@ -75,8 +82,6 @@ const Button = styled.button`
     font-size: 1rem;
     align-self: flex-end;
 `;
-
-// --- COMPONENT LOGIC ---
 
 const InvoiceModal = ({ isOpen, onClose, invoice, invoices, insertAtIndex, onSave }) => {
     const isEditMode = !!invoice;
@@ -153,9 +158,9 @@ const InvoiceModal = ({ isOpen, onClose, invoice, invoices, insertAtIndex, onSav
         if (isInsertMode) {
             const prevInvoice = invoices[insertAtIndex - 1];
             const nextInvoice = invoices[insertAtIndex];
-            const prevSort = prevInvoice ? parseFloat(prevInvoice.sort_order) : (nextInvoice ? parseFloat(nextInvoice.sort_order) - 1 : new Date().getTime() / 1000);
-            const nextSort = nextInvoice ? parseFloat(nextInvoice.sort_order) : (prevInvoice ? parseFloat(prevInvoice.sort_order) + 1 : new Date().getTime() / 1000);
-            calculated_sort_order = prevSort + (nextSort - prevSort) / 2;
+            const prevSort = prevInvoice ? parseFloat(prevInvoice.sort_order) : (nextInvoice ? parseFloat(nextInvoice.sort_order) - 10000 : new Date(fullTimestamp).getTime());
+            const nextSort = nextInvoice ? parseFloat(nextInvoice.sort_order) : (prevInvoice ? parseFloat(prevInvoice.sort_order) + 10000 : new Date(fullTimestamp).getTime());
+            calculated_sort_order = Math.floor(prevSort + (nextSort - prevSort) / 2);
         }
         
         const payload = {
@@ -166,7 +171,7 @@ const InvoiceModal = ({ isOpen, onClose, invoice, invoices, insertAtIndex, onSav
         };
 
         if (calculated_sort_order !== undefined) {
-            payload.sort_order = calculated_sort_order.toFixed(4);
+            payload.sort_order = calculated_sort_order;
         }
 
         try {
@@ -186,7 +191,6 @@ const InvoiceModal = ({ isOpen, onClose, invoice, invoices, insertAtIndex, onSav
         <Modal isOpen={isOpen} onClose={onClose} maxWidth="700px">
             <h2>{isEditMode ? 'Edit Invoice' : 'Add New Entry'}</h2>
             <Form onSubmit={handleSubmit}>
-
                 <FieldSet>
                     <Legend>Date & Time (GMT-05:00)</Legend>
                     <DateTimeContainer>
@@ -200,7 +204,6 @@ const InvoiceModal = ({ isOpen, onClose, invoice, invoices, insertAtIndex, onSav
                         <Input type="number" name="second" placeholder="SS" value={dateTime.second} onChange={handleDateTimeChange} />
                     </DateTimeContainer>
                 </FieldSet>
-
                 <FieldSet>
                     <Legend>Parties & ID</Legend>
                     <InputGroup>
@@ -216,7 +219,6 @@ const InvoiceModal = ({ isOpen, onClose, invoice, invoices, insertAtIndex, onSav
                         <Input type="text" name="transaction_id" value={formData.transaction_id || ''} onChange={handleChange} />
                     </InputGroup>
                 </FieldSet>
-
                 <FieldSet>
                     <Legend>Financials</Legend>
                     <InputGroup>
@@ -228,7 +230,6 @@ const InvoiceModal = ({ isOpen, onClose, invoice, invoices, insertAtIndex, onSav
                         <Input type="text" name="credit" value={formData.credit || ''} onChange={handleChange} placeholder="e.g., 50.00" />
                     </InputGroup>
                 </FieldSet>
-                
                 <FieldSet>
                     <Legend>Additional Info</Legend>
                     <InputGroup>
@@ -240,7 +241,6 @@ const InvoiceModal = ({ isOpen, onClose, invoice, invoices, insertAtIndex, onSav
                         <Textarea name="notes" value={formData.notes || ''} onChange={handleChange} />
                     </InputGroup>
                 </FieldSet>
-
                 <Button type="submit">Save Changes</Button>
             </Form>
         </Modal>

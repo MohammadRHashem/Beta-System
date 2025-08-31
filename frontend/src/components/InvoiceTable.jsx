@@ -38,7 +38,6 @@ const Th = styled.th`
     text-align: left;
     background-color: ${({ theme }) => theme.background};
     font-weight: 600;
-    cursor: ${({ sortable }) => sortable ? 'pointer' : 'default'};
     white-space: nowrap;
 `;
 
@@ -46,20 +45,16 @@ const Tr = styled.tr`
     position: relative;
     border-bottom: 1px solid ${({ theme }) => theme.border};
     transition: background-color 0.3s ease;
-
     &:last-child {
         border-bottom: none;
     }
-
     ${({ isDuplicate }) => isDuplicate && css`
         background-color: #fff0f0;
     `}
-    
     ${({ isDeleted }) => isDeleted && css`
         background-color: #e9ecef !important;
         color: #6c757d;
         text-decoration: line-through;
-        
         .actions svg, .actions a {
             color: #adb5bd;
             cursor: not-allowed;
@@ -70,27 +65,23 @@ const Tr = styled.tr`
 const Td = styled.td`
     padding: 0.8rem 1rem;
     vertical-align: middle;
-
     &.actions {
         display: flex;
         gap: 1.2rem;
         font-size: 1rem;
         white-space: nowrap;
-        
         svg, a {
             cursor: pointer;
             color: ${({ theme }) => theme.lightText};
             &:hover { color: ${({ theme }) => theme.primary}; }
         }
     }
-    
     &.currency {
         text-align: right;
         font-family: 'Courier New', Courier, monospace;
         font-weight: 600;
         white-space: nowrap;
     }
-
     &.review {
         color: ${({ theme }) => theme.error};
         font-weight: bold;
@@ -116,7 +107,6 @@ const AddBetweenButton = styled.button`
     opacity: 0;
     transition: opacity 0.2s ease;
     z-index: 5;
-
     ${Tr}:hover & {
         opacity: 1;
     }
@@ -144,13 +134,7 @@ const PageButton = styled.button`
     }
 `;
 
-const SortIcon = ({ sort, columnKey }) => {
-    if (sort.sortBy !== columnKey) return <FaSort />;
-    if (sort.sortOrder === 'asc') return <FaSortUp />;
-    return <FaSortDown />;
-};
-
-const InvoiceTable = ({ invoices, loading, sort, onSortChange, onEdit, pagination, setPagination }) => {
+const InvoiceTable = ({ invoices, loading, onEdit, pagination, setPagination }) => {
 
     const transactionIdCounts = useMemo(() => {
         const counts = {};
@@ -170,11 +154,6 @@ const InvoiceTable = ({ invoices, loading, sort, onSortChange, onEdit, paginatio
                 alert('Failed to delete invoice.');
             }
         }
-    };
-    
-    const handleSort = (columnKey) => {
-        const isAsc = sort.sortBy === columnKey && sort.sortOrder === 'asc';
-        onSortChange({ sortBy: columnKey, sortOrder: isAsc ? 'desc' : 'asc' });
     };
 
     const handleViewMedia = async (id) => {
@@ -208,10 +187,11 @@ const InvoiceTable = ({ invoices, loading, sort, onSortChange, onEdit, paginatio
                 </thead>
                 <tbody>
                     {invoices.map((inv, index) => {
-                        const needsReview = !inv.is_manual && (!inv.sender_name || !inv.recipient_name || !inv.amount);
+                        const isDuplicate = inv.transaction_id && transactionIdCounts[inv.transaction_id] > 1;
+                        const needsReview = !inv.is_manual && (!inv.sender_name || !inv.recipient_name || !inv.amount || inv.amount === '0.00');
 
                         return (
-                            <Tr key={inv.id} isDeleted={!!inv.is_deleted}>
+                            <Tr key={inv.id} isDuplicate={isDuplicate} isDeleted={!!inv.is_deleted}>
                                 <Td>
                                     <AddBetweenButton onClick={() => onEdit(null, index)} title="Insert new entry here">
                                         <FaPlus size={12} />
@@ -222,7 +202,7 @@ const InvoiceTable = ({ invoices, loading, sort, onSortChange, onEdit, paginatio
                                 <Td>{inv.sender_name || (needsReview ? 'REVIEW' : '')}</Td>
                                 <Td>{inv.recipient_name || (needsReview ? 'REVIEW' : '')}</Td>
                                 <Td>{inv.source_group_name || ''}</Td>
-                                <Td className={`currency`}>{inv.amount || ''}</Td>
+                                <Td className={`currency ${needsReview && inv.amount === '0.00' ? 'review' : ''}`}>{inv.amount || ''}</Td>
                                 <Td className="currency">{inv.credit || ''}</Td>
                                 <Td className="currency">{inv.balance || ''}</Td>
                                 <Td className="actions">

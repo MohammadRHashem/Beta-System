@@ -64,11 +64,7 @@ const invoiceWorker = new Worker(
       if (tombstoneRows.length > 0) {
         const utcDate = new Date(message.timestamp * 1000);
         const gmtMinus5Date = new Date(utcDate.getTime() - 300 * 60 * 1000);
-        const sortOrder = parseFloat(
-          `${message.timestamp}.${String(message._data?.t || "0")
-            .slice(-4)
-            .padStart(4, "0")}`
-        );
+        const sortOrder = gmtMinus5Date.getTime();
 
         await connection.query(
           `INSERT INTO invoices (message_id, source_group_jid, received_at, sort_order, is_deleted, notes) 
@@ -168,13 +164,8 @@ const invoiceWorker = new Worker(
         const utcDate = new Date(message.timestamp * 1000);
         const gmtMinus5Date = new Date(utcDate.getTime() - 300 * 60 * 1000);
 
-        // DEFINITIVE SORT_ORDER FIX: Combine timestamp with a high-precision internal number.
-        const sequenceNumber = message._data?.t || message.timestamp;
-        const sortOrder = parseFloat(
-          `${message.timestamp}.${String(sequenceNumber)
-            .slice(-4)
-            .padStart(4, "0")}`
-        );
+        // DEFINITIVE SORT_ORDER FIX: The sort_order is now the timestamp in milliseconds.
+        const sortOrder = gmtMinus5Date.getTime();
 
         await connection.query(
           `INSERT INTO invoices (message_id, transaction_id, sender_name, recipient_name, pix_key, amount, source_group_jid, received_at, sort_order, raw_json_data, media_path, is_deleted) 
@@ -274,41 +265,33 @@ const reconcileMissedMessages = async () => {
   }
   isReconciling = true;
   console.log("[RECONCILER] Starting aggressive check for missed messages...");
-
   const cutoffTimestamp = Math.floor((Date.now() - 24 * 60 * 60 * 1000) / 1000);
   console.log(
     `[RECONCILER] Ignoring any messages received before: ${new Date(
       cutoffTimestamp * 1000
     ).toISOString()}`
   );
-
   try {
     const chats = await client.getChats();
     const groups = chats.filter((chat) => chat.isGroup);
-
     for (const group of groups) {
       const recentMessages = await group.fetchMessages({ limit: 50 });
       if (recentMessages.length === 0) continue;
-
       const messagesWithinWindow = recentMessages.filter(
         (msg) => msg.timestamp >= cutoffTimestamp
       );
       if (messagesWithinWindow.length === 0) continue;
-
       const messageIdsToCheck = messagesWithinWindow.map(
         (msg) => msg.id._serialized
       );
-
       const [processedRows] = await pool.query(
         "SELECT message_id FROM processed_messages WHERE message_id IN (?)",
         [messageIdsToCheck]
       );
       const processedIds = new Set(processedRows.map((r) => r.message_id));
-
       const missedMessages = messagesWithinWindow.filter(
         (msg) => !processedIds.has(msg.id._serialized)
       );
-
       if (missedMessages.length > 0) {
         console.log(
           `[RECONCILER] Found ${missedMessages.length} missed message(s) in "${group.name}" within the last 24 hours. Processing them now.`
@@ -334,15 +317,12 @@ const handleMessage = async (message) => {
       [messageId]
     );
     if (rows.length > 0) return;
-
     await pool.query(
       "INSERT INTO processed_messages (message_id) VALUES (?) ON DUPLICATE KEY UPDATE message_id=message_id",
       [messageId]
     );
-
     const chat = await message.getChat();
     if (!chat.isGroup) return;
-
     if (message.body) {
       const triggerText = message.body.trim();
       const match = abbreviationCache.find(
@@ -353,7 +333,6 @@ const handleMessage = async (message) => {
         return;
       }
     }
-
     if (message.hasMedia && !message.fromMe) {
       try {
         await invoiceQueue.add(
@@ -393,13 +372,11 @@ const handleMessageRevoke = async (message, revoked_msg) => {
     return;
   }
   console.log(`[DELETE] Revoke event for message ID: ${deletedMessageId}`);
-
   try {
     const [updateResult] = await pool.query(
       "UPDATE invoices SET is_deleted = 1 WHERE message_id = ?",
       [deletedMessageId]
     );
-
     if (updateResult.affectedRows > 0) {
       console.log(
         `[DELETE] Found and marked existing invoice as deleted for message ID: ${deletedMessageId}`
@@ -433,15 +410,8 @@ const initializeWhatsApp = (socketIoInstance) => {
         "--no-sandbox",
         "--disable-setuid-sandbox",
         "--disable-dev-shm-usage",
-        "--disable-accelerated-2d-canvas",
-        "--no-first-run",
-        "--no-zygote",
-        "--single-process",
-        "--disable-gpu",
       ],
     },
-    qrMaxRetries: 10,
-    authTimeoutMs: 0,
   });
 
   client.on("qr", async (qr) => {
@@ -449,31 +419,26 @@ const initializeWhatsApp = (socketIoInstance) => {
     qrCodeData = await qrcode.toDataURL(qr);
     connectionStatus = "qr";
   });
-
   client.on("ready", () => {
     console.log("Connection opened. Client is ready!");
     qrCodeData = null;
     connectionStatus = "connected";
     refreshAbbreviationCache();
-    cron.schedule("* * * * *", reconcileMissedMessages); // Run every minute
+    cron.schedule("* * * * *", reconcileMissedMessages);
     console.log(
       "[RECONCILER] Self-healing reconciler scheduled to run every minute."
     );
   });
-
   client.on("message", handleMessage);
   client.on("message_revoke_everyone", handleMessageRevoke);
-
   client.on("disconnected", (reason) => {
     console.log("Client was logged out or disconnected", reason);
     connectionStatus = "disconnected";
   });
-
   client.on("auth_failure", (msg) => {
     console.error("AUTHENTICATION FAILURE", msg);
     connectionStatus = "disconnected";
   });
-
   client.initialize();
 };
 
@@ -487,7 +452,6 @@ const fetchAllGroups = async () => {
   try {
     const chats = await client.getChats();
     const groups = chats.filter((chat) => chat.isGroup);
-    console.log(`Fetched ${groups.length} groups.`);
     return groups.map((group) => ({
       id: group.id._serialized,
       name: group.name,
@@ -506,16 +470,10 @@ const broadcast = async (io, socketId, groupObjects, message) => {
     });
     return;
   }
-
-  console.log(
-    `[BROADCAST] Starting broadcast to ${groupObjects.length} groups for socket ${socketId}.`
-  );
-
   let successfulSends = 0;
   let failedSends = 0;
   const failedGroups = [];
   const successfulGroups = [];
-
   for (const group of groupObjects) {
     try {
       io.to(socketId).emit("broadcast:progress", {
@@ -523,25 +481,18 @@ const broadcast = async (io, socketId, groupObjects, message) => {
         status: "sending",
         message: `Sending to "${group.name}"...`,
       });
-
       const chat = await client.getChatById(group.id);
       chat.sendStateTyping();
-
-      const typingDelay = 400;
-      await new Promise((resolve) => setTimeout(resolve, typingDelay));
-
+      await new Promise((resolve) => setTimeout(resolve, 400));
       await client.sendMessage(group.id, message);
       successfulSends++;
       successfulGroups.push(group.name);
-
       io.to(socketId).emit("broadcast:progress", {
         groupName: group.name,
         status: "success",
         message: `Successfully sent to "${group.name}".`,
       });
-
-      const cooldownDelay = 1000;
-      await new Promise((resolve) => setTimeout(resolve, cooldownDelay));
+      await new Promise((resolve) => setTimeout(resolve, 1000));
     } catch (error) {
       console.error(
         `[BROADCAST-ERROR] Failed to send to ${group.name} (${group.id}):`,
@@ -549,7 +500,6 @@ const broadcast = async (io, socketId, groupObjects, message) => {
       );
       failedSends++;
       failedGroups.push(group.name);
-
       io.to(socketId).emit("broadcast:progress", {
         groupName: group.name,
         status: "failed",
@@ -558,7 +508,6 @@ const broadcast = async (io, socketId, groupObjects, message) => {
       await new Promise((resolve) => setTimeout(resolve, 5000));
     }
   }
-
   io.to(socketId).emit("broadcast:complete", {
     total: groupObjects.length,
     successful: successfulSends,
@@ -566,9 +515,6 @@ const broadcast = async (io, socketId, groupObjects, message) => {
     successfulGroups,
     failedGroups,
   });
-  console.log(
-    `[BROADCAST] Finished for socket ${socketId}. Success: ${successfulSends}, Failed: ${failedSends}`
-  );
 };
 
 module.exports = {
