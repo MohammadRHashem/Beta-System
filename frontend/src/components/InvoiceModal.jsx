@@ -152,6 +152,7 @@ const InvoiceModal = ({ isOpen, onClose, invoice, invoices, insertAtIndex, onSav
                     <Label>Transaction ID</Label>
                     <Input type="text" name="transaction_id" value={formData.transaction_id || ''} onChange={handleChange} />
                 </InputGroup>
+                <br />
                 <InputGroup>
                     <Label>Sender Name</Label>
                     <Input type="text" name="sender_name" value={formData.sender_name || ''} onChange={handleChange} />
@@ -160,6 +161,7 @@ const InvoiceModal = ({ isOpen, onClose, invoice, invoices, insertAtIndex, onSav
                     <Label>Recipient Name</Label>
                     <Input type="text" name="recipient_name" value={formData.recipient_name || ''} onChange={handleChange} />
                 </InputGroup>
+                <br />
                 <InputGroup>
                     <Label>Amount (Debit)</Label>
                     <Input type="text" name="amount" value={formData.amount || ''} onChange={handleChange} placeholder="e.g., 1,250.00" />
