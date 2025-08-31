@@ -4,13 +4,6 @@ const fs = require("fs/promises");
 const fsSync = require("fs");
 const pool = require("../config/db");
 const path = require("path");
-// execa is no longer required at the top
-const { Client, LocalAuth, MessageMedia } = require("whatsapp-web.js");
-const qrcode = require("qrcode");
-const fs = require("fs/promises");
-const fsSync = require("fs");
-const pool = require("../config/db");
-const path = require("path");
 const os = require("os");
 const dotenv = require("dotenv");
 const { Queue, Worker } = require("bullmq");
