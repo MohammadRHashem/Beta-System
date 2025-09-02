@@ -22,7 +22,7 @@
     "node-cron": "^4.2.1",
     "qrcode": "^1.5.4",
     "socket.io": "^4.8.1",
-    "whatsapp-web.js": "github:BenyFilho/whatsapp-web.js#fix_event_ready"
+    "whatsapp-web.js": "github:BenyFilho/whatsapp-web.js#fix_event_ready_again"
   },
   "devDependencies": {
     "nodemon": "3.1.0"
