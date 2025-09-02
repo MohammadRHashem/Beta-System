@@ -6,6 +6,7 @@ const { Server } = require("socket.io");
 const authMiddleware = require('./middleware/authMiddleware');
 const path = require('path');
 const fs = require('fs');
+const multer = require('multer');
 
 // --- Controllers ---
 const authController = require('./controllers/authController');
@@ -20,6 +21,10 @@ const invoiceController = require('./controllers/invoiceController');
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, { path: "/socket.io/", cors: { origin: "https://beta.hashemlabs.dev", methods: ["GET", "POST"] } });
+
+// Setup for file uploads in memory
+const storage = multer.memoryStorage();
+const upload = multer({ storage: storage });
 
 app.use(cors({ origin: "https://beta.hashemlabs.dev" }));
 app.use(express.json());
@@ -61,6 +66,7 @@ app.delete('/api/templates/:id', templateController.deleteTemplate);
 app.get('/api/settings/forwarding', settingsController.getForwardingRules);
 app.post('/api/settings/forwarding', settingsController.createForwardingRule);
 app.put('/api/settings/forwarding/:id', settingsController.updateForwardingRule);
+app.patch('/api/settings/forwarding/:id/toggle', settingsController.toggleForwardingRule);
 app.delete('/api/settings/forwarding/:id', settingsController.deleteForwardingRule);
 app.get('/api/settings/groups', settingsController.getGroupSettings);
 app.post('/api/settings/groups', settingsController.updateGroupSetting);
@@ -84,12 +90,14 @@ app.put('/api/invoices/:id', invoiceController.updateInvoice);
 app.delete('/api/invoices/:id', invoiceController.deleteInvoice);
 app.get('/api/invoices/recipients', invoiceController.getRecipientNames);
 app.get('/api/invoices/export', invoiceController.exportInvoices);
+// === NEW ROUTE FOR EXCEL IMPORT ===
+app.post('/api/invoices/import', upload.single('file'), invoiceController.importInvoices);
 app.get('/api/invoices/media/:id', invoiceController.getInvoiceMedia);
 
 // --- Serve Frontend (for production build) ---
 const frontendPath = path.join(__dirname, '..', 'frontend', 'dist');
 if (fs.existsSync(frontendPath)) {
-    console.log(`Serving frontend from: ${frontendPath}`);
+    console.log(`[SERVER] Serving frontend from: ${frontendPath}`);
     app.use(express.static(frontendPath));
     app.get('*', (req, res) => {
         res.sendFile(path.resolve(frontendPath, 'index.html'));
@@ -100,7 +108,7 @@ if (fs.existsSync(frontendPath)) {
 const HOST = '0.0.0.0';
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, HOST, () => {
-    console.log(`Server is running on http://${HOST}:${PORT}`);
+    console.log(`[SERVER] Server is running on http://${HOST}:${PORT}`);
     const whatsappService = require('./services/whatsappService');
     whatsappService.init(io);
 });

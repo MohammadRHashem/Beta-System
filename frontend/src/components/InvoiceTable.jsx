@@ -1,22 +1,24 @@
 import React, { useMemo } from 'react';
 import styled, { css } from 'styled-components';
 import { viewInvoiceMedia, deleteInvoice } from '../services/api';
-import { FaEdit, FaTrashAlt, FaEye, FaPlus } from 'react-icons/fa';
+import { FaEdit, FaTrashAlt, FaEye } from 'react-icons/fa';
 
 const formatDisplayDateTime = (dbDateString) => {
     if (!dbDateString) return '';
     try {
-        const date = new Date(dbDateString);
+        // The date from the DB is already GMT-3, so we just format it.
+        const date = new Date(dbDateString + "Z"); // Treat as UTC to prevent local conversion
         const pad = (num) => num.toString().padStart(2, '0');
-        const day = pad(date.getDate());
-        const month = pad(date.getMonth() + 1);
-        const year = date.getFullYear();
-        const hours = pad(date.getHours());
-        const minutes = pad(date.getMinutes());
-        const seconds = pad(date.getSeconds());
+        const day = pad(date.getUTCDate());
+        const month = pad(date.getUTCMonth() + 1);
+        const year = date.getUTCFullYear();
+        const hours = pad(date.getUTCHours());
+        const minutes = pad(date.getUTCMinutes());
+        const seconds = pad(date.getUTCSeconds());
         return `${day}/${month}/${year} ${hours}:${minutes}:${seconds}`;
     } catch (e) {
-        return 'Invalid Date String';
+        console.warn("Invalid date string for formatting:", dbDateString);
+        return 'Invalid Date';
     }
 };
 
@@ -88,30 +90,6 @@ const Td = styled.td`
     }
 `;
 
-const AddBetweenButton = styled.button`
-    position: absolute;
-    left: -20px;
-    top: 50%;
-    transform: translateY(-50%);
-    width: 24px;
-    height: 24px;
-    border-radius: 50%;
-    background-color: ${({ theme }) => theme.secondary};
-    color: white;
-    border: 2px solid white;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.2);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    opacity: 0;
-    transition: opacity 0.2s ease;
-    z-index: 5;
-    ${Tr}:hover & {
-        opacity: 1;
-    }
-`;
-
 const PaginationContainer = styled.div`
     display: flex;
     justify-content: space-between;
@@ -134,7 +112,7 @@ const PageButton = styled.button`
     }
 `;
 
-const InvoiceTable = ({ invoices, loading, onInsert, onEdit, pagination, setPagination }) => {
+const InvoiceTable = ({ invoices, loading, onEdit, pagination, setPagination }) => {
 
     const transactionIdCounts = useMemo(() => {
         const counts = {};
@@ -150,6 +128,7 @@ const InvoiceTable = ({ invoices, loading, onInsert, onEdit, pagination, setPagi
         if (window.confirm('Are you sure you want to permanently delete this invoice? This action cannot be undone.')) {
             try {
                 await deleteInvoice(id);
+                // The parent component will refetch via socket event
             } catch (error) {
                 alert('Failed to delete invoice.');
             }
@@ -174,7 +153,7 @@ const InvoiceTable = ({ invoices, loading, onInsert, onEdit, pagination, setPagi
             <Table>
                 <thead>
                     <tr>
-                        <Th style={{paddingLeft: '30px'}}>Received At (GMT-05:00)</Th>
+                        <Th>Received At (GMT-03:00)</Th>
                         <Th>Transaction ID</Th>
                         <Th>Sender</Th>
                         <Th>Recipient</Th>
@@ -186,18 +165,13 @@ const InvoiceTable = ({ invoices, loading, onInsert, onEdit, pagination, setPagi
                     </tr>
                 </thead>
                 <tbody>
-                    {invoices.map((inv, index) => {
+                    {invoices.map((inv) => {
                         const isDuplicate = inv.transaction_id && transactionIdCounts[inv.transaction_id] > 1;
                         const needsReview = !inv.is_manual && (!inv.sender_name || !inv.recipient_name || !inv.amount || inv.amount === '0.00');
 
                         return (
                             <Tr key={inv.id} isDuplicate={isDuplicate} isDeleted={!!inv.is_deleted}>
-                                <Td>
-                                    <AddBetweenButton onClick={() => onInsert(index)} title="Insert new entry here">
-                                        <FaPlus size={12} />
-                                    </AddBetweenButton>
-                                    {formatDisplayDateTime(inv.received_at)}
-                                </Td>
+                                <Td>{formatDisplayDateTime(inv.received_at)}</Td>
                                 <Td>{inv.transaction_id || ''}</Td>
                                 <Td>{inv.sender_name || (needsReview ? 'REVIEW' : '')}</Td>
                                 <Td>{inv.recipient_name || (needsReview ? 'REVIEW' : '')}</Td>

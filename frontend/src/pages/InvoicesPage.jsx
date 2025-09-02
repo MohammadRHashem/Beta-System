@@ -1,13 +1,11 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import styled from 'styled-components';
 import { useAuth } from '../context/AuthContext';
-import { getInvoices, getRecipientNames, exportInvoices } from '../services/api';
-import { FaPlus, FaFileExcel } from 'react-icons/fa';
+import { getInvoices, getRecipientNames, exportInvoices, importInvoices } from '../services/api';
+import { FaPlus, FaFileExcel, FaUpload } from 'react-icons/fa';
 import InvoiceFilter from '../components/InvoiceFilter';
 import InvoiceTable from '../components/InvoiceTable';
 import InvoiceModal from '../components/InvoiceModal';
-import InsertTransactionModal from '../components/InsertTransactionModal'; // The new, simpler modal
-
 
 const PageContainer = styled.div`
     display: flex;
@@ -41,20 +39,32 @@ const Button = styled.button`
     border-radius: 6px;
     font-weight: 600;
     cursor: pointer;
-    background-color: ${({ theme, primary }) => primary ? theme.secondary : theme.primary};
+    background-color: ${({ theme, primary, secondary }) => 
+        primary ? theme.secondary : (secondary ? '#17a2b8' : theme.primary)};
     color: white;
     font-size: 0.9rem;
     
     &:hover {
         opacity: 0.9;
     }
+
+    &:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+    }
+`;
+
+// Hidden file input for the import button
+const HiddenInput = styled.input`
+    display: none;
 `;
 
 const InvoicesPage = ({ allGroups, socket }) => {
     const [invoices, setInvoices] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [isImporting, setIsImporting] = useState(false);
     const [recipientNames, setRecipientNames] = useState([]);
-    const [pagination, setPagination] = useState({ page: 1, limit: 50, totalPages: 1 });
+    const [pagination, setPagination] = useState({ page: 1, limit: 50, totalPages: 1, totalRecords: 0 });
     
     const [filters, setFilters] = useState({
         search: '', dateFrom: '', dateTo: '', timeFrom: '', timeTo: '',
@@ -64,16 +74,11 @@ const InvoicesPage = ({ allGroups, socket }) => {
         status: '',
     });
 
-    // We no longer need client-side sorting state, the backend handles it.
+    const fileInputRef = useRef(null);
     const { isAuthenticated } = useAuth();
     
-    // State for the main Edit/Add modal
     const [isInvoiceModalOpen, setIsInvoiceModalOpen] = useState(false);
     const [editingInvoice, setEditingInvoice] = useState(null);
-
-    // State for the NEW "Insert Between" modal
-    const [isInsertModalOpen, setIsInsertModalOpen] = useState(false);
-    const [insertAfterId, setInsertAfterId] = useState(null);
 
     const fetchInvoices = useCallback(async () => {
         setLoading(true);
@@ -97,8 +102,12 @@ const InvoicesPage = ({ allGroups, socket }) => {
     useEffect(() => {
         if (isAuthenticated) {
             const fetchFilterData = async () => {
-                const { data: recipients } = await getRecipientNames();
-                setRecipientNames(recipients);
+                try {
+                    const { data: recipients } = await getRecipientNames();
+                    setRecipientNames(recipients);
+                } catch (error) {
+                    console.error("Failed to fetch recipient names:", error);
+                }
             };
             fetchFilterData();
         }
@@ -107,7 +116,7 @@ const InvoicesPage = ({ allGroups, socket }) => {
     useEffect(() => {
         if (isAuthenticated && socket) {
             const handleInvoiceUpdate = () => {
-                console.log('Received invoices:updated event, refetching...');
+                console.log('[Socket.io] Received invoices:updated event, refetching...');
                 fetchInvoices();
             };
             socket.on('invoices:updated', handleInvoiceUpdate);
@@ -122,18 +131,39 @@ const InvoicesPage = ({ allGroups, socket }) => {
         setFilters(newFilters);
     };
 
-    const handleSortChange = (newSort) => {
-        setSort(newSort);
-    };
-
     const handleExport = async () => {
-        const params = { ...filters, ...sort };
-        Object.keys(params).forEach(key => (!params[key] || params[key].length === 0) && delete params[key]);
         try {
-            await exportInvoices(params);
+            await exportInvoices(filters);
         } catch (error) {
             console.error("Failed to export invoices:", error);
             alert("Failed to export invoices.");
+        }
+    };
+
+    const handleImportClick = () => {
+        fileInputRef.current.click();
+    };
+    
+    const handleFileSelected = async (event) => {
+        const file = event.target.files[0];
+        if (!file) return;
+
+        if (!window.confirm("Are you sure you want to import this file? This will update existing records and create new ones based on the file content. This action cannot be undone.")) {
+            return;
+        }
+
+        setIsImporting(true);
+        try {
+            const { data } = await importInvoices(file);
+            alert(data.message);
+            fetchInvoices(); // Refresh data after successful import
+        } catch (error) {
+            console.error("Failed to import invoices:", error);
+            alert(`Import failed: ${error.response?.data?.message || 'An unknown error occurred.'}`);
+        } finally {
+            setIsImporting(false);
+            // Reset the input value to allow re-uploading the same file
+            event.target.value = null; 
         }
     };
     
@@ -142,21 +172,14 @@ const InvoicesPage = ({ allGroups, socket }) => {
         setIsInvoiceModalOpen(true);
     };
 
-    const openInsertModal = (index) => {
-        // If index is 0, we want to insert before the first item.
-        // Otherwise, we insert after the item at index - 1.
-        const prevInvoiceId = index === 0 ? 'START' : invoices[index - 1]?.id;
-        if (prevInvoiceId) {
-            setInsertAfterId(prevInvoiceId);
-            setIsInsertModalOpen(true);
-        }
+    const handleSave = () => {
+        closeAllModals();
+        fetchInvoices();
     };
 
     const closeAllModals = () => {
         setIsInvoiceModalOpen(false);
         setEditingInvoice(null);
-        setIsInsertModalOpen(false);
-        setInsertAfterId(null);
     };
 
     return (
@@ -165,6 +188,10 @@ const InvoicesPage = ({ allGroups, socket }) => {
                 <Header>
                     <Title>Invoices</Title>
                     <Actions>
+                        <HiddenInput type="file" ref={fileInputRef} onChange={handleFileSelected} accept=".xlsx, .xls" />
+                        <Button secondary onClick={handleImportClick} disabled={isImporting}>
+                            <FaUpload /> {isImporting ? 'Importing...' : 'Import & Sync'}
+                        </Button>
                         <Button onClick={handleExport}><FaFileExcel /> Export</Button>
                         <Button primary onClick={() => openEditModal(null)}><FaPlus /> Add Entry</Button>
                     </Actions>
@@ -177,9 +204,8 @@ const InvoicesPage = ({ allGroups, socket }) => {
                 />
                 <InvoiceTable
                     invoices={invoices}
-                    loading={loading}
+                    loading={loading || isImporting}
                     onEdit={openEditModal}
-                    onInsert={openInsertModal}
                     pagination={pagination}
                     setPagination={setPagination}
                 />
@@ -188,15 +214,8 @@ const InvoicesPage = ({ allGroups, socket }) => {
             <InvoiceModal
                 isOpen={isInvoiceModalOpen}
                 onClose={closeAllModals}
-                onSave={closeAllModals}
+                onSave={handleSave}
                 invoice={editingInvoice}
-            />
-
-            <InsertTransactionModal
-                isOpen={isInsertModalOpen}
-                onClose={closeAllModals}
-                onSave={closeAllModals}
-                insertAfterId={insertAfterId}
             />
         </>
     );

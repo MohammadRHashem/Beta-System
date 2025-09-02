@@ -4,9 +4,10 @@ const pool = require('../config/db');
 exports.getForwardingRules = async (req, res) => {
     const userId = req.user.id;
     try {
-        const [rules] = await pool.query('SELECT * FROM forwarding_rules WHERE user_id = ?', [userId]);
+        const [rules] = await pool.query('SELECT * FROM forwarding_rules WHERE user_id = ? ORDER BY trigger_keyword ASC', [userId]);
         res.json(rules);
     } catch (error) {
+        console.error('[ERROR] Failed to fetch forwarding rules:', error);
         res.status(500).json({ message: 'Failed to fetch rules.' });
     }
 };
@@ -16,11 +17,12 @@ exports.createForwardingRule = async (req, res) => {
     const { trigger_keyword, destination_group_jid, destination_group_name } = req.body;
     try {
         await pool.query(
-            'INSERT INTO forwarding_rules (user_id, trigger_keyword, destination_group_jid, destination_group_name) VALUES (?, ?, ?, ?)',
-            [userId, trigger_keyword, destination_group_jid, destination_group_name]
+            'INSERT INTO forwarding_rules (user_id, trigger_keyword, destination_group_jid, destination_group_name, is_enabled) VALUES (?, ?, ?, ?, ?)',
+            [userId, trigger_keyword, destination_group_jid, destination_group_name, 1] // Default to enabled
         );
         res.status(201).json({ message: 'Rule created successfully.' });
     } catch (error) {
+        console.error('[ERROR] Failed to create forwarding rule:', error);
         res.status(500).json({ message: 'Failed to create rule.' });
     }
 };
@@ -45,8 +47,32 @@ exports.updateForwardingRule = async (req, res) => {
         if (error.code === 'ER_DUP_ENTRY') {
             return res.status(409).json({ message: 'This trigger keyword already exists.' });
         }
-        console.error('Error updating forwarding rule:', error);
+        console.error('[ERROR] Failed to update forwarding rule:', error);
         res.status(500).json({ message: 'Failed to update rule.' });
+    }
+};
+
+exports.toggleForwardingRule = async (req, res) => {
+    const userId = req.user.id;
+    const { id } = req.params;
+    const { is_enabled } = req.body;
+
+    if (typeof is_enabled !== 'boolean') {
+        return res.status(400).json({ message: 'A boolean `is_enabled` value is required.' });
+    }
+
+    try {
+        const [result] = await pool.query(
+            'UPDATE forwarding_rules SET is_enabled = ? WHERE id = ? AND user_id = ?',
+            [is_enabled, id, userId]
+        );
+        if (result.affectedRows === 0) {
+            return res.status(404).json({ message: 'Rule not found or permission denied.' });
+        }
+        res.json({ message: `Rule successfully ${is_enabled ? 'enabled' : 'disabled'}.` });
+    } catch (error) {
+        console.error('[ERROR] Failed to toggle forwarding rule:', error);
+        res.status(500).json({ message: 'Failed to update rule status.' });
     }
 };
 
@@ -63,7 +89,7 @@ exports.deleteForwardingRule = async (req, res) => {
         }
         res.status(204).send();
     } catch (error) {
-        console.error('Error deleting forwarding rule:', error);
+        console.error('[ERROR] Failed to delete forwarding rule:', error);
         res.status(500).json({ message: 'Failed to delete rule.' });
     }
 };
@@ -82,6 +108,7 @@ exports.getGroupSettings = async (req, res) => {
         `);
         res.json(groups);
     } catch (error) {
+        console.error('[ERROR] Failed to fetch group settings:', error);
         res.status(500).json({ message: 'Failed to fetch group settings.' });
     }
 };
@@ -102,6 +129,7 @@ exports.updateGroupSetting = async (req, res) => {
         await pool.query(query, [group_jid, group_name, value]);
         res.json({ message: 'Setting updated successfully.' });
     } catch (error) {
+        console.error('[ERROR] Failed to update group setting:', error);
         res.status(500).json({ message: 'Failed to update setting.' });
     }
 };

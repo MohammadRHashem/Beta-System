@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import styled from 'styled-components';
-import api from '../services/api';
+import api, { toggleForwardingRule } from '../services/api';
 import Modal from '../components/Modal';
-import SearchableSelect from '../components/SearchableSelect'; // Import our new component
+import SearchableSelect from '../components/SearchableSelect';
 import { FaEdit, FaTrash } from 'react-icons/fa';
-import ComboBox from '../components/ComboBox'; // Import the new component
+import ComboBox from '../components/ComboBox';
 
 const PageContainer = styled.div`
     display: flex;
@@ -69,9 +69,10 @@ const RulesTable = styled.table`
     th {
         background-color: ${({ theme }) => theme.background};
     }
-    .actions {
+    td.actions {
         display: flex;
         gap: 1rem;
+        align-items: center;
         font-size: 1.1rem;
         svg {
             cursor: pointer;
@@ -79,6 +80,49 @@ const RulesTable = styled.table`
         }
     }
 `;
+
+const SwitchContainer = styled.label`
+    position: relative;
+    display: inline-block;
+    width: 50px;
+    height: 28px;
+`;
+
+const SwitchInput = styled.input`
+    opacity: 0;
+    width: 0;
+    height: 0;
+    &:checked + span {
+        background-color: ${({ theme }) => theme.secondary};
+    }
+    &:checked + span:before {
+        transform: translateX(22px);
+    }
+`;
+
+const Slider = styled.span`
+    position: absolute;
+    cursor: pointer;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: #ccc;
+    transition: .4s;
+    border-radius: 34px;
+    &:before {
+        position: absolute;
+        content: "";
+        height: 20px;
+        width: 20px;
+        left: 4px;
+        bottom: 4px;
+        background-color: white;
+        transition: .4s;
+        border-radius: 50%;
+    }
+`;
+
 
 const AiForwardingPage = ({ allGroups }) => {
     const [rules, setRules] = useState([]);
@@ -145,7 +189,7 @@ const AiForwardingPage = ({ allGroups }) => {
             await api.put(`/settings/forwarding/${editingRule.id}`, {
                 trigger_keyword: editingRule.trigger_keyword,
                 destination_group_jid: editingRule.destination_group_jid,
-                destination_group_name: selectedGroup?.name
+                destination_group_name: selectedGroup?.name // This ensures the name is updated
             });
             alert('Rule updated successfully!');
             setIsModalOpen(false);
@@ -153,6 +197,16 @@ const AiForwardingPage = ({ allGroups }) => {
             fetchRules();
         } catch (error) {
             alert(error.response?.data?.message || 'Failed to update rule.');
+        }
+    };
+
+    const handleToggle = async (rule) => {
+        const newEnabledState = !rule.is_enabled;
+        try {
+            await toggleForwardingRule(rule.id, newEnabledState);
+            setRules(rules.map(r => r.id === rule.id ? { ...r, is_enabled: newEnabledState } : r));
+        } catch (error) {
+            alert('Failed to update rule status.');
         }
     };
 
@@ -173,7 +227,6 @@ const AiForwardingPage = ({ allGroups }) => {
                         </InputGroup>
                         <InputGroup>
                         <Label>Destination Group</Label>
-                            {/* === REPLACE SearchableSelect WITH ComboBox === */}
                             <ComboBox 
                                 options={allGroups}
                                 value={destination}
@@ -190,6 +243,7 @@ const AiForwardingPage = ({ allGroups }) => {
                     <RulesTable>
                         <thead>
                             <tr>
+                                <th>Enabled</th>
                                 <th>Trigger Keyword</th>
                                 <th>Destination Group</th>
                                 <th>Actions</th>
@@ -198,6 +252,16 @@ const AiForwardingPage = ({ allGroups }) => {
                         <tbody>
                             {rules.map(rule => (
                                 <tr key={rule.id}>
+                                    <td>
+                                        <SwitchContainer>
+                                            <SwitchInput 
+                                                type="checkbox" 
+                                                checked={!!rule.is_enabled}
+                                                onChange={() => handleToggle(rule)}
+                                            />
+                                            <Slider />
+                                        </SwitchContainer>
+                                    </td>
                                     <td>{rule.trigger_keyword}</td>
                                     <td>{rule.destination_group_name || rule.destination_group_jid}</td>
                                     <td className="actions">

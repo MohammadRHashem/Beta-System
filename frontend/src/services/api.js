@@ -33,9 +33,29 @@ export const createTemplate = (data) => apiClient.post('/templates', data);
 export const updateTemplate = (id, data) => apiClient.put(`/templates/${id}`, data);
 export const deleteTemplate = (id) => apiClient.delete(`/templates/${id}`);
 
+// AI Forwarding Rule Toggle
+export const toggleForwardingRule = (id, is_enabled) => apiClient.patch(`/settings/forwarding/${id}/toggle`, { is_enabled });
+
+
 // Protected file downloads
 const downloadFile = async (url, params) => {
-    const { data } = await apiClient.get(url, { params, responseType: 'blob' });
+    const config = {
+        params,
+        responseType: 'blob',
+        paramsSerializer: params => {
+            const parts = [];
+            for (const key in params) {
+                const value = params[key];
+                if (Array.isArray(value)) {
+                    if (value.length > 0) parts.push(`${key}=${value.join(',')}`);
+                } else if (value) {
+                    parts.push(`${key}=${value}`);
+                }
+            }
+            return parts.join('&');
+        }
+    };
+    const { data } = await apiClient.get(url, config);
     return data;
 };
 
@@ -67,5 +87,17 @@ export const exportInvoices = async (params) => {
     const blob = await downloadFile('/invoices/export', params);
     triggerBrowserDownload(blob, 'invoices.xlsx');
 };
+
+// === NEW: API function for Excel Import ===
+export const importInvoices = (file) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    return apiClient.post('/invoices/import', formData, {
+        headers: {
+            'Content-Type': 'multipart/form-data'
+        }
+    });
+};
+
 
 export default apiClient;

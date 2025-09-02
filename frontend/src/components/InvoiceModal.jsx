@@ -2,16 +2,8 @@ import React, { useState, useEffect } from 'react';
 import styled from 'styled-components';
 import Modal from './Modal';
 import { createInvoice, updateInvoice } from '../services/api';
-
-const WiderModalContent = styled.div`
-  background: white;
-  padding: 2rem;
-  border-radius: 8px;
-  width: 90%;
-  max-width: 700px;
-  position: relative;
-  box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
-`;
+import { format, subHours, parse } from 'date-fns';
+import { toZonedTime } from 'date-fns-tz';
 
 const Form = styled.form`
     display: flex;
@@ -46,8 +38,7 @@ const InputGroup = styled.div`
 `;
 
 const DateTimeContainer = styled.div`
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    display: flex;
     gap: 0.5rem;
 `;
 
@@ -83,85 +74,51 @@ const Button = styled.button`
     align-self: flex-end;
 `;
 
-const InvoiceModal = ({ isOpen, onClose, invoice, invoices, insertAtIndex, onSave }) => {
+const SAO_PAULO_TIMEZONE = 'America/Sao_Paulo';
+
+const InvoiceModal = ({ isOpen, onClose, invoice, onSave }) => {
     const isEditMode = !!invoice;
-    const isInsertMode = insertAtIndex !== null;
     
     const [formData, setFormData] = useState({});
-    const [dateTime, setDateTime] = useState({
-        year: '', month: '', day: '', hour: '', minute: '', second: ''
-    });
+    const [date, setDate] = useState('');
+    const [time, setTime] = useState('');
 
     useEffect(() => {
         if (isOpen) {
             let initialDate;
-            let datePartsFound = false;
-
-            if (isEditMode) {
-                if (invoice && invoice.received_at && typeof invoice.received_at === 'string') {
-                    const dateTimeParts = invoice.received_at.split(' ');
-                    if (dateTimeParts.length === 2) {
-                        const datePart = dateTimeParts[0];
-                        const timePart = dateTimeParts[1];
-                        const [year, month, day] = datePart.split('-');
-                        const [hour, minute, second] = timePart.split(':');
-                        if (year && month && day && hour && minute && second) {
-                            setDateTime({ year, month, day, hour, minute, second });
-                            datePartsFound = true;
-                        }
-                    }
-                }
-            }
-            
-            if (!datePartsFound) {
-                if (isInsertMode) {
-                    const prevInvoice = invoices[insertAtIndex - 1];
-                    const nextInvoice = invoices[insertAtIndex];
-                    const startTime = prevInvoice ? new Date(prevInvoice.received_at).getTime() : new Date().getTime() - 60000;
-                    const endTime = nextInvoice ? new Date(nextInvoice.received_at).getTime() : new Date().getTime();
-                    initialDate = new Date(startTime + (endTime - startTime) / 2);
-                } else {
-                    initialDate = new Date();
-                }
-                const pad = (num) => num.toString().padStart(2, '0');
-                setDateTime({
-                    year: initialDate.getFullYear().toString(),
-                    month: pad(initialDate.getMonth() + 1),
-                    day: pad(initialDate.getDate()),
-                    hour: pad(initialDate.getHours()),
-                    minute: pad(initialDate.getMinutes()),
-                    second: pad(initialDate.getSeconds())
-                });
+            if (isEditMode && invoice.received_at) {
+                // The date from DB is already in GMT-3, treat it as such
+                initialDate = new Date(invoice.received_at + "Z");
+                initialDate = subHours(initialDate, 3); // Adjust for proper display
+            } else {
+                // Get current time in São Paulo for new entries
+                initialDate = toZonedTime(new Date(), SAO_PAULO_TIMEZONE);
             }
 
-            setFormData(isEditMode ? invoice : {
+            setDate(format(initialDate, 'yyyy-MM-dd'));
+            setTime(format(initialDate, 'HH:mm:ss'));
+
+            setFormData(isEditMode ? { ...invoice } : {
                 sender_name: '', recipient_name: '', transaction_id: '',
-                pix_key: '', amount: '0.00', credit: '0.00', notes: ''
+                pix_key: '', amount: '', credit: '', notes: ''
             });
         }
-    }, [invoice, invoices, insertAtIndex, isEditMode, isInsertMode, isOpen]);
+    }, [invoice, isEditMode, isOpen]);
 
     const handleChange = (e) => {
         setFormData({ ...formData, [e.target.name]: e.target.value });
     };
 
-    const handleDateTimeChange = (e) => {
-        setDateTime({ ...dateTime, [e.target.name]: e.target.value });
-    };
-
     const handleSubmit = async (e) => {
         e.preventDefault();
         
-        const fullTimestamp = `${dateTime.year}-${dateTime.month}-${dateTime.day} ${dateTime.hour}:${dateTime.minute}:${dateTime.second}`;
-        
-        let calculated_sort_order;
-        if (isInsertMode) {
-            const prevInvoice = invoices[insertAtIndex - 1];
-            const nextInvoice = invoices[insertAtIndex];
-            const prevSort = prevInvoice ? parseFloat(prevInvoice.sort_order) : (nextInvoice ? parseFloat(nextInvoice.sort_order) - 10000 : new Date(fullTimestamp).getTime());
-            const nextSort = nextInvoice ? parseFloat(nextInvoice.sort_order) : (prevInvoice ? parseFloat(prevInvoice.sort_order) + 10000 : new Date(fullTimestamp).getTime());
-            calculated_sort_order = Math.floor(prevSort + (nextSort - prevSort) / 2);
+        if (!date || !time) {
+            alert('Date and Time are required.');
+            return;
         }
+
+        // Combine date and time strings to create the final timestamp
+        const fullTimestamp = `${date} ${time}`;
         
         const payload = {
             ...formData,
@@ -170,13 +127,8 @@ const InvoiceModal = ({ isOpen, onClose, invoice, invoices, insertAtIndex, onSav
             credit: formData.credit === '' ? '0.00' : formData.credit,
         };
 
-        if (calculated_sort_order !== undefined) {
-            payload.sort_order = calculated_sort_order;
-        }
-
         try {
             if (isEditMode) {
-                delete payload.sort_order;
                 await updateInvoice(invoice.id, payload);
             } else {
                 await createInvoice(payload);
@@ -192,17 +144,15 @@ const InvoiceModal = ({ isOpen, onClose, invoice, invoices, insertAtIndex, onSav
             <h2>{isEditMode ? 'Edit Invoice' : 'Add New Entry'}</h2>
             <Form onSubmit={handleSubmit}>
                 <FieldSet>
-                    <Legend>Date & Time (GMT-05:00)</Legend>
-                    <DateTimeContainer>
-                        <Input type="number" name="day" placeholder="DD" value={dateTime.day} onChange={handleDateTimeChange} />
-                        <Input type="number" name="month" placeholder="MM" value={dateTime.month} onChange={handleDateTimeChange} />
-                        <Input type="number" name="year" placeholder="YYYY" value={dateTime.year} onChange={handleDateTimeChange} />
-                    </DateTimeContainer>
-                    <DateTimeContainer>
-                        <Input type="number" name="hour" placeholder="HH" value={dateTime.hour} onChange={handleDateTimeChange} />
-                        <Input type="number" name="minute" placeholder="MM" value={dateTime.minute} onChange={handleDateTimeChange} />
-                        <Input type="number" name="second" placeholder="SS" value={dateTime.second} onChange={handleDateTimeChange} />
-                    </DateTimeContainer>
+                    <Legend>Date & Time (GMT-03:00 São Paulo)</Legend>
+                    <InputGroup>
+                        <Label>Date</Label>
+                        <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+                    </InputGroup>
+                    <InputGroup>
+                        <Label>Time</Label>
+                        <Input type="time" step="1" value={time} onChange={(e) => setTime(e.target.value)} />
+                    </InputGroup>
                 </FieldSet>
                 <FieldSet>
                     <Legend>Parties & ID</Legend>
