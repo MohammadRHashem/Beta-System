@@ -20,13 +20,17 @@ const invoiceController = require('./controllers/invoiceController');
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server, { path: "/socket.io/", cors: { origin: "https://beta.hashemlabs.dev", methods: ["GET", "POST"] } });
+
+// This is the URL for your local frontend dev server
+const localFrontendUrl = "http://localhost:5173";
+
+const io = new Server(server, { path: "/socket.io/", cors: { origin: localFrontendUrl, methods: ["GET", "POST"] } });
 
 // Setup for file uploads in memory
 const storage = multer.memoryStorage();
 const upload = multer({ storage: storage });
 
-app.use(cors({ origin: "https://beta.hashemlabs.dev" }));
+app.use(cors({ origin: localFrontendUrl }));
 app.use(express.json());
 app.use((req, res, next) => { req.io = io; next(); });
 
@@ -90,14 +94,14 @@ app.put('/api/invoices/:id', invoiceController.updateInvoice);
 app.delete('/api/invoices/:id', invoiceController.deleteInvoice);
 app.get('/api/invoices/recipients', invoiceController.getRecipientNames);
 app.get('/api/invoices/export', invoiceController.exportInvoices);
-// === NEW ROUTE FOR EXCEL IMPORT ===
 app.post('/api/invoices/import', upload.single('file'), invoiceController.importInvoices);
 app.get('/api/invoices/media/:id', invoiceController.getInvoiceMedia);
 
 // --- Serve Frontend (for production build) ---
+// This part is not used in local development but should be kept for production builds
 const frontendPath = path.join(__dirname, '..', 'frontend', 'dist');
 if (fs.existsSync(frontendPath)) {
-    console.log(`[SERVER] Serving frontend from: ${frontendPath}`);
+    console.log(`[SERVER] Found production frontend build at: ${frontendPath}`);
     app.use(express.static(frontendPath));
     app.get('*', (req, res) => {
         res.sendFile(path.resolve(frontendPath, 'index.html'));

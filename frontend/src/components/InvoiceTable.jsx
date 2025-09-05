@@ -3,22 +3,34 @@ import styled, { css } from 'styled-components';
 import { viewInvoiceMedia, deleteInvoice } from '../services/api';
 import { FaEdit, FaTrashAlt, FaEye } from 'react-icons/fa';
 
+/**
+ * === THE DEFINITIVE FIX ===
+ * This function now uses simple string manipulation instead of the unreliable new Date() constructor.
+ * It is guaranteed to work correctly regardless of the browser.
+ * Input: "2025-09-02 10:30:00"
+ * Output: "02/09/2025 10:30:00"
+ */
 const formatDisplayDateTime = (dbDateString) => {
-    if (!dbDateString) return '';
+    if (!dbDateString || typeof dbDateString !== 'string') return '';
+    
     try {
-        // The date from the DB is already GMT-3, so we just format it.
-        const date = new Date(dbDateString + "Z"); // Treat as UTC to prevent local conversion
-        const pad = (num) => num.toString().padStart(2, '0');
-        const day = pad(date.getUTCDate());
-        const month = pad(date.getUTCMonth() + 1);
-        const year = date.getUTCFullYear();
-        const hours = pad(date.getUTCHours());
-        const minutes = pad(date.getUTCMinutes());
-        const seconds = pad(date.getUTCSeconds());
-        return `${day}/${month}/${year} ${hours}:${minutes}:${seconds}`;
+        const parts = dbDateString.split(' ');
+        if (parts.length !== 2) return dbDateString; // Return original if format is unexpected
+
+        const datePart = parts[0];
+        const timePart = parts[1];
+
+        const dateParts = datePart.split('-');
+        if (dateParts.length !== 3) return dbDateString;
+
+        const year = dateParts[0];
+        const month = dateParts[1];
+        const day = dateParts[2];
+
+        return `${day}/${month}/${year} ${timePart}`;
     } catch (e) {
-        console.warn("Invalid date string for formatting:", dbDateString);
-        return 'Invalid Date';
+        console.warn("Could not format date string:", dbDateString);
+        return dbDateString; // Return original string if any error occurs
     }
 };
 

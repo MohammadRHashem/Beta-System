@@ -1,6 +1,7 @@
 import axios from 'axios';
 
-const apiClient = axios.create({ baseURL: '/api' });
+// The baseURL is now the full path to your local backend server
+const apiClient = axios.create({ baseURL: 'http://localhost:5000/api' });
 
 apiClient.interceptors.request.use(config => {
     const token = localStorage.getItem('authToken');
@@ -88,7 +89,7 @@ export const exportInvoices = async (params) => {
     triggerBrowserDownload(blob, 'invoices.xlsx');
 };
 
-// === NEW: API function for Excel Import ===
+// API function for Excel Import
 export const importInvoices = (file) => {
     const formData = new FormData();
     formData.append('file', file);

@@ -247,18 +247,21 @@ exports.exportInvoices = async (req, res) => {
         sourceGroups, recipientNames, reviewStatus, status
     } = req.query;
 
+    console.log('[EXPORT] Received export request with filters:', req.query);
+
     let query = `
-        SELECT i.*, wg.group_name as source_group_name
+        SELECT i.received_at, i.transaction_id, i.sender_name, i.recipient_name, wg.group_name as source_group_name, i.amount
         FROM invoices i
         LEFT JOIN whatsapp_groups wg ON i.source_group_jid = wg.group_jid
         WHERE 1=1
     `;
     const params = [];
 
+    // Apply all filters from the frontend
     if (search) {
-        query += ` AND (i.transaction_id LIKE ? OR i.sender_name LIKE ? OR i.recipient_name LIKE ? OR i.pix_key LIKE ? OR i.notes LIKE ?)`;
+        query += ` AND (i.transaction_id LIKE ? OR i.sender_name LIKE ? OR i.recipient_name LIKE ?)`;
         const searchTerm = `%${search}%`;
-        params.push(searchTerm, searchTerm, searchTerm, searchTerm, searchTerm);
+        params.push(searchTerm, searchTerm, searchTerm);
     }
     if (dateFrom) {
         const startDateTime = `${dateFrom} ${timeFrom || '00:00:00'}`;
@@ -278,7 +281,7 @@ exports.exportInvoices = async (req, res) => {
         query += ' AND i.recipient_name IN (?)';
         params.push(recipientNames.split(','));
     }
-    const reviewCondition = "(i.sender_name IS NULL OR i.sender_name = '' OR i.recipient_name IS NULL OR i.recipient_name = '' OR i.amount IS NULL OR i.amount = '0.00')";
+    const reviewCondition = "(i.sender_name IS NULL OR i.sender_name = '' OR i.recipient_name IS NULL OR i.recipient_name = '')";
     if (reviewStatus === 'only_review') { query += ` AND ${reviewCondition}`; }
     if (reviewStatus === 'hide_review') { query += ` AND NOT ${reviewCondition}`; }
     if (status === 'only_deleted') { query += ' AND i.is_deleted = 1'; }
@@ -287,61 +290,68 @@ exports.exportInvoices = async (req, res) => {
     query += ' ORDER BY i.sort_order ASC, i.id ASC';
 
     try {
-        console.log('[EXPORT] Fetching data for Excel export...');
-        const [invoices] = await pool.query(query, params);
-        console.log(`[EXPORT] Found ${invoices.length} records to export based on filters.`);
+        const [invoicesFromDb] = await pool.query(query, params);
+        console.log(`[EXPORT] Found ${invoicesFromDb.length} records to export based on filters.`);
 
         const workbook = new ExcelJS.Workbook();
-        const worksheet = workbook.addWorksheet('Invoices');
+        const worksheet = workbook.addWorksheet('Invoices', {
+            views: [{ state: 'frozen', ySplit: 1 }] // Freeze header row
+        });
 
+        // Define columns with new order and styling
         worksheet.columns = [
-            // === NEW: Hidden ID column for re-importing ===
-            { header: 'ID', key: 'id', width: 10 },
-            { header: 'Date', key: 'date', width: 22, style: { numFmt: 'dd/mm/yyyy hh:mm:ss' } },
-            { header: 'Description', key: 'description', width: 45 },
-            { header: 'Debit', key: 'debit', width: 18, style: { numFmt: '#,##0.00' } },
-            { header: 'Credit', key: 'credit', width: 18, style: { numFmt: '#,##0.00' } },
-            { header: 'Balance', key: 'balance', width: 18, style: { numFmt: '#,##0.00' } },
+            { header: 'TimeDate', key: 'received_at', width: 22, style: { numFmt: 'dd/mm/yyyy hh:mm:ss', alignment: { horizontal: 'right' } } },
+            { header: 'Transaction ID', key: 'transaction_id', width: 35, style: { alignment: { horizontal: 'left' } } },
+            { header: 'Sender', key: 'sender_name', width: 30, style: { alignment: { horizontal: 'left' } } },
+            { header: 'Recipient', key: 'recipient_name', width: 30, style: { alignment: { horizontal: 'left' } } },
+            { header: 'Source Grp Name', key: 'source_group_name', width: 25, style: { alignment: { horizontal: 'left' } } },
+            { header: 'Amount', key: 'amount', width: 18, style: { numFmt: '#,##0.00', alignment: { horizontal: 'right' } } },
         ];
-        // Hide the ID column in the output file
-        worksheet.getColumn('A').hidden = true;
-        
-        const headerRow = worksheet.getRow(1);
-        headerRow.font = { bold: true, color: { argb: 'FFFFFFFF' } };
-        headerRow.fill = { type: 'pattern', pattern:'solid', fgColor:{argb:'FF0A2540'} };
-        
+
+        // Style the header row
+        worksheet.getRow(1).font = { name: 'Calibri', bold: true, color: { argb: 'FFFFFFFF' } };
+        worksheet.getRow(1).fill = { type: 'pattern', pattern:'solid', fgColor:{argb:'FF0A2540'} };
+
         let lastDate = null;
-        let lastBalanceCell = 'F1'; 
-
-        for (const invoice of invoices) {
+        for (const invoice of invoicesFromDb) {
+            // Because of `dateStrings: true`, received_at is a string 'YYYY-MM-DD HH:MM:SS'
             const currentDate = new Date(invoice.received_at);
-            const gmt3Date = new Date(currentDate.getTime());
 
+            // Yellow Separator Logic
             if (lastDate) {
                 const lastDayMarker = new Date(lastDate);
                 lastDayMarker.setHours(16, 15, 0, 0);
-                if (lastDate < lastDayMarker && gmt3Date >= lastDayMarker) {
-                    const splitterRow = worksheet.addRow({ description: `--- Day of ${gmt3Date.toLocaleDateString('en-CA')} ---` });
+                if (lastDate < lastDayMarker && currentDate >= lastDayMarker) {
+                    worksheet.addRow([]); // Add an empty row for visual separation
+                    const splitterRow = worksheet.addRow({ transaction_id: `--- Day of ${currentDate.toLocaleDateString('en-CA')} ---` });
                     splitterRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFF00' } };
-                    splitterRow.font = { bold: true };
-                    splitterRow.getCell('F').value = { formula: `${lastBalanceCell}` };
-                    lastBalanceCell = `F${splitterRow.number}`;
+                    splitterRow.font = { name: 'Calibri', bold: true };
+                    worksheet.mergeCells(`B${splitterRow.number}:F${splitterRow.number}`);
                 }
             }
             
-            const description = invoice.notes || `${invoice.sender_name || 'N/A'} -> ${invoice.recipient_name || 'N/A'}`;
-            
+            // Add the main data row
             const newRow = worksheet.addRow({
-                id: invoice.id, // Add the hidden ID
-                date: invoice.received_at ? new Date(invoice.received_at) : null,
-                description: description,
-                debit: invoice.amount ? parseFormattedCurrency(invoice.amount) : 0,
-                credit: invoice.credit ? parseFormattedCurrency(invoice.credit) : 0,
+                received_at: currentDate,
+                transaction_id: invoice.transaction_id,
+                sender_name: invoice.sender_name,
+                recipient_name: invoice.recipient_name,
+                source_group_name: invoice.source_group_name,
+                amount: parseFormattedCurrency(invoice.amount) // Use the robust parser here
+            });
+            
+            // Apply default font and borders to the new row
+            newRow.font = { name: 'Calibri', size: 11 };
+            newRow.eachCell({ includeEmpty: true }, (cell) => {
+                cell.border = {
+                    top: { style: 'thin' },
+                    left: { style: 'thin' },
+                    bottom: { style: 'thin' },
+                    right: { style: 'thin' }
+                };
             });
 
-            newRow.getCell('F').value = { formula: `${lastBalanceCell}+D${newRow.number}-E${newRow.number}` };
-            lastBalanceCell = `F${newRow.number}`;
-            lastDate = gmt3Date;
+            lastDate = currentDate;
         }
 
         res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');

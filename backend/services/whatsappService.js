@@ -14,7 +14,7 @@ let client;
 let qrCodeData;
 let connectionStatus = "disconnected";
 let abbreviationCache = [];
-let io; // To hold the socket.io instance
+let io;
 
 const redisConnection = {
   host: "localhost",

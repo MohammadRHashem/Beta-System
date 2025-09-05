@@ -66,7 +66,8 @@ const QRContainer = styled.div`
   }
 `;
 
-const API_URL = "https://beta.hashemlabs.dev";
+// This is the URL for your local backend server
+const API_URL = "http://localhost:5000";
 
 const MainLayout = () => {
   const [status, setStatus] = useState("disconnected");

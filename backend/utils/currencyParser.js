@@ -1,20 +1,37 @@
 /**
- * Parses a currency string with comma thousands separators into a float.
- * This is our "interpreter" for calculations.
- * @param {string | number} value The currency string to parse (e.g., "1,250.00").
- * @returns {number} The parsed numeric value (e.g., 1250.00).
+ * A robust currency parser that handles both US (1,234.56) and Brazilian/European (1.234,56) formats.
+ * This is the definitive "interpreter" that fixes bad number formats before calculations or export.
+ * @param {string | number} value The currency string to parse.
+ * @returns {number} The parsed numeric value, defaulting to 0.
  */
 function parseFormattedCurrency(value) {
-    if (value === null || value === undefined || value === '') {
+    if (value === null || value === undefined) {
         return 0;
     }
     if (typeof value === 'number') {
         return value;
     }
-    // Remove all comma separators (the thousands separator) and then parse as a float.
-    const numericString = String(value).replace(/,/g, '');
-    const number = parseFloat(numericString);
 
+    let s = String(value).trim();
+    if (s === '') {
+        return 0;
+    }
+
+    const lastComma = s.lastIndexOf(',');
+    const lastPeriod = s.lastIndexOf('.');
+
+    // If a comma exists and it comes after any period, it's a decimal separator (e.g., "1.234,56")
+    if (lastComma > -1 && lastComma > lastPeriod) {
+        // Remove all periods (thousands separators) and replace the decimal comma with a period
+        s = s.replace(/\./g, '').replace(',', '.');
+    } 
+    // Otherwise, the period is the decimal separator (e.g., "1,234.56")
+    else {
+        // Just remove all commas (thousands separators)
+        s = s.replace(/,/g, '');
+    }
+
+    const number = parseFloat(s);
     return isNaN(number) ? 0 : number;
 }
 
@@ -26,14 +43,12 @@ function parseFormattedCurrency(value) {
  */
 function formatNumberToCustomCurrency(value) {
     if (value === null || value === undefined) {
-        // Return the required default string instead of an empty one
         return '0.00';
     }
     const num = Number(value);
     if (isNaN(num)) {
         return '0.00';
     }
-    // Use 'en-US' locale as it provides the exact "1,250.00" format you want.
     return new Intl.NumberFormat('en-US', {
         minimumFractionDigits: 2,
         maximumFractionDigits: 2,

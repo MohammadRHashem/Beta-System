@@ -1,7 +1,13 @@
 backend/node_modules/
-backend/baileys_auth_info/
-frontend/node_modules/
-.env
+backend/.wwebjs_cache/
+backend/wwebjs_sessions/
+backend/media_archive/
 backend/python_scripts/venv
 backend/python_scripts/__pycache__
 backend/python_scripts/.env
+frontend/node_modules/
+.env
+backend/.env
+backend/package-lock.json
+frontend/package-lock.json
+node_modules/
