@@ -21,7 +21,8 @@ const invoiceController = require('./controllers/invoiceController');
 const app = express();
 const server = http.createServer(app);
 
-// This is the URL for your local frontend dev server
+// === REVERT FOR PRODUCTION ===
+// The origin for CORS and Socket.IO is now your live production domain.
 const productionFrontendUrl = "https://beta.hashemlabs.dev";
 
 const io = new Server(server, { path: "/socket.io/", cors: { origin: productionFrontendUrl, methods: ["GET", "POST"] } });
@@ -30,7 +31,7 @@ const io = new Server(server, { path: "/socket.io/", cors: { origin: productionF
 const storage = multer.memoryStorage();
 const upload = multer({ storage: storage });
 
-app.use(cors({ origin: localFrontendUrl }));
+app.use(cors({ origin: productionFrontendUrl }));
 app.use(express.json());
 app.use((req, res, next) => { req.io = io; next(); });
 
@@ -98,7 +99,6 @@ app.post('/api/invoices/import', upload.single('file'), invoiceController.import
 app.get('/api/invoices/media/:id', invoiceController.getInvoiceMedia);
 
 // --- Serve Frontend (for production build) ---
-// This part is not used in local development but should be kept for production builds
 const frontendPath = path.join(__dirname, '..', 'frontend', 'dist');
 if (fs.existsSync(frontendPath)) {
     console.log(`[SERVER] Found production frontend build at: ${frontendPath}`);
