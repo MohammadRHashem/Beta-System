@@ -22,9 +22,9 @@ const app = express();
 const server = http.createServer(app);
 
 // This is the URL for your local frontend dev server
-const localFrontendUrl = "http://localhost:5173";
+const productionFrontendUrl = "https://beta.hashemlabs.dev";
 
-const io = new Server(server, { path: "/socket.io/", cors: { origin: localFrontendUrl, methods: ["GET", "POST"] } });
+const io = new Server(server, { path: "/socket.io/", cors: { origin: productionFrontendUrl, methods: ["GET", "POST"] } });
 
 // Setup for file uploads in memory
 const storage = multer.memoryStorage();

@@ -1,7 +1,7 @@
 import axios from 'axios';
 
 // The baseURL is now the full path to your local backend server
-const apiClient = axios.create({ baseURL: 'http://localhost:5000/api' });
+const apiClient = axios.create({ baseURL: '/api' });
 
 apiClient.interceptors.request.use(config => {
     const token = localStorage.getItem('authToken');
