@@ -51,18 +51,25 @@ const invoiceWorker = new Worker(
 
       const chat = await message.getChat();
       
+      // === THE DEFINITIVE TIMEZONE FIX STARTS HERE ===
+      // 1. Get the raw UTC Unix timestamp and create a universal Date object.
+      // This object will be passed directly to the mysql2 driver.
+      const correctUtcDate = new Date(message.timestamp * 1000);
+      // 2. The manual subtraction line has been REMOVED.
+
       const [tombstoneRows] = await connection.query(
         "SELECT message_id FROM deleted_message_ids WHERE message_id = ?",
         [messageId]
       );
       if (tombstoneRows.length > 0) {
-        const utcDate = new Date(message.timestamp * 1000);
-        const gmtMinus3Date = new Date(utcDate.getTime() - 180 * 60 * 1000);
         await connection.query(
           `INSERT INTO invoices (message_id, source_group_jid, received_at, is_deleted, notes) 
                 VALUES (?, ?, ?, ?, ?)`,
           [
-            messageId, chat.id._serialized, gmtMinus3Date, true,
+            messageId, 
+            chat.id._serialized, 
+            correctUtcDate, // 3. Use the pure UTC date object. The driver will convert it.
+            true,
             "Message deleted before processing.",
           ]
         );
@@ -117,9 +124,6 @@ const invoiceWorker = new Worker(
         await fs.unlink(tempFilePath); await connection.commit(); return;
       }
 
-      const utcDate = new Date(message.timestamp * 1000);
-      const gmtMinus3Date = new Date(utcDate.getTime() - 180 * 60 * 1000);
-
       let finalMediaPath = null;
       if (groupSettings.archiving_enabled) {
         const extension = path.extname(media.filename || "") || `.${media.mimetype.split("/")[1] || "bin"}`;
@@ -132,7 +136,8 @@ const invoiceWorker = new Worker(
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             messageId, transaction_id, sender?.name, recipient.name,
-            recipient.pix_key, amount, chat.id._serialized, gmtMinus3Date,
+            recipient.pix_key, amount, chat.id._serialized, 
+            correctUtcDate, // 4. Use the pure UTC date object here as well.
             JSON.stringify(invoiceJson), finalMediaPath, false,
           ]
         );
@@ -317,73 +322,72 @@ const handleMessageRevoke = async (message, revoked_msg) => {
 };
 
 const initializeWhatsApp = (socketIoInstance) => {
-  io = socketIoInstance;
-  console.log("[WAPP] Initializing WhatsApp client...");
-  client = new Client({
-    authStrategy: new LocalAuth({ dataPath: "wwebjs_sessions" }),
-    puppeteer: {
-      headless: true,
-      args: [
-        "--no-sandbox",
-        "--disable-setuid-sandbox",
-        "--disable-dev-shm-usage",
-      ],
-    },
-  });
-
-  client.on("qr", async (qr) => {
-    console.log("[WAPP] QR code generated. Scan required.");
-    qrCodeData = await qrcode.toDataURL(qr);
-    connectionStatus = "qr";
-  });
-  client.on("ready", () => {
-    console.log("[WAPP] Connection opened. Client is ready!");
-    qrCodeData = null;
-    connectionStatus = "connected";
-    refreshAbbreviationCache();
-    cron.schedule("* * * * *", reconcileMissedMessages);
-    console.log("[RECONCILER] Self-healing reconciler scheduled to run every minute.");
-  });
-  client.on("message", handleMessage);
-  client.on("message_revoke_everyone", handleMessageRevoke);
-  client.on("disconnected", (reason) => {
-    console.warn("[WAPP] Client was logged out or disconnected. Reason:", reason);
-    connectionStatus = "disconnected";
-  });
-  client.on("auth_failure", (msg) => {
-    console.error("[WAPP-FATAL] AUTHENTICATION FAILURE", msg);
-    connectionStatus = "disconnected";
-  });
-  client.initialize();
-};
-
-const getQR = () => qrCodeData;
-const getStatus = () => connectionStatus;
-
-const fetchAllGroups = async () => {
-  if (connectionStatus !== "connected" || !client.info) {
-    throw new Error("WhatsApp is not connected or client info is not available yet.");
-  }
-  try {
-    const selfId = client.info.wid._serialized; // Get the bot's own WhatsApp ID
-    const chats = await client.getChats();
-    const allGroups = chats.filter((chat) => chat.isGroup);
-
-    // Filter the list to only include groups where the bot is still a participant.
-    const activeGroups = allGroups.filter(group => 
-        group.participants && group.participants.some(p => p.id._serialized === selfId)
-    );
-
-    return activeGroups.map((group) => ({
-      id: group.id._serialized,
-      name: group.name,
-      participants: group.participants.length,
-    }));
-  } catch (error) {
-    console.error("[WAPP-ERROR] Error fetching groups:", error);
-    throw error;
-  }
-};
+    io = socketIoInstance;
+    console.log("[WAPP] Initializing WhatsApp client...");
+    client = new Client({
+      authStrategy: new LocalAuth({ dataPath: "wwebjs_sessions" }),
+      puppeteer: {
+        headless: true,
+        args: [
+          "--no-sandbox",
+          "--disable-setuid-sandbox",
+          "--disable-dev-shm-usage",
+        ],
+      },
+    });
+  
+    client.on("qr", async (qr) => {
+      console.log("[WAPP] QR code generated. Scan required.");
+      qrCodeData = await qrcode.toDataURL(qr);
+      connectionStatus = "qr";
+    });
+    client.on("ready", () => {
+      console.log("[WAPP] Connection opened. Client is ready!");
+      qrCodeData = null;
+      connectionStatus = "connected";
+      refreshAbbreviationCache();
+      cron.schedule("* * * * *", reconcileMissedMessages);
+      console.log("[RECONCILER] Self-healing reconciler scheduled to run every minute.");
+    });
+    client.on("message", handleMessage);
+    client.on("message_revoke_everyone", handleMessageRevoke);
+    client.on("disconnected", (reason) => {
+      console.warn("[WAPP] Client was logged out or disconnected. Reason:", reason);
+      connectionStatus = "disconnected";
+    });
+    client.on("auth_failure", (msg) => {
+      console.error("[WAPP-FATAL] AUTHENTICATION FAILURE", msg);
+      connectionStatus = "disconnected";
+    });
+    client.initialize();
+  };
+  
+  const getQR = () => qrCodeData;
+  const getStatus = () => connectionStatus;
+  
+  const fetchAllGroups = async () => {
+    if (connectionStatus !== "connected" || !client.info) {
+      throw new Error("WhatsApp is not connected or client info is not available yet.");
+    }
+    try {
+      const selfId = client.info.wid._serialized;
+      const chats = await client.getChats();
+      const allGroups = chats.filter((chat) => chat.isGroup);
+  
+      const activeGroups = allGroups.filter(group => 
+          group.participants && group.participants.some(p => p.id._serialized === selfId)
+      );
+  
+      return activeGroups.map((group) => ({
+        id: group.id._serialized,
+        name: group.name,
+        participants: group.participants.length,
+      }));
+    } catch (error) {
+      console.error("[WAPP-ERROR] Error fetching groups:", error);
+      throw error;
+    }
+  };
 
 const broadcast = async (io, socketId, groupObjects, message) => {
   if (connectionStatus !== "connected") {
