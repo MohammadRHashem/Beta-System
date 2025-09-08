@@ -55,7 +55,6 @@ exports.getAllInvoices = async (req, res) => {
         query += ` AND i.transaction_id IS NOT NULL AND i.transaction_id != '' AND i.transaction_id IN (SELECT transaction_id FROM invoices WHERE transaction_id IS NOT NULL AND transaction_id != '' GROUP BY transaction_id HAVING COUNT(*) > 1)`;
     }
 
-    // === THE FIX: Changed the ORDER BY clause from 'i.sort_order' to 'i.received_at' ===
     const orderByClause = `i.received_at ${sortOrder === 'asc' ? 'ASC' : 'DESC'}`;
 
     try {
@@ -79,6 +78,119 @@ exports.getAllInvoices = async (req, res) => {
     } catch (error) {
         console.error('[ERROR] Failed to fetch invoices:', error);
         res.status(500).json({ message: 'Failed to fetch invoices.' });
+    }
+};
+
+exports.exportInvoices = async (req, res) => {
+    const {
+        search = '', dateFrom, dateTo, timeFrom, timeTo,
+        sourceGroups, recipientNames, reviewStatus, status
+    } = req.query;
+
+    let query = `
+        SELECT i.received_at, i.transaction_id, i.sender_name, i.recipient_name, wg.group_name as source_group_name, i.amount
+        FROM invoices i
+        LEFT JOIN whatsapp_groups wg ON i.source_group_jid = wg.group_jid
+        WHERE 1=1
+    `;
+    const params = [];
+
+    // Apply filters
+    if (search) {
+        query += ` AND (i.transaction_id LIKE ? OR i.sender_name LIKE ? OR i.recipient_name LIKE ?)`;
+        const searchTerm = `%${search}%`;
+        params.push(searchTerm, searchTerm, searchTerm);
+    }
+    if (dateFrom) {
+        query += ' AND DATE(i.received_at) >= ?';
+        params.push(dateFrom);
+    }
+    if (dateTo) {
+        query += ' AND DATE(i.received_at) <= ?';
+        params.push(dateTo);
+    }
+    if (sourceGroups && typeof sourceGroups === 'string' && sourceGroups.length > 0) {
+        query += ' AND i.source_group_jid IN (?)';
+        params.push(sourceGroups.split(','));
+    }
+    if (recipientNames && typeof recipientNames === 'string' && recipientNames.length > 0) {
+        query += ' AND i.recipient_name IN (?)';
+        params.push(recipientNames.split(','));
+    }
+    
+    query += ' ORDER BY i.received_at ASC';
+
+    try {
+        const [invoicesFromDb] = await pool.query(query, params);
+        console.log(`[EXPORT] Found ${invoicesFromDb.length} records to export based on filters.`);
+
+        const workbook = new ExcelJS.Workbook();
+        const worksheet = workbook.addWorksheet('Invoices', {
+            views: [{ state: 'frozen', ySplit: 1 }]
+        });
+
+        worksheet.columns = [
+            { header: 'TimeDate', key: 'received_at', width: 22, style: { numFmt: 'dd/mm/yyyy hh:mm:ss', alignment: { horizontal: 'right' } } },
+            { header: 'Transaction ID', key: 'transaction_id', width: 35, style: { alignment: { horizontal: 'left' } } },
+            { header: 'Sender', key: 'sender_name', width: 30, style: { alignment: { horizontal: 'left' } } },
+            { header: 'Recipient', key: 'recipient_name', width: 30, style: { alignment: { horizontal: 'left' } } },
+            { header: 'Source Grp Name', key: 'source_group_name', width: 25, style: { alignment: { horizontal: 'left' } } },
+            { header: 'Amount', key: 'amount', width: 18, style: { numFmt: '#,##0.00;[Red]-#,##0.00', alignment: { horizontal: 'right' } } },
+        ];
+
+        worksheet.getRow(1).font = { name: 'Calibri', bold: true, color: { argb: 'FFFFFFFF' } };
+        worksheet.getRow(1).fill = { type: 'pattern', pattern:'solid', fgColor:{argb:'FF0A2540'} };
+        worksheet.getRow(1).alignment = { vertical: 'middle', horizontal: 'center' };
+
+        let lastDate = null;
+        for (const invoice of invoicesFromDb) {
+            // === THE DEFINITIVE TIMEZONE FIX FOR EXCEL ===
+            // By appending the offset, we create a Date object that is timezone-aware and correct.
+            const currentDate = new Date(invoice.received_at + '-03:00');
+
+            if (lastDate) {
+                const lastDayMarker = new Date(lastDate);
+                lastDayMarker.setHours(16, 15, 0, 0);
+                if (lastDate < lastDayMarker && currentDate >= lastDayMarker) {
+                    worksheet.addRow([]);
+                    const splitterRow = worksheet.addRow({ transaction_id: `--- Day of ${currentDate.toLocaleDateString('en-CA')} ---` });
+                    splitterRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFF00' } };
+                    splitterRow.font = { name: 'Calibri', bold: true };
+                    worksheet.mergeCells(`B${splitterRow.number}:F${splitterRow.number}`);
+                    splitterRow.getCell('B').alignment = { horizontal: 'center' };
+                }
+            }
+            
+            const newRow = worksheet.addRow({
+                received_at: currentDate,
+                transaction_id: invoice.transaction_id,
+                sender_name: invoice.sender_name,
+                recipient_name: invoice.recipient_name,
+                source_group_name: invoice.source_group_name,
+                amount: parseFormattedCurrency(invoice.amount)
+            });
+            
+            newRow.font = { name: 'Calibri', size: 11 };
+            newRow.eachCell({ includeEmpty: true }, (cell) => {
+                cell.border = {
+                    top: { style: 'thin' }, left: { style: 'thin' },
+                    bottom: { style: 'thin' }, right: { style: 'thin' }
+                };
+            });
+
+            lastDate = currentDate;
+        }
+
+        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        res.setHeader('Content-Disposition', 'attachment; filename="invoices_export.xlsx"');
+
+        await workbook.xlsx.write(res);
+        console.log('[EXPORT] Successfully sent Excel file to client.');
+        res.end();
+
+    } catch (error) {
+        console.error('[EXPORT-ERROR] Failed to export invoices:', error);
+        res.status(500).json({ message: 'Failed to export invoices.' });
     }
 };
 
@@ -179,115 +291,5 @@ exports.getInvoiceMedia = async (req, res) => {
     } catch (error) {
         console.error('[ERROR] Failed to serve media file:', error);
         res.status(500).send('Server error.');
-    }
-};
-
-exports.exportInvoices = async (req, res) => {
-    const {
-        search = '', dateFrom, dateTo, timeFrom, timeTo,
-        sourceGroups, recipientNames, reviewStatus, status
-    } = req.query;
-
-    let query = `
-        SELECT i.received_at, i.transaction_id, i.sender_name, i.recipient_name, wg.group_name as source_group_name, i.amount
-        FROM invoices i
-        LEFT JOIN whatsapp_groups wg ON i.source_group_jid = wg.group_jid
-        WHERE 1=1
-    `;
-    const params = [];
-
-    if (search) {
-        query += ` AND (i.transaction_id LIKE ? OR i.sender_name LIKE ? OR i.recipient_name LIKE ?)`;
-        const searchTerm = `%${search}%`;
-        params.push(searchTerm, searchTerm, searchTerm);
-    }
-    if (dateFrom) {
-        query += ' AND DATE(i.received_at) >= ?';
-        params.push(dateFrom);
-    }
-    if (dateTo) {
-        query += ' AND DATE(i.received_at) <= ?';
-        params.push(dateTo);
-    }
-    if (sourceGroups && typeof sourceGroups === 'string' && sourceGroups.length > 0) {
-        query += ' AND i.source_group_jid IN (?)';
-        params.push(sourceGroups.split(','));
-    }
-    if (recipientNames && typeof recipientNames === 'string' && recipientNames.length > 0) {
-        query += ' AND i.recipient_name IN (?)';
-        params.push(recipientNames.split(','));
-    }
-
-    query += ' ORDER BY i.received_at ASC';
-
-    try {
-        const [invoices] = await pool.query(query, params);
-        console.log(`[EXPORT] Found ${invoices.length} records to export based on filters.`);
-
-        const workbook = new ExcelJS.Workbook();
-        const worksheet = workbook.addWorksheet('Invoices', {
-            views: [{ state: 'frozen', ySplit: 1 }]
-        });
-
-        worksheet.columns = [
-            { header: 'TimeDate', key: 'received_at', width: 22, style: { numFmt: 'dd/mm/yyyy hh:mm:ss', alignment: { horizontal: 'right' } } },
-            { header: 'Transaction ID', key: 'transaction_id', width: 35, style: { alignment: { horizontal: 'left' } } },
-            { header: 'Sender', key: 'sender_name', width: 30, style: { alignment: { horizontal: 'left' } } },
-            { header: 'Recipient', key: 'recipient_name', width: 30, style: { alignment: { horizontal: 'left' } } },
-            { header: 'Source Grp Name', key: 'source_group_name', width: 25, style: { alignment: { horizontal: 'left' } } },
-            { header: 'Amount', key: 'amount', width: 18, style: { numFmt: '#,##0.00;[Red]-#,##0.00', alignment: { horizontal: 'right' } } },
-        ];
-
-        worksheet.getRow(1).font = { name: 'Calibri', bold: true, color: { argb: 'FFFFFFFF' } };
-        worksheet.getRow(1).fill = { type: 'pattern', pattern:'solid', fgColor:{argb:'FF0A2540'} };
-        worksheet.getRow(1).alignment = { vertical: 'middle', horizontal: 'center' };
-
-        let lastDate = null;
-        for (const invoice of invoices) {
-            const currentDate = new Date(invoice.received_at);
-
-            if (lastDate) {
-                const lastDayMarker = new Date(lastDate);
-                lastDayMarker.setHours(16, 15, 0, 0);
-                if (lastDate < lastDayMarker && currentDate >= lastDayMarker) {
-                    worksheet.addRow([]);
-                    const splitterRow = worksheet.addRow({ transaction_id: `--- Day of ${currentDate.toLocaleDateString('en-CA')} ---` });
-                    splitterRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFF00' } };
-                    splitterRow.font = { name: 'Calibri', bold: true };
-                    worksheet.mergeCells(`B${splitterRow.number}:F${splitterRow.number}`);
-                    splitterRow.getCell('B').alignment = { horizontal: 'center' };
-                }
-            }
-            
-            const newRow = worksheet.addRow({
-                received_at: currentDate,
-                transaction_id: invoice.transaction_id,
-                sender_name: invoice.sender_name,
-                recipient_name: invoice.recipient_name,
-                source_group_name: invoice.source_group_name,
-                amount: parseFormattedCurrency(invoice.amount)
-            });
-            
-            newRow.font = { name: 'Calibri', size: 11 };
-            newRow.eachCell({ includeEmpty: true }, (cell) => {
-                cell.border = {
-                    top: { style: 'thin' }, left: { style: 'thin' },
-                    bottom: { style: 'thin' }, right: { style: 'thin' }
-                };
-            });
-
-            lastDate = currentDate;
-        }
-
-        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-        res.setHeader('Content-Disposition', 'attachment; filename="invoices_export.xlsx"');
-
-        await workbook.xlsx.write(res);
-        console.log('[EXPORT] Successfully sent Excel file to client.');
-        res.end();
-
-    } catch (error) {
-        console.error('[EXPORT-ERROR] Failed to export invoices:', error);
-        res.status(500).json({ message: 'Failed to export invoices.' });
     }
 };
