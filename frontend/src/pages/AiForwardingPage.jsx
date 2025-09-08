@@ -184,13 +184,14 @@ const AiForwardingPage = ({ allGroups }) => {
 
     const handleUpdate = async (e) => {
         e.preventDefault();
-        const selectedGroup = allGroups.find(g => g.id === editingRule.destination_group_jid);
         try {
-            await api.put(`/settings/forwarding/${editingRule.id}`, {
+            // === THE FIX: Send ONLY the essential data. The backend will handle the name lookup. ===
+            const payload = {
                 trigger_keyword: editingRule.trigger_keyword,
-                destination_group_jid: editingRule.destination_group_jid,
-                destination_group_name: selectedGroup?.name // This ensures the name is updated
-            });
+                destination_group_jid: editingRule.destination_group_jid
+            };
+            await api.put(`/settings/forwarding/${editingRule.id}`, payload);
+            
             alert('Rule updated successfully!');
             setIsModalOpen(false);
             setEditingRule(null);
