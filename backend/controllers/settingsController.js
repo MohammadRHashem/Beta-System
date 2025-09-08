@@ -1,6 +1,5 @@
 const pool = require('../config/db');
 
-// ... (get, create, toggle, delete are unchanged) ...
 exports.getForwardingRules = async (req, res) => {
     const userId = req.user.id;
     try {
@@ -27,11 +26,12 @@ exports.createForwardingRule = async (req, res) => {
     }
 };
 
-// === THE FIX FOR THE UPDATE BUG ===
+// === THE DEFINITIVE FIX FOR THE UPDATE BUG ===
 exports.updateForwardingRule = async (req, res) => {
     const userId = req.user.id;
     const { id } = req.params;
-    const { trigger_keyword, destination_group_jid } = req.body; // Only need JID from frontend
+    // We ONLY trust the trigger and the JID from the client.
+    const { trigger_keyword, destination_group_jid } = req.body;
 
     if (!trigger_keyword || !destination_group_jid) {
         return res.status(400).json({ message: 'Trigger keyword and destination group are required.' });
@@ -41,25 +41,29 @@ exports.updateForwardingRule = async (req, res) => {
     try {
         await connection.beginTransaction();
 
-        // Step 1: Look up the group name from the database using the provided JID.
+        // Step 1: Look up the definitive group name from the database using the provided JID.
         const [[group]] = await connection.query(
             'SELECT group_name FROM whatsapp_groups WHERE group_jid = ?',
             [destination_group_jid]
         );
 
         if (!group) {
+            // If the group doesn't exist in our system, fail the request.
             throw new Error('Destination group not found in the system. Please sync groups and try again.');
         }
-        const destination_group_name = group.group_name;
-        console.log(`[INFO] Updating rule ${id}. Found group name "${destination_group_name}" for JID ${destination_group_jid}`);
+        
+        // This is the true, up-to-date name.
+        const correct_destination_group_name = group.group_name;
+        console.log(`[INFO] Updating rule ${id}. Found correct group name: "${correct_destination_group_name}"`);
 
-        // Step 2: Update the rule with all correct information.
+        // Step 2: Update the rule using the data we have validated and looked up ourselves.
         const [result] = await connection.query(
             'UPDATE forwarding_rules SET trigger_keyword = ?, destination_group_jid = ?, destination_group_name = ? WHERE id = ? AND user_id = ?',
-            [trigger_keyword, destination_group_jid, destination_group_name, id, userId]
+            [trigger_keyword, destination_group_jid, correct_destination_group_name, id, userId]
         );
 
         if (result.affectedRows === 0) {
+            // This happens if the rule ID doesn't exist or doesn't belong to the user.
             return res.status(404).json({ message: 'Rule not found or you do not have permission to edit it.' });
         }
         
