@@ -2,8 +2,7 @@ import React, { useState, useEffect } from 'react';
 import styled from 'styled-components';
 import Modal from './Modal';
 import { createInvoice, updateInvoice } from '../services/api';
-import { format, subHours, parse } from 'date-fns';
-import { toZonedTime } from 'date-fns-tz';
+import { format, toZonedTime } from 'date-fns-tz';
 
 const Form = styled.form`
     display: flex;
@@ -18,9 +17,6 @@ const FieldSet = styled.fieldset`
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 1rem 1.5rem;
-    @media (max-width: 600px) {
-        grid-template-columns: 1fr;
-    }
 `;
 
 const Legend = styled.legend`
@@ -35,11 +31,6 @@ const InputGroup = styled.div`
     flex-direction: column;
     gap: 0.5rem;
     grid-column: ${({ full }) => full ? '1 / -1' : 'auto'};
-`;
-
-const DateTimeContainer = styled.div`
-    display: flex;
-    gap: 0.5rem;
 `;
 
 const Label = styled.label`
@@ -74,6 +65,18 @@ const Button = styled.button`
     align-self: flex-end;
 `;
 
+const CheckboxContainer = styled.div`
+    grid-column: 1 / -1;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+`;
+
+const Checkbox = styled.input.attrs({ type: 'checkbox' })`
+    width: 18px;
+    height: 18px;
+`;
+
 const SAO_PAULO_TIMEZONE = 'America/Sao_Paulo';
 
 const InvoiceModal = ({ isOpen, onClose, invoice, onSave }) => {
@@ -87,9 +90,8 @@ const InvoiceModal = ({ isOpen, onClose, invoice, onSave }) => {
         if (isOpen) {
             let initialDate;
             if (isEditMode && invoice.received_at) {
-                // The date from DB is already in GMT-3, treat it as such
-                initialDate = new Date(invoice.received_at + "Z");
-                initialDate = subHours(initialDate, 3); // Adjust for proper display
+                // The date string from the DB is already the correct local time
+                initialDate = new Date(invoice.received_at);
             } else {
                 // Get current time in São Paulo for new entries
                 initialDate = toZonedTime(new Date(), SAO_PAULO_TIMEZONE);
@@ -100,13 +102,17 @@ const InvoiceModal = ({ isOpen, onClose, invoice, onSave }) => {
 
             setFormData(isEditMode ? { ...invoice } : {
                 sender_name: '', recipient_name: '', transaction_id: '',
-                pix_key: '', amount: '', credit: '', notes: ''
+                pix_key: '', amount: '', notes: '', is_deleted: false
             });
         }
     }, [invoice, isEditMode, isOpen]);
 
     const handleChange = (e) => {
-        setFormData({ ...formData, [e.target.name]: e.target.value });
+        const { name, value, type, checked } = e.target;
+        setFormData(prev => ({
+            ...prev,
+            [name]: type === 'checkbox' ? checked : value
+        }));
     };
 
     const handleSubmit = async (e) => {
@@ -117,15 +123,9 @@ const InvoiceModal = ({ isOpen, onClose, invoice, onSave }) => {
             return;
         }
 
-        // Combine date and time strings to create the final timestamp
         const fullTimestamp = `${date} ${time}`;
         
-        const payload = {
-            ...formData,
-            received_at: fullTimestamp,
-            amount: formData.amount === '' ? '0.00' : formData.amount,
-            credit: formData.credit === '' ? '0.00' : formData.credit,
-        };
+        const payload = { ...formData, received_at: fullTimestamp };
 
         try {
             if (isEditMode) {
@@ -170,15 +170,15 @@ const InvoiceModal = ({ isOpen, onClose, invoice, onSave }) => {
                     </InputGroup>
                 </FieldSet>
                 <FieldSet>
-                    <Legend>Financials</Legend>
+                    <Legend>Financials & Status</Legend>
                     <InputGroup>
-                        <Label>Amount (Debit)</Label>
+                        <Label>Amount</Label>
                         <Input type="text" name="amount" value={formData.amount || ''} onChange={handleChange} placeholder="e.g., 1,250.00" />
                     </InputGroup>
-                    <InputGroup>
-                        <Label>Credit</Label>
-                        <Input type="text" name="credit" value={formData.credit || ''} onChange={handleChange} placeholder="e.g., 50.00" />
-                    </InputGroup>
+                     <CheckboxContainer>
+                        <Checkbox name="is_deleted" checked={!!formData.is_deleted} onChange={handleChange} />
+                        <Label>Mark as Deleted</Label>
+                    </CheckboxContainer>
                 </FieldSet>
                 <FieldSet>
                     <Legend>Additional Info</Legend>

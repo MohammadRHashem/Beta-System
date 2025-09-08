@@ -3,19 +3,12 @@ import styled, { css } from 'styled-components';
 import { viewInvoiceMedia, deleteInvoice } from '../services/api';
 import { FaEdit, FaTrashAlt, FaEye } from 'react-icons/fa';
 
-/**
- * === THE DEFINITIVE FIX ===
- * This function now uses simple string manipulation instead of the unreliable new Date() constructor.
- * It is guaranteed to work correctly regardless of the browser.
- * Input: "2025-09-02 10:30:00"
- * Output: "02/09/2025 10:30:00"
- */
 const formatDisplayDateTime = (dbDateString) => {
     if (!dbDateString || typeof dbDateString !== 'string') return '';
     
     try {
         const parts = dbDateString.split(' ');
-        if (parts.length !== 2) return dbDateString; // Return original if format is unexpected
+        if (parts.length !== 2) return dbDateString;
 
         const datePart = parts[0];
         const timePart = parts[1];
@@ -30,7 +23,7 @@ const formatDisplayDateTime = (dbDateString) => {
         return `${day}/${month}/${year} ${timePart}`;
     } catch (e) {
         console.warn("Could not format date string:", dbDateString);
-        return dbDateString; // Return original string if any error occurs
+        return dbDateString;
     }
 };
 
@@ -69,10 +62,6 @@ const Tr = styled.tr`
         background-color: #e9ecef !important;
         color: #6c757d;
         text-decoration: line-through;
-        .actions svg, .actions a {
-            color: #adb5bd;
-            cursor: not-allowed;
-        }
     `}
 `;
 
@@ -84,7 +73,7 @@ const Td = styled.td`
         gap: 1.2rem;
         font-size: 1rem;
         white-space: nowrap;
-        svg, a {
+        svg {
             cursor: pointer;
             color: ${({ theme }) => theme.lightText};
             &:hover { color: ${({ theme }) => theme.primary}; }
@@ -137,10 +126,9 @@ const InvoiceTable = ({ invoices, loading, onEdit, pagination, setPagination }) 
     }, [invoices]);
 
     const handleDelete = async (id) => {
-        if (window.confirm('Are you sure you want to permanently delete this invoice? This action cannot be undone.')) {
+        if (window.confirm('Are you sure you want to PERMANENTLY delete this invoice? This action cannot be undone.')) {
             try {
                 await deleteInvoice(id);
-                // The parent component will refetch via socket event
             } catch (error) {
                 alert('Failed to delete invoice.');
             }
@@ -170,9 +158,7 @@ const InvoiceTable = ({ invoices, loading, onEdit, pagination, setPagination }) 
                         <Th>Sender</Th>
                         <Th>Recipient</Th>
                         <Th>Source Group</Th>
-                        <Th className="currency">Amount (Debit)</Th>
-                        <Th className="currency">Credit</Th>
-                        <Th className="currency">Balance</Th>
+                        <Th className="currency">Amount</Th>
                         <Th>Actions</Th>
                     </tr>
                 </thead>
@@ -189,12 +175,10 @@ const InvoiceTable = ({ invoices, loading, onEdit, pagination, setPagination }) 
                                 <Td>{inv.recipient_name || (needsReview ? 'REVIEW' : '')}</Td>
                                 <Td>{inv.source_group_name || ''}</Td>
                                 <Td className={`currency ${needsReview && inv.amount === '0.00' ? 'review' : ''}`}>{inv.amount || ''}</Td>
-                                <Td className="currency">{inv.credit || ''}</Td>
-                                <Td className="currency">{inv.balance || ''}</Td>
                                 <Td className="actions">
-                                    {inv.media_path && !inv.is_deleted && <FaEye onClick={() => handleViewMedia(inv.id)} title="View Media" />}
+                                    {inv.media_path && <FaEye onClick={() => handleViewMedia(inv.id)} title="View Media" />}
                                     <FaEdit onClick={() => onEdit(inv)} title="Edit" />
-                                    {!inv.is_deleted && <FaTrashAlt onClick={() => handleDelete(inv.id)} title="Delete" />}
+                                    <FaTrashAlt onClick={() => handleDelete(inv.id)} title="Delete Permanently" />
                                 </Td>
                             </Tr>
                         );

@@ -1,6 +1,6 @@
 const pool = require('../config/db');
 
-// --- Forwarding Rules ---
+// ... (get, create, toggle, delete are unchanged) ...
 exports.getForwardingRules = async (req, res) => {
     const userId = req.user.id;
     try {
@@ -18,7 +18,7 @@ exports.createForwardingRule = async (req, res) => {
     try {
         await pool.query(
             'INSERT INTO forwarding_rules (user_id, trigger_keyword, destination_group_jid, destination_group_name, is_enabled) VALUES (?, ?, ?, ?, ?)',
-            [userId, trigger_keyword, destination_group_jid, destination_group_name, 1] // Default to enabled
+            [userId, trigger_keyword, destination_group_jid, destination_group_name, 1]
         );
         res.status(201).json({ message: 'Rule created successfully.' });
     } catch (error) {
@@ -27,28 +27,53 @@ exports.createForwardingRule = async (req, res) => {
     }
 };
 
+// === THE FIX FOR THE UPDATE BUG ===
 exports.updateForwardingRule = async (req, res) => {
     const userId = req.user.id;
     const { id } = req.params;
-    const { trigger_keyword, destination_group_jid, destination_group_name } = req.body;
-    if (!trigger_keyword || !destination_group_jid || !destination_group_name) {
-        return res.status(400).json({ message: 'All fields are required.' });
+    const { trigger_keyword, destination_group_jid } = req.body; // Only need JID from frontend
+
+    if (!trigger_keyword || !destination_group_jid) {
+        return res.status(400).json({ message: 'Trigger keyword and destination group are required.' });
     }
+    
+    const connection = await pool.getConnection();
     try {
-        const [result] = await pool.query(
+        await connection.beginTransaction();
+
+        // Step 1: Look up the group name from the database using the provided JID.
+        const [[group]] = await connection.query(
+            'SELECT group_name FROM whatsapp_groups WHERE group_jid = ?',
+            [destination_group_jid]
+        );
+
+        if (!group) {
+            throw new Error('Destination group not found in the system. Please sync groups and try again.');
+        }
+        const destination_group_name = group.group_name;
+        console.log(`[INFO] Updating rule ${id}. Found group name "${destination_group_name}" for JID ${destination_group_jid}`);
+
+        // Step 2: Update the rule with all correct information.
+        const [result] = await connection.query(
             'UPDATE forwarding_rules SET trigger_keyword = ?, destination_group_jid = ?, destination_group_name = ? WHERE id = ? AND user_id = ?',
             [trigger_keyword, destination_group_jid, destination_group_name, id, userId]
         );
+
         if (result.affectedRows === 0) {
             return res.status(404).json({ message: 'Rule not found or you do not have permission to edit it.' });
         }
+        
+        await connection.commit();
         res.json({ message: 'Rule updated successfully.' });
     } catch (error) {
+        await connection.rollback();
         if (error.code === 'ER_DUP_ENTRY') {
             return res.status(409).json({ message: 'This trigger keyword already exists.' });
         }
-        console.error('[ERROR] Failed to update forwarding rule:', error);
-        res.status(500).json({ message: 'Failed to update rule.' });
+        console.error(`[ERROR] Failed to update forwarding rule ${id}:`, error);
+        res.status(500).json({ message: error.message || 'Failed to update rule.' });
+    } finally {
+        connection.release();
     }
 };
 
@@ -94,7 +119,6 @@ exports.deleteForwardingRule = async (req, res) => {
     }
 };
 
-// --- Group Settings ---
 exports.getGroupSettings = async (req, res) => {
     try {
         const [groups] = await pool.query(`

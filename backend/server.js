@@ -6,7 +6,6 @@ const { Server } = require("socket.io");
 const authMiddleware = require('./middleware/authMiddleware');
 const path = require('path');
 const fs = require('fs');
-const multer = require('multer');
 
 // --- Controllers ---
 const authController = require('./controllers/authController');
@@ -21,15 +20,9 @@ const invoiceController = require('./controllers/invoiceController');
 const app = express();
 const server = http.createServer(app);
 
-// === REVERT FOR PRODUCTION ===
-// The origin for CORS and Socket.IO is now your live production domain.
 const productionFrontendUrl = "https://beta.hashemlabs.dev";
 
 const io = new Server(server, { path: "/socket.io/", cors: { origin: productionFrontendUrl, methods: ["GET", "POST"] } });
-
-// Setup for file uploads in memory
-const storage = multer.memoryStorage();
-const upload = multer({ storage: storage });
 
 app.use(cors({ origin: productionFrontendUrl }));
 app.use(express.json());
@@ -95,7 +88,6 @@ app.put('/api/invoices/:id', invoiceController.updateInvoice);
 app.delete('/api/invoices/:id', invoiceController.deleteInvoice);
 app.get('/api/invoices/recipients', invoiceController.getRecipientNames);
 app.get('/api/invoices/export', invoiceController.exportInvoices);
-app.post('/api/invoices/import', upload.single('file'), invoiceController.importInvoices);
 app.get('/api/invoices/media/:id', invoiceController.getInvoiceMedia);
 
 // --- Serve Frontend (for production build) ---

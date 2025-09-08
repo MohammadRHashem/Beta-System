@@ -1,6 +1,5 @@
 import axios from 'axios';
 
-// The baseURL is now the full path to your local backend server
 const apiClient = axios.create({ baseURL: '/api' });
 
 apiClient.interceptors.request.use(config => {
@@ -37,8 +36,6 @@ export const deleteTemplate = (id) => apiClient.delete(`/templates/${id}`);
 // AI Forwarding Rule Toggle
 export const toggleForwardingRule = (id, is_enabled) => apiClient.patch(`/settings/forwarding/${id}/toggle`, { is_enabled });
 
-
-// Protected file downloads
 const downloadFile = async (url, params) => {
     const config = {
         params,
@@ -88,17 +85,5 @@ export const exportInvoices = async (params) => {
     const blob = await downloadFile('/invoices/export', params);
     triggerBrowserDownload(blob, 'invoices.xlsx');
 };
-
-// API function for Excel Import
-export const importInvoices = (file) => {
-    const formData = new FormData();
-    formData.append('file', file);
-    return apiClient.post('/invoices/import', formData, {
-        headers: {
-            'Content-Type': 'multipart/form-data'
-        }
-    });
-};
-
 
 export default apiClient;

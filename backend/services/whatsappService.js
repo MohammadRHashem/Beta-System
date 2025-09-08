@@ -8,13 +8,12 @@ const os = require("os");
 const dotenv = require("dotenv");
 const { Queue, Worker } = require("bullmq");
 const cron = require("node-cron");
-const { recalculateBalances } = require("../utils/balanceCalculator");
 
 let client;
 let qrCodeData;
 let connectionStatus = "disconnected";
 let abbreviationCache = [];
-let io;
+let io; // To hold the socket.io instance
 
 const redisConnection = {
   host: "localhost",
@@ -34,12 +33,9 @@ const invoiceWorker = new Worker(
   "invoice-processing-queue",
   async (job) => {
     const { execa } = await import("execa");
-
     if (!client || connectionStatus !== "connected") {
-      console.warn(`[WORKER] WhatsApp client not connected. Job ${job.id} will be retried.`);
       throw new Error("WhatsApp client is not connected. Job will be retried.");
     }
-
     const { messageId } = job.data;
     console.log(`[WORKER][${job.id}] Started processing job for message ID: ${messageId}`);
 
@@ -52,7 +48,6 @@ const invoiceWorker = new Worker(
     const connection = await pool.getConnection();
     try {
       await connection.beginTransaction();
-      console.log(`[WORKER][${job.id}] Database transaction started.`);
 
       const chat = await message.getChat();
       
@@ -61,20 +56,13 @@ const invoiceWorker = new Worker(
         [messageId]
       );
       if (tombstoneRows.length > 0) {
-        console.log(`[WORKER][${job.id}] Message was deleted before processing. Creating 'deleted' invoice entry.`);
-        // TIMEZONE FIX: Convert UTC timestamp to GMT-03:00
         const utcDate = new Date(message.timestamp * 1000);
         const gmtMinus3Date = new Date(utcDate.getTime() - 180 * 60 * 1000);
-        const sortOrder = gmtMinus3Date.getTime();
         await connection.query(
-          `INSERT INTO invoices (message_id, source_group_jid, received_at, sort_order, is_deleted, notes) 
-                VALUES (?, ?, ?, ?, ?, ?)`,
+          `INSERT INTO invoices (message_id, source_group_jid, received_at, is_deleted, notes) 
+                VALUES (?, ?, ?, ?, ?)`,
           [
-            messageId,
-            chat.id._serialized,
-            gmtMinus3Date,
-            sortOrder,
-            true,
+            messageId, chat.id._serialized, gmtMinus3Date, true,
             "Message deleted before processing.",
           ]
         );
@@ -83,7 +71,6 @@ const invoiceWorker = new Worker(
           [messageId]
         );
         await connection.commit();
-        console.log(`[WORKER][${job.id}] Tombstone processed and transaction committed.`);
         if (io) io.emit("invoices:updated");
         return;
       }
@@ -98,62 +85,40 @@ const invoiceWorker = new Worker(
       };
 
       if (!groupSettings.forwarding_enabled && !groupSettings.archiving_enabled) {
-        console.log(`[WORKER][${job.id}] Both archiving and forwarding are disabled for group "${chat.name}". Skipping.`);
-        await connection.commit();
-        return;
+        await connection.commit(); return;
       }
 
       const media = await message.downloadMedia();
       if (!media) {
-        console.log(`[WORKER][${job.id}] Message has no media to process. Skipping.`);
-        await connection.commit();
-        return;
+        await connection.commit(); return;
       }
 
-      const tempFilePath = path.join(
-        os.tmpdir(),
-        `${message.id.id}.${media.mimetype.split("/")[1] || "bin"}`
-      );
+      const tempFilePath = path.join(os.tmpdir(), `${message.id.id}.${media.mimetype.split("/")[1] || "bin"}`);
       await fs.writeFile(tempFilePath, Buffer.from(media.data, "base64"));
-      console.log(`[WORKER][${job.id}] Media downloaded to temp path: ${tempFilePath}`);
-
+      
       const pythonScriptsDir = path.join(__dirname, "..", "python_scripts");
       const pythonExecutablePath = path.join(pythonScriptsDir, "venv", "bin", "python3");
       const pythonScriptPath = path.join(pythonScriptsDir, "main.py");
       const pythonEnv = dotenv.config({ path: path.join(pythonScriptsDir, ".env"), }).parsed;
 
-      if (!pythonEnv || !pythonEnv.GOOGLE_API_KEY) {
-          throw new Error("Could not load GOOGLE_API_KEY for Python script.");
-      }
-
+      if (!pythonEnv || !pythonEnv.GOOGLE_API_KEY) throw new Error("Could not load GOOGLE_API_KEY.");
+      
       let invoiceJson;
       try {
-        console.log(`[WORKER][${job.id}] Executing Python OCR script...`);
-        const { stdout } = await execa(
-          pythonExecutablePath,
-          [pythonScriptPath, tempFilePath],
-          { cwd: pythonScriptsDir, env: pythonEnv }
-        );
+        const { stdout } = await execa(pythonExecutablePath, [pythonScriptPath, tempFilePath], { cwd: pythonScriptsDir, env: pythonEnv });
         invoiceJson = JSON.parse(stdout);
-        console.log(`[WORKER][${job.id}] Python script executed successfully.`);
       } catch (pythonError) {
         await fs.unlink(tempFilePath);
-        console.error(`[WORKER][${job.id}] Python script failed:`, pythonError.stderr || pythonError.message);
-        throw pythonError; // This will cause the job to fail and be retried
+        throw pythonError;
       }
 
       const { amount, sender, recipient, transaction_id } = invoiceJson;
       if (!amount || !recipient?.name) {
-        console.log(`[WORKER][${job.id}] OCR did not return required fields (amount, recipient). Skipping.`);
-        await fs.unlink(tempFilePath);
-        await connection.commit();
-        return;
+        await fs.unlink(tempFilePath); await connection.commit(); return;
       }
 
-      // TIMEZONE FIX: Convert UTC timestamp to GMT-03:00
       const utcDate = new Date(message.timestamp * 1000);
       const gmtMinus3Date = new Date(utcDate.getTime() - 180 * 60 * 1000);
-      const sortOrder = gmtMinus3Date.getTime();
 
       let finalMediaPath = null;
       if (groupSettings.archiving_enabled) {
@@ -161,51 +126,40 @@ const invoiceWorker = new Worker(
         const archiveFileName = `${messageId}${extension}`;
         finalMediaPath = path.join(MEDIA_ARCHIVE_DIR, archiveFileName);
         await fs.rename(tempFilePath, finalMediaPath);
-        console.log(`[WORKER][${job.id}] Media archived to: ${finalMediaPath}`);
         
         await connection.query(
-          `INSERT INTO invoices (message_id, transaction_id, sender_name, recipient_name, pix_key, amount, source_group_jid, received_at, sort_order, raw_json_data, media_path, is_deleted) 
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          `INSERT INTO invoices (message_id, transaction_id, sender_name, recipient_name, pix_key, amount, source_group_jid, received_at, raw_json_data, media_path, is_deleted) 
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             messageId, transaction_id, sender?.name, recipient.name,
             recipient.pix_key, amount, chat.id._serialized, gmtMinus3Date,
-            sortOrder, JSON.stringify(invoiceJson), finalMediaPath, false,
+            JSON.stringify(invoiceJson), finalMediaPath, false,
           ]
         );
-        console.log(`[WORKER][${job.id}] Invoice data inserted into database.`);
-        await recalculateBalances(connection, gmtMinus3Date.toISOString());
       } else {
         await fs.unlink(tempFilePath);
-        console.log(`[WORKER][${job.id}] Archiving disabled. Temp media file deleted.`);
       }
 
       if (groupSettings.forwarding_enabled) {
         const recipientNameLower = (recipient.name || "").toLowerCase().trim();
         if (recipientNameLower) {
-          // FORWARDING FIX: Only select rules that are enabled
           const [rules] = await connection.query("SELECT * FROM forwarding_rules WHERE is_enabled = 1");
           for (const rule of rules) {
             if (recipientNameLower.includes(rule.trigger_keyword.toLowerCase())) {
-              console.log(`[WORKER][${job.id}] Forwarding rule matched for keyword "${rule.trigger_keyword}". Forwarding to "${rule.destination_group_name}".`);
               const mediaToForward = new MessageMedia(media.mimetype, media.data, media.filename);
               await client.sendMessage(rule.destination_group_jid, mediaToForward, { caption: '\u200C' });
-              break; // Stop after first match
+              break;
             }
           }
         }
       }
 
       await connection.commit();
-      console.log(`[WORKER][${job.id}] Transaction committed successfully.`);
       if (io) io.emit("invoices:updated");
     } catch (error) {
       await connection.rollback();
-      console.error(`[WORKER-ERROR][${job.id}] Transaction rolled back due to critical error:`, error);
-      // Don't acknowledge duplicate entry errors, but throw others to trigger a retry
-      if (error.code === "ER_DUP_ENTRY") {
-        console.warn(`[WORKER][${job.id}] Duplicate entry error. Acknowledging job as complete to prevent retries.`);
-        return; 
-      }
+      if (error.code === "ER_DUP_ENTRY") { return; }
+      console.error(`[WORKER-ERROR] Critical error processing job ${messageId}:`, error);
       throw error;
     } finally {
       connection.release();
@@ -214,7 +168,7 @@ const invoiceWorker = new Worker(
   {
     connection: redisConnection,
     lockDuration: 120000,
-    concurrency: 2, // CONCURRENCY CHANGE: Increased from 1 to 2
+    concurrency: 2,
   }
 );
 

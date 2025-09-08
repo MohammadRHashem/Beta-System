@@ -1,8 +1,8 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import styled from 'styled-components';
 import { useAuth } from '../context/AuthContext';
-import { getInvoices, getRecipientNames, exportInvoices, importInvoices } from '../services/api';
-import { FaPlus, FaFileExcel, FaUpload } from 'react-icons/fa';
+import { getInvoices, getRecipientNames, exportInvoices } from '../services/api';
+import { FaPlus, FaFileExcel } from 'react-icons/fa';
 import InvoiceFilter from '../components/InvoiceFilter';
 import InvoiceTable from '../components/InvoiceTable';
 import InvoiceModal from '../components/InvoiceModal';
@@ -39,30 +39,18 @@ const Button = styled.button`
     border-radius: 6px;
     font-weight: 600;
     cursor: pointer;
-    background-color: ${({ theme, primary, secondary }) => 
-        primary ? theme.secondary : (secondary ? '#17a2b8' : theme.primary)};
+    background-color: ${({ theme, primary }) => primary ? theme.secondary : theme.primary};
     color: white;
     font-size: 0.9rem;
     
     &:hover {
         opacity: 0.9;
     }
-
-    &:disabled {
-        opacity: 0.6;
-        cursor: not-allowed;
-    }
-`;
-
-// Hidden file input for the import button
-const HiddenInput = styled.input`
-    display: none;
 `;
 
 const InvoicesPage = ({ allGroups, socket }) => {
     const [invoices, setInvoices] = useState([]);
     const [loading, setLoading] = useState(true);
-    const [isImporting, setIsImporting] = useState(false);
     const [recipientNames, setRecipientNames] = useState([]);
     const [pagination, setPagination] = useState({ page: 1, limit: 50, totalPages: 1, totalRecords: 0 });
     
@@ -74,7 +62,6 @@ const InvoicesPage = ({ allGroups, socket }) => {
         status: '',
     });
 
-    const fileInputRef = useRef(null);
     const { isAuthenticated } = useAuth();
     
     const [isInvoiceModalOpen, setIsInvoiceModalOpen] = useState(false);
@@ -139,33 +126,6 @@ const InvoicesPage = ({ allGroups, socket }) => {
             alert("Failed to export invoices.");
         }
     };
-
-    const handleImportClick = () => {
-        fileInputRef.current.click();
-    };
-    
-    const handleFileSelected = async (event) => {
-        const file = event.target.files[0];
-        if (!file) return;
-
-        if (!window.confirm("Are you sure you want to import this file? This will update existing records and create new ones based on the file content. This action cannot be undone.")) {
-            return;
-        }
-
-        setIsImporting(true);
-        try {
-            const { data } = await importInvoices(file);
-            alert(data.message);
-            fetchInvoices(); // Refresh data after successful import
-        } catch (error) {
-            console.error("Failed to import invoices:", error);
-            alert(`Import failed: ${error.response?.data?.message || 'An unknown error occurred.'}`);
-        } finally {
-            setIsImporting(false);
-            // Reset the input value to allow re-uploading the same file
-            event.target.value = null; 
-        }
-    };
     
     const openEditModal = (invoice) => {
         setEditingInvoice(invoice);
@@ -188,10 +148,6 @@ const InvoicesPage = ({ allGroups, socket }) => {
                 <Header>
                     <Title>Invoices</Title>
                     <Actions>
-                        <HiddenInput type="file" ref={fileInputRef} onChange={handleFileSelected} accept=".xlsx, .xls" />
-                        <Button secondary onClick={handleImportClick} disabled={isImporting}>
-                            <FaUpload /> {isImporting ? 'Importing...' : 'Import & Sync'}
-                        </Button>
                         <Button onClick={handleExport}><FaFileExcel /> Export</Button>
                         <Button primary onClick={() => openEditModal(null)}><FaPlus /> Add Entry</Button>
                     </Actions>
@@ -204,7 +160,7 @@ const InvoicesPage = ({ allGroups, socket }) => {
                 />
                 <InvoiceTable
                     invoices={invoices}
-                    loading={loading || isImporting}
+                    loading={loading}
                     onEdit={openEditModal}
                     pagination={pagination}
                     setPagination={setPagination}
