@@ -26,7 +26,7 @@ exports.createForwardingRule = async (req, res) => {
     }
 };
 
-// === THE DEFINITIVE FIX FOR THE UPDATE BUG ===
+// === THE FINAL, DEFINITIVE FIX FOR THE UPDATE BUG ===
 exports.updateForwardingRule = async (req, res) => {
     const userId = req.user.id;
     const { id } = req.params;
@@ -54,7 +54,7 @@ exports.updateForwardingRule = async (req, res) => {
         
         // This is the true, up-to-date name.
         const correct_destination_group_name = group.group_name;
-        console.log(`[INFO] Updating rule ${id}. Found correct group name: "${correct_destination_group_name}"`);
+        console.log(`[INFO] Updating rule ${id}. Found correct group name: "${correct_destination_group_name}" for JID: ${destination_group_jid}`);
 
         // Step 2: Update the rule using the data we have validated and looked up ourselves.
         const [result] = await connection.query(
@@ -64,6 +64,7 @@ exports.updateForwardingRule = async (req, res) => {
 
         if (result.affectedRows === 0) {
             // This happens if the rule ID doesn't exist or doesn't belong to the user.
+            await connection.rollback();
             return res.status(404).json({ message: 'Rule not found or you do not have permission to edit it.' });
         }
         

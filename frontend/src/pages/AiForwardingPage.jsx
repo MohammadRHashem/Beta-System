@@ -178,6 +178,7 @@ const AiForwardingPage = ({ allGroups }) => {
     };
     
     const openEditModal = (rule) => {
+        // We set the full rule object to state for editing
         setEditingRule(rule);
         setIsModalOpen(true);
     };
@@ -185,17 +186,20 @@ const AiForwardingPage = ({ allGroups }) => {
     const handleUpdate = async (e) => {
         e.preventDefault();
         try {
-            // === THE FIX: Send ONLY the essential data. The backend will handle the name lookup. ===
+            // === THE DEFINITIVE FIX ===
+            // Create a payload with ONLY the data that can be changed.
+            // The backend is now responsible for finding the correct group name.
             const payload = {
                 trigger_keyword: editingRule.trigger_keyword,
-                destination_group_jid: editingRule.destination_group_jid
+                destination_group_jid: editingRule.destination_group_jid,
             };
+
             await api.put(`/settings/forwarding/${editingRule.id}`, payload);
             
             alert('Rule updated successfully!');
             setIsModalOpen(false);
             setEditingRule(null);
-            fetchRules();
+            fetchRules(); // Refresh the list to show the updated name
         } catch (error) {
             alert(error.response?.data?.message || 'Failed to update rule.');
         }
@@ -290,12 +294,12 @@ const AiForwardingPage = ({ allGroups }) => {
                         </InputGroup>
                          <InputGroup style={{marginBottom: '1rem'}}>
                             <Label>Destination Group</Label>
-                             <SearchableSelect 
+                            {/* Standardizing on ComboBox for a better user experience */}
+                             <ComboBox
                                 options={allGroups}
                                 value={editingRule.destination_group_jid}
                                 onChange={(e) => setEditingRule({...editingRule, destination_group_jid: e.target.value})}
-                                placeholder="Select a destination"
-                                searchPlaceholder="Search for a group..."
+                                placeholder="Search & select a group..."
                             />
                         </InputGroup>
                         <Button type="submit" style={{width: '100%'}}>Save Changes</Button>
