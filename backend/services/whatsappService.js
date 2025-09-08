@@ -361,13 +361,20 @@ const getQR = () => qrCodeData;
 const getStatus = () => connectionStatus;
 
 const fetchAllGroups = async () => {
-  if (connectionStatus !== "connected") {
-    throw new Error("WhatsApp is not connected.");
+  if (connectionStatus !== "connected" || !client.info) {
+    throw new Error("WhatsApp is not connected or client info is not available yet.");
   }
   try {
+    const selfId = client.info.wid._serialized; // Get the bot's own WhatsApp ID
     const chats = await client.getChats();
-    const groups = chats.filter((chat) => chat.isGroup);
-    return groups.map((group) => ({
+    const allGroups = chats.filter((chat) => chat.isGroup);
+
+    // Filter the list to only include groups where the bot is still a participant.
+    const activeGroups = allGroups.filter(group => 
+        group.participants && group.participants.some(p => p.id._serialized === selfId)
+    );
+
+    return activeGroups.map((group) => ({
       id: group.id._serialized,
       name: group.name,
       participants: group.participants.length,
