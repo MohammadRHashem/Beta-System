@@ -55,6 +55,7 @@ exports.getAllInvoices = async (req, res) => {
         query += ` AND i.transaction_id IS NOT NULL AND i.transaction_id != '' AND i.transaction_id IN (SELECT transaction_id FROM invoices WHERE transaction_id IS NOT NULL AND transaction_id != '' GROUP BY transaction_id HAVING COUNT(*) > 1)`;
     }
 
+    // === THE FIX: Changed the ORDER BY clause from 'i.sort_order' to 'i.received_at' ===
     const orderByClause = `i.received_at ${sortOrder === 'asc' ? 'ASC' : 'DESC'}`;
 
     try {
@@ -195,7 +196,6 @@ exports.exportInvoices = async (req, res) => {
     `;
     const params = [];
 
-    // Apply filters
     if (search) {
         query += ` AND (i.transaction_id LIKE ? OR i.sender_name LIKE ? OR i.recipient_name LIKE ?)`;
         const searchTerm = `%${search}%`;
@@ -217,8 +217,6 @@ exports.exportInvoices = async (req, res) => {
         query += ' AND i.recipient_name IN (?)';
         params.push(recipientNames.split(','));
     }
-    
-    // (Other filters removed for simplicity as per new column requirements)
 
     query += ' ORDER BY i.received_at ASC';
 
@@ -228,7 +226,7 @@ exports.exportInvoices = async (req, res) => {
 
         const workbook = new ExcelJS.Workbook();
         const worksheet = workbook.addWorksheet('Invoices', {
-            views: [{ state: 'frozen', ySplit: 1 }] // Freeze header row
+            views: [{ state: 'frozen', ySplit: 1 }]
         });
 
         worksheet.columns = [
@@ -252,6 +250,7 @@ exports.exportInvoices = async (req, res) => {
                 const lastDayMarker = new Date(lastDate);
                 lastDayMarker.setHours(16, 15, 0, 0);
                 if (lastDate < lastDayMarker && currentDate >= lastDayMarker) {
+                    worksheet.addRow([]);
                     const splitterRow = worksheet.addRow({ transaction_id: `--- Day of ${currentDate.toLocaleDateString('en-CA')} ---` });
                     splitterRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFF00' } };
                     splitterRow.font = { name: 'Calibri', bold: true };
