@@ -95,7 +95,6 @@ exports.exportInvoices = async (req, res) => {
     `;
     const params = [];
 
-    // Apply filters
     if (search) {
         query += ` AND (i.transaction_id LIKE ? OR i.sender_name LIKE ? OR i.recipient_name LIKE ?)`;
         const searchTerm = `%${search}%`;
@@ -122,8 +121,6 @@ exports.exportInvoices = async (req, res) => {
 
     try {
         const [invoicesFromDb] = await pool.query(query, params);
-        console.log(`[EXPORT] Found ${invoicesFromDb.length} records to export based on filters.`);
-
         const workbook = new ExcelJS.Workbook();
         const worksheet = workbook.addWorksheet('Invoices', {
             views: [{ state: 'frozen', ySplit: 1 }]
@@ -142,15 +139,18 @@ exports.exportInvoices = async (req, res) => {
         worksheet.getRow(1).fill = { type: 'pattern', pattern:'solid', fgColor:{argb:'FF0A2540'} };
         worksheet.getRow(1).alignment = { vertical: 'middle', horizontal: 'center' };
 
-        let lastDate = null;
+        let lastDateString = null;
         for (const invoice of invoicesFromDb) {
-            // === THE DEFINITIVE TIMEZONE FIX FOR EXCEL ===
-            // By appending the offset, we create a Date object that is timezone-aware and correct.
-            const currentDate = new Date(invoice.received_at + '-03:00');
+            // received_at is now a plain string like '2025-09-08 10:30:00'
+            const currentDateString = invoice.received_at;
+            
+            if (lastDateString) {
+                const lastDate = new Date(lastDateString + '-03:00'); // Use last known correct date for comparison
+                const currentDate = new Date(currentDateString + '-03:00');
 
-            if (lastDate) {
                 const lastDayMarker = new Date(lastDate);
                 lastDayMarker.setHours(16, 15, 0, 0);
+
                 if (lastDate < lastDayMarker && currentDate >= lastDayMarker) {
                     worksheet.addRow([]);
                     const splitterRow = worksheet.addRow({ transaction_id: `--- Day of ${currentDate.toLocaleDateString('en-CA')} ---` });
@@ -161,8 +161,10 @@ exports.exportInvoices = async (req, res) => {
                 }
             }
             
+            // === THE DEFINITIVE FIX: PASS THE RAW STRING DIRECTLY ===
+            // We do NOT create a `new Date()` object. We let exceljs parse the standard string.
             const newRow = worksheet.addRow({
-                received_at: currentDate,
+                received_at: currentDateString, // Pass the unmodified string
                 transaction_id: invoice.transaction_id,
                 sender_name: invoice.sender_name,
                 recipient_name: invoice.recipient_name,
@@ -178,7 +180,7 @@ exports.exportInvoices = async (req, res) => {
                 };
             });
 
-            lastDate = currentDate;
+            lastDateString = currentDateString;
         }
 
         res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
