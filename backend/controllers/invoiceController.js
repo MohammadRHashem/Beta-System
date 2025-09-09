@@ -100,8 +100,16 @@ exports.exportInvoices = async (req, res) => {
         sourceGroups, recipientNames,
     } = req.query;
 
+    // === THE DEFINITIVE FIX FOR EXCEL TIME ===
+    // We will perform the timezone conversion directly in the SQL query.
     let query = `
-        SELECT i.received_at, i.transaction_id, i.sender_name, i.recipient_name, wg.group_name as source_group_name, i.amount
+        SELECT 
+            CONVERT_TZ(i.received_at, '+00:00', '-03:00') AS received_at, 
+            i.transaction_id, 
+            i.sender_name, 
+            i.recipient_name, 
+            wg.group_name as source_group_name, 
+            i.amount
         FROM invoices i
         LEFT JOIN whatsapp_groups wg ON i.source_group_jid = wg.group_jid
         WHERE 1=1
@@ -114,7 +122,7 @@ exports.exportInvoices = async (req, res) => {
         params.push(searchTerm, searchTerm, searchTerm);
     }
     if (dateFrom) {
-        // Since DB is now UTC, we filter against UTC dates
+        // Since the user provides a date in their local time, we must also convert the DB time for the WHERE clause.
         query += ' AND DATE(CONVERT_TZ(i.received_at, "+00:00", "-03:00")) >= ?';
         params.push(dateFrom);
     }
@@ -156,12 +164,9 @@ exports.exportInvoices = async (req, res) => {
         let lastBusinessDay = null;
         for (const invoice of invoicesFromDb) {
             
-            // === THE DEFINITIVE FIX FOR EXCEL TIME ===
-            // 1. Create a date object from the UTC string from the DB.
-            const utcDate = new Date(invoice.received_at);
-            // 2. Manually subtract 3 hours (180 minutes) to get the correct São Paulo time for display.
-            const saoPauloDate = new Date(utcDate.getTime() - (180 * 60 * 1000));
-            
+            // The database has already done the conversion for us. `invoice.received_at` is the correct SP time string.
+            const saoPauloDate = new Date(invoice.received_at);
+
             const currentBusinessDay = getBusinessDay(saoPauloDate);
 
             if (lastBusinessDay && currentBusinessDay.getTime() !== lastBusinessDay.getTime()) {
@@ -173,7 +178,7 @@ exports.exportInvoices = async (req, res) => {
             }
             
             const newRow = worksheet.addRow({
-                received_at: saoPauloDate, // 3. Use the adjusted date object.
+                received_at: saoPauloDate,
                 transaction_id: invoice.transaction_id,
                 sender_name: invoice.sender_name,
                 recipient_name: invoice.recipient_name,
