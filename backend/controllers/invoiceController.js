@@ -81,10 +81,33 @@ exports.getAllInvoices = async (req, res) => {
     }
 };
 
+
+/**
+ * === NEW HELPER FUNCTION ===
+ * Determines the "business day" for a given transaction date based on the 16:15 cutoff time.
+ * @param {Date} transactionDate - The actual date and time of the transaction.
+ * @returns {Date} - A new Date object representing the start of the business day (for comparison).
+ */
+const getBusinessDay = (transactionDate) => {
+    const businessDay = new Date(transactionDate);
+    const hour = transactionDate.getHours();
+    const minute = transactionDate.getMinutes();
+
+    // If the transaction is at or after 16:15, it belongs to the *next* day's business period.
+    if (hour > 16 || (hour === 16 && minute >= 15)) {
+        businessDay.setDate(businessDay.getDate() + 1);
+    }
+    
+    // Set to midnight for easy comparison
+    businessDay.setHours(0, 0, 0, 0); 
+    return businessDay;
+};
+
+
 exports.exportInvoices = async (req, res) => {
     const {
-        search = '', dateFrom, dateTo, timeFrom, timeTo,
-        sourceGroups, recipientNames, reviewStatus, status
+        search = '', dateFrom, dateTo,
+        sourceGroups, recipientNames,
     } = req.query;
 
     let query = `
@@ -139,32 +162,23 @@ exports.exportInvoices = async (req, res) => {
         worksheet.getRow(1).fill = { type: 'pattern', pattern:'solid', fgColor:{argb:'FF0A2540'} };
         worksheet.getRow(1).alignment = { vertical: 'middle', horizontal: 'center' };
 
-        let lastDateString = null;
+        // === NEW SEPARATOR LOGIC ===
+        let lastBusinessDay = null;
         for (const invoice of invoicesFromDb) {
-            // received_at is now a plain string like '2025-09-08 10:30:00'
-            const currentDateString = invoice.received_at;
-            
-            if (lastDateString) {
-                const lastDate = new Date(lastDateString + '-03:00'); // Use last known correct date for comparison
-                const currentDate = new Date(currentDateString + '-03:00');
+            const currentDate = new Date(invoice.received_at + '-03:00');
+            const currentBusinessDay = getBusinessDay(currentDate);
 
-                const lastDayMarker = new Date(lastDate);
-                lastDayMarker.setHours(16, 15, 0, 0);
-
-                if (lastDate < lastDayMarker && currentDate >= lastDayMarker) {
-                    worksheet.addRow([]);
-                    const splitterRow = worksheet.addRow({ transaction_id: `--- Day of ${currentDate.toLocaleDateString('en-CA')} ---` });
-                    splitterRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFF00' } };
-                    splitterRow.font = { name: 'Calibri', bold: true };
-                    worksheet.mergeCells(`B${splitterRow.number}:F${splitterRow.number}`);
-                    splitterRow.getCell('B').alignment = { horizontal: 'center' };
-                }
+            // Check if the business day has changed since the last row.
+            if (lastBusinessDay && currentBusinessDay.getTime() !== lastBusinessDay.getTime()) {
+                const splitterRow = worksheet.addRow({ transaction_id: `--- Day of ${currentBusinessDay.toLocaleDateString('en-CA')} ---` });
+                splitterRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFF00' } };
+                splitterRow.font = { name: 'Calibri', bold: true };
+                worksheet.mergeCells(`B${splitterRow.number}:F${splitterRow.number}`);
+                splitterRow.getCell('B').alignment = { horizontal: 'center' };
             }
             
-            // === THE DEFINITIVE FIX: PASS THE RAW STRING DIRECTLY ===
-            // We do NOT create a `new Date()` object. We let exceljs parse the standard string.
             const newRow = worksheet.addRow({
-                received_at: currentDateString, // Pass the unmodified string
+                received_at: currentDate,
                 transaction_id: invoice.transaction_id,
                 sender_name: invoice.sender_name,
                 recipient_name: invoice.recipient_name,
@@ -180,7 +194,8 @@ exports.exportInvoices = async (req, res) => {
                 };
             });
 
-            lastDateString = currentDateString;
+            // Update the last business day for the next iteration.
+            lastBusinessDay = currentBusinessDay;
         }
 
         res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
