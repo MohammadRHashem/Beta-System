@@ -51,11 +51,9 @@ const invoiceWorker = new Worker(
 
       const chat = await message.getChat();
       
-      // === THE DEFINITIVE TIMEZONE FIX STARTS HERE ===
-      // 1. Get the raw UTC Unix timestamp and create a universal Date object.
-      // This object will be passed directly to the mysql2 driver.
+      // Get the raw UTC Unix timestamp and create a universal Date object.
+      // This pure object will be passed to the mysql2 driver, which will perform the timezone conversion.
       const correctUtcDate = new Date(message.timestamp * 1000);
-      // 2. The manual subtraction line has been REMOVED.
 
       const [tombstoneRows] = await connection.query(
         "SELECT message_id FROM deleted_message_ids WHERE message_id = ?",

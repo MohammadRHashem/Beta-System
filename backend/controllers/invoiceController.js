@@ -82,23 +82,13 @@ exports.getAllInvoices = async (req, res) => {
 };
 
 
-/**
- * === NEW HELPER FUNCTION ===
- * Determines the "business day" for a given transaction date based on the 16:15 cutoff time.
- * @param {Date} transactionDate - The actual date and time of the transaction.
- * @returns {Date} - A new Date object representing the start of the business day (for comparison).
- */
 const getBusinessDay = (transactionDate) => {
     const businessDay = new Date(transactionDate);
     const hour = transactionDate.getHours();
     const minute = transactionDate.getMinutes();
-
-    // If the transaction is at or after 16:15, it belongs to the *next* day's business period.
     if (hour > 16 || (hour === 16 && minute >= 15)) {
         businessDay.setDate(businessDay.getDate() + 1);
     }
-    
-    // Set to midnight for easy comparison
     businessDay.setHours(0, 0, 0, 0); 
     return businessDay;
 };
@@ -124,11 +114,12 @@ exports.exportInvoices = async (req, res) => {
         params.push(searchTerm, searchTerm, searchTerm);
     }
     if (dateFrom) {
-        query += ' AND DATE(i.received_at) >= ?';
+        // Since DB is now UTC, we filter against UTC dates
+        query += ' AND DATE(CONVERT_TZ(i.received_at, "+00:00", "-03:00")) >= ?';
         params.push(dateFrom);
     }
     if (dateTo) {
-        query += ' AND DATE(i.received_at) <= ?';
+        query += ' AND DATE(CONVERT_TZ(i.received_at, "+00:00", "-03:00")) <= ?';
         params.push(dateTo);
     }
     if (sourceGroups && typeof sourceGroups === 'string' && sourceGroups.length > 0) {
@@ -162,13 +153,17 @@ exports.exportInvoices = async (req, res) => {
         worksheet.getRow(1).fill = { type: 'pattern', pattern:'solid', fgColor:{argb:'FF0A2540'} };
         worksheet.getRow(1).alignment = { vertical: 'middle', horizontal: 'center' };
 
-        // === NEW SEPARATOR LOGIC ===
         let lastBusinessDay = null;
         for (const invoice of invoicesFromDb) {
-            const currentDate = new Date(invoice.received_at + '-03:00');
-            const currentBusinessDay = getBusinessDay(currentDate);
+            
+            // === THE DEFINITIVE FIX FOR EXCEL TIME ===
+            // 1. Create a date object from the UTC string from the DB.
+            const utcDate = new Date(invoice.received_at);
+            // 2. Manually subtract 3 hours (180 minutes) to get the correct São Paulo time for display.
+            const saoPauloDate = new Date(utcDate.getTime() - (180 * 60 * 1000));
+            
+            const currentBusinessDay = getBusinessDay(saoPauloDate);
 
-            // Check if the business day has changed since the last row.
             if (lastBusinessDay && currentBusinessDay.getTime() !== lastBusinessDay.getTime()) {
                 const splitterRow = worksheet.addRow({ transaction_id: `--- Day of ${currentBusinessDay.toLocaleDateString('en-CA')} ---` });
                 splitterRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFF00' } };
@@ -178,7 +173,7 @@ exports.exportInvoices = async (req, res) => {
             }
             
             const newRow = worksheet.addRow({
-                received_at: currentDate,
+                received_at: saoPauloDate, // 3. Use the adjusted date object.
                 transaction_id: invoice.transaction_id,
                 sender_name: invoice.sender_name,
                 recipient_name: invoice.recipient_name,
@@ -194,7 +189,6 @@ exports.exportInvoices = async (req, res) => {
                 };
             });
 
-            // Update the last business day for the next iteration.
             lastBusinessDay = currentBusinessDay;
         }
 
@@ -202,8 +196,6 @@ exports.exportInvoices = async (req, res) => {
         res.setHeader('Content-Disposition', 'attachment; filename="invoices_export.xlsx"');
 
         await workbook.xlsx.write(res);
-        console.log('[EXPORT] Successfully sent Excel file to client.');
-        res.end();
 
     } catch (error) {
         console.error('[EXPORT-ERROR] Failed to export invoices:', error);

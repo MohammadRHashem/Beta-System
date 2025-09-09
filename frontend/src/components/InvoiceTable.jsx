@@ -2,28 +2,19 @@ import React, { useMemo } from 'react';
 import styled, { css } from 'styled-components';
 import { viewInvoiceMedia, deleteInvoice } from '../services/api';
 import { FaEdit, FaTrashAlt, FaEye } from 'react-icons/fa';
+import { formatInTimeZone } from 'date-fns-tz';
 
 const formatDisplayDateTime = (dbDateString) => {
     if (!dbDateString || typeof dbDateString !== 'string') return '';
     
     try {
-        const parts = dbDateString.split(' ');
-        if (parts.length !== 2) return dbDateString;
-
-        const datePart = parts[0];
-        const timePart = parts[1];
-
-        const dateParts = datePart.split('-');
-        if (dateParts.length !== 3) return dbDateString;
-
-        const year = dateParts[0];
-        const month = dateParts[1];
-        const day = dateParts[2];
-
-        return `${day}/${month}/${year} ${timePart}`;
+        // The input string is 'YYYY-MM-DD HH:MM:SS' in UTC.
+        // We need to parse it as such and format it for São Paulo.
+        const utcDate = new Date(dbDateString + 'Z'); // Append 'Z' to mark it as UTC
+        return formatInTimeZone(utcDate, 'America/Sao_Paulo', 'dd/MM/yyyy HH:mm:ss');
     } catch (e) {
         console.warn("Could not format date string:", dbDateString);
-        return dbDateString;
+        return dbDateString; // Fallback to original string
     }
 };
 
