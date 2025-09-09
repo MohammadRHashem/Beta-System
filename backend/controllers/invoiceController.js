@@ -100,8 +100,6 @@ exports.exportInvoices = async (req, res) => {
         sourceGroups, recipientNames,
     } = req.query;
 
-    // === THE DEFINITIVE FIX FOR EXCEL TIME ===
-    // We will perform the timezone conversion directly in the SQL query.
     let query = `
         SELECT 
             CONVERT_TZ(i.received_at, '+00:00', '-03:00') AS received_at, 
@@ -122,7 +120,6 @@ exports.exportInvoices = async (req, res) => {
         params.push(searchTerm, searchTerm, searchTerm);
     }
     if (dateFrom) {
-        // Since the user provides a date in their local time, we must also convert the DB time for the WHERE clause.
         query += ' AND DATE(CONVERT_TZ(i.received_at, "+00:00", "-03:00")) >= ?';
         params.push(dateFrom);
     }
@@ -164,10 +161,12 @@ exports.exportInvoices = async (req, res) => {
         let lastBusinessDay = null;
         for (const invoice of invoicesFromDb) {
             
-            // The database has already done the conversion for us. `invoice.received_at` is the correct SP time string.
-            const saoPauloDate = new Date(invoice.received_at);
+            // The database has already done the conversion. `invoice.received_at` is the correct SP time string.
+            const saoPauloDateString = invoice.received_at;
 
-            const currentBusinessDay = getBusinessDay(saoPauloDate);
+            // For the business day logic ONLY, we create a timezone-aware date object to be safe.
+            const comparisonDate = new Date(saoPauloDateString + '-03:00');
+            const currentBusinessDay = getBusinessDay(comparisonDate);
 
             if (lastBusinessDay && currentBusinessDay.getTime() !== lastBusinessDay.getTime()) {
                 const splitterRow = worksheet.addRow({ transaction_id: `--- Day of ${currentBusinessDay.toLocaleDateString('en-CA')} ---` });
@@ -178,7 +177,10 @@ exports.exportInvoices = async (req, res) => {
             }
             
             const newRow = worksheet.addRow({
-                received_at: saoPauloDate,
+                // === THE DEFINITIVE FIX ===
+                // Pass the raw, unmodified São Paulo time string directly to ExcelJS.
+                // The library is smart enough to parse this standard format correctly without timezone conversion.
+                received_at: saoPauloDateString,
                 transaction_id: invoice.transaction_id,
                 sender_name: invoice.sender_name,
                 recipient_name: invoice.recipient_name,
