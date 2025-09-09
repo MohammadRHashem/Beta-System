@@ -10,7 +10,7 @@ const pool = mysql.createPool({
     connectionLimit: 10,
     queueLimit: 0,
     dateStrings: true,
-    timezone: '-03:00'
+    timezone: '+00:00'
 });
 
 console.log('[DB] Database connection pool created.');
