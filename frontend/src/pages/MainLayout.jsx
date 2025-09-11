@@ -67,8 +67,7 @@ const QRContainer = styled.div`
   }
 `;
 
-// This is the URL for your local backend server
-const API_URL = "beta.hashemlabs.dev";
+const API_URL = "https://platform.betaserver.dev";
 
 const MainLayout = () => {
   const [status, setStatus] = useState("disconnected");
@@ -77,35 +76,27 @@ const MainLayout = () => {
 
   const location = useLocation();
   const { logout } = useAuth();
-  const pageName =
-    location.pathname.replace("/", "").replace(/-/g, " ") || "invoices";
+  const pageName = location.pathname.replace("/", "").replace(/-/g, " ") || "invoices";
 
   const socket = useRef(null);
   useEffect(() => {
-    const token = localStorage.getItem("authToken");
+    const token = localStorage.getItem('authToken');
     if (!socket.current && token) {
-      // === THE DEFINITIVE FIX FOR MIXED CONTENT ===
-      // Determine if the current page is secure (https)
-      const isSecure = window.location.protocol === "https:";
-
-      // Initialize the socket with explicit security settings
+      
+      // === THE FIX: Simplified and explicit socket initialization ===
       socket.current = io(API_URL, {
-        path: "/socket.io/",
-        transports: ["websocket", "polling"],
-        auth: { token },
-        // Force secure connection if the site is secure
-        secure: isSecure,
-        // Reconnection attempts are useful for production
-        reconnection: true,
-        reconnectionAttempts: 5,
+          path: "/socket.io/",
+          // We prioritize WebSocket and have polling as a fallback.
+          transports: ["websocket", "polling"],
+          auth: { token }
       });
 
-      socket.current.on("connect", () => {
-        console.log("Connected to WebSocket server:", socket.current.id);
+      socket.current.on("connect", () => { console.log("WebSocket connected successfully:", socket.current.id); });
+      socket.current.on("connect_error", (err) => {
+          // Provide more detailed error logging in the console
+          console.error("WebSocket connection error object:", err);
+          // alert(`Real-time connection failed: ${err.message}. Some features may not update automatically.`);
       });
-      socket.current.on("connect_error", (err) =>
-        console.error("WebSocket connection error:", err.message)
-      );
     }
     return () => {
       socket.current?.disconnect();
