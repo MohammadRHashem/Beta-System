@@ -37,22 +37,15 @@ const invoiceWorker = new Worker(
       throw new Error("WhatsApp client is not connected. Job will be retried.");
     }
     const { messageId } = job.data;
-    console.log(`[WORKER][${job.id}] Started processing job for message ID: ${messageId}`);
-
     const message = await client.getMessageById(messageId);
     if (!message) {
-      console.warn(`[WORKER][${job.id}] Could not find message by ID. Acknowledging job.`);
       return;
     }
-
+    
     const connection = await pool.getConnection();
     try {
       await connection.beginTransaction();
-
       const chat = await message.getChat();
-      
-      // Get the raw UTC Unix timestamp and create a universal Date object.
-      // This pure object will be passed to the mysql2 driver, which will perform the timezone conversion.
       const correctUtcDate = new Date(message.timestamp * 1000);
 
       const [tombstoneRows] = await connection.query(
@@ -61,20 +54,16 @@ const invoiceWorker = new Worker(
       );
       if (tombstoneRows.length > 0) {
         await connection.query(
-          `INSERT INTO invoices (message_id, source_group_jid, received_at, is_deleted, notes) 
-                VALUES (?, ?, ?, ?, ?)`,
+          `INSERT INTO invoices (message_id, source_group_jid, received_at, is_deleted, notes) VALUES (?, ?, ?, ?, ?)`,
           [
             messageId, 
             chat.id._serialized, 
-            correctUtcDate, // 3. Use the pure UTC date object. The driver will convert it.
+            correctUtcDate,
             true,
             "Message deleted before processing.",
           ]
         );
-        await connection.query(
-          "DELETE FROM deleted_message_ids WHERE message_id = ?",
-          [messageId]
-        );
+        await connection.query("DELETE FROM deleted_message_ids WHERE message_id = ?", [messageId]);
         await connection.commit();
         if (io) io.emit("invoices:updated");
         return;
@@ -98,11 +87,22 @@ const invoiceWorker = new Worker(
         await connection.commit(); return;
       }
 
-      const tempFilePath = path.join(os.tmpdir(), `${message.id.id}.${media.mimetype.split("/")[1] || "bin"}`);
+      // === THE FIX FOR FILE EXTENSIONS and AUDIO FILES ===
+      // Some media types (like ogg audio) have complex mime types. We clean them up.
+      const cleanMimeType = media.mimetype.split(';')[0];
+      const extension = cleanMimeType.split('/')[1] || 'bin';
+      const tempFilePath = path.join(os.tmpdir(), `${message.id.id}.${extension}`);
+
       await fs.writeFile(tempFilePath, Buffer.from(media.data, "base64"));
       
       const pythonScriptsDir = path.join(__dirname, "..", "python_scripts");
-      const pythonExecutablePath = path.join(pythonScriptsDir, "venv", "bin", "python3");
+
+      // === THE DEFINITIVE FIX FOR WINDOWS PATHS ===
+      // Check the operating system and build the correct path to the Python executable.
+      const pythonExecutable = process.platform === 'win32' 
+        ? path.join(pythonScriptsDir, "venv", "Scripts", "python.exe") 
+        : path.join(pythonScriptsDir, "venv", "bin", "python3");
+
       const pythonScriptPath = path.join(pythonScriptsDir, "main.py");
       const pythonEnv = dotenv.config({ path: path.join(pythonScriptsDir, ".env"), }).parsed;
 
@@ -110,9 +110,11 @@ const invoiceWorker = new Worker(
       
       let invoiceJson;
       try {
-        const { stdout } = await execa(pythonExecutablePath, [pythonScriptPath, tempFilePath], { cwd: pythonScriptsDir, env: pythonEnv });
+        console.log(`[WORKER] Executing Python script: ${pythonExecutable}`);
+        const { stdout } = await execa(pythonExecutable, [pythonScriptPath, tempFilePath], { cwd: pythonScriptsDir, env: pythonEnv });
         invoiceJson = JSON.parse(stdout);
       } catch (pythonError) {
+        console.error(`[WORKER] Python script failed for file ${tempFilePath}. Error:`, pythonError.stderr || pythonError.message);
         await fs.unlink(tempFilePath);
         throw pythonError;
       }
@@ -124,8 +126,7 @@ const invoiceWorker = new Worker(
 
       let finalMediaPath = null;
       if (groupSettings.archiving_enabled) {
-        const extension = path.extname(media.filename || "") || `.${media.mimetype.split("/")[1] || "bin"}`;
-        const archiveFileName = `${messageId}${extension}`;
+        const archiveFileName = `${messageId}.${extension}`; // Use the cleaned extension
         finalMediaPath = path.join(MEDIA_ARCHIVE_DIR, archiveFileName);
         await fs.rename(tempFilePath, finalMediaPath);
         
@@ -135,7 +136,7 @@ const invoiceWorker = new Worker(
           [
             messageId, transaction_id, sender?.name, recipient.name,
             recipient.pix_key, amount, chat.id._serialized, 
-            correctUtcDate, // 4. Use the pure UTC date object here as well.
+            correctUtcDate,
             JSON.stringify(invoiceJson), finalMediaPath, false,
           ]
         );
