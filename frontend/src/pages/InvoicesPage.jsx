@@ -11,6 +11,8 @@ const PageContainer = styled.div`
     display: flex;
     flex-direction: column;
     gap: 1.5rem;
+    /* Allow the page container to take full height for scrolling table */
+    height: 100%;
 `;
 
 const Header = styled.div`
@@ -52,7 +54,8 @@ const InvoicesPage = ({ allGroups, socket }) => {
     const [invoices, setInvoices] = useState([]);
     const [loading, setLoading] = useState(true);
     const [recipientNames, setRecipientNames] = useState([]);
-    const [pagination, setPagination] = useState({ page: 1, limit: 50, totalPages: 1, totalRecords: 0 });
+    
+    // === THE EDIT: Remove pagination state entirely ===
     
     const [filters, setFilters] = useState({
         search: '', dateFrom: '', dateTo: '', timeFrom: '', timeTo: '',
@@ -70,17 +73,17 @@ const InvoicesPage = ({ allGroups, socket }) => {
     const fetchInvoices = useCallback(async () => {
         setLoading(true);
         try {
-            const params = { ...filters, page: pagination.page, limit: pagination.limit };
+            // === THE EDIT: Set a very high limit to fetch all records, removing page number ===
+            const params = { ...filters, limit: 10000 }; 
             Object.keys(params).forEach(key => (!params[key] || params[key].length === 0) && delete params[key]);
             const { data } = await getInvoices(params);
             setInvoices(data.invoices);
-            setPagination(prev => ({ ...prev, totalPages: data.totalPages, totalRecords: data.totalRecords }));
         } catch (error) {
             console.error("Failed to fetch invoices:", error);
         } finally {
             setLoading(false);
         }
-    }, [filters, pagination.page, pagination.limit]);
+    }, [filters]);
 
     useEffect(() => {
         if (isAuthenticated) { fetchInvoices(); }
@@ -103,7 +106,6 @@ const InvoicesPage = ({ allGroups, socket }) => {
     useEffect(() => {
         if (isAuthenticated && socket) {
             const handleInvoiceUpdate = () => {
-                console.log('[Socket.io] Received invoices:updated event, refetching...');
                 fetchInvoices();
             };
             socket.on('invoices:updated', handleInvoiceUpdate);
@@ -114,7 +116,6 @@ const InvoicesPage = ({ allGroups, socket }) => {
     }, [isAuthenticated, socket, fetchInvoices]);
 
     const handleFilterChange = (newFilters) => {
-        setPagination(p => ({ ...p, page: 1 }));
         setFilters(newFilters);
     };
 
@@ -162,8 +163,6 @@ const InvoicesPage = ({ allGroups, socket }) => {
                     invoices={invoices}
                     loading={loading}
                     onEdit={openEditModal}
-                    pagination={pagination}
-                    setPagination={setPagination}
                 />
             </PageContainer>
             
