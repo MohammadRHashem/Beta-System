@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import styled, { css } from 'styled-components';
 
 const PaginationContainer = styled.div`
@@ -61,7 +61,8 @@ const Ellipsis = styled.span`
     color: ${({ theme }) => theme.lightText};
     display: flex;
     align-items: center;
-    height: 100%;
+    justify-content: center;
+    min-width: 40px;
 `;
 
 const GoToPageForm = styled.form`
@@ -92,43 +93,6 @@ const GoToPageButton = styled.button`
     }
 `;
 
-const generatePageRange = (currentPage, totalPages) => {
-    const siblingCount = 1;
-    const totalPageNumbers = siblingCount + 5;
-
-    if (totalPages <= totalPageNumbers) {
-        return Array.from({ length: totalPages }, (_, i) => i + 1);
-    }
-
-    const leftSiblingIndex = Math.max(currentPage - siblingCount, 1);
-    const rightSiblingIndex = Math.min(currentPage + siblingCount, totalPages);
-
-    const shouldShowLeftDots = leftSiblingIndex > 2;
-    const shouldShowRightDots = rightSiblingIndex < totalPages - 2;
-
-    const firstPageIndex = 1;
-    const lastPageIndex = totalPages;
-
-    if (!shouldShowLeftDots && shouldShowRightDots) {
-        let leftItemCount = 3 + 2 * siblingCount;
-        let leftRange = Array.from({ length: leftItemCount }, (_, i) => i + 1);
-        return [...leftRange, '...', totalPages];
-    }
-
-    if (shouldShowLeftDots && !shouldShowRightDots) {
-        let rightItemCount = 3 + 2 * siblingCount;
-        let rightRange = Array.from({ length: rightItemCount }, (_, i) => totalPages - rightItemCount + i + 1);
-        return [firstPageIndex, '...', ...rightRange];
-    }
-
-    if (shouldShowLeftDots && shouldShowRightDots) {
-        let middleRange = Array.from({ length: rightSiblingIndex - leftSiblingIndex + 1 }, (_, i) => leftSiblingIndex + i);
-        return [firstPageIndex, '...', ...middleRange, '...', lastPageIndex];
-    }
-    
-    return [];
-};
-
 
 const Pagination = ({ pagination, setPagination }) => {
     const { currentPage, totalPages, totalRecords } = pagination;
@@ -138,12 +102,10 @@ const Pagination = ({ pagination, setPagination }) => {
         setGoToPage(currentPage);
     }, [currentPage]);
 
-    // === THE DEFINITIVE BUG FIX ===
+    // === THE DEFINITIVE BUG FIX & REWRITE ===
     const handlePageChange = (newPage) => {
         const pageAsNumber = Number(newPage);
-        // Ensure the page is a valid number and within bounds
         if (!isNaN(pageAsNumber) && pageAsNumber >= 1 && pageAsNumber <= totalPages && pageAsNumber !== currentPage) {
-            // Use a functional update to ensure we always have the latest state
             setPagination(p => ({ ...p, page: pageAsNumber }));
         }
     };
@@ -153,6 +115,46 @@ const Pagination = ({ pagination, setPagination }) => {
         handlePageChange(goToPage);
     };
 
+    // This hook creates the array of page numbers to display
+    const pageRange = useMemo(() => {
+        const range = [];
+        const delta = 2; // Pages to show around current page
+        
+        // Show all pages if there are not that many
+        if (totalPages <= 7) {
+            for (let i = 1; i <= totalPages; i++) {
+                range.push(i);
+            }
+            return range;
+        }
+
+        // Always show first page
+        range.push(1);
+
+        // Show ellipsis after first page if needed
+        if (currentPage > delta + 2) {
+            range.push('...');
+        }
+
+        // Show pages around the current page
+        const start = Math.max(2, currentPage - delta);
+        const end = Math.min(totalPages - 1, currentPage + delta);
+
+        for (let i = start; i <= end; i++) {
+            range.push(i);
+        }
+
+        // Show ellipsis before last page if needed
+        if (currentPage < totalPages - delta - 1) {
+            range.push('...');
+        }
+
+        // Always show last page
+        range.push(totalPages);
+        
+        return range;
+    }, [currentPage, totalPages]);
+
     if (totalPages <= 1) {
         return (
             <PaginationContainer>
@@ -160,8 +162,6 @@ const Pagination = ({ pagination, setPagination }) => {
             </PaginationContainer>
         );
     }
-
-    const pageRange = generatePageRange(currentPage, totalPages);
 
     return (
         <PaginationContainer>
