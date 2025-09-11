@@ -113,14 +113,16 @@ exports.exportInvoices = async (req, res) => {
             i.amount
         FROM invoices i
         LEFT JOIN whatsapp_groups wg ON i.source_group_jid = wg.group_jid
-        WHERE 1=1
-    `;
+        WHERE 1=1 
+        AND i.is_deleted = 0
+    `; // === THE EDIT: Added 'AND i.is_deleted = 0' as a permanent rule for exports ===
+    
     const params = [];
 
     if (search) {
-        query += ` AND (i.transaction_id LIKE ? OR i.sender_name LIKE ? OR i.recipient_name LIKE ?)`;
+        query += ` AND (i.transaction_id LIKE ? OR i.sender_name LIKE ? OR i.recipient_name LIKE ? OR i.amount LIKE ?)`;
         const searchTerm = `%${search}%`;
-        params.push(searchTerm, searchTerm, searchTerm);
+        params.push(searchTerm, searchTerm, searchTerm, searchTerm);
     }
     if (dateFrom) {
         query += ' AND DATE(CONVERT_TZ(i.received_at, "+00:00", "-03:00")) >= ?';
@@ -164,10 +166,7 @@ exports.exportInvoices = async (req, res) => {
         let lastBusinessDay = null;
         for (const invoice of invoicesFromDb) {
             
-            // The database has already done the conversion. `invoice.received_at` is the correct SP time string.
             const saoPauloDateString = invoice.received_at;
-
-            // For the business day logic ONLY, we create a timezone-aware date object to be safe.
             const comparisonDate = new Date(saoPauloDateString + '-03:00');
             const currentBusinessDay = getBusinessDay(comparisonDate);
 
@@ -180,9 +179,6 @@ exports.exportInvoices = async (req, res) => {
             }
             
             const newRow = worksheet.addRow({
-                // === THE DEFINITIVE FIX ===
-                // Pass the raw, unmodified São Paulo time string directly to ExcelJS.
-                // The library is smart enough to parse this standard format correctly without timezone conversion.
                 received_at: saoPauloDateString,
                 transaction_id: invoice.transaction_id,
                 sender_name: invoice.sender_name,
