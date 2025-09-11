@@ -67,7 +67,7 @@ const QRContainer = styled.div`
 `;
 
 // This is the URL for your local backend server
-const API_URL = "http://beta.hashemlabs.dev";
+const API_URL = "beta.hashemlabs.dev";
 
 const MainLayout = () => {
   const [status, setStatus] = useState("disconnected");
@@ -82,11 +82,23 @@ const MainLayout = () => {
   useEffect(() => {
     const token = localStorage.getItem('authToken');
     if (!socket.current && token) {
+      
+      // === THE DEFINITIVE FIX FOR MIXED CONTENT ===
+      // Determine if the current page is secure (https)
+      const isSecure = window.location.protocol === "https:";
+      
+      // Initialize the socket with explicit security settings
       socket.current = io(API_URL, {
           path: "/socket.io/",
           transports: ["websocket", "polling"],
-          auth: { token }
+          auth: { token },
+          // Force secure connection if the site is secure
+          secure: isSecure, 
+          // Reconnection attempts are useful for production
+          reconnection: true,
+          reconnectionAttempts: 5
       });
+
       socket.current.on("connect", () => { console.log("Connected to WebSocket server:", socket.current.id); });
       socket.current.on("connect_error", (err) => console.error("WebSocket connection error:", err.message));
     }
