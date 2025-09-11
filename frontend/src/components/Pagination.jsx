@@ -92,14 +92,10 @@ const GoToPageButton = styled.button`
     }
 `;
 
-// A more robust and professional page range generator
 const generatePageRange = (currentPage, totalPages) => {
-    // How many pages to show on each side of the current page
     const siblingCount = 1;
-    // Total page numbers to show in the component
     const totalPageNumbers = siblingCount + 5;
 
-    // Case 1: If total pages is less than the number we want to show, return all pages
     if (totalPages <= totalPageNumbers) {
         return Array.from({ length: totalPages }, (_, i) => i + 1);
     }
@@ -113,27 +109,23 @@ const generatePageRange = (currentPage, totalPages) => {
     const firstPageIndex = 1;
     const lastPageIndex = totalPages;
 
-    // Case 2: No left dots to show, but right dots needed
     if (!shouldShowLeftDots && shouldShowRightDots) {
         let leftItemCount = 3 + 2 * siblingCount;
         let leftRange = Array.from({ length: leftItemCount }, (_, i) => i + 1);
         return [...leftRange, '...', totalPages];
     }
 
-    // Case 3: No right dots to show, but left dots needed
     if (shouldShowLeftDots && !shouldShowRightDots) {
         let rightItemCount = 3 + 2 * siblingCount;
         let rightRange = Array.from({ length: rightItemCount }, (_, i) => totalPages - rightItemCount + i + 1);
         return [firstPageIndex, '...', ...rightRange];
     }
 
-    // Case 4: Both left and right dots needed
     if (shouldShowLeftDots && shouldShowRightDots) {
         let middleRange = Array.from({ length: rightSiblingIndex - leftSiblingIndex + 1 }, (_, i) => leftSiblingIndex + i);
         return [firstPageIndex, '...', ...middleRange, '...', lastPageIndex];
     }
     
-    // Default case (should not be reached)
     return [];
 };
 
@@ -146,26 +138,25 @@ const Pagination = ({ pagination, setPagination }) => {
         setGoToPage(currentPage);
     }, [currentPage]);
 
+    // === THE DEFINITIVE BUG FIX ===
     const handlePageChange = (newPage) => {
-        // Ensure new page is within valid bounds
-        const page = Math.max(1, Math.min(newPage, totalPages));
-        if (page !== currentPage) {
-            setPagination(p => ({ ...p, page }));
+        const pageAsNumber = Number(newPage);
+        // Ensure the page is a valid number and within bounds
+        if (!isNaN(pageAsNumber) && pageAsNumber >= 1 && pageAsNumber <= totalPages && pageAsNumber !== currentPage) {
+            // Use a functional update to ensure we always have the latest state
+            setPagination(p => ({ ...p, page: pageAsNumber }));
         }
     };
     
     const handleGoToPageSubmit = (e) => {
         e.preventDefault();
-        const pageNum = parseInt(goToPage, 10);
-        if (!isNaN(pageNum)) {
-            handlePageChange(pageNum);
-        }
+        handlePageChange(goToPage);
     };
 
     if (totalPages <= 1) {
         return (
             <PaginationContainer>
-                <PageInfo>{totalRecords} records found</PageInfo>
+                <PageInfo>{totalRecords} record{totalRecords !== 1 ? 's' : ''} found</PageInfo>
             </PaginationContainer>
         );
     }
