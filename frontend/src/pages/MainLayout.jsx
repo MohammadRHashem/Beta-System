@@ -13,6 +13,7 @@ import GroupSettingsPage from "./GroupSettingsPage";
 import ChavePixPage from "./ChavePixPage";
 import AbbreviationsPage from "./AbbreviationsPage";
 import InvoicesPage from "./InvoicesPage";
+import PositionPage from "./PositionPage"; // Add this import
 
 const AppLayout = styled.div`
   display: flex;
@@ -76,31 +77,35 @@ const MainLayout = () => {
 
   const location = useLocation();
   const { logout } = useAuth();
-  const pageName = location.pathname.replace("/", "").replace(/-/g, " ") || "invoices";
+  const pageName =
+    location.pathname.replace("/", "").replace(/-/g, " ") || "invoices";
 
   const socket = useRef(null);
   useEffect(() => {
-    const token = localStorage.getItem('authToken');
+    const token = localStorage.getItem("authToken");
     if (!socket.current && token) {
-      
       // === THE DEFINITIVE FIX FOR MIXED CONTENT ===
       // Determine if the current page is secure (https)
       const isSecure = window.location.protocol === "https:";
-      
+
       // Initialize the socket with explicit security settings
       socket.current = io(API_URL, {
-          path: "/socket.io/",
-          transports: ["websocket", "polling"],
-          auth: { token },
-          // Force secure connection if the site is secure
-          secure: isSecure, 
-          // Reconnection attempts are useful for production
-          reconnection: true,
-          reconnectionAttempts: 5
+        path: "/socket.io/",
+        transports: ["websocket", "polling"],
+        auth: { token },
+        // Force secure connection if the site is secure
+        secure: isSecure,
+        // Reconnection attempts are useful for production
+        reconnection: true,
+        reconnectionAttempts: 5,
       });
 
-      socket.current.on("connect", () => { console.log("Connected to WebSocket server:", socket.current.id); });
-      socket.current.on("connect_error", (err) => console.error("WebSocket connection error:", err.message));
+      socket.current.on("connect", () => {
+        console.log("Connected to WebSocket server:", socket.current.id);
+      });
+      socket.current.on("connect_error", (err) =>
+        console.error("WebSocket connection error:", err.message)
+      );
     }
     return () => {
       socket.current?.disconnect();
@@ -160,9 +165,13 @@ const MainLayout = () => {
             </QRContainer>
           ) : (
             <Routes>
+              <Route path="/position" element={<PositionPage />} />
+
               <Route
                 path="/invoices"
-                element={<InvoicesPage allGroups={allGroups} socket={socket.current} />}
+                element={
+                  <InvoicesPage allGroups={allGroups} socket={socket.current} />
+                }
               />
               <Route
                 path="/broadcaster"
@@ -175,10 +184,7 @@ const MainLayout = () => {
               />
               <Route path="/chave-pix" element={<ChavePixPage />} />
               <Route path="/group-settings" element={<GroupSettingsPage />} />
-              <Route
-                path="*"
-                element={<Navigate to="/invoices" replace />}
-              />
+              <Route path="*" element={<Navigate to="/invoices" replace />} />
             </Routes>
           )}
         </PageContent>

@@ -6,6 +6,7 @@ const { Server } = require("socket.io");
 const authMiddleware = require('./middleware/authMiddleware');
 const path = require('path');
 const fs = require('fs');
+const positionController = require('./controllers/positionController'); // Add this line
 
 // --- Controllers ---
 const authController = require('./controllers/authController');
@@ -89,6 +90,10 @@ app.delete('/api/invoices/:id', invoiceController.deleteInvoice);
 app.get('/api/invoices/recipients', invoiceController.getRecipientNames);
 app.get('/api/invoices/export', invoiceController.exportInvoices);
 app.get('/api/invoices/media/:id', invoiceController.getInvoiceMedia);
+
+
+// --- Position Calculation ---
+app.get('/api/position', positionController.calculatePosition);
 
 // --- Serve Frontend (for production build) ---
 const frontendPath = path.join(__dirname, '..', 'frontend', 'dist');
