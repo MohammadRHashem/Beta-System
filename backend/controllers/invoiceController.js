@@ -113,9 +113,15 @@ exports.exportInvoices = async (req, res) => {
             i.amount
         FROM invoices i
         LEFT JOIN whatsapp_groups wg ON i.source_group_jid = wg.group_jid
-        WHERE 1=1 
-        AND i.is_deleted = 0
-    `; // === THE EDIT: Added 'AND i.is_deleted = 0' as a permanent rule for exports ===
+        WHERE 
+            i.is_deleted = 0
+            -- === THE EDIT: Add de-duplication logic ===
+            AND (
+                i.transaction_id IS NULL OR i.transaction_id = '' OR i.id IN (
+                    SELECT MIN(id) FROM invoices WHERE transaction_id IS NOT NULL AND transaction_id != '' GROUP BY transaction_id
+                )
+            )
+    `;
     
     const params = [];
 
