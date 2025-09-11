@@ -10,7 +10,7 @@ const PaginationContainer = styled.div`
     border-top: 1px solid ${({ theme }) => theme.border};
     border-radius: 0 0 8px 8px;
     flex-wrap: wrap;
-    gap: 1.5rem; /* Increased gap */
+    gap: 1.5rem;
 `;
 
 const PageInfo = styled.span`
@@ -92,36 +92,49 @@ const GoToPageButton = styled.button`
     }
 `;
 
-
-// Helper to generate the range of pages to display
+// A more robust and professional page range generator
 const generatePageRange = (currentPage, totalPages) => {
-    // Show more pages around the current page
-    const delta = 3; 
-    const left = currentPage - delta;
-    const right = currentPage + delta + 1;
-    const range = [];
-    const rangeWithDots = [];
+    // How many pages to show on each side of the current page
+    const siblingCount = 1;
+    // Total page numbers to show in the component
+    const totalPageNumbers = siblingCount + 5;
 
-    for (let i = 1; i <= totalPages; i++) {
-        if (i === 1 || i === totalPages || (i >= left && i < right)) {
-            range.push(i);
-        }
+    // Case 1: If total pages is less than the number we want to show, return all pages
+    if (totalPages <= totalPageNumbers) {
+        return Array.from({ length: totalPages }, (_, i) => i + 1);
     }
 
-    let l;
-    for (const i of range) {
-        if (l) {
-            if (i - l === 2) {
-                rangeWithDots.push(l + 1);
-            } else if (i - l !== 1) {
-                rangeWithDots.push('...');
-            }
-        }
-        rangeWithDots.push(i);
-        l = i;
+    const leftSiblingIndex = Math.max(currentPage - siblingCount, 1);
+    const rightSiblingIndex = Math.min(currentPage + siblingCount, totalPages);
+
+    const shouldShowLeftDots = leftSiblingIndex > 2;
+    const shouldShowRightDots = rightSiblingIndex < totalPages - 2;
+
+    const firstPageIndex = 1;
+    const lastPageIndex = totalPages;
+
+    // Case 2: No left dots to show, but right dots needed
+    if (!shouldShowLeftDots && shouldShowRightDots) {
+        let leftItemCount = 3 + 2 * siblingCount;
+        let leftRange = Array.from({ length: leftItemCount }, (_, i) => i + 1);
+        return [...leftRange, '...', totalPages];
     }
 
-    return rangeWithDots;
+    // Case 3: No right dots to show, but left dots needed
+    if (shouldShowLeftDots && !shouldShowRightDots) {
+        let rightItemCount = 3 + 2 * siblingCount;
+        let rightRange = Array.from({ length: rightItemCount }, (_, i) => totalPages - rightItemCount + i + 1);
+        return [firstPageIndex, '...', ...rightRange];
+    }
+
+    // Case 4: Both left and right dots needed
+    if (shouldShowLeftDots && shouldShowRightDots) {
+        let middleRange = Array.from({ length: rightSiblingIndex - leftSiblingIndex + 1 }, (_, i) => leftSiblingIndex + i);
+        return [firstPageIndex, '...', ...middleRange, '...', lastPageIndex];
+    }
+    
+    // Default case (should not be reached)
+    return [];
 };
 
 
@@ -129,14 +142,15 @@ const Pagination = ({ pagination, setPagination }) => {
     const { currentPage, totalPages, totalRecords } = pagination;
     const [goToPage, setGoToPage] = useState(currentPage);
 
-    // Keep the input box in sync with the actual current page
     useEffect(() => {
         setGoToPage(currentPage);
     }, [currentPage]);
 
     const handlePageChange = (newPage) => {
-        if (newPage >= 1 && newPage <= totalPages && newPage !== currentPage) {
-            setPagination(p => ({ ...p, page: newPage }));
+        // Ensure new page is within valid bounds
+        const page = Math.max(1, Math.min(newPage, totalPages));
+        if (page !== currentPage) {
+            setPagination(p => ({ ...p, page }));
         }
     };
     
@@ -148,7 +162,13 @@ const Pagination = ({ pagination, setPagination }) => {
         }
     };
 
-    if (totalPages <= 1) return null;
+    if (totalPages <= 1) {
+        return (
+            <PaginationContainer>
+                <PageInfo>{totalRecords} records found</PageInfo>
+            </PaginationContainer>
+        );
+    }
 
     const pageRange = generatePageRange(currentPage, totalPages);
 
