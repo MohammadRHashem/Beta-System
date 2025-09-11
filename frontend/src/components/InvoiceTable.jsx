@@ -3,24 +3,22 @@ import styled, { css } from 'styled-components';
 import { viewInvoiceMedia, deleteInvoice } from '../services/api';
 import { FaEdit, FaTrashAlt, FaEye } from 'react-icons/fa';
 import { formatInTimeZone } from 'date-fns-tz';
+import Pagination from './Pagination'; // Import the new component
 
 const formatDisplayDateTime = (dbDateString) => {
     if (!dbDateString || typeof dbDateString !== 'string') return '';
-    
     try {
-        // The input string is 'YYYY-MM-DD HH:MM:SS' in UTC.
-        // We need to parse it as such and format it for São Paulo.
-        const utcDate = new Date(dbDateString + 'Z'); // Append 'Z' to mark it as UTC
+        const utcDate = new Date(dbDateString + 'Z');
         return formatInTimeZone(utcDate, 'America/Sao_Paulo', 'dd/MM/yyyy HH:mm:ss');
     } catch (e) {
         console.warn("Could not format date string:", dbDateString);
-        return dbDateString; // Fallback to original string
+        return dbDateString;
     }
 };
 
 const TableWrapper = styled.div`
     background: #fff;
-    border-radius: 8px;
+    border-radius: 8px 8px 0 0; /* Rounded corners only on top */
     box-shadow: 0 2px 4px rgba(0,0,0,0.05);
     overflow-x: auto;
 `;
@@ -82,27 +80,6 @@ const Td = styled.td`
     }
 `;
 
-const PaginationContainer = styled.div`
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 1rem;
-    background: #fff;
-    border-top: 1px solid ${({ theme }) => theme.border};
-    border-radius: 0 0 8px 8px;
-`;
-
-const PageButton = styled.button`
-    padding: 0.5rem 1rem;
-    margin: 0 0.25rem;
-    border: 1px solid ${({ theme }) => theme.border};
-    background-color: ${({ disabled }) => disabled ? '#f8f9fa' : 'white'};
-    cursor: ${({ disabled }) => disabled ? 'not-allowed' : 'pointer'};
-    border-radius: 4px;
-    &:hover:not(:disabled) {
-        background-color: ${({ theme }) => theme.background};
-    }
-`;
 
 const InvoiceTable = ({ invoices, loading, onEdit, pagination, setPagination }) => {
 
@@ -140,50 +117,46 @@ const InvoiceTable = ({ invoices, loading, onEdit, pagination, setPagination }) 
 
     return (
         <>
-        <TableWrapper>
-            <Table>
-                <thead>
-                    <tr>
-                        <Th>Received At (GMT-03:00)</Th>
-                        <Th>Transaction ID</Th>
-                        <Th>Sender</Th>
-                        <Th>Recipient</Th>
-                        <Th>Source Group</Th>
-                        <Th className="currency">Amount</Th>
-                        <Th>Actions</Th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {invoices.map((inv) => {
-                        const isDuplicate = inv.transaction_id && transactionIdCounts[inv.transaction_id] > 1;
-                        const needsReview = !inv.is_manual && (!inv.sender_name || !inv.recipient_name || !inv.amount || inv.amount === '0.00');
+            <TableWrapper>
+                <Table>
+                    <thead>
+                        <tr>
+                            <Th>Received At (GMT-03:00)</Th>
+                            <Th>Transaction ID</Th>
+                            <Th>Sender</Th>
+                            <Th>Recipient</Th>
+                            <Th>Source Group</Th>
+                            <Th className="currency">Amount</Th>
+                            <Th>Actions</Th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {invoices.map((inv) => {
+                            const isDuplicate = inv.transaction_id && transactionIdCounts[inv.transaction_id] > 1;
+                            const needsReview = !inv.is_manual && (!inv.sender_name || !inv.recipient_name || !inv.amount || inv.amount === '0.00');
 
-                        return (
-                            <Tr key={inv.id} isDuplicate={isDuplicate} isDeleted={!!inv.is_deleted}>
-                                <Td>{formatDisplayDateTime(inv.received_at)}</Td>
-                                <Td>{inv.transaction_id || ''}</Td>
-                                <Td>{inv.sender_name || (needsReview ? 'REVIEW' : '')}</Td>
-                                <Td>{inv.recipient_name || (needsReview ? 'REVIEW' : '')}</Td>
-                                <Td>{inv.source_group_name || ''}</Td>
-                                <Td className={`currency ${needsReview && inv.amount === '0.00' ? 'review' : ''}`}>{inv.amount || ''}</Td>
-                                <Td className="actions">
-                                    {inv.media_path && <FaEye onClick={() => handleViewMedia(inv.id)} title="View Media" />}
-                                    <FaEdit onClick={() => onEdit(inv)} title="Edit" />
-                                    <FaTrashAlt onClick={() => handleDelete(inv.id)} title="Delete Permanently" />
-                                </Td>
-                            </Tr>
-                        );
-                    })}
-                </tbody>
-            </Table>
-        </TableWrapper>
-        <PaginationContainer>
-            <span>Page {pagination.currentPage} of {pagination.totalPages} ({pagination.totalRecords} records)</span>
-            <div>
-                 <PageButton onClick={() => setPagination(p => ({...p, page: p.page - 1}))} disabled={pagination.currentPage <= 1}>Previous</PageButton>
-                 <PageButton onClick={() => setPagination(p => ({...p, page: p.page + 1}))} disabled={pagination.currentPage >= pagination.totalPages}>Next</PageButton>
-            </div>
-        </PaginationContainer>
+                            return (
+                                <Tr key={inv.id} isDuplicate={isDuplicate} isDeleted={!!inv.is_deleted}>
+                                    <Td>{formatDisplayDateTime(inv.received_at)}</Td>
+                                    <Td>{inv.transaction_id || ''}</Td>
+                                    <Td>{inv.sender_name || (needsReview ? 'REVIEW' : '')}</Td>
+                                    <Td>{inv.recipient_name || (needsReview ? 'REVIEW' : '')}</Td>
+                                    <Td>{inv.source_group_name || ''}</Td>
+                                    <Td className={`currency ${needsReview && inv.amount === '0.00' ? 'review' : ''}`}>{inv.amount || ''}</Td>
+                                    <Td className="actions">
+                                        {inv.media_path && <FaEye onClick={() => handleViewMedia(inv.id)} title="View Media" />}
+                                        <FaEdit onClick={() => onEdit(inv)} title="Edit" />
+                                        <FaTrashAlt onClick={() => handleDelete(inv.id)} title="Delete Permanently" />
+                                    </Td>
+                                </Tr>
+                            );
+                        })}
+                    </tbody>
+                </Table>
+            </TableWrapper>
+            
+            {/* === THE EDIT: Replaced old buttons with the new component === */}
+            <Pagination pagination={pagination} setPagination={setPagination} />
         </>
     );
 };
