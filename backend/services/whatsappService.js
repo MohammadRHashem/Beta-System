@@ -97,12 +97,11 @@ const invoiceWorker = new Worker(
       
       const pythonScriptsDir = path.join(__dirname, "..", "python_scripts");
 
-      // === THE DEFINITIVE FIX FOR WINDOWS PATHS ===
-      // Check the operating system and build the correct path to the Python executable.
-      const pythonExecutable = process.platform === 'win32' 
-        ? path.join(pythonScriptsDir, "venv", "Scripts", "python.exe") 
-        : path.join(pythonScriptsDir, "venv", "bin", "python3");
-
+      // === THE DEFINITIVE FIX FOR WINDOWS PYTHON EXECUTION ===
+      // On Windows, call 'python.exe' directly. On Linux, use 'python3'.
+      // This relies on the global Python installation, not the problematic venv.
+      const pythonExecutable = process.platform === 'win32' ? 'python.exe' : 'python3';
+      
       const pythonScriptPath = path.join(pythonScriptsDir, "main.py");
       const pythonEnv = dotenv.config({ path: path.join(pythonScriptsDir, ".env"), }).parsed;
 
