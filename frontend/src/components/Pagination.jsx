@@ -34,16 +34,17 @@ const PageButton = styled.button`
     border-radius: 4px;
     font-weight: 600;
     transition: all 0.2s ease;
+    color: ${({ theme }) => theme.primary};
 
     &:hover:not(:disabled) {
         background-color: ${({ theme }) => theme.background};
         border-color: ${({ theme }) => theme.primary};
-        color: ${({ theme }) => theme.primary};
     }
 
     &:disabled {
         cursor: not-allowed;
         opacity: 0.5;
+        color: ${({ theme }) => theme.lightText};
     }
 
     ${({ isActive, theme }) =>
@@ -93,7 +94,6 @@ const GoToPageButton = styled.button`
     }
 `;
 
-
 const Pagination = ({ pagination, setPagination }) => {
     const { currentPage, totalPages, totalRecords } = pagination;
     const [goToPage, setGoToPage] = useState(currentPage);
@@ -102,7 +102,7 @@ const Pagination = ({ pagination, setPagination }) => {
         setGoToPage(currentPage);
     }, [currentPage]);
 
-    // === THE DEFINITIVE BUG FIX & REWRITE ===
+    // === DEFINITIVE BUG FIX: Correct state update logic ===
     const handlePageChange = (newPage) => {
         const pageAsNumber = Number(newPage);
         if (!isNaN(pageAsNumber) && pageAsNumber >= 1 && pageAsNumber <= totalPages && pageAsNumber !== currentPage) {
@@ -115,44 +115,40 @@ const Pagination = ({ pagination, setPagination }) => {
         handlePageChange(goToPage);
     };
 
-    // This hook creates the array of page numbers to display
+    // === NEW, PROFESSIONAL PAGE RANGE LOGIC ===
     const pageRange = useMemo(() => {
-        const range = [];
-        const delta = 2; // Pages to show around current page
+        const totalPageNumbers = 7; // Total buttons to show if possible
+        if (totalPages <= totalPageNumbers) {
+            return Array.from({ length: totalPages }, (_, i) => i + 1);
+        }
+
+        const leftSiblingIndex = Math.max(currentPage - 1, 1);
+        const rightSiblingIndex = Math.min(currentPage + 1, totalPages);
         
-        // Show all pages if there are not that many
-        if (totalPages <= 7) {
-            for (let i = 1; i <= totalPages; i++) {
-                range.push(i);
-            }
-            return range;
+        const shouldShowLeftDots = leftSiblingIndex > 2;
+        const shouldShowRightDots = rightSiblingIndex < totalPages - 2;
+
+        const firstPageIndex = 1;
+        const lastPageIndex = totalPages;
+
+        if (!shouldShowLeftDots && shouldShowRightDots) {
+            let leftItemCount = 5;
+            let leftRange = Array.from({ length: leftItemCount }, (_, i) => i + 1);
+            return [...leftRange, '...', totalPages];
         }
 
-        // Always show first page
-        range.push(1);
-
-        // Show ellipsis after first page if needed
-        if (currentPage > delta + 2) {
-            range.push('...');
+        if (shouldShowLeftDots && !shouldShowRightDots) {
+            let rightItemCount = 5;
+            let rightRange = Array.from({ length: rightItemCount }, (_, i) => totalPages - rightItemCount + i + 1);
+            return [firstPageIndex, '...', ...rightRange];
         }
 
-        // Show pages around the current page
-        const start = Math.max(2, currentPage - delta);
-        const end = Math.min(totalPages - 1, currentPage + delta);
-
-        for (let i = start; i <= end; i++) {
-            range.push(i);
+        if (shouldShowLeftDots && shouldShowRightDots) {
+            let middleRange = [currentPage - 1, currentPage, currentPage + 1];
+            return [firstPageIndex, '...', ...middleRange, '...', lastPageIndex];
         }
 
-        // Show ellipsis before last page if needed
-        if (currentPage < totalPages - delta - 1) {
-            range.push('...');
-        }
-
-        // Always show last page
-        range.push(totalPages);
-        
-        return range;
+        return []; // Fallback, should not be reached
     }, [currentPage, totalPages]);
 
     if (totalPages <= 1) {
