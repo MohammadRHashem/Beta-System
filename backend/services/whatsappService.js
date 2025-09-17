@@ -37,22 +37,15 @@ const invoiceWorker = new Worker(
       throw new Error("WhatsApp client is not connected. Job will be retried.");
     }
     const { messageId } = job.data;
-    console.log(`[WORKER][${job.id}] Started processing job for message ID: ${messageId}`);
-
     const message = await client.getMessageById(messageId);
     if (!message) {
-      console.warn(`[WORKER][${job.id}] Could not find message by ID. Acknowledging job.`);
       return;
     }
-
+    
     const connection = await pool.getConnection();
     try {
       await connection.beginTransaction();
-
       const chat = await message.getChat();
-      
-      // Get the raw UTC Unix timestamp and create a universal Date object.
-      // This pure object will be passed to the mysql2 driver, which will perform the timezone conversion.
       const correctUtcDate = new Date(message.timestamp * 1000);
 
       const [tombstoneRows] = await connection.query(
@@ -61,20 +54,16 @@ const invoiceWorker = new Worker(
       );
       if (tombstoneRows.length > 0) {
         await connection.query(
-          `INSERT INTO invoices (message_id, source_group_jid, received_at, is_deleted, notes) 
-                VALUES (?, ?, ?, ?, ?)`,
+          `INSERT INTO invoices (message_id, source_group_jid, received_at, is_deleted, notes) VALUES (?, ?, ?, ?, ?)`,
           [
             messageId, 
             chat.id._serialized, 
-            correctUtcDate, // 3. Use the pure UTC date object. The driver will convert it.
+            correctUtcDate,
             true,
             "Message deleted before processing.",
           ]
         );
-        await connection.query(
-          "DELETE FROM deleted_message_ids WHERE message_id = ?",
-          [messageId]
-        );
+        await connection.query("DELETE FROM deleted_message_ids WHERE message_id = ?", [messageId]);
         await connection.commit();
         if (io) io.emit("invoices:updated");
         return;
@@ -98,11 +87,21 @@ const invoiceWorker = new Worker(
         await connection.commit(); return;
       }
 
-      const tempFilePath = path.join(os.tmpdir(), `${message.id.id}.${media.mimetype.split("/")[1] || "bin"}`);
+      // === THE FIX FOR FILE EXTENSIONS and AUDIO FILES ===
+      // Some media types (like ogg audio) have complex mime types. We clean them up.
+      const cleanMimeType = media.mimetype.split(';')[0];
+      const extension = cleanMimeType.split('/')[1] || 'bin';
+      const tempFilePath = path.join(os.tmpdir(), `${message.id.id}.${extension}`);
+
       await fs.writeFile(tempFilePath, Buffer.from(media.data, "base64"));
       
       const pythonScriptsDir = path.join(__dirname, "..", "python_scripts");
-      const pythonExecutablePath = path.join(pythonScriptsDir, "venv", "bin", "python3");
+
+      // === THE DEFINITIVE FIX FOR WINDOWS PYTHON EXECUTION ===
+      // On Windows, call 'python.exe' directly. On Linux, use 'python3'.
+      // This relies on the global Python installation, not the problematic venv.
+      const pythonExecutable = process.platform === 'win32' ? 'python.exe' : 'python3';
+      
       const pythonScriptPath = path.join(pythonScriptsDir, "main.py");
       const pythonEnv = dotenv.config({ path: path.join(pythonScriptsDir, ".env"), }).parsed;
 
@@ -110,9 +109,11 @@ const invoiceWorker = new Worker(
       
       let invoiceJson;
       try {
-        const { stdout } = await execa(pythonExecutablePath, [pythonScriptPath, tempFilePath], { cwd: pythonScriptsDir, env: pythonEnv });
+        console.log(`[WORKER] Executing Python script: ${pythonExecutable}`);
+        const { stdout } = await execa(pythonExecutable, [pythonScriptPath, tempFilePath], { cwd: pythonScriptsDir, env: pythonEnv });
         invoiceJson = JSON.parse(stdout);
       } catch (pythonError) {
+        console.error(`[WORKER] Python script failed for file ${tempFilePath}. Error:`, pythonError.stderr || pythonError.message);
         await fs.unlink(tempFilePath);
         throw pythonError;
       }
@@ -124,8 +125,7 @@ const invoiceWorker = new Worker(
 
       let finalMediaPath = null;
       if (groupSettings.archiving_enabled) {
-        const extension = path.extname(media.filename || "") || `.${media.mimetype.split("/")[1] || "bin"}`;
-        const archiveFileName = `${messageId}${extension}`;
+        const archiveFileName = `${messageId}.${extension}`; // Use the cleaned extension
         finalMediaPath = path.join(MEDIA_ARCHIVE_DIR, archiveFileName);
         await fs.rename(tempFilePath, finalMediaPath);
         
@@ -135,7 +135,7 @@ const invoiceWorker = new Worker(
           [
             messageId, transaction_id, sender?.name, recipient.name,
             recipient.pix_key, amount, chat.id._serialized, 
-            correctUtcDate, // 4. Use the pure UTC date object here as well.
+            correctUtcDate,
             JSON.stringify(invoiceJson), finalMediaPath, false,
           ]
         );
@@ -389,36 +389,68 @@ const initializeWhatsApp = (socketIoInstance) => {
 
 const broadcast = async (io, socketId, groupObjects, message) => {
   if (connectionStatus !== "connected") {
-    io.to(socketId).emit("broadcast:error", { message: "WhatsApp is not connected." });
+    // === THE FIX: Check if socketId exists before trying to use it ===
+    if (io && socketId) {
+      io.to(socketId).emit("broadcast:error", {
+        message: "WhatsApp is not connected.",
+      });
+    }
     return;
   }
   let successfulSends = 0;
   let failedSends = 0;
   const failedGroups = [];
   const successfulGroups = [];
-  console.log(`[BROADCAST] Starting broadcast to ${groupObjects.length} groups for socket ${socketId}.`);
-
+  
   for (const group of groupObjects) {
     try {
-      io.to(socketId).emit("broadcast:progress", { groupName: group.name, status: "sending", message: `Sending to "${group.name}"...` });
+      // === THE FIX: Check if socketId exists before emitting progress ===
+      if (io && socketId) {
+        io.to(socketId).emit("broadcast:progress", {
+          groupName: group.name,
+          status: "sending",
+          message: `Sending to "${group.name}"...`,
+        });
+      }
       const chat = await client.getChatById(group.id);
       chat.sendStateTyping();
       await new Promise((resolve) => setTimeout(resolve, 400));
       await client.sendMessage(group.id, message);
       successfulSends++;
       successfulGroups.push(group.name);
-      io.to(socketId).emit("broadcast:progress", { groupName: group.name, status: "success", message: `Successfully sent to "${group.name}".` });
+      if (io && socketId) {
+        io.to(socketId).emit("broadcast:progress", {
+          groupName: group.name,
+          status: "success",
+          message: `Successfully sent to "${group.name}".`,
+        });
+      }
       await new Promise((resolve) => setTimeout(resolve, 1000));
     } catch (error) {
       console.error(`[BROADCAST-ERROR] Failed to send to ${group.name} (${group.id}):`, error.message);
       failedSends++;
       failedGroups.push(group.name);
-      io.to(socketId).emit("broadcast:progress", { groupName: group.name, status: "failed", message: `Failed to send to "${group.name}". Reason: ${error.message}` });
+      if (io && socketId) {
+        io.to(socketId).emit("broadcast:progress", {
+          groupName: group.name,
+          status: "failed",
+          message: `Failed to send to "${group.name}". Reason: ${error.message}`,
+        });
+      }
       await new Promise((resolve) => setTimeout(resolve, 5000));
     }
   }
-  console.log(`[BROADCAST] Broadcast complete for socket ${socketId}. Successful: ${successfulSends}, Failed: ${failedSends}.`);
-  io.to(socketId).emit("broadcast:complete", { total: groupObjects.length, successful: successfulSends, failed: failedSends, successfulGroups, failedGroups });
+  
+  // === THE FIX: Check if socketId exists before sending completion message ===
+  if (io && socketId) {
+    io.to(socketId).emit("broadcast:complete", {
+      total: groupObjects.length,
+      successful: successfulSends,
+      failed: failedSends,
+      successfulGroups,
+      failedGroups,
+    });
+  }
 };
 
 module.exports = {
