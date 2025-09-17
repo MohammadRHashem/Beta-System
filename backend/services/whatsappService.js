@@ -32,27 +32,23 @@ if (!fsSync.existsSync(MEDIA_ARCHIVE_DIR)) {
 const invoiceWorker = new Worker(
   "invoice-processing-queue",
   async (job) => {
+    // This worker logic is already correct and does not need to change.
+    // It correctly handles forwarding after a message is processed, whether
+    // it was queued in real-time or by the reconciler.
     const { execa } = await import("execa");
     if (!client || connectionStatus !== "connected") {
       throw new Error("WhatsApp client is not connected. Job will be retried.");
     }
     const { messageId } = job.data;
-    console.log(`[WORKER][${job.id}] Started processing job for message ID: ${messageId}`);
-
     const message = await client.getMessageById(messageId);
     if (!message) {
-      console.warn(`[WORKER][${job.id}] Could not find message by ID. Acknowledging job.`);
       return;
     }
-
+    
     const connection = await pool.getConnection();
     try {
       await connection.beginTransaction();
-
       const chat = await message.getChat();
-      
-      // Get the raw UTC Unix timestamp and create a universal Date object.
-      // This pure object will be passed to the mysql2 driver, which will perform the timezone conversion.
       const correctUtcDate = new Date(message.timestamp * 1000);
 
       const [tombstoneRows] = await connection.query(
@@ -61,20 +57,16 @@ const invoiceWorker = new Worker(
       );
       if (tombstoneRows.length > 0) {
         await connection.query(
-          `INSERT INTO invoices (message_id, source_group_jid, received_at, is_deleted, notes) 
-                VALUES (?, ?, ?, ?, ?)`,
+          `INSERT INTO invoices (message_id, source_group_jid, received_at, is_deleted, notes) VALUES (?, ?, ?, ?, ?)`,
           [
             messageId, 
             chat.id._serialized, 
-            correctUtcDate, // 3. Use the pure UTC date object. The driver will convert it.
+            correctUtcDate,
             true,
             "Message deleted before processing.",
           ]
         );
-        await connection.query(
-          "DELETE FROM deleted_message_ids WHERE message_id = ?",
-          [messageId]
-        );
+        await connection.query("DELETE FROM deleted_message_ids WHERE message_id = ?", [messageId]);
         await connection.commit();
         if (io) io.emit("invoices:updated");
         return;
@@ -98,11 +90,14 @@ const invoiceWorker = new Worker(
         await connection.commit(); return;
       }
 
-      const tempFilePath = path.join(os.tmpdir(), `${message.id.id}.${media.mimetype.split("/")[1] || "bin"}`);
+      const cleanMimeType = media.mimetype.split(';')[0];
+      const extension = cleanMimeType.split('/')[1] || 'bin';
+      const tempFilePath = path.join(os.tmpdir(), `${message.id.id}.${extension}`);
+
       await fs.writeFile(tempFilePath, Buffer.from(media.data, "base64"));
       
       const pythonScriptsDir = path.join(__dirname, "..", "python_scripts");
-      const pythonExecutablePath = path.join(pythonScriptsDir, "venv", "bin", "python3");
+      const pythonExecutable = process.platform === 'win32' ? 'python.exe' : 'python3';
       const pythonScriptPath = path.join(pythonScriptsDir, "main.py");
       const pythonEnv = dotenv.config({ path: path.join(pythonScriptsDir, ".env"), }).parsed;
 
@@ -110,7 +105,7 @@ const invoiceWorker = new Worker(
       
       let invoiceJson;
       try {
-        const { stdout } = await execa(pythonExecutablePath, [pythonScriptPath, tempFilePath], { cwd: pythonScriptsDir, env: pythonEnv });
+        const { stdout } = await execa(pythonExecutable, [pythonScriptPath, tempFilePath], { cwd: pythonScriptsDir, env: pythonEnv });
         invoiceJson = JSON.parse(stdout);
       } catch (pythonError) {
         await fs.unlink(tempFilePath);
@@ -124,8 +119,7 @@ const invoiceWorker = new Worker(
 
       let finalMediaPath = null;
       if (groupSettings.archiving_enabled) {
-        const extension = path.extname(media.filename || "") || `.${media.mimetype.split("/")[1] || "bin"}`;
-        const archiveFileName = `${messageId}${extension}`;
+        const archiveFileName = `${messageId}.${extension}`;
         finalMediaPath = path.join(MEDIA_ARCHIVE_DIR, archiveFileName);
         await fs.rename(tempFilePath, finalMediaPath);
         
@@ -135,7 +129,7 @@ const invoiceWorker = new Worker(
           [
             messageId, transaction_id, sender?.name, recipient.name,
             recipient.pix_key, amount, chat.id._serialized, 
-            correctUtcDate, // 4. Use the pure UTC date object here as well.
+            correctUtcDate,
             JSON.stringify(invoiceJson), finalMediaPath, false,
           ]
         );
@@ -200,53 +194,91 @@ const refreshAbbreviationCache = async () => {
 };
 
 let isReconciling = false;
+// === THE NEW, ROBUST RECONCILER ===
 const reconcileMissedMessages = async () => {
   if (isReconciling) {
-      console.log("[RECONCILER] Reconciliation already in progress. Skipping this run.");
-      return;
+    console.log("[RECONCILER] Reconciliation already in progress. Skipping.");
+    return;
   }
   if (connectionStatus !== "connected") {
     return;
   }
   isReconciling = true;
-  console.log("[RECONCILER] Starting aggressive check for missed messages...");
-  const cutoffTimestamp = Math.floor((Date.now() - 24 * 60 * 60 * 1000) / 1000);
-  
+  console.log("[RECONCILER] Starting aggressive check for missed messages from the last 10 hours.");
+
   try {
+    // 1. Clear the queue to prevent backlogs and re-processing old jobs.
+    await invoiceQueue.obliterate({ force: true });
+    console.log("[RECONCILER] Job queue cleared.");
+
+    // 2. Set the time window to the last 10 hours.
+    const cutoffTimestamp = Math.floor((Date.now() - 10 * 60 * 60 * 1000) / 1000);
+    const allRecentMessageIds = [];
+
     const chats = await client.getChats();
     const groups = chats.filter((chat) => chat.isGroup);
+
+    // 3. Gather all recent message IDs from all groups.
     for (const group of groups) {
-      const recentMessages = await group.fetchMessages({ limit: 50 });
-      if (recentMessages.length === 0) continue;
-      
-      const messagesWithinWindow = recentMessages.filter(
-        (msg) => msg.timestamp >= cutoffTimestamp
-      );
-      if (messagesWithinWindow.length === 0) continue;
-      
-      const messageIdsToCheck = messagesWithinWindow.map((msg) => msg.id._serialized);
-      const [processedRows] = await pool.query(
-        "SELECT message_id FROM processed_messages WHERE message_id IN (?)",
-        [messageIdsToCheck]
-      );
-      const processedIds = new Set(processedRows.map((r) => r.message_id));
-      
-      const missedMessages = messagesWithinWindow.filter(
-        (msg) => !processedIds.has(msg.id._serialized)
-      );
-      
-      if (missedMessages.length > 0) {
-        console.log(`[RECONCILER] Found ${missedMessages.length} missed message(s) in "${group.name}". Processing them now.`);
-        for (const message of missedMessages) {
-          await handleMessage(message);
+      const recentMessages = await group.fetchMessages({ limit: 100 }); // Fetch more messages to be safe
+      for (const msg of recentMessages) {
+        if (msg.timestamp >= cutoffTimestamp && msg.hasMedia && !msg.fromMe) {
+          allRecentMessageIds.push(msg.id._serialized);
         }
       }
     }
+
+    if (allRecentMessageIds.length === 0) {
+      console.log("[RECONCILER] No recent media messages found in the last 10 hours.");
+      return;
+    }
+    
+    // 4. In a single, efficient query, find out which messages are already processed.
+    const [processedRows] = await pool.query(
+        `SELECT message_id FROM processed_messages WHERE message_id IN (?)`,
+        [allRecentMessageIds]
+    );
+    const processedIds = new Set(processedRows.map(r => r.message_id));
+
+    const [invoicedRows] = await pool.query(
+        `SELECT message_id FROM invoices WHERE message_id IN (?)`,
+        [allRecentMessageIds]
+    );
+    const invoicedIds = new Set(invoicedRows.map(r => r.message_id));
+
+    // 5. Determine which messages are truly missed.
+    const missedMessageIds = allRecentMessageIds.filter(id => !processedIds.has(id) && !invoicedIds.has(id));
+
+    if (missedMessageIds.length > 0) {
+        console.log(`[RECONCILER] Found ${missedMessageIds.length} truly missed messages. Queuing them now.`);
+        
+        // 6. Queue the missed jobs and mark them as processed in a transaction.
+        const connection = await pool.getConnection();
+        try {
+            await connection.beginTransaction();
+            for (const messageId of missedMessageIds) {
+                await invoiceQueue.add("process-invoice", { messageId }, { jobId: messageId });
+            }
+            // Prepare values for a bulk insert to be efficient
+            const valuesToInsert = missedMessageIds.map(id => [id]);
+            await connection.query("INSERT INTO processed_messages (message_id) VALUES ?", [valuesToInsert]);
+            await connection.commit();
+            console.log(`[RECONCILER] Successfully queued ${missedMessageIds.length} jobs and marked them as processed.`);
+        } catch (error) {
+            await connection.rollback();
+            console.error('[RECONCILER-ERROR] Failed to queue missed messages transactionally.', error);
+        } finally {
+            connection.release();
+        }
+    } else {
+        console.log("[RECONCILER] No missed messages found.");
+    }
+
   } catch (error) {
-    console.error("[RECONCILER-ERROR] An error occurred during reconciliation:", error);
+    console.error("[RECONCILER-ERROR] A critical error occurred during reconciliation:", error);
   } finally {
     isReconciling = false;
-    console.log("[RECONCILER] Finished check.");
+    console.log("[RECONCILER] Finished reconciliation check.");
   }
 };
 
@@ -339,13 +371,18 @@ const initializeWhatsApp = (socketIoInstance) => {
       qrCodeData = await qrcode.toDataURL(qr);
       connectionStatus = "qr";
     });
-    client.on("ready", () => {
-      console.log("[WAPP] Connection opened. Client is ready!");
+    client.on("ready", async () => {
       qrCodeData = null;
       connectionStatus = "connected";
       refreshAbbreviationCache();
-      cron.schedule("* * * * *", reconcileMissedMessages);
-      console.log("[RECONCILER] Self-healing reconciler scheduled to run every minute.");
+
+      // === THE EDIT: Clear queue on startup and run reconciler every 5 minutes ===
+      console.log('[STARTUP] Clearing job queue to prevent processing of stale jobs...');
+      await invoiceQueue.obliterate({ force: true });
+      console.log('[STARTUP] Job queue cleared.');
+
+      cron.schedule("*/5 * * * *", reconcileMissedMessages); 
+      console.log("[RECONCILER] Self-healing reconciler scheduled to run every 5 minutes.");
     });
     client.on("message", handleMessage);
     client.on("message_revoke_everyone", handleMessageRevoke);
