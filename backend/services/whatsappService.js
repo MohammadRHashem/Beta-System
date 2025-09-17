@@ -32,6 +32,9 @@ if (!fsSync.existsSync(MEDIA_ARCHIVE_DIR)) {
 const invoiceWorker = new Worker(
   "invoice-processing-queue",
   async (job) => {
+    // This worker logic is already correct and does not need to change.
+    // It correctly handles forwarding after a message is processed, whether
+    // it was queued in real-time or by the reconciler.
     const { execa } = await import("execa");
     if (!client || connectionStatus !== "connected") {
       throw new Error("WhatsApp client is not connected. Job will be retried.");
@@ -87,8 +90,6 @@ const invoiceWorker = new Worker(
         await connection.commit(); return;
       }
 
-      // === THE FIX FOR FILE EXTENSIONS and AUDIO FILES ===
-      // Some media types (like ogg audio) have complex mime types. We clean them up.
       const cleanMimeType = media.mimetype.split(';')[0];
       const extension = cleanMimeType.split('/')[1] || 'bin';
       const tempFilePath = path.join(os.tmpdir(), `${message.id.id}.${extension}`);
@@ -96,12 +97,7 @@ const invoiceWorker = new Worker(
       await fs.writeFile(tempFilePath, Buffer.from(media.data, "base64"));
       
       const pythonScriptsDir = path.join(__dirname, "..", "python_scripts");
-
-      // === THE DEFINITIVE FIX FOR WINDOWS PYTHON EXECUTION ===
-      // On Windows, call 'python.exe' directly. On Linux, use 'python3'.
-      // This relies on the global Python installation, not the problematic venv.
       const pythonExecutable = process.platform === 'win32' ? 'python.exe' : 'python3';
-      
       const pythonScriptPath = path.join(pythonScriptsDir, "main.py");
       const pythonEnv = dotenv.config({ path: path.join(pythonScriptsDir, ".env"), }).parsed;
 
@@ -109,11 +105,9 @@ const invoiceWorker = new Worker(
       
       let invoiceJson;
       try {
-        console.log(`[WORKER] Executing Python script: ${pythonExecutable}`);
         const { stdout } = await execa(pythonExecutable, [pythonScriptPath, tempFilePath], { cwd: pythonScriptsDir, env: pythonEnv });
         invoiceJson = JSON.parse(stdout);
       } catch (pythonError) {
-        console.error(`[WORKER] Python script failed for file ${tempFilePath}. Error:`, pythonError.stderr || pythonError.message);
         await fs.unlink(tempFilePath);
         throw pythonError;
       }
@@ -125,7 +119,7 @@ const invoiceWorker = new Worker(
 
       let finalMediaPath = null;
       if (groupSettings.archiving_enabled) {
-        const archiveFileName = `${messageId}.${extension}`; // Use the cleaned extension
+        const archiveFileName = `${messageId}.${extension}`;
         finalMediaPath = path.join(MEDIA_ARCHIVE_DIR, archiveFileName);
         await fs.rename(tempFilePath, finalMediaPath);
         
@@ -200,53 +194,91 @@ const refreshAbbreviationCache = async () => {
 };
 
 let isReconciling = false;
+// === THE NEW, ROBUST RECONCILER ===
 const reconcileMissedMessages = async () => {
   if (isReconciling) {
-      console.log("[RECONCILER] Reconciliation already in progress. Skipping this run.");
-      return;
+    console.log("[RECONCILER] Reconciliation already in progress. Skipping.");
+    return;
   }
   if (connectionStatus !== "connected") {
     return;
   }
   isReconciling = true;
-  console.log("[RECONCILER] Starting aggressive check for missed messages...");
-  const cutoffTimestamp = Math.floor((Date.now() - 24 * 60 * 60 * 1000) / 1000);
-  
+  console.log("[RECONCILER] Starting aggressive check for missed messages from the last 10 hours.");
+
   try {
+    // 1. Clear the queue to prevent backlogs and re-processing old jobs.
+    await invoiceQueue.obliterate({ force: true });
+    console.log("[RECONCILER] Job queue cleared.");
+
+    // 2. Set the time window to the last 10 hours.
+    const cutoffTimestamp = Math.floor((Date.now() - 10 * 60 * 60 * 1000) / 1000);
+    const allRecentMessageIds = [];
+
     const chats = await client.getChats();
     const groups = chats.filter((chat) => chat.isGroup);
+
+    // 3. Gather all recent message IDs from all groups.
     for (const group of groups) {
-      const recentMessages = await group.fetchMessages({ limit: 50 });
-      if (recentMessages.length === 0) continue;
-      
-      const messagesWithinWindow = recentMessages.filter(
-        (msg) => msg.timestamp >= cutoffTimestamp
-      );
-      if (messagesWithinWindow.length === 0) continue;
-      
-      const messageIdsToCheck = messagesWithinWindow.map((msg) => msg.id._serialized);
-      const [processedRows] = await pool.query(
-        "SELECT message_id FROM processed_messages WHERE message_id IN (?)",
-        [messageIdsToCheck]
-      );
-      const processedIds = new Set(processedRows.map((r) => r.message_id));
-      
-      const missedMessages = messagesWithinWindow.filter(
-        (msg) => !processedIds.has(msg.id._serialized)
-      );
-      
-      if (missedMessages.length > 0) {
-        console.log(`[RECONCILER] Found ${missedMessages.length} missed message(s) in "${group.name}". Processing them now.`);
-        for (const message of missedMessages) {
-          await handleMessage(message);
+      const recentMessages = await group.fetchMessages({ limit: 100 }); // Fetch more messages to be safe
+      for (const msg of recentMessages) {
+        if (msg.timestamp >= cutoffTimestamp && msg.hasMedia && !msg.fromMe) {
+          allRecentMessageIds.push(msg.id._serialized);
         }
       }
     }
+
+    if (allRecentMessageIds.length === 0) {
+      console.log("[RECONCILER] No recent media messages found in the last 10 hours.");
+      return;
+    }
+    
+    // 4. In a single, efficient query, find out which messages are already processed.
+    const [processedRows] = await pool.query(
+        `SELECT message_id FROM processed_messages WHERE message_id IN (?)`,
+        [allRecentMessageIds]
+    );
+    const processedIds = new Set(processedRows.map(r => r.message_id));
+
+    const [invoicedRows] = await pool.query(
+        `SELECT message_id FROM invoices WHERE message_id IN (?)`,
+        [allRecentMessageIds]
+    );
+    const invoicedIds = new Set(invoicedRows.map(r => r.message_id));
+
+    // 5. Determine which messages are truly missed.
+    const missedMessageIds = allRecentMessageIds.filter(id => !processedIds.has(id) && !invoicedIds.has(id));
+
+    if (missedMessageIds.length > 0) {
+        console.log(`[RECONCILER] Found ${missedMessageIds.length} truly missed messages. Queuing them now.`);
+        
+        // 6. Queue the missed jobs and mark them as processed in a transaction.
+        const connection = await pool.getConnection();
+        try {
+            await connection.beginTransaction();
+            for (const messageId of missedMessageIds) {
+                await invoiceQueue.add("process-invoice", { messageId }, { jobId: messageId });
+            }
+            // Prepare values for a bulk insert to be efficient
+            const valuesToInsert = missedMessageIds.map(id => [id]);
+            await connection.query("INSERT INTO processed_messages (message_id) VALUES ?", [valuesToInsert]);
+            await connection.commit();
+            console.log(`[RECONCILER] Successfully queued ${missedMessageIds.length} jobs and marked them as processed.`);
+        } catch (error) {
+            await connection.rollback();
+            console.error('[RECONCILER-ERROR] Failed to queue missed messages transactionally.', error);
+        } finally {
+            connection.release();
+        }
+    } else {
+        console.log("[RECONCILER] No missed messages found.");
+    }
+
   } catch (error) {
-    console.error("[RECONCILER-ERROR] An error occurred during reconciliation:", error);
+    console.error("[RECONCILER-ERROR] A critical error occurred during reconciliation:", error);
   } finally {
     isReconciling = false;
-    console.log("[RECONCILER] Finished check.");
+    console.log("[RECONCILER] Finished reconciliation check.");
   }
 };
 
@@ -339,13 +371,18 @@ const initializeWhatsApp = (socketIoInstance) => {
       qrCodeData = await qrcode.toDataURL(qr);
       connectionStatus = "qr";
     });
-    client.on("ready", () => {
-      console.log("[WAPP] Connection opened. Client is ready!");
+    client.on("ready", async () => {
       qrCodeData = null;
       connectionStatus = "connected";
       refreshAbbreviationCache();
-      cron.schedule("* * * * *", reconcileMissedMessages);
-      console.log("[RECONCILER] Self-healing reconciler scheduled to run every minute.");
+
+      // === THE EDIT: Clear queue on startup and run reconciler every 5 minutes ===
+      console.log('[STARTUP] Clearing job queue to prevent processing of stale jobs...');
+      await invoiceQueue.obliterate({ force: true });
+      console.log('[STARTUP] Job queue cleared.');
+
+      cron.schedule("*/5 * * * *", reconcileMissedMessages); 
+      console.log("[RECONCILER] Self-healing reconciler scheduled to run every 5 minutes.");
     });
     client.on("message", handleMessage);
     client.on("message_revoke_everyone", handleMessageRevoke);
@@ -389,68 +426,36 @@ const initializeWhatsApp = (socketIoInstance) => {
 
 const broadcast = async (io, socketId, groupObjects, message) => {
   if (connectionStatus !== "connected") {
-    // === THE FIX: Check if socketId exists before trying to use it ===
-    if (io && socketId) {
-      io.to(socketId).emit("broadcast:error", {
-        message: "WhatsApp is not connected.",
-      });
-    }
+    io.to(socketId).emit("broadcast:error", { message: "WhatsApp is not connected." });
     return;
   }
   let successfulSends = 0;
   let failedSends = 0;
   const failedGroups = [];
   const successfulGroups = [];
-  
+  console.log(`[BROADCAST] Starting broadcast to ${groupObjects.length} groups for socket ${socketId}.`);
+
   for (const group of groupObjects) {
     try {
-      // === THE FIX: Check if socketId exists before emitting progress ===
-      if (io && socketId) {
-        io.to(socketId).emit("broadcast:progress", {
-          groupName: group.name,
-          status: "sending",
-          message: `Sending to "${group.name}"...`,
-        });
-      }
+      io.to(socketId).emit("broadcast:progress", { groupName: group.name, status: "sending", message: `Sending to "${group.name}"...` });
       const chat = await client.getChatById(group.id);
       chat.sendStateTyping();
       await new Promise((resolve) => setTimeout(resolve, 400));
       await client.sendMessage(group.id, message);
       successfulSends++;
       successfulGroups.push(group.name);
-      if (io && socketId) {
-        io.to(socketId).emit("broadcast:progress", {
-          groupName: group.name,
-          status: "success",
-          message: `Successfully sent to "${group.name}".`,
-        });
-      }
+      io.to(socketId).emit("broadcast:progress", { groupName: group.name, status: "success", message: `Successfully sent to "${group.name}".` });
       await new Promise((resolve) => setTimeout(resolve, 1000));
     } catch (error) {
       console.error(`[BROADCAST-ERROR] Failed to send to ${group.name} (${group.id}):`, error.message);
       failedSends++;
       failedGroups.push(group.name);
-      if (io && socketId) {
-        io.to(socketId).emit("broadcast:progress", {
-          groupName: group.name,
-          status: "failed",
-          message: `Failed to send to "${group.name}". Reason: ${error.message}`,
-        });
-      }
+      io.to(socketId).emit("broadcast:progress", { groupName: group.name, status: "failed", message: `Failed to send to "${group.name}". Reason: ${error.message}` });
       await new Promise((resolve) => setTimeout(resolve, 5000));
     }
   }
-  
-  // === THE FIX: Check if socketId exists before sending completion message ===
-  if (io && socketId) {
-    io.to(socketId).emit("broadcast:complete", {
-      total: groupObjects.length,
-      successful: successfulSends,
-      failed: failedSends,
-      successfulGroups,
-      failedGroups,
-    });
-  }
+  console.log(`[BROADCAST] Broadcast complete for socket ${socketId}. Successful: ${successfulSends}, Failed: ${failedSends}.`);
+  io.to(socketId).emit("broadcast:complete", { total: groupObjects.length, successful: successfulSends, failed: failedSends, successfulGroups, failedGroups });
 };
 
 module.exports = {
