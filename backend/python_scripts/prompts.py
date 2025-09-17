@@ -42,7 +42,7 @@ prompt_2 = f"""
         - name: The full name of the recipient.
         - **CRITICAL SWAP RULE:** The recipient is often "Trkbit". If you find "Trkbit", "Trkbit Tecnologia E Informacao Ltda", or any case-variation of these in the **sender** field, you MUST swap them and place "TRKBIT TECNOLOGIA E INFORMACAO LTDA" in the recipient name field, and find the correct sender from the other information.
         - **FALLBACK RULE:** If you see "trkbit" (case-insensitive) anywhere in the image but cannot determine a recipient name, you MUST set the recipient name to "TRKBIT".
-        - **CRITICAL MAIN RULE:** If recipient name contains "trkbit" or "BRAZ E SALADO" or "TER CONSULTORIA" (case-insensitive), you MUST set the recipient name to "TRKBIT TECNOLOGIA E INFORMACAO".
+        - **CRITICAL MAIN RULE:** If recipient name contains "trkbit" or "BRAZ E SALADO" or "TER CONSULTORIA" (case-insensitive), you MUST set the recipient name to "TRKBIT TECNOLOGIA E INFORMACAO" all caps.
 
     - **image_type:** Classify the image's context.
         - **replay:** A photo of another screen (phone, monitor). Look for glare, screen borders, or moiré patterns.

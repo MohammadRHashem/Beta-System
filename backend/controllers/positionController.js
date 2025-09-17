@@ -1,6 +1,4 @@
 const pool = require('../config/db');
-// === THE DEFINITIVE FIX: Correctly destructure all needed functions from the library ===
-const { zonedTimeToUtc, utcToZonedTime, format } = require('date-fns-tz');
 
 const SAO_PAULO_TZ = 'America/Sao_Paulo';
 
@@ -11,7 +9,11 @@ exports.calculatePosition = async (req, res) => {
     }
 
     try {
-        // --- Smart Timestamp Calculation ---
+        // === THE DEFINITIVE, PERMANENT FIX ===
+        // We will dynamically import the library functions using await.
+        // This permanently solves the "is not a function" error.
+        const { zonedTimeToUtc, utcToZonedTime, format } = await import('date-fns-tz');
+
         const targetDate = new Date(date);
         const todayInSaoPaulo = utcToZonedTime(new Date(), SAO_PAULO_TZ);
 

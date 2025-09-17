@@ -67,7 +67,7 @@ const QRContainer = styled.div`
   }
 `;
 
-const API_URL = "https://platform.betaserver.dev";
+const API_URL = "https://platform.betaserver.dev:4433";
 
 const MainLayout = () => {
   const [status, setStatus] = useState("disconnected");
@@ -83,19 +83,15 @@ const MainLayout = () => {
     const token = localStorage.getItem('authToken');
     if (!socket.current && token) {
       
-      // === THE FIX: Simplified and explicit socket initialization ===
       socket.current = io(API_URL, {
           path: "/socket.io/",
-          // We prioritize WebSocket and have polling as a fallback.
-          transports: ["websocket", "polling"],
+          transports: ["websocket", "polling"], // Allow polling as a fallback
           auth: { token }
       });
 
       socket.current.on("connect", () => { console.log("WebSocket connected successfully:", socket.current.id); });
       socket.current.on("connect_error", (err) => {
-          // Provide more detailed error logging in the console
-          console.error("WebSocket connection error object:", err);
-          // alert(`Real-time connection failed: ${err.message}. Some features may not update automatically.`);
+          console.error("WebSocket connection error:", err.message);
       });
     }
     return () => {

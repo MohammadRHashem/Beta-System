@@ -33,7 +33,7 @@ const RightPanel = styled.div`
   gap: 1.5rem;
 `;
 
-const API_URL = "https://platform.betaserver.dev";
+const API_URL = "https://platform.betaserver.dev:4433";
 
 const BroadcasterPage = ({ allGroups }) => {
   const [selectedGroups, setSelectedGroups] = useState(new Set());

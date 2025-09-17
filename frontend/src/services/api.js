@@ -1,6 +1,7 @@
 import axios from 'axios';
 
-const apiClient = axios.create({ baseURL: '/api' });
+// === THE DEFINITIVE FIX: Use the full URL with the custom port ===
+const apiClient = axios.create({ baseURL: 'https://platform.betaserver.dev:4433/api' });
 
 apiClient.interceptors.request.use(config => {
     const token = localStorage.getItem('authToken');
@@ -21,6 +22,8 @@ apiClient.interceptors.response.use(
         return Promise.reject(error);
     }
 );
+
+// ... (the rest of the file remains exactly the same) ...
 
 // Batch & Template Endpoints
 export const getBatches = () => apiClient.get('/batches');

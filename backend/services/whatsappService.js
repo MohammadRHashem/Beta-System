@@ -389,36 +389,68 @@ const initializeWhatsApp = (socketIoInstance) => {
 
 const broadcast = async (io, socketId, groupObjects, message) => {
   if (connectionStatus !== "connected") {
-    io.to(socketId).emit("broadcast:error", { message: "WhatsApp is not connected." });
+    // === THE FIX: Check if socketId exists before trying to use it ===
+    if (io && socketId) {
+      io.to(socketId).emit("broadcast:error", {
+        message: "WhatsApp is not connected.",
+      });
+    }
     return;
   }
   let successfulSends = 0;
   let failedSends = 0;
   const failedGroups = [];
   const successfulGroups = [];
-  console.log(`[BROADCAST] Starting broadcast to ${groupObjects.length} groups for socket ${socketId}.`);
-
+  
   for (const group of groupObjects) {
     try {
-      io.to(socketId).emit("broadcast:progress", { groupName: group.name, status: "sending", message: `Sending to "${group.name}"...` });
+      // === THE FIX: Check if socketId exists before emitting progress ===
+      if (io && socketId) {
+        io.to(socketId).emit("broadcast:progress", {
+          groupName: group.name,
+          status: "sending",
+          message: `Sending to "${group.name}"...`,
+        });
+      }
       const chat = await client.getChatById(group.id);
       chat.sendStateTyping();
       await new Promise((resolve) => setTimeout(resolve, 400));
       await client.sendMessage(group.id, message);
       successfulSends++;
       successfulGroups.push(group.name);
-      io.to(socketId).emit("broadcast:progress", { groupName: group.name, status: "success", message: `Successfully sent to "${group.name}".` });
+      if (io && socketId) {
+        io.to(socketId).emit("broadcast:progress", {
+          groupName: group.name,
+          status: "success",
+          message: `Successfully sent to "${group.name}".`,
+        });
+      }
       await new Promise((resolve) => setTimeout(resolve, 1000));
     } catch (error) {
       console.error(`[BROADCAST-ERROR] Failed to send to ${group.name} (${group.id}):`, error.message);
       failedSends++;
       failedGroups.push(group.name);
-      io.to(socketId).emit("broadcast:progress", { groupName: group.name, status: "failed", message: `Failed to send to "${group.name}". Reason: ${error.message}` });
+      if (io && socketId) {
+        io.to(socketId).emit("broadcast:progress", {
+          groupName: group.name,
+          status: "failed",
+          message: `Failed to send to "${group.name}". Reason: ${error.message}`,
+        });
+      }
       await new Promise((resolve) => setTimeout(resolve, 5000));
     }
   }
-  console.log(`[BROADCAST] Broadcast complete for socket ${socketId}. Successful: ${successfulSends}, Failed: ${failedSends}.`);
-  io.to(socketId).emit("broadcast:complete", { total: groupObjects.length, successful: successfulSends, failed: failedSends, successfulGroups, failedGroups });
+  
+  // === THE FIX: Check if socketId exists before sending completion message ===
+  if (io && socketId) {
+    io.to(socketId).emit("broadcast:complete", {
+      total: groupObjects.length,
+      successful: successfulSends,
+      failed: failedSends,
+      successfulGroups,
+      failedGroups,
+    });
+  }
 };
 
 module.exports = {
