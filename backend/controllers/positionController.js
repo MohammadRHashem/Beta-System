@@ -1,8 +1,6 @@
 const pool = require('../config/db');
-// === THE PERMANENT FIX: Import the entire library object directly. ===
-const dateFnsTz = require('date-fns-tz');
 
-const SAO_PAULO_TZ = 'America/Sao_Paulo';
+// We are no longer using the date-fns-tz library here to avoid import issues.
 
 exports.calculatePosition = async (req, res) => {
     const { date } = req.query;
@@ -11,26 +9,26 @@ exports.calculatePosition = async (req, res) => {
     }
 
     try {
-        // === THE FIX: Precise Business Day Calculation ===
-        // 1. Parse the user-selected date (e.g., '2025-09-06'). This will be treated as the END of the business day.
-        const targetDate = new Date(date);
-        targetDate.setHours(12, 0, 0, 0); // Avoid timezone/DST issues by setting time to midday
+        // === THE DEFINITIVE, LIBRARY-FREE FIX ===
 
-        // 2. The start time is the PREVIOUS day at 16:15 São Paulo time.
-        const startTimeSp = new Date(targetDate);
-        startTimeSp.setDate(startTimeSp.getDate() - 1);
-        startTimeSp.setHours(16, 15, 0, 0);
+        // 1. Create a date object from the user's input, making sure it's interpreted as UTC to start.
+        // e.g., '2025-09-06' becomes '2025-09-06T00:00:00.000Z'
+        const targetDate = new Date(date + 'T00:00:00Z');
 
-        // 3. The end time is the SELECTED day at 16:14:59 São Paulo time.
-        const endTimeSp = new Date(targetDate);
-        endTimeSp.setHours(16, 14, 59, 999);
+        // 2. Calculate the start and end dates based on the target date.
+        // Start time is the PREVIOUS day.
+        const startTime = new Date(targetDate);
+        startTime.setUTCDate(startTime.getUTCDate() - 1);
         
-        // 4. Convert our calculated São Paulo times to UTC for the database query.
-        //    We now correctly access the functions as properties of the imported object.
-        const startTimeUtc = dateFnsTz.zonedTimeToUtc(startTimeSp, SAO_PAULO_TZ);
-        const endTimeUtc = dateFnsTz.zonedTimeToUtc(endTimeSp, SAO_PAULO_TZ);
-        
-        // === THE FIX: Add recipient filter and update SUM logic ===
+        // End time is the SELECTED day.
+        const endTime = new Date(targetDate);
+
+        // 3. Set the exact time for the period in UTC.
+        // 16:15 in São Paulo (GMT-3) is 19:15 in UTC (GMT+0).
+        startTime.setUTCHours(19, 15, 0, 0); // 16:15 SP time
+        endTime.setUTCHours(19, 14, 59, 999); // 16:14:59 SP time
+
+        // 4. The SQL query remains the same, using these precise UTC timestamps.
         const query = `
             SELECT 
                 SUM(CAST(REPLACE(amount, ',', '') AS DECIMAL(20, 2))) AS netPosition,
@@ -43,14 +41,15 @@ exports.calculatePosition = async (req, res) => {
                 received_at <= ?
         `;
         
-        const [[result]] = await pool.query(query, [startTimeUtc, endTimeUtc]);
+        const [[result]] = await pool.query(query, [startTime, endTime]);
 
         res.json({
             netPosition: result.netPosition || 0,
             transactionCount: result.transactionCount || 0,
+            // For display, we can format the calculated UTC dates back to ISO strings
             calculationPeriod: {
-                start: dateFnsTz.format(startTimeSp, "yyyy-MM-dd'T'HH:mm:ssXXX", { timeZone: SAO_PAULO_TZ }),
-                end: dateFnsTz.format(endTimeSp, "yyyy-MM-dd'T'HH:mm:ssXXX", { timeZone: SAO_PAULO_TZ }),
+                start: startTime.toISOString(),
+                end: endTime.toISOString(),
             }
         });
 
