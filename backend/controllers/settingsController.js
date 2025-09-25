@@ -1,4 +1,5 @@
 const pool = require('../config/db');
+const whatsappService = require('../services/whatsappService');
 
 exports.getForwardingRules = async (req, res) => {
     const userId = req.user.id;
