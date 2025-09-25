@@ -32,9 +32,8 @@ if (!fsSync.existsSync(MEDIA_ARCHIVE_DIR)) {
 const invoiceWorker = new Worker(
   "invoice-processing-queue",
   async (job) => {
-    // This worker logic is already correct and does not need to change.
-    // It correctly handles forwarding after a message is processed, whether
-    // it was queued in real-time or by the reconciler.
+    // This worker logic is already robust and does not need to change.
+    // It correctly handles forwarding after a message is processed.
     const { execa } = await import("execa");
     if (!client || connectionStatus !== "connected") {
       throw new Error("WhatsApp client is not connected. Job will be retried.");
@@ -42,6 +41,7 @@ const invoiceWorker = new Worker(
     const { messageId } = job.data;
     const message = await client.getMessageById(messageId);
     if (!message) {
+      console.warn(`[WORKER] Could not find message by ID ${messageId}. It may have been deleted. Acknowledging job.`);
       return;
     }
     
@@ -82,12 +82,15 @@ const invoiceWorker = new Worker(
       };
 
       if (!groupSettings.forwarding_enabled && !groupSettings.archiving_enabled) {
-        await connection.commit(); return;
+        console.log(`[WORKER] Skipping message ${messageId} from "${chat.name}" as both archiving and forwarding are disabled.`);
+        await connection.commit(); 
+        return;
       }
 
       const media = await message.downloadMedia();
       if (!media) {
-        await connection.commit(); return;
+        await connection.commit(); 
+        return;
       }
 
       const cleanMimeType = media.mimetype.split(';')[0];
@@ -114,7 +117,10 @@ const invoiceWorker = new Worker(
 
       const { amount, sender, recipient, transaction_id } = invoiceJson;
       if (!amount || !recipient?.name) {
-        await fs.unlink(tempFilePath); await connection.commit(); return;
+        console.log(`[WORKER] Skipping message ${messageId} due to insufficient data from AI (amount or recipient missing).`);
+        await fs.unlink(tempFilePath); 
+        await connection.commit(); 
+        return;
       }
 
       let finalMediaPath = null;
@@ -155,9 +161,12 @@ const invoiceWorker = new Worker(
       if (io) io.emit("invoices:updated");
     } catch (error) {
       await connection.rollback();
-      if (error.code === "ER_DUP_ENTRY") { return; }
+      if (error.code === "ER_DUP_ENTRY") { 
+        console.warn(`[WORKER] Attempted to process a duplicate invoice for message ${messageId}. Ignoring.`);
+        return; 
+      }
       console.error(`[WORKER-ERROR] Critical error processing job ${messageId}:`, error);
-      throw error;
+      throw error; // Throw to let BullMQ handle retry
     } finally {
       connection.release();
     }
@@ -194,7 +203,7 @@ const refreshAbbreviationCache = async () => {
 };
 
 let isReconciling = false;
-// === THE NEW, ROBUST RECONCILER ===
+// === THE NEW, NON-DESTRUCTIVE RECONCILER ===
 const reconcileMissedMessages = async () => {
   if (isReconciling) {
     console.log("[RECONCILER] Reconciliation already in progress. Skipping.");
@@ -204,72 +213,51 @@ const reconcileMissedMessages = async () => {
     return;
   }
   isReconciling = true;
-  console.log("[RECONCILER] Starting aggressive check for missed messages from the last 10 hours.");
+  console.log("[RECONCILER] Starting check for missed messages from the last 10 hours.");
 
   try {
-    // 1. Clear the queue to prevent backlogs and re-processing old jobs.
-    await invoiceQueue.obliterate({ force: true });
-    console.log("[RECONCILER] Job queue cleared.");
+    // === CRITICAL FIX: REMOVED the destructive `invoiceQueue.obliterate()` call ===
+    // The queue will no longer be wiped, preventing the race condition and data loss.
 
-    // 2. Set the time window to the last 10 hours.
     const cutoffTimestamp = Math.floor((Date.now() - 10 * 60 * 60 * 1000) / 1000);
-    const allRecentMessageIds = [];
+    const allRecentMessageIds = new Set();
 
     const chats = await client.getChats();
     const groups = chats.filter((chat) => chat.isGroup);
 
-    // 3. Gather all recent message IDs from all groups.
     for (const group of groups) {
-      const recentMessages = await group.fetchMessages({ limit: 100 }); // Fetch more messages to be safe
+      const recentMessages = await group.fetchMessages({ limit: 100 }); 
       for (const msg of recentMessages) {
         if (msg.timestamp >= cutoffTimestamp && msg.hasMedia && !msg.fromMe) {
-          allRecentMessageIds.push(msg.id._serialized);
+          allRecentMessageIds.add(msg.id._serialized);
         }
       }
     }
 
-    if (allRecentMessageIds.length === 0) {
-      console.log("[RECONCILER] No recent media messages found in the last 10 hours.");
+    if (allRecentMessageIds.size === 0) {
+      console.log("[RECONCILER] No recent media messages found. Check complete.");
+      isReconciling = false;
       return;
     }
     
-    // 4. In a single, efficient query, find out which messages are already processed.
+    // In a single, efficient query, find out which messages are already processed or invoiced.
     const [processedRows] = await pool.query(
         `SELECT message_id FROM processed_messages WHERE message_id IN (?)`,
-        [allRecentMessageIds]
+        [[...allRecentMessageIds]]
     );
     const processedIds = new Set(processedRows.map(r => r.message_id));
 
-    const [invoicedRows] = await pool.query(
-        `SELECT message_id FROM invoices WHERE message_id IN (?)`,
-        [allRecentMessageIds]
-    );
-    const invoicedIds = new Set(invoicedRows.map(r => r.message_id));
-
-    // 5. Determine which messages are truly missed.
-    const missedMessageIds = allRecentMessageIds.filter(id => !processedIds.has(id) && !invoicedIds.has(id));
+    // Determine which messages are truly missed.
+    const missedMessageIds = [...allRecentMessageIds].filter(id => !processedIds.has(id));
 
     if (missedMessageIds.length > 0) {
-        console.log(`[RECONCILER] Found ${missedMessageIds.length} truly missed messages. Queuing them now.`);
+        console.log(`[RECONCILER] Found ${missedMessageIds.length} missed messages. Queuing them now.`);
         
-        // 6. Queue the missed jobs and mark them as processed in a transaction.
-        const connection = await pool.getConnection();
-        try {
-            await connection.beginTransaction();
-            for (const messageId of missedMessageIds) {
-                await invoiceQueue.add("process-invoice", { messageId }, { jobId: messageId });
-            }
-            // Prepare values for a bulk insert to be efficient
-            const valuesToInsert = missedMessageIds.map(id => [id]);
-            await connection.query("INSERT INTO processed_messages (message_id) VALUES ?", [valuesToInsert]);
-            await connection.commit();
-            console.log(`[RECONCILER] Successfully queued ${missedMessageIds.length} jobs and marked them as processed.`);
-        } catch (error) {
-            await connection.rollback();
-            console.error('[RECONCILER-ERROR] Failed to queue missed messages transactionally.', error);
-        } finally {
-            connection.release();
+        // Use the robust, transactional queuing logic for each missed message.
+        for (const messageId of missedMessageIds) {
+            await queueMessageIfNotExists(messageId);
         }
+        console.log(`[RECONCILER] Successfully queued ${missedMessageIds.length} missed jobs.`);
     } else {
         console.log("[RECONCILER] No missed messages found.");
     }
@@ -282,40 +270,63 @@ const reconcileMissedMessages = async () => {
   }
 };
 
+// === NEW: A robust, transactional function to queue a message ===
+const queueMessageIfNotExists = async (messageId) => {
+    const connection = await pool.getConnection();
+    try {
+        await connection.beginTransaction();
+
+        // Double-check inside the transaction to prevent race conditions
+        const [rows] = await connection.query("SELECT message_id FROM processed_messages WHERE message_id = ?", [messageId]);
+        if (rows.length > 0) {
+            await connection.commit();
+            return; // Already processed by another process, do nothing.
+        }
+
+        // 1. Add to the queue
+        await invoiceQueue.add("process-invoice", { messageId }, { jobId: messageId, removeOnComplete: true, removeOnFail: 50 });
+        
+        // 2. Mark as processed in the database
+        await connection.query("INSERT INTO processed_messages (message_id) VALUES (?)", [messageId]);
+
+        // 3. Commit both actions together
+        await connection.commit();
+        console.log(`[QUEUE-ADD] Transactionally added message to queue. ID: ${messageId}`);
+
+    } catch (error) {
+        await connection.rollback();
+        // Ignore duplicate entry errors which are expected in high-concurrency, but log others
+        if (error.code !== 'ER_DUP_ENTRY') {
+             console.error(`[QUEUE-ERROR] Failed to transactionally queue message ${messageId}. It will be retried by the reconciler.`, error);
+        }
+    } finally {
+        connection.release();
+    }
+};
+
 const handleMessage = async (message) => {
   try {
-    const messageId = message.id._serialized;
-    const [rows] = await pool.query("SELECT message_id FROM processed_messages WHERE message_id = ?", [messageId]);
-    if (rows.length > 0) {
-      return; // Already processed or queued, do nothing.
-    }
-
     const chat = await message.getChat();
     if (!chat.isGroup) return;
-
+    
+    // Abbreviation logic remains the same
     if (message.body) {
       const triggerText = message.body.trim();
       const match = abbreviationCache.find((abbr) => abbr.trigger === triggerText);
       if (match) {
-        await pool.query("INSERT INTO processed_messages (message_id) VALUES (?) ON DUPLICATE KEY UPDATE message_id=message_id", [messageId]);
+        // We can mark this as processed too to avoid re-checks
+        await pool.query("INSERT INTO processed_messages (message_id) VALUES (?) ON DUPLICATE KEY UPDATE message_id=message_id", [message.id._serialized]);
         await client.sendMessage(chat.id._serialized, match.response);
         return;
       }
     }
 
+    // Invoice processing logic now uses the new transactional function
     if (message.hasMedia && !message.fromMe) {
-        try {
-            await invoiceQueue.add("process-invoice", { messageId }, { jobId: messageId });
-            console.log(`[QUEUE-ADD] Added media from "${chat.name}" to queue. Msg ID: ${messageId}`);
-            await pool.query("INSERT INTO processed_messages (message_id) VALUES (?) ON DUPLICATE KEY UPDATE message_id=message_id", [messageId]);
-        } catch (queueError) {
-            console.error(`[QUEUE-ERROR] Failed to add message ${messageId} to the queue. It will be retried by the reconciler.`, queueError);
-        }
+        await queueMessageIfNotExists(message.id._serialized);
     }
   } catch (error) {
-    if (error.code !== "ER_DUP_ENTRY") {
       console.error(`[MESSAGE-HANDLER-ERROR]`, error);
-    }
   }
 };
 
@@ -376,13 +387,14 @@ const initializeWhatsApp = (socketIoInstance) => {
       connectionStatus = "connected";
       refreshAbbreviationCache();
 
-      // === THE EDIT: Clear queue on startup and run reconciler every 5 minutes ===
-      console.log('[STARTUP] Clearing job queue to prevent processing of stale jobs...');
+      // Clear any old jobs on startup, but not during runtime
+      console.log('[STARTUP] Clearing any old/stale jobs from the queue...');
       await invoiceQueue.obliterate({ force: true });
       console.log('[STARTUP] Job queue cleared.');
 
+      // Schedule the new, safer reconciler
       cron.schedule("*/5 * * * *", reconcileMissedMessages); 
-      console.log("[RECONCILER] Self-healing reconciler scheduled to run every 5 minutes.");
+      console.log("[RECONCILER] Safe, non-destructive reconciler scheduled to run every 5 minutes.");
     });
     client.on("message", handleMessage);
     client.on("message_revoke_everyone", handleMessageRevoke);
