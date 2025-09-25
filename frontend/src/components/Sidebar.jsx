@@ -1,7 +1,7 @@
 import React from "react";
 import { NavLink } from "react-router-dom";
 import styled from "styled-components";
-import { FaWhatsapp, FaBullhorn, FaRobot, FaCog, FaKey, FaKeyboard, FaFileInvoiceDollar, FaChartLine } from "react-icons/fa";
+import { FaWhatsapp, FaBullhorn, FaRobot, FaCog, FaKey, FaKeyboard, FaFileInvoiceDollar, FaChartLine, FaCheckCircle } from "react-icons/fa";
 
 const SidebarContainer = styled.nav`
   width: 250px;
@@ -64,6 +64,8 @@ const Sidebar = () => {
             <Title><FaWhatsapp /> Beta Suite</Title>
             <NavItem to="/broadcaster"><FaBullhorn /><span>Broadcaster</span></NavItem>
             <NavItem to="/ai-forwarding"><FaRobot /><span>AI Forwarding</span></NavItem>
+            {/* === NEW: Link to the Auto Confirmation Page === */}
+            <NavItem to="/auto-confirmation"><FaCheckCircle /><span>Auto Confirmation</span></NavItem>
             <NavItem to="/abbreviations"><FaKeyboard /><span>Abbreviations</span></NavItem>
             <NavItem to="/chave-pix"><FaKey /><span>Chave PIX</span></NavItem>
             <NavItem to="/position"><FaChartLine /><span>Position</span></NavItem>

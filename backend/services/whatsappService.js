@@ -15,6 +15,9 @@ let connectionStatus = "disconnected";
 let abbreviationCache = [];
 let io; // To hold the socket.io instance
 
+// === NEW: State for Auto Confirmation ===
+let isAutoConfirmationEnabled = false;
+
 const redisConnection = {
   host: "localhost",
   port: 6379,
@@ -32,115 +35,70 @@ if (!fsSync.existsSync(MEDIA_ARCHIVE_DIR)) {
 const invoiceWorker = new Worker(
   "invoice-processing-queue",
   async (job) => {
-    // This worker logic is already robust and does not need to change.
     const { execa } = await import("execa");
     if (!client || connectionStatus !== "connected") {
       throw new Error("WhatsApp client is not connected. Job will be retried.");
     }
     const { messageId } = job.data;
-    const message = await client.getMessageById(messageId);
-    if (!message) {
-      console.warn(`[WORKER] Could not find message by ID ${messageId}. It may have been deleted. Acknowledging job.`);
+    const originalMessage = await client.getMessageById(messageId);
+    if (!originalMessage) {
+      console.warn(`[WORKER] Could not find message by ID ${messageId}.`);
       return;
     }
     
     const connection = await pool.getConnection();
     try {
       await connection.beginTransaction();
-      const chat = await message.getChat();
-      const correctUtcDate = new Date(message.timestamp * 1000);
+      const chat = await originalMessage.getChat();
+      const correctUtcDate = new Date(originalMessage.timestamp * 1000);
 
-      const [tombstoneRows] = await connection.query(
-        "SELECT message_id FROM deleted_message_ids WHERE message_id = ?",
-        [messageId]
-      );
+      const [tombstoneRows] = await connection.query("SELECT message_id FROM deleted_message_ids WHERE message_id = ?", [messageId]);
       if (tombstoneRows.length > 0) {
-        await connection.query(
-          `INSERT INTO invoices (message_id, source_group_jid, received_at, is_deleted, notes) VALUES (?, ?, ?, ?, ?)`,
-          [
-            messageId, 
-            chat.id._serialized, 
-            correctUtcDate,
-            true,
-            "Message deleted before processing.",
-          ]
-        );
+        // Handle tombstone logic
+        await connection.query(`INSERT INTO invoices (message_id, source_group_jid, received_at, is_deleted, notes) VALUES (?, ?, ?, ?, ?)`,[messageId, chat.id._serialized, correctUtcDate, true, "Message deleted before processing."]);
         await connection.query("DELETE FROM deleted_message_ids WHERE message_id = ?", [messageId]);
         await connection.commit();
         if (io) io.emit("invoices:updated");
         return;
       }
 
-      const [settings] = await connection.query(
-        "SELECT * FROM group_settings WHERE group_jid = ?",
-        [chat.id._serialized]
-      );
-      const groupSettings = settings[0] || {
-        forwarding_enabled: true,
-        archiving_enabled: true,
-      };
+      const [settings] = await connection.query("SELECT * FROM group_settings WHERE group_jid = ?", [chat.id._serialized]);
+      const groupSettings = settings[0] || { forwarding_enabled: true, archiving_enabled: true };
 
       if (!groupSettings.forwarding_enabled && !groupSettings.archiving_enabled) {
-        console.log(`[WORKER] Skipping message ${messageId} from "${chat.name}" as both archiving and forwarding are disabled.`);
-        await connection.commit(); 
-        return;
+        await connection.commit(); return;
       }
 
-      const media = await message.downloadMedia();
-      if (!media) {
-        await connection.commit(); 
-        return;
-      }
+      const media = await originalMessage.downloadMedia();
+      if (!media) { await connection.commit(); return; }
 
       const cleanMimeType = media.mimetype.split(';')[0];
       const extension = cleanMimeType.split('/')[1] || 'bin';
-      const tempFilePath = path.join(os.tmpdir(), `${message.id.id}.${extension}`);
-
+      const tempFilePath = path.join(os.tmpdir(), `${originalMessage.id.id}.${extension}`);
       await fs.writeFile(tempFilePath, Buffer.from(media.data, "base64"));
       
       const pythonScriptsDir = path.join(__dirname, "..", "python_scripts");
       const pythonExecutable = process.platform === 'win32' ? 'python.exe' : 'python3';
       const pythonScriptPath = path.join(pythonScriptsDir, "main.py");
       const pythonEnv = dotenv.config({ path: path.join(pythonScriptsDir, ".env"), }).parsed;
-
       if (!pythonEnv || !pythonEnv.GOOGLE_API_KEY) throw new Error("Could not load GOOGLE_API_KEY.");
       
       let invoiceJson;
       try {
         const { stdout } = await execa(pythonExecutable, [pythonScriptPath, tempFilePath], { cwd: pythonScriptsDir, env: pythonEnv });
         invoiceJson = JSON.parse(stdout);
-      } catch (pythonError) {
-        await fs.unlink(tempFilePath);
-        throw pythonError;
-      }
+      } catch (pythonError) { await fs.unlink(tempFilePath); throw pythonError; }
 
       const { amount, sender, recipient, transaction_id } = invoiceJson;
-      if (!amount || !recipient?.name) {
-        console.log(`[WORKER] Skipping message ${messageId} due to insufficient data from AI (amount or recipient missing).`);
-        await fs.unlink(tempFilePath); 
-        await connection.commit(); 
-        return;
-      }
+      if (!amount || !recipient?.name) { await fs.unlink(tempFilePath); await connection.commit(); return; }
 
       let finalMediaPath = null;
       if (groupSettings.archiving_enabled) {
         const archiveFileName = `${messageId}.${extension}`;
         finalMediaPath = path.join(MEDIA_ARCHIVE_DIR, archiveFileName);
         await fs.rename(tempFilePath, finalMediaPath);
-        
-        await connection.query(
-          `INSERT INTO invoices (message_id, transaction_id, sender_name, recipient_name, pix_key, amount, source_group_jid, received_at, raw_json_data, media_path, is_deleted) 
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          [
-            messageId, transaction_id, sender?.name, recipient.name,
-            recipient.pix_key, amount, chat.id._serialized, 
-            correctUtcDate,
-            JSON.stringify(invoiceJson), finalMediaPath, false,
-          ]
-        );
-      } else {
-        await fs.unlink(tempFilePath);
-      }
+        await connection.query(`INSERT INTO invoices (message_id, transaction_id, sender_name, recipient_name, pix_key, amount, source_group_jid, received_at, raw_json_data, media_path, is_deleted) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [messageId, transaction_id, sender?.name, recipient.name, recipient.pix_key, amount, chat.id._serialized, correctUtcDate, JSON.stringify(invoiceJson), finalMediaPath, false]);
+      } else { await fs.unlink(tempFilePath); }
 
       if (groupSettings.forwarding_enabled) {
         const recipientNameLower = (recipient.name || "").toLowerCase().trim();
@@ -149,8 +107,19 @@ const invoiceWorker = new Worker(
           for (const rule of rules) {
             if (recipientNameLower.includes(rule.trigger_keyword.toLowerCase())) {
               const mediaToForward = new MessageMedia(media.mimetype, media.data, media.filename);
-              await client.sendMessage(rule.destination_group_jid, mediaToForward, { caption: '\u200C' });
-              break;
+              // === THE EDIT: Capture the new message and apply logic ===
+              const forwardedMessage = await client.sendMessage(rule.destination_group_jid, mediaToForward, { caption: '\u200C' });
+              
+              if (isAutoConfirmationEnabled) {
+                // Store the link between original and forwarded message
+                await connection.query(
+                    `INSERT INTO forwarded_invoices (original_message_id, forwarded_message_id, destination_group_jid) VALUES (?, ?, ?)`,
+                    [messageId, forwardedMessage.id._serialized, rule.destination_group_jid]
+                );
+                // React with white circle on the original message
+                await originalMessage.react('⚪');
+              }
+              break; // Stop after first matching rule
             }
           }
         }
@@ -160,30 +129,32 @@ const invoiceWorker = new Worker(
       if (io) io.emit("invoices:updated");
     } catch (error) {
       await connection.rollback();
-      if (error.code === "ER_DUP_ENTRY") { 
-        console.warn(`[WORKER] Attempted to process a duplicate invoice for message ${messageId}. Ignoring.`);
-        return; 
-      }
+      if (error.code === "ER_DUP_ENTRY") { return; }
       console.error(`[WORKER-ERROR] Critical error processing job ${messageId}:`, error);
       throw error;
     } finally {
       connection.release();
     }
   },
-  {
-    connection: redisConnection,
-    lockDuration: 120000,
-    concurrency: 2,
-  }
+  { connection: redisConnection, lockDuration: 120000, concurrency: 2 }
 );
 
-invoiceWorker.on("failed", (job, err) => {
-  console.error(`[QUEUE-FAIL] Job ${job?.id} (Message: ${job?.data?.messageId}) failed with error: ${err.message}`);
-});
+invoiceWorker.on("failed", (job, err) => console.error(`[QUEUE-FAIL] Job ${job?.id} failed: ${err.message}`));
+invoiceWorker.on("completed", (job) => console.log(`[QUEUE-SUCCESS] Job ${job.id} has completed.`));
 
-invoiceWorker.on("completed", (job) => {
-    console.log(`[QUEUE-SUCCESS] Job ${job.id} (Message: ${job.data.messageId}) has completed.`);
-});
+// === NEW: Function to check and cache the auto-confirmation setting ===
+const refreshAutoConfirmationStatus = async () => {
+  try {
+    const [[setting]] = await pool.query(
+        "SELECT setting_value FROM system_settings WHERE setting_key = 'auto_confirmation_enabled'"
+    );
+    isAutoConfirmationEnabled = setting ? setting.setting_value === 'true' : false;
+    console.log(`[SETTINGS] Auto Confirmation is now ${isAutoConfirmationEnabled ? 'ENABLED' : 'DISABLED'}.`);
+  } catch (error) {
+    console.error("[SETTINGS-ERROR] Failed to refresh auto confirmation status:", error);
+    isAutoConfirmationEnabled = false; // Default to off on error
+  }
+};
 
 const refreshAbbreviationCache = async () => {
   try {
@@ -281,6 +252,7 @@ const queueMessageIfNotExists = async (messageId) => {
     }
 };
 
+// === NEW: Self-healing cron job to check for missed deletions ===
 let isReconcilingDeletions = false;
 const reconcileDeletedMessages = async () => {
     if (isReconcilingDeletions) {
@@ -311,11 +283,13 @@ const reconcileDeletedMessages = async () => {
         for (const invoice of invoicesToCheck) {
             try {
                 const message = await client.getMessageById(invoice.message_id);
+                // A message object with type 'revoked' is a confirmed deletion.
                 if (message && message.type === 'revoked') {
                     idsToMarkAsDeleted.push(invoice.message_id);
                 }
             } catch (error) {
-                console.warn(`[DELETE-RECONCILER] Could not fetch status for message ${invoice.message_id}.`, error.message);
+                // Errors from getMessageById can often mean the message doesn't exist, but we check type to be safe.
+                console.warn(`[DELETE-RECONCILER] Could not fetch status for message ${invoice.message_id}. It might be too old or an error occurred.`, error.message);
             }
         }
 
@@ -393,6 +367,39 @@ const handleMessageRevoke = async (message, revoked_msg) => {
   }
 };
 
+const handleReaction = async (reaction) => {
+    if (!isAutoConfirmationEnabled || reaction.reaction !== '👍') {
+        return; // Exit if feature is off or reaction is not a 'like'
+    }
+
+    const reactedMessageId = reaction.msgId._serialized;
+    console.log(`[REACTION] Detected 'like' on message: ${reactedMessageId}`);
+
+    try {
+        const [[link]] = await pool.query(
+            'SELECT original_message_id FROM forwarded_invoices WHERE forwarded_message_id = ?',
+            [reactedMessageId]
+        );
+
+        if (!link) {
+            // This was a 'like' on a message we are not tracking, so we ignore it.
+            return;
+        }
+
+        console.log(`[REACTION] Found linked original message: ${link.original_message_id}`);
+        const originalMessage = await client.getMessageById(link.original_message_id);
+
+        if (originalMessage) {
+            await originalMessage.reply('Caiu');
+            await originalMessage.react(''); // Remove previous reactions
+            await originalMessage.react('🟢'); // Add final confirmation reaction
+            console.log(`[REACTION] Successfully processed confirmation for ${link.original_message_id}`);
+        }
+    } catch (error) {
+        console.error(`[REACTION-ERROR] Failed to process 'like' confirmation for ${reactedMessageId}:`, error);
+    }
+};
+
 const initializeWhatsApp = (socketIoInstance) => {
     io = socketIoInstance;
     console.log("[WAPP] Initializing WhatsApp client...");
@@ -417,6 +424,7 @@ const initializeWhatsApp = (socketIoInstance) => {
       qrCodeData = null;
       connectionStatus = "connected";
       refreshAbbreviationCache();
+      refreshAutoConfirmationStatus();
 
       console.log('[STARTUP] Clearing any old/stale jobs from the queue...');
       await invoiceQueue.obliterate({ force: true });
@@ -425,11 +433,13 @@ const initializeWhatsApp = (socketIoInstance) => {
       cron.schedule("*/5 * * * *", reconcileMissedMessages); 
       console.log("[RECONCILER] Safe, non-destructive message reconciler scheduled to run every 5 minutes.");
 
+      // === THE EDIT: Schedule the new deletion reconciler ===
       cron.schedule("*/15 * * * *", reconcileDeletedMessages);
       console.log("[DELETE-RECONCILER] Proactive deletion-checking reconciler scheduled to run every 15 minutes.");
     });
     client.on("message", handleMessage);
     client.on("message_revoke_everyone", handleMessageRevoke);
+    client.on("message_reaction", handleReaction);
     client.on("disconnected", (reason) => {
       console.warn("[WAPP] Client was logged out or disconnected. Reason:", reason);
       connectionStatus = "disconnected";
@@ -468,77 +478,36 @@ const initializeWhatsApp = (socketIoInstance) => {
     }
   };
 
-// === THE NEW, "HUMANIZED" BROADCAST FUNCTION ===
 const broadcast = async (io, socketId, groupObjects, message) => {
   if (connectionStatus !== "connected") {
     io.to(socketId).emit("broadcast:error", { message: "WhatsApp is not connected." });
     return;
   }
-
-  // --- Configuration for human-like behavior ---
-  const BATCH_SIZE = 5;
-  const BATCH_DELAY_MS = 3000; // 3 seconds between batches
-  const ERROR_DELAY_MS = 5000; // 5 seconds after a failed send
-
   let successfulSends = 0;
   let failedSends = 0;
   const failedGroups = [];
   const successfulGroups = [];
-  const totalGroups = groupObjects.length;
-  console.log(`[BROADCAST] Starting humanized broadcast to ${totalGroups} groups for socket ${socketId}.`);
+  console.log(`[BROADCAST] Starting broadcast to ${groupObjects.length} groups for socket ${socketId}.`);
 
-  // Loop through the groupObjects in chunks of BATCH_SIZE
-  for (let i = 0; i < totalGroups; i += BATCH_SIZE) {
-    const batch = groupObjects.slice(i, i + BATCH_SIZE);
-    const batchNumber = Math.floor(i / BATCH_SIZE) + 1;
-    const totalBatches = Math.ceil(totalGroups / BATCH_SIZE);
-
-    io.to(socketId).emit("broadcast:progress", { 
-        status: "info", 
-        message: `--- Starting Batch ${batchNumber} of ${totalBatches} ---` 
-    });
-
-    // Process each group within the current batch
-    for (const group of batch) {
-      try {
-        io.to(socketId).emit("broadcast:progress", { groupName: group.name, status: "sending", message: `Sending to "${group.name}"...` });
-        const chat = await client.getChatById(group.id);
-        
-        // Add a small, variable delay before sending to look more human
-        const randomTypingDelay = 400 + Math.random() * 300; // between 0.4s and 0.7s
-        chat.sendStateTyping();
-        await new Promise((resolve) => setTimeout(resolve, randomTypingDelay));
-
-        await client.sendMessage(group.id, message);
-
-        successfulSends++;
-        successfulGroups.push(group.name);
-        io.to(socketId).emit("broadcast:progress", { groupName: group.name, status: "success", message: `Successfully sent to "${group.name}".` });
-        
-        // Add another variable delay after sending
-        const randomPostSendDelay = 800 + Math.random() * 500; // between 0.8s and 1.3s
-        await new Promise((resolve) => setTimeout(resolve, randomPostSendDelay));
-
-      } catch (error) {
-        console.error(`[BROADCAST-ERROR] Failed to send to ${group.name} (${group.id}):`, error.message);
-        failedSends++;
-        failedGroups.push(group.name);
-        io.to(socketId).emit("broadcast:progress", { groupName: group.name, status: "failed", message: `Failed to send to "${group.name}". Reason: ${error.message}` });
-        await new Promise((resolve) => setTimeout(resolve, ERROR_DELAY_MS));
-      }
-    }
-
-    // After a batch is complete, check if it's not the last one
-    if (i + BATCH_SIZE < totalGroups) {
-      io.to(socketId).emit("broadcast:progress", { 
-          status: "info", 
-          message: `Batch complete. Pausing for ${BATCH_DELAY_MS / 1000} seconds...` 
-      });
-      // Wait for the specified delay before starting the next batch
-      await new Promise((resolve) => setTimeout(resolve, BATCH_DELAY_MS));
+  for (const group of groupObjects) {
+    try {
+      io.to(socketId).emit("broadcast:progress", { groupName: group.name, status: "sending", message: `Sending to "${group.name}"...` });
+      const chat = await client.getChatById(group.id);
+      chat.sendStateTyping();
+      await new Promise((resolve) => setTimeout(resolve, 400));
+      await client.sendMessage(group.id, message);
+      successfulSends++;
+      successfulGroups.push(group.name);
+      io.to(socketId).emit("broadcast:progress", { groupName: group.name, status: "success", message: `Successfully sent to "${group.name}".` });
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+    } catch (error) {
+      console.error(`[BROADCAST-ERROR] Failed to send to ${group.name} (${group.id}):`, error.message);
+      failedSends++;
+      failedGroups.push(group.name);
+      io.to(socketId).emit("broadcast:progress", { groupName: group.name, status: "failed", message: `Failed to send to "${group.name}". Reason: ${error.message}` });
+      await new Promise((resolve) => setTimeout(resolve, 5000));
     }
   }
-
   console.log(`[BROADCAST] Broadcast complete for socket ${socketId}. Successful: ${successfulSends}, Failed: ${failedSends}.`);
   io.to(socketId).emit("broadcast:complete", { total: groupObjects.length, successful: successfulSends, failed: failedSends, successfulGroups, failedGroups });
 };
@@ -550,4 +519,5 @@ module.exports = {
   fetchAllGroups,
   broadcast,
   refreshAbbreviationCache,
+  refreshAutoConfirmationStatus,
 };

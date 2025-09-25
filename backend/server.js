@@ -21,20 +21,17 @@ const positionController = require('./controllers/positionController');
 const app = express();
 const server = http.createServer(app);
 
-// === THE DEFINITIVE WEBSOCKET FIX: Explicitly allow the origin WITH the custom port ===
 const productionFrontendUrlWithPort = "https://platform.betaserver.dev:4433";
 const productionFrontendUrl = "https://platform.betaserver.dev";
 
 const io = new Server(server, {
     path: "/socket.io/",
     cors: {
-        // This MUST match the URL in the browser, including the port.
         origin: [productionFrontendUrlWithPort, productionFrontendUrl],
         methods: ["GET", "POST"]
     }
 });
 
-// The standard API still uses the non-port URL for flexibility behind the proxy
 app.use(cors({ origin: productionFrontendUrl }));
 app.use(express.json());
 app.use((req, res, next) => { req.io = io; next(); });
@@ -69,6 +66,10 @@ app.patch('/api/settings/forwarding/:id/toggle', settingsController.toggleForwar
 app.delete('/api/settings/forwarding/:id', settingsController.deleteForwardingRule);
 app.get('/api/settings/groups', settingsController.getGroupSettings);
 app.post('/api/settings/groups', settingsController.updateGroupSetting);
+// === NEW: Auto Confirmation Routes ===
+app.get('/api/settings/auto-confirmation', settingsController.getAutoConfirmationStatus);
+app.post('/api/settings/auto-confirmation', settingsController.setAutoConfirmationStatus);
+// ===================================
 app.get('/api/chave-pix', chavePixController.getAllKeys);
 app.post('/api/chave-pix', chavePixController.createKey);
 app.put('/api/chave-pix/:id', chavePixController.updateKey);

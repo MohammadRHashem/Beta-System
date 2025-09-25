@@ -162,3 +162,35 @@ exports.updateGroupSetting = async (req, res) => {
         res.status(500).json({ message: 'Failed to update setting.' });
     }
 };
+
+exports.getAutoConfirmationStatus = async (req, res) => {
+    try {
+        const [[setting]] = await pool.query(
+            "SELECT setting_value FROM system_settings WHERE setting_key = 'auto_confirmation_enabled'"
+        );
+        const isEnabled = setting ? setting.setting_value === 'true' : false;
+        res.json({ isEnabled });
+    } catch (error) {
+        console.error('[ERROR] Failed to fetch auto confirmation status:', error);
+        res.status(500).json({ message: 'Failed to fetch status.' });
+    }
+};
+
+exports.setAutoConfirmationStatus = async (req, res) => {
+    const { isEnabled } = req.body;
+    if (typeof isEnabled !== 'boolean') {
+        return res.status(400).json({ message: 'A boolean `isEnabled` value is required.' });
+    }
+
+    try {
+        await pool.query(
+            "UPDATE system_settings SET setting_value = ? WHERE setting_key = 'auto_confirmation_enabled'",
+            [isEnabled.toString()]
+        );
+        whatsappService.refreshAutoConfirmationStatus(); // Notify the service of the change
+        res.json({ message: `Auto confirmation successfully ${isEnabled ? 'enabled' : 'disabled'}.` });
+    } catch (error) {
+        console.error('[ERROR] Failed to update auto confirmation status:', error);
+        res.status(500).json({ message: 'Failed to update status.' });
+    }
+};
