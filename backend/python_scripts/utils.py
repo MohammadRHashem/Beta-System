@@ -9,7 +9,7 @@ from pdf2image import convert_from_path
 api_key = os.getenv('GOOGLE_API_KEY')
 genai.configure(api_key=api_key)
 
-vision_model = genai.GenerativeModel(model_name="gemini-1.5-flash")
+vision_model = genai.GenerativeModel(model_name="gemini-2.5-flash-lite")
 
 def clean_text_and_load_json(response_text):
     # This function now expects raw text and returns a Python dictionary
