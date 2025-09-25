@@ -54,7 +54,6 @@ const invoiceWorker = new Worker(
 
       const [tombstoneRows] = await connection.query("SELECT message_id FROM deleted_message_ids WHERE message_id = ?", [messageId]);
       if (tombstoneRows.length > 0) {
-        // Handle tombstone logic
         await connection.query(`INSERT INTO invoices (message_id, source_group_jid, received_at, is_deleted, notes) VALUES (?, ?, ?, ?, ?)`,[messageId, chat.id._serialized, correctUtcDate, true, "Message deleted before processing."]);
         await connection.query("DELETE FROM deleted_message_ids WHERE message_id = ?", [messageId]);
         await connection.commit();
@@ -107,19 +106,27 @@ const invoiceWorker = new Worker(
           for (const rule of rules) {
             if (recipientNameLower.includes(rule.trigger_keyword.toLowerCase())) {
               const mediaToForward = new MessageMedia(media.mimetype, media.data, media.filename);
-              // === THE EDIT: Capture the new message and apply logic ===
-              const forwardedMessage = await client.sendMessage(rule.destination_group_jid, mediaToForward, { caption: '\u200C' });
+
+              // === THE EDIT: Logic to extract number from group name for caption ===
+              let caption = '\u200C'; // Default invisible caption
+              const groupName = chat.name;
+              // Regex: find all sequences of 3 or more digits/hyphens that form a "word"
+              const numberRegex = /\b(\d[\d-]{2,})\b/g; 
+              const matches = groupName.match(numberRegex);
+
+              if (matches && matches.length > 0) {
+                  // If we find one or more matches, use the last one as the caption
+                  caption = matches[matches.length - 1];
+              }
+              // ===================================================================
+
+              const forwardedMessage = await client.sendMessage(rule.destination_group_jid, mediaToForward, { caption: caption });
               
               if (isAutoConfirmationEnabled) {
-                // Store the link between original and forwarded message
-                await connection.query(
-                    `INSERT INTO forwarded_invoices (original_message_id, forwarded_message_id, destination_group_jid) VALUES (?, ?, ?)`,
-                    [messageId, forwardedMessage.id._serialized, rule.destination_group_jid]
-                );
-                // React with white circle on the original message
+                await connection.query(`INSERT INTO forwarded_invoices (original_message_id, forwarded_message_id, destination_group_jid) VALUES (?, ?, ?)`, [messageId, forwardedMessage.id._serialized, rule.destination_group_jid]);
                 await originalMessage.react('⚪');
               }
-              break; // Stop after first matching rule
+              break;
             }
           }
         }
