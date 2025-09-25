@@ -1,8 +1,8 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import styled from 'styled-components';
 import { useAuth } from '../context/AuthContext';
 import { getInvoices, getRecipientNames, exportInvoices } from '../services/api';
-import { FaPlus, FaFileExcel } from 'react-icons/fa';
+import { FaPlus, FaFileExcel, FaSyncAlt } from 'react-icons/fa';
 import InvoiceFilter from '../components/InvoiceFilter';
 import InvoiceTable from '../components/InvoiceTable';
 import InvoiceModal from '../components/InvoiceModal';
@@ -11,7 +11,6 @@ const PageContainer = styled.div`
     display: flex;
     flex-direction: column;
     gap: 1.5rem;
-    /* Allow the page container to take full height for scrolling table */
     height: 100%;
 `;
 
@@ -48,14 +47,34 @@ const Button = styled.button`
     &:hover {
         opacity: 0.9;
     }
+
+    &:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+    }
+`;
+
+const RefreshBanner = styled.div`
+    background-color: ${({ theme }) => theme.secondary};
+    color: white;
+    padding: 0.75rem 1rem;
+    border-radius: 6px;
+    text-align: center;
+    font-weight: 600;
+    cursor: pointer;
+    margin-bottom: 1rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.75rem;
 `;
 
 const InvoicesPage = ({ allGroups, socket }) => {
-    const [invoices, setInvoices] = useState([]);
+    const [allInvoices, setAllInvoices] = useState([]); // Holds all data from the server
     const [loading, setLoading] = useState(true);
+    const [isExporting, setIsExporting] = useState(false);
     const [recipientNames, setRecipientNames] = useState([]);
-    
-    // === THE EDIT: Remove pagination state entirely ===
+    const [hasNewInvoices, setHasNewInvoices] = useState(false);
     
     const [filters, setFilters] = useState({
         search: '', dateFrom: '', dateTo: '', timeFrom: '', timeTo: '',
@@ -64,67 +83,110 @@ const InvoicesPage = ({ allGroups, socket }) => {
         reviewStatus: '',
         status: '',
     });
-
-    const { isAuthenticated } = useAuth();
     
+    const { isAuthenticated } = useAuth();
     const [isInvoiceModalOpen, setIsInvoiceModalOpen] = useState(false);
     const [editingInvoice, setEditingInvoice] = useState(null);
 
+    // This is a custom hook for debouncing, which is cleaner
+    const useDebounce = (value, delay) => {
+        const [debouncedValue, setDebouncedValue] = useState(value);
+        useEffect(() => {
+            const handler = setTimeout(() => {
+                setDebouncedValue(value);
+            }, delay);
+            return () => clearTimeout(handler);
+        }, [value, delay]);
+        return debouncedValue;
+    };
+
+    // We only debounce the primary date filters for server-side fetching
+    const debouncedDateFrom = useDebounce(filters.dateFrom, 500);
+    const debouncedDateTo = useDebounce(filters.dateTo, 500);
+
     const fetchInvoices = useCallback(async () => {
         setLoading(true);
+        setHasNewInvoices(false);
         try {
-            // === THE EDIT: Set a very high limit to fetch all records, removing page number ===
-            const params = { ...filters, limit: 10000 }; 
-            Object.keys(params).forEach(key => (!params[key] || params[key].length === 0) && delete params[key]);
+            const params = { 
+                dateFrom: debouncedDateFrom, 
+                dateTo: debouncedDateTo,
+                limit: 10000 
+            };
             const { data } = await getInvoices(params);
-            setInvoices(data.invoices);
+            setAllInvoices(data.invoices || []); // Ensure it's always an array
         } catch (error) {
             console.error("Failed to fetch invoices:", error);
+            setAllInvoices([]); // Set to empty array on error
         } finally {
             setLoading(false);
         }
-    }, [filters]);
+    }, [debouncedDateFrom, debouncedDateTo]);
 
+    // Effect to fetch initial data and re-fetch when the debounced date range changes
     useEffect(() => {
-        if (isAuthenticated) { fetchInvoices(); }
+        if (isAuthenticated) { 
+            fetchInvoices(); 
+        }
     }, [fetchInvoices, isAuthenticated]);
-
+    
+    // Effect to fetch the dropdown data for filters only once
     useEffect(() => {
         if (isAuthenticated) {
-            const fetchFilterData = async () => {
-                try {
-                    const { data: recipients } = await getRecipientNames();
-                    setRecipientNames(recipients);
-                } catch (error) {
-                    console.error("Failed to fetch recipient names:", error);
-                }
-            };
-            fetchFilterData();
+            getRecipientNames().then(response => setRecipientNames(response.data)).catch(err => console.error(err));
         }
     }, [isAuthenticated]);
 
+    // This is the SINGLE, CORRECT socket listener. It just sets the banner flag.
     useEffect(() => {
         if (isAuthenticated && socket) {
             const handleInvoiceUpdate = () => {
-                fetchInvoices();
+                setHasNewInvoices(true);
             };
             socket.on('invoices:updated', handleInvoiceUpdate);
             return () => {
                 socket.off('invoices:updated', handleInvoiceUpdate);
             };
         }
-    }, [isAuthenticated, socket, fetchInvoices]);
+    }, [isAuthenticated, socket]);
+
+
+    // This useMemo performs INSTANT client-side filtering whenever filters change.
+    const filteredInvoices = useMemo(() => {
+        return allInvoices.filter(inv => {
+            const { search, sourceGroups, recipientNames: recipientFilter, reviewStatus, status } = filters;
+            const searchTerm = search.toLowerCase();
+
+            if (searchTerm && !(inv.transaction_id?.toLowerCase().includes(searchTerm) || inv.sender_name?.toLowerCase().includes(searchTerm) || inv.recipient_name?.toLowerCase().includes(searchTerm) || inv.amount?.toLowerCase().includes(searchTerm))) return false;
+            if (sourceGroups.length > 0 && !sourceGroups.includes(inv.source_group_jid)) return false;
+            if (recipientFilter.length > 0 && !recipientFilter.includes(inv.recipient_name)) return false;
+            const needsReview = !inv.is_manual && (!inv.sender_name || !inv.recipient_name || !inv.amount || inv.amount === '0.00');
+            if (reviewStatus === 'only_review' && !needsReview) return false;
+            if (reviewStatus === 'hide_review' && needsReview) return false;
+            if (status === 'only_deleted' && !inv.is_deleted) return false;
+            if (status === 'only_duplicates') {
+                const isDuplicate = allInvoices.filter(i => i.transaction_id && i.transaction_id === inv.transaction_id).length > 1;
+                if (!isDuplicate) return false;
+            }
+
+            return true;
+        });
+    }, [allInvoices, filters]);
+
 
     const handleFilterChange = (newFilters) => {
         setFilters(newFilters);
     };
 
     const handleExport = async () => {
+        setIsExporting(true);
         try {
             await exportInvoices(filters);
         } catch (error) {
             console.error("Failed to export invoices:", error);
             alert("Failed to export invoices.");
+        } finally {
+            setIsExporting(false);
         }
     };
     
@@ -133,10 +195,7 @@ const InvoicesPage = ({ allGroups, socket }) => {
         setIsInvoiceModalOpen(true);
     };
 
-    const handleSave = () => {
-        closeAllModals();
-        fetchInvoices();
-    };
+    const handleSave = () => { closeAllModals(); fetchInvoices(); };
 
     const closeAllModals = () => {
         setIsInvoiceModalOpen(false);
@@ -149,10 +208,19 @@ const InvoicesPage = ({ allGroups, socket }) => {
                 <Header>
                     <Title>Invoices</Title>
                     <Actions>
-                        <Button onClick={handleExport}><FaFileExcel /> Export</Button>
+                        <Button onClick={handleExport} disabled={isExporting}>
+                            <FaFileExcel /> {isExporting ? 'Exporting...' : 'Export'}
+                        </Button>
                         <Button primary onClick={() => openEditModal(null)}><FaPlus /> Add Entry</Button>
                     </Actions>
                 </Header>
+                
+                {hasNewInvoices && (
+                    <RefreshBanner onClick={fetchInvoices}>
+                        <FaSyncAlt /> New invoices have arrived. Click to refresh the list.
+                    </RefreshBanner>
+                )}
+
                 <InvoiceFilter
                     filters={filters}
                     onFilterChange={handleFilterChange}
@@ -160,7 +228,7 @@ const InvoicesPage = ({ allGroups, socket }) => {
                     recipientNames={recipientNames}
                 />
                 <InvoiceTable
-                    invoices={invoices}
+                    invoices={filteredInvoices}
                     loading={loading}
                     onEdit={openEditModal}
                 />
