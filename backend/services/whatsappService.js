@@ -33,7 +33,6 @@ const invoiceWorker = new Worker(
   "invoice-processing-queue",
   async (job) => {
     // This worker logic is already robust and does not need to change.
-    // It correctly handles forwarding after a message is processed.
     const { execa } = await import("execa");
     if (!client || connectionStatus !== "connected") {
       throw new Error("WhatsApp client is not connected. Job will be retried.");
@@ -166,7 +165,7 @@ const invoiceWorker = new Worker(
         return; 
       }
       console.error(`[WORKER-ERROR] Critical error processing job ${messageId}:`, error);
-      throw error; // Throw to let BullMQ handle retry
+      throw error;
     } finally {
       connection.release();
     }
@@ -203,10 +202,9 @@ const refreshAbbreviationCache = async () => {
 };
 
 let isReconciling = false;
-// === THE NEW, NON-DESTRUCTIVE RECONCILER ===
 const reconcileMissedMessages = async () => {
   if (isReconciling) {
-    console.log("[RECONCILER] Reconciliation already in progress. Skipping.");
+    console.log("[RECONCILER] Missed message reconciliation already in progress. Skipping.");
     return;
   }
   if (connectionStatus !== "connected") {
@@ -216,12 +214,8 @@ const reconcileMissedMessages = async () => {
   console.log("[RECONCILER] Starting check for missed messages from the last 10 hours.");
 
   try {
-    // === CRITICAL FIX: REMOVED the destructive `invoiceQueue.obliterate()` call ===
-    // The queue will no longer be wiped, preventing the race condition and data loss.
-
     const cutoffTimestamp = Math.floor((Date.now() - 10 * 60 * 60 * 1000) / 1000);
     const allRecentMessageIds = new Set();
-
     const chats = await client.getChats();
     const groups = chats.filter((chat) => chat.isGroup);
 
@@ -240,20 +234,15 @@ const reconcileMissedMessages = async () => {
       return;
     }
     
-    // In a single, efficient query, find out which messages are already processed or invoiced.
     const [processedRows] = await pool.query(
         `SELECT message_id FROM processed_messages WHERE message_id IN (?)`,
         [[...allRecentMessageIds]]
     );
     const processedIds = new Set(processedRows.map(r => r.message_id));
-
-    // Determine which messages are truly missed.
     const missedMessageIds = [...allRecentMessageIds].filter(id => !processedIds.has(id));
 
     if (missedMessageIds.length > 0) {
         console.log(`[RECONCILER] Found ${missedMessageIds.length} missed messages. Queuing them now.`);
-        
-        // Use the robust, transactional queuing logic for each missed message.
         for (const messageId of missedMessageIds) {
             await queueMessageIfNotExists(messageId);
         }
@@ -261,41 +250,29 @@ const reconcileMissedMessages = async () => {
     } else {
         console.log("[RECONCILER] No missed messages found.");
     }
-
   } catch (error) {
     console.error("[RECONCILER-ERROR] A critical error occurred during reconciliation:", error);
   } finally {
     isReconciling = false;
-    console.log("[RECONCILER] Finished reconciliation check.");
+    console.log("[RECONCILER] Finished missed message reconciliation check.");
   }
 };
 
-// === NEW: A robust, transactional function to queue a message ===
 const queueMessageIfNotExists = async (messageId) => {
     const connection = await pool.getConnection();
     try {
         await connection.beginTransaction();
-
-        // Double-check inside the transaction to prevent race conditions
         const [rows] = await connection.query("SELECT message_id FROM processed_messages WHERE message_id = ?", [messageId]);
         if (rows.length > 0) {
             await connection.commit();
-            return; // Already processed by another process, do nothing.
+            return;
         }
-
-        // 1. Add to the queue
         await invoiceQueue.add("process-invoice", { messageId }, { jobId: messageId, removeOnComplete: true, removeOnFail: 50 });
-        
-        // 2. Mark as processed in the database
         await connection.query("INSERT INTO processed_messages (message_id) VALUES (?)", [messageId]);
-
-        // 3. Commit both actions together
         await connection.commit();
         console.log(`[QUEUE-ADD] Transactionally added message to queue. ID: ${messageId}`);
-
     } catch (error) {
         await connection.rollback();
-        // Ignore duplicate entry errors which are expected in high-concurrency, but log others
         if (error.code !== 'ER_DUP_ENTRY') {
              console.error(`[QUEUE-ERROR] Failed to transactionally queue message ${messageId}. It will be retried by the reconciler.`, error);
         }
@@ -304,24 +281,81 @@ const queueMessageIfNotExists = async (messageId) => {
     }
 };
 
+// === NEW: Self-healing cron job to check for missed deletions ===
+let isReconcilingDeletions = false;
+const reconcileDeletedMessages = async () => {
+    if (isReconcilingDeletions) {
+        console.log("[DELETE-RECONCILER] Deletion reconciliation already in progress. Skipping.");
+        return;
+    }
+    if (connectionStatus !== "connected") {
+        return;
+    }
+    isReconcilingDeletions = true;
+    console.log("[DELETE-RECONCILER] Starting proactive check for deleted messages.");
+
+    try {
+        const twelveHoursAgo = new Date(Date.now() - 12 * 60 * 60 * 1000);
+        
+        const [invoicesToCheck] = await pool.query(
+            `SELECT message_id FROM invoices WHERE is_deleted = 0 AND received_at >= ?`,
+            [twelveHoursAgo]
+        );
+
+        if (invoicesToCheck.length === 0) {
+            console.log("[DELETE-RECONCILER] No recent, active invoices to check.");
+            isReconcilingDeletions = false;
+            return;
+        }
+
+        const idsToMarkAsDeleted = [];
+        for (const invoice of invoicesToCheck) {
+            try {
+                const message = await client.getMessageById(invoice.message_id);
+                // A message object with type 'revoked' is a confirmed deletion.
+                if (message && message.type === 'revoked') {
+                    idsToMarkAsDeleted.push(invoice.message_id);
+                }
+            } catch (error) {
+                // Errors from getMessageById can often mean the message doesn't exist, but we check type to be safe.
+                console.warn(`[DELETE-RECONCILER] Could not fetch status for message ${invoice.message_id}. It might be too old or an error occurred.`, error.message);
+            }
+        }
+
+        if (idsToMarkAsDeleted.length > 0) {
+            console.log(`[DELETE-RECONCILER] Found ${idsToMarkAsDeleted.length} invoices that were deleted but not marked. Updating now.`);
+            await pool.query(
+                `UPDATE invoices SET is_deleted = 1 WHERE message_id IN (?)`,
+                [idsToMarkAsDeleted]
+            );
+            if (io) io.emit("invoices:updated");
+        } else {
+            console.log("[DELETE-RECONCILER] All recent invoices are in sync. No inconsistencies found.");
+        }
+
+    } catch (error) {
+        console.error("[DELETE-RECONCILER-ERROR] A critical error occurred during deletion reconciliation:", error);
+    } finally {
+        isReconcilingDeletions = false;
+        console.log("[DELETE-RECONCILER] Finished deletion reconciliation check.");
+    }
+};
+
 const handleMessage = async (message) => {
   try {
     const chat = await message.getChat();
     if (!chat.isGroup) return;
     
-    // Abbreviation logic remains the same
     if (message.body) {
       const triggerText = message.body.trim();
       const match = abbreviationCache.find((abbr) => abbr.trigger === triggerText);
       if (match) {
-        // We can mark this as processed too to avoid re-checks
         await pool.query("INSERT INTO processed_messages (message_id) VALUES (?) ON DUPLICATE KEY UPDATE message_id=message_id", [message.id._serialized]);
         await client.sendMessage(chat.id._serialized, match.response);
         return;
       }
     }
 
-    // Invoice processing logic now uses the new transactional function
     if (message.hasMedia && !message.fromMe) {
         await queueMessageIfNotExists(message.id._serialized);
     }
@@ -341,7 +375,7 @@ const handleMessageRevoke = async (message, revoked_msg) => {
     console.warn("[DELETE] Revoke event received but could not determine message ID.");
     return;
   }
-  console.log(`[DELETE] Revoke event for message ID: ${deletedMessageId}`);
+  console.log(`[DELETE] Real-time revoke event for message ID: ${deletedMessageId}`);
   try {
     const [updateResult] = await pool.query(
       "UPDATE invoices SET is_deleted = 1 WHERE message_id = ?",
@@ -387,14 +421,16 @@ const initializeWhatsApp = (socketIoInstance) => {
       connectionStatus = "connected";
       refreshAbbreviationCache();
 
-      // Clear any old jobs on startup, but not during runtime
       console.log('[STARTUP] Clearing any old/stale jobs from the queue...');
       await invoiceQueue.obliterate({ force: true });
       console.log('[STARTUP] Job queue cleared.');
 
-      // Schedule the new, safer reconciler
       cron.schedule("*/5 * * * *", reconcileMissedMessages); 
-      console.log("[RECONCILER] Safe, non-destructive reconciler scheduled to run every 5 minutes.");
+      console.log("[RECONCILER] Safe, non-destructive message reconciler scheduled to run every 5 minutes.");
+
+      // === THE EDIT: Schedule the new deletion reconciler ===
+      cron.schedule("*/15 * * * *", reconcileDeletedMessages);
+      console.log("[DELETE-RECONCILER] Proactive deletion-checking reconciler scheduled to run every 15 minutes.");
     });
     client.on("message", handleMessage);
     client.on("message_revoke_everyone", handleMessageRevoke);
