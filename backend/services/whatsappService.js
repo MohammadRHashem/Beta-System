@@ -1,6 +1,6 @@
 const { Client, LocalAuth, MessageMedia } = require("whatsapp-web.js");
 const qrcode = require("qrcode");
-const fs = require("fs/promises");
+const fs =require("fs/promises");
 const fsSync = require("fs");
 const pool = require("../config/db");
 const path = require("path");
@@ -281,7 +281,6 @@ const queueMessageIfNotExists = async (messageId) => {
     }
 };
 
-// === NEW: Self-healing cron job to check for missed deletions ===
 let isReconcilingDeletions = false;
 const reconcileDeletedMessages = async () => {
     if (isReconcilingDeletions) {
@@ -312,13 +311,11 @@ const reconcileDeletedMessages = async () => {
         for (const invoice of invoicesToCheck) {
             try {
                 const message = await client.getMessageById(invoice.message_id);
-                // A message object with type 'revoked' is a confirmed deletion.
                 if (message && message.type === 'revoked') {
                     idsToMarkAsDeleted.push(invoice.message_id);
                 }
             } catch (error) {
-                // Errors from getMessageById can often mean the message doesn't exist, but we check type to be safe.
-                console.warn(`[DELETE-RECONCILER] Could not fetch status for message ${invoice.message_id}. It might be too old or an error occurred.`, error.message);
+                console.warn(`[DELETE-RECONCILER] Could not fetch status for message ${invoice.message_id}.`, error.message);
             }
         }
 
@@ -428,7 +425,6 @@ const initializeWhatsApp = (socketIoInstance) => {
       cron.schedule("*/5 * * * *", reconcileMissedMessages); 
       console.log("[RECONCILER] Safe, non-destructive message reconciler scheduled to run every 5 minutes.");
 
-      // === THE EDIT: Schedule the new deletion reconciler ===
       cron.schedule("*/15 * * * *", reconcileDeletedMessages);
       console.log("[DELETE-RECONCILER] Proactive deletion-checking reconciler scheduled to run every 15 minutes.");
     });
@@ -472,36 +468,77 @@ const initializeWhatsApp = (socketIoInstance) => {
     }
   };
 
+// === THE NEW, "HUMANIZED" BROADCAST FUNCTION ===
 const broadcast = async (io, socketId, groupObjects, message) => {
   if (connectionStatus !== "connected") {
     io.to(socketId).emit("broadcast:error", { message: "WhatsApp is not connected." });
     return;
   }
+
+  // --- Configuration for human-like behavior ---
+  const BATCH_SIZE = 5;
+  const BATCH_DELAY_MS = 3000; // 3 seconds between batches
+  const ERROR_DELAY_MS = 5000; // 5 seconds after a failed send
+
   let successfulSends = 0;
   let failedSends = 0;
   const failedGroups = [];
   const successfulGroups = [];
-  console.log(`[BROADCAST] Starting broadcast to ${groupObjects.length} groups for socket ${socketId}.`);
+  const totalGroups = groupObjects.length;
+  console.log(`[BROADCAST] Starting humanized broadcast to ${totalGroups} groups for socket ${socketId}.`);
 
-  for (const group of groupObjects) {
-    try {
-      io.to(socketId).emit("broadcast:progress", { groupName: group.name, status: "sending", message: `Sending to "${group.name}"...` });
-      const chat = await client.getChatById(group.id);
-      chat.sendStateTyping();
-      await new Promise((resolve) => setTimeout(resolve, 400));
-      await client.sendMessage(group.id, message);
-      successfulSends++;
-      successfulGroups.push(group.name);
-      io.to(socketId).emit("broadcast:progress", { groupName: group.name, status: "success", message: `Successfully sent to "${group.name}".` });
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-    } catch (error) {
-      console.error(`[BROADCAST-ERROR] Failed to send to ${group.name} (${group.id}):`, error.message);
-      failedSends++;
-      failedGroups.push(group.name);
-      io.to(socketId).emit("broadcast:progress", { groupName: group.name, status: "failed", message: `Failed to send to "${group.name}". Reason: ${error.message}` });
-      await new Promise((resolve) => setTimeout(resolve, 5000));
+  // Loop through the groupObjects in chunks of BATCH_SIZE
+  for (let i = 0; i < totalGroups; i += BATCH_SIZE) {
+    const batch = groupObjects.slice(i, i + BATCH_SIZE);
+    const batchNumber = Math.floor(i / BATCH_SIZE) + 1;
+    const totalBatches = Math.ceil(totalGroups / BATCH_SIZE);
+
+    io.to(socketId).emit("broadcast:progress", { 
+        status: "info", 
+        message: `--- Starting Batch ${batchNumber} of ${totalBatches} ---` 
+    });
+
+    // Process each group within the current batch
+    for (const group of batch) {
+      try {
+        io.to(socketId).emit("broadcast:progress", { groupName: group.name, status: "sending", message: `Sending to "${group.name}"...` });
+        const chat = await client.getChatById(group.id);
+        
+        // Add a small, variable delay before sending to look more human
+        const randomTypingDelay = 400 + Math.random() * 300; // between 0.4s and 0.7s
+        chat.sendStateTyping();
+        await new Promise((resolve) => setTimeout(resolve, randomTypingDelay));
+
+        await client.sendMessage(group.id, message);
+
+        successfulSends++;
+        successfulGroups.push(group.name);
+        io.to(socketId).emit("broadcast:progress", { groupName: group.name, status: "success", message: `Successfully sent to "${group.name}".` });
+        
+        // Add another variable delay after sending
+        const randomPostSendDelay = 800 + Math.random() * 500; // between 0.8s and 1.3s
+        await new Promise((resolve) => setTimeout(resolve, randomPostSendDelay));
+
+      } catch (error) {
+        console.error(`[BROADCAST-ERROR] Failed to send to ${group.name} (${group.id}):`, error.message);
+        failedSends++;
+        failedGroups.push(group.name);
+        io.to(socketId).emit("broadcast:progress", { groupName: group.name, status: "failed", message: `Failed to send to "${group.name}". Reason: ${error.message}` });
+        await new Promise((resolve) => setTimeout(resolve, ERROR_DELAY_MS));
+      }
+    }
+
+    // After a batch is complete, check if it's not the last one
+    if (i + BATCH_SIZE < totalGroups) {
+      io.to(socketId).emit("broadcast:progress", { 
+          status: "info", 
+          message: `Batch complete. Pausing for ${BATCH_DELAY_MS / 1000} seconds...` 
+      });
+      // Wait for the specified delay before starting the next batch
+      await new Promise((resolve) => setTimeout(resolve, BATCH_DELAY_MS));
     }
   }
+
   console.log(`[BROADCAST] Broadcast complete for socket ${socketId}. Successful: ${successfulSends}, Failed: ${failedSends}.`);
   io.to(socketId).emit("broadcast:complete", { total: groupObjects.length, successful: successfulSends, failed: failedSends, successfulGroups, failedGroups });
 };
