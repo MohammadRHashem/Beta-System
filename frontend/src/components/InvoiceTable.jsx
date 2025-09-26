@@ -15,12 +15,10 @@ const formatDisplayDateTime = (dbDateString) => {
     }
 };
 
-// === THE EDIT: New styles for a scrolling table with a sticky header ===
 const TableWrapper = styled.div`
     background: #fff;
     border-radius: 8px;
     box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-    /* Set a max height and allow internal scrolling */
     max-height: 70vh; 
     overflow-y: auto;
     border: 1px solid ${({ theme }) => theme.border};
@@ -33,7 +31,6 @@ const Table = styled.table`
 `;
 
 const Thead = styled.thead`
-    /* This makes the header stick to the top of the TableWrapper */
     position: sticky;
     top: 0;
     z-index: 1;
@@ -94,11 +91,12 @@ const Td = styled.td`
     }
 `;
 
-// === THE EDIT: Removed pagination props, they are no longer needed ===
 const InvoiceTable = ({ invoices, loading, onEdit }) => {
 
+    // This logic correctly creates a map of transaction IDs to their counts.
     const transactionIdCounts = useMemo(() => {
         const counts = {};
+        if (!invoices || !Array.isArray(invoices)) return {}; // Safety check
         invoices.forEach(inv => {
             if (inv.transaction_id && !inv.is_manual) {
                 counts[inv.transaction_id] = (counts[inv.transaction_id] || 0) + 1;
@@ -127,7 +125,7 @@ const InvoiceTable = ({ invoices, loading, onEdit }) => {
     };
 
     if (loading) return <p>Loading invoices...</p>;
-    if (!invoices.length) return <p>No invoices found for the selected criteria.</p>;
+    if (!invoices || !invoices.length) return <p>No invoices found for the selected criteria.</p>;
 
     return (
         <TableWrapper>
@@ -145,6 +143,8 @@ const InvoiceTable = ({ invoices, loading, onEdit }) => {
                 </Thead>
                 <tbody>
                     {invoices.map((inv) => {
+                        // === THE DEFINITIVE FIX FOR THE CRASH ===
+                        // This correctly checks the count from the pre-calculated object.
                         const isDuplicate = inv.transaction_id && transactionIdCounts[inv.transaction_id] > 1;
                         const needsReview = !inv.is_manual && (!inv.sender_name || !inv.recipient_name || !inv.amount || inv.amount === '0.00');
 

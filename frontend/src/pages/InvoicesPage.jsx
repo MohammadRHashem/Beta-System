@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import styled from 'styled-components';
 import { useAuth } from '../context/AuthContext';
 import { getInvoices, getRecipientNames, exportInvoices } from '../services/api';
@@ -71,6 +71,7 @@ const RefreshBanner = styled.div`
 
 const InvoicesPage = ({ allGroups, socket }) => {
     const [allInvoices, setAllInvoices] = useState([]); // Holds all data from the server
+    const [filteredInvoices, setFilteredInvoices] = useState([]); // Holds data to be displayed
     const [loading, setLoading] = useState(true);
     const [isExporting, setIsExporting] = useState(false);
     const [recipientNames, setRecipientNames] = useState([]);
@@ -88,89 +89,82 @@ const InvoicesPage = ({ allGroups, socket }) => {
     const [isInvoiceModalOpen, setIsInvoiceModalOpen] = useState(false);
     const [editingInvoice, setEditingInvoice] = useState(null);
 
-    // This is a custom hook for debouncing, which is cleaner
-    const useDebounce = (value, delay) => {
-        const [debouncedValue, setDebouncedValue] = useState(value);
-        useEffect(() => {
-            const handler = setTimeout(() => {
-                setDebouncedValue(value);
-            }, delay);
-            return () => clearTimeout(handler);
-        }, [value, delay]);
-        return debouncedValue;
-    };
-
-    // We only debounce the primary date filters for server-side fetching
-    const debouncedDateFrom = useDebounce(filters.dateFrom, 500);
-    const debouncedDateTo = useDebounce(filters.dateTo, 500);
-
     const fetchInvoices = useCallback(async () => {
         setLoading(true);
         setHasNewInvoices(false);
         try {
-            const params = { 
-                dateFrom: debouncedDateFrom, 
-                dateTo: debouncedDateTo,
-                limit: 10000 
-            };
+            const params = { limit: 10000 }; 
             const { data } = await getInvoices(params);
-            setAllInvoices(data.invoices || []); // Ensure it's always an array
+            setAllInvoices(data.invoices || []);
+            setFilteredInvoices(data.invoices || []);
         } catch (error) {
             console.error("Failed to fetch invoices:", error);
-            setAllInvoices([]); // Set to empty array on error
+            setAllInvoices([]);
+            setFilteredInvoices([]);
         } finally {
             setLoading(false);
         }
-    }, [debouncedDateFrom, debouncedDateTo]);
+    }, []);
 
-    // Effect to fetch initial data and re-fetch when the debounced date range changes
     useEffect(() => {
         if (isAuthenticated) { 
             fetchInvoices(); 
         }
     }, [fetchInvoices, isAuthenticated]);
     
-    // Effect to fetch the dropdown data for filters only once
     useEffect(() => {
         if (isAuthenticated) {
-            getRecipientNames().then(response => setRecipientNames(response.data)).catch(err => console.error(err));
+            getRecipientNames().then(response => setRecipientNames(response.data || [])).catch(err => console.error(err));
         }
     }, [isAuthenticated]);
 
-    // This is the SINGLE, CORRECT socket listener. It just sets the banner flag.
     useEffect(() => {
         if (isAuthenticated && socket) {
-            const handleInvoiceUpdate = () => {
-                setHasNewInvoices(true);
-            };
+            const handleInvoiceUpdate = () => setHasNewInvoices(true);
             socket.on('invoices:updated', handleInvoiceUpdate);
-            return () => {
-                socket.off('invoices:updated', handleInvoiceUpdate);
-            };
+            return () => socket.off('invoices:updated', handleInvoiceUpdate);
         }
     }, [isAuthenticated, socket]);
 
+    useEffect(() => {
+        setLoading(true);
+        let invoicesToFilter = [...allInvoices];
+        
+        const { search, dateFrom, dateTo, timeFrom, timeTo, sourceGroups, recipientNames: recipientFilter, reviewStatus, status } = filters;
+        
+        // This logic correctly compares UTC time from DB with local time from the filter inputs
+        const startDateTimeFilter = dateFrom ? new Date(`${dateFrom}T${timeFrom || '00:00:00'}`).getTime() : null;
+        const endDateTimeFilter = dateTo ? new Date(`${dateTo}T${timeTo || '23:59:59'}`).getTime() : null;
 
-    // This useMemo performs INSTANT client-side filtering whenever filters change.
-    const filteredInvoices = useMemo(() => {
-        return allInvoices.filter(inv => {
-            const { search, sourceGroups, recipientNames: recipientFilter, reviewStatus, status } = filters;
+        const filtered = invoicesToFilter.filter(inv => {
             const searchTerm = search.toLowerCase();
 
             if (searchTerm && !(inv.transaction_id?.toLowerCase().includes(searchTerm) || inv.sender_name?.toLowerCase().includes(searchTerm) || inv.recipient_name?.toLowerCase().includes(searchTerm) || inv.amount?.toLowerCase().includes(searchTerm))) return false;
+            
+            if (inv.received_at) {
+                const invoiceDateTime = new Date(inv.received_at + 'Z').getTime();
+                if (startDateTimeFilter && invoiceDateTime < startDateTimeFilter) return false;
+                if (endDateTimeFilter && invoiceDateTime > endDateTimeFilter) return false;
+            }
+
             if (sourceGroups.length > 0 && !sourceGroups.includes(inv.source_group_jid)) return false;
             if (recipientFilter.length > 0 && !recipientFilter.includes(inv.recipient_name)) return false;
+            
             const needsReview = !inv.is_manual && (!inv.sender_name || !inv.recipient_name || !inv.amount || inv.amount === '0.00');
             if (reviewStatus === 'only_review' && !needsReview) return false;
             if (reviewStatus === 'hide_review' && needsReview) return false;
             if (status === 'only_deleted' && !inv.is_deleted) return false;
             if (status === 'only_duplicates') {
+                // Correctly check for duplicates within the full dataset
                 const isDuplicate = allInvoices.filter(i => i.transaction_id && i.transaction_id === inv.transaction_id).length > 1;
                 if (!isDuplicate) return false;
             }
 
             return true;
         });
+
+        setFilteredInvoices(filtered);
+        setLoading(false);
     }, [allInvoices, filters]);
 
 
@@ -196,11 +190,7 @@ const InvoicesPage = ({ allGroups, socket }) => {
     };
 
     const handleSave = () => { closeAllModals(); fetchInvoices(); };
-
-    const closeAllModals = () => {
-        setIsInvoiceModalOpen(false);
-        setEditingInvoice(null);
-    };
+    const closeAllModals = () => { setIsInvoiceModalOpen(false); setEditingInvoice(null); };
 
     return (
         <>
