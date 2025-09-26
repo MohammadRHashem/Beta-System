@@ -41,8 +41,8 @@ prompt_2 = f"""
     - **recipient:** Information about the entity receiving the payment.
         - name: The full name of the recipient.
         - **CRITICAL SWAP RULE:** The recipient is often "Trkbit". If you find "Trkbit", "Trkbit Tecnologia E Informacao Ltda", or any case-variation of these in the **sender** field, you MUST swap them and place "TRKBIT TECNOLOGIA E INFORMACAO LTDA" in the recipient name field, and find the correct sender from the other information.
-        - **FALLBACK RULE:** If you see "trkbit" (case-insensitive) anywhere in the image but cannot determine a recipient name, you MUST set the recipient name to "TRKBIT".
-        - **CRITICAL MAIN RULE:** If recipient name contains "trkbit" or "BRAZ E SALADO" or "TER CONSULTORIA" (case-insensitive), you MUST set the recipient name to "TRKBIT TECNOLOGIA E INFORMACAO" all caps.
+        - **FALLBACK RULE:** If you see "@trkbit.co" (case-insensitive) in the chave pix field but cannot determine a recipient name, you MUST set the recipient name to "TRKBIT TECNOLOGIA E INFORMACAO LTDA".
+        - **CRITICAL MAIN RULE:** If recipient name contains "trkbit" or "BRAZ E SALADO" or "TER CONSULTORIA" (case-insensitive), you MUST set the recipient name to "TRKBIT TECNOLOGIA E INFORMACAO LTDA" all caps.
 
     - **image_type:** Classify the image's context.
         - **replay:** A photo of another screen (phone, monitor). Look for glare, screen borders, or moiré patterns.
@@ -50,7 +50,11 @@ prompt_2 = f"""
         - **live:** A photo of a physical, real-world paper receipt. Look for shadows, lighting, and perspective.
         - **others:** Anything else that is not a receipt.
 
-    If any field is not found, its value in the JSON must be an empty string "".
+    - If any field is not found, its value in the JSON must be an empty string "".
+    - VERY IMPORTANT: Do not fabricate or guess any information. Only extract what is clearly visible in the image.
+    - VERY IMPORTANT: IF image appears to be by-hand calculations, return empty json.
+    - VERY IMPORTANT: If the image is not a receipt or does not contain relevant transaction information, return the empty JSON structure.
+    - VERY IMPORTANT: If the image is a bank statement or contains "statement of account" or "usdt", return the empty JSON structure.
 
     **JSON OUTPUT FORMAT (Return only this):**
     ```json
