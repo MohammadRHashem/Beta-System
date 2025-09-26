@@ -89,7 +89,7 @@ const invoiceWorker = new Worker(
       } catch (pythonError) { await fs.unlink(tempFilePath); throw pythonError; }
 
       const { amount, sender, recipient, transaction_id } = invoiceJson;
-      if (!amount || !recipient?.name) { await fs.unlink(tempFilePath); await connection.commit(); return; }
+      if (!amount || !recipient?.name) { await fs.unlink(tempFilePath); await connection.commit(); await originalMessage.react(''); return; }
 
       let finalMediaPath = null;
       if (groupSettings.archiving_enabled) {
@@ -124,7 +124,7 @@ const invoiceWorker = new Worker(
               
               if (isAutoConfirmationEnabled) {
                 await connection.query(`INSERT INTO forwarded_invoices (original_message_id, forwarded_message_id, destination_group_jid) VALUES (?, ?, ?)`, [messageId, forwardedMessage.id._serialized, rule.destination_group_jid]);
-                await originalMessage.react('⚪');
+                await originalMessage.react('🟡');
               }
               break;
             }
@@ -249,6 +249,18 @@ const queueMessageIfNotExists = async (messageId) => {
         await connection.query("INSERT INTO processed_messages (message_id) VALUES (?)", [messageId]);
         await connection.commit();
         console.log(`[QUEUE-ADD] Transactionally added message to queue. ID: ${messageId}`);
+        const originalMessage = await client.getMessageById(messageId);
+        if (
+          originalMessage &&
+          originalMessage.hasMedia &&
+          (
+            originalMessage.type === 'image' ||
+            (originalMessage.type === 'document' &&
+              originalMessage._data?.mimetype?.toLowerCase() === 'application/pdf')
+          )
+        ) {
+          await originalMessage.react('🕒');
+        }
     } catch (error) {
         await connection.rollback();
         if (error.code !== 'ER_DUP_ENTRY') {
@@ -375,36 +387,48 @@ const handleMessageRevoke = async (message, revoked_msg) => {
 };
 
 const handleReaction = async (reaction) => {
-    if (!isAutoConfirmationEnabled || reaction.reaction !== '👍') {
-        return; // Exit if feature is off or reaction is not a 'like'
+  if (
+    !isAutoConfirmationEnabled ||
+    (reaction.reaction !== '👍' && reaction.reaction !== '✅')
+  ) {
+    return;
+  }
+
+  const reactedMessageId = reaction.msgId._serialized;
+  console.log(`[REACTION] Detected 'like' on message: ${reactedMessageId}`);
+
+  try {
+    const [[link]] = await pool.query(
+      'SELECT original_message_id, is_confirmed FROM forwarded_invoices WHERE forwarded_message_id = ?',
+      [reactedMessageId]
+    );
+
+    if (!link) {
+      // This was a 'like' on a message we are not tracking, so we ignore it.
+      return;
     }
 
-    const reactedMessageId = reaction.msgId._serialized;
-    console.log(`[REACTION] Detected 'like' on message: ${reactedMessageId}`);
-
-    try {
-        const [[link]] = await pool.query(
-            'SELECT original_message_id FROM forwarded_invoices WHERE forwarded_message_id = ?',
-            [reactedMessageId]
-        );
-
-        if (!link) {
-            // This was a 'like' on a message we are not tracking, so we ignore it.
-            return;
-        }
-
-        console.log(`[REACTION] Found linked original message: ${link.original_message_id}`);
-        const originalMessage = await client.getMessageById(link.original_message_id);
-
-        if (originalMessage) {
-            await originalMessage.reply('Caiu');
-            await originalMessage.react(''); // Remove previous reactions
-            await originalMessage.react('🟢'); // Add final confirmation reaction
-            console.log(`[REACTION] Successfully processed confirmation for ${link.original_message_id}`);
-        }
-    } catch (error) {
-        console.error(`[REACTION-ERROR] Failed to process 'like' confirmation for ${reactedMessageId}:`, error);
+    if (link.is_confirmed !== 0) {
+      // Already confirmed, do not send "Caiu" again
+      return;
     }
+
+    console.log(`[REACTION] Found linked original message: ${link.original_message_id}`);
+    const originalMessage = await client.getMessageById(link.original_message_id);
+
+    if (originalMessage) {
+      await originalMessage.reply('Caiu');
+      await originalMessage.react(''); // Remove previous reactions
+      await originalMessage.react('🟢'); // Add final confirmation reaction
+      await pool.query(
+        'UPDATE forwarded_invoices SET is_confirmed = 1 WHERE forwarded_message_id = ?',
+        [reactedMessageId]
+      );
+      console.log(`[REACTION] Successfully processed confirmation for ${link.original_message_id}`);
+    }
+  } catch (error) {
+    console.error(`[REACTION-ERROR] Failed to process 'like' confirmation for ${reactedMessageId}:`, error);
+  }
 };
 
 const initializeWhatsApp = (socketIoInstance) => {
@@ -418,6 +442,9 @@ const initializeWhatsApp = (socketIoInstance) => {
           "--no-sandbox",
           "--disable-setuid-sandbox",
           "--disable-dev-shm-usage",
+          "--disable-gpu",
+          // This can help prevent navigation-related race conditions
+          "--unhandled-rejections=strict",
         ],
       },
     });
