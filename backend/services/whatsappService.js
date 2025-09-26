@@ -335,6 +335,39 @@ const handleMessage = async (message) => {
   try {
     const chat = await message.getChat();
     if (!chat.isGroup) return;
+
+
+    if (message.hasQuotedMsg && message.body.trim().toLowerCase() === 'repeated') {
+        const quotedMessage = await message.getQuotedMessage();
+        const quotedMessageId = quotedMessage.id._serialized;
+        
+        console.log(`[REPEATED] Detected "repeated" reply to message: ${quotedMessageId}`);
+
+        try {
+            const [[link]] = await pool.query(
+                'SELECT original_message_id FROM forwarded_invoices WHERE forwarded_message_id = ?',
+                [quotedMessageId]
+            );
+
+            if (link) {
+                console.log(`[REPEATED] Found linked original message: ${link.original_message_id}`);
+                const originalMessage = await client.getMessageById(link.original_message_id);
+                if (originalMessage) {
+                    await originalMessage.reply('repeated');
+                    // Mark the "repeated" reply itself as processed to avoid re-triggering
+                    await pool.query("INSERT INTO processed_messages (message_id) VALUES (?) ON DUPLICATE KEY UPDATE message_id=message_id", [message.id._serialized]);
+                    console.log(`[REPEATED] Successfully sent "repeated" reply to original message.`);
+                }
+            } else {
+                console.log(`[REPEATED] No linked original message found for ${quotedMessageId}. Ignoring.`);
+            }
+        } catch (error) {
+            console.error(`[REPEATED-ERROR] Failed to process "repeated" reply for ${quotedMessageId}:`, error);
+        }
+        return; // Stop further processing for this message
+    }
+
+
     
     if (message.body) {
       const triggerText = message.body.trim();
