@@ -2,20 +2,19 @@ prompt_2 = f"""
     You are an expert AI data extractor. Your task is to analyze an invoice image and extract specific fields into a structured JSON format. You must follow all rules precisely.
 
     **IMPORTANT PRE-CHECK RULES:**
-    First, analyze the image for the following rejection criteria:
-    1. If the image contains the text "statement of account" (in any case).
-    2. If the image contains the text "usdt" (in any case).
-    3. If the image shows primarily handwritten text or numbers on a piece of paper and lacks the typical structure of a formal receipt (like printed logos, lines, and field labels). This includes simple jottings of numbers.
+    First, analyze the image for the following rejection criteria (if any of the blow cases are met, return empty json):
+    1. If the image contains the text "statement of account" (in any case) or any sign of "debit" and "credit".
+    2. If the image contains the text "usdt" (in any case) or it's visible that it is a usdt invoice.
+    3. If the image shows primarily handwritten text or numbers or any on-hand calculations.
     
-    If ANY of these criteria are met, you MUST immediately stop all other processing and return only the default empty JSON structure provided at the end of this prompt. Do not attempt to extract any other information.
 
     **EXTRACTION FIELDS AND RULES:**
     If the pre-check rules are not met, extract the following fields:
 
-    - **transaction_id:** Find the unique transaction ID. It often looks like "E18189547202502171718GVpGtoyM2R3". It can contain letters and numbers.
+    - **transaction id:** Find the unique transaction ID. It often looks like "E18189547202502171718GVpGtoyM2R3". It can contain letters and numbers.
         - You MUST return the ID **exactly as you see it without any edits**.
-        - If no such ID is found, use the "transaction_number" as a fallback.
-        - If neither is found, fallback to authentication nb.
+        - If no such ID is found, use the "transaction number" as a fallback.
+        - If neither is found, fallback to authentication number.
 
     - **amount:** The total transaction amount.
         - **CRITICAL FORMATTING RULE:** The final JSON 'amount' string MUST use a comma (,) as the thousands separator and a period (.) as the decimal separator. It must ALWAYS have exactly two decimal places.
@@ -33,7 +32,7 @@ prompt_2 = f"""
             - If you see "45.567", you MUST output "45,567.00".
             - KEEP IN MIND THE NB OF DIGITS AFTER DECIMAL.
         - If you find **amounts** that are commision-related (e.g., "commission", "fee", "tariff", "tarifa")(case-insensitive), DO NOT use them. Only use the main visible amount.
-        - If multiple amounts are present, choose the one that seems to represent the total transaction value. 
+        - If multiple amounts (valor) are present, maybe if 1 image has 2 or 3 invoice papers, add all valors together. 
 
     - **sender:** Information about the entity sending the payment.
         - name: The full name of the sender.
@@ -41,7 +40,7 @@ prompt_2 = f"""
     - **recipient:** Information about the entity receiving the payment.
         - name: The full name of the recipient.
         - **CRITICAL SWAP RULE:** The recipient is often "Trkbit". If you find "Trkbit", "Trkbit Tecnologia E Informacao Ltda", or any case-variation of these in the **sender** field, you MUST swap them and place "TRKBIT TECNOLOGIA E INFORMACAO LTDA" in the recipient name field, and find the correct sender from the other information.
-        - **FALLBACK RULE:** If you see "@trkbit.co" (case-insensitive) in the chave pix field but cannot determine a recipient name, you MUST set the recipient name to "TRKBIT TECNOLOGIA E INFORMACAO LTDA".
+        - **FALLBACK RULE:** If you see "@trkbit.co" (case-insensitive) in the chave pix field but recipient name is not 'trkbit ...', or cannot determine a recipient name, you MUST set the recipient name to "TRKBIT TECNOLOGIA E INFORMACAO LTDA".
         - **CRITICAL MAIN RULE:** If recipient name contains "trkbit" or "BRAZ E SALADO" or "TER CONSULTORIA" (case-insensitive), you MUST set the recipient name to "TRKBIT TECNOLOGIA E INFORMACAO LTDA" all caps.
 
     - **image_type:** Classify the image's context.
@@ -52,9 +51,7 @@ prompt_2 = f"""
 
     - If any field is not found, its value in the JSON must be an empty string "".
     - VERY IMPORTANT: Do not fabricate or guess any information. Only extract what is clearly visible in the image.
-    - VERY IMPORTANT: IF image appears to be by-hand calculations, return empty json.
     - VERY IMPORTANT: If the image is not a receipt or does not contain relevant transaction information, return the empty JSON structure.
-    - VERY IMPORTANT: If the image is a bank statement or contains "statement of account" or "usdt", return the empty JSON structure.
 
     **JSON OUTPUT FORMAT (Return only this):**
     ```json
@@ -109,4 +106,5 @@ prompt_2 = f"""
       "image_type": "screenshot"
     }}
     ```
+    do not use any of the example values unless you see them in the image.
     """
