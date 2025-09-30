@@ -15,6 +15,7 @@ import AbbreviationsPage from "./AbbreviationsPage";
 import InvoicesPage from "./InvoicesPage";
 import PositionPage from "./PositionPage"; // Add this import
 import AutoConfirmationPage from "./AutoConfirmationPage";
+import DirectForwardingPage from "./DirectForwardingPage";
 
 const AppLayout = styled.div`
   display: flex;
@@ -171,6 +172,7 @@ const MainLayout = () => {
                 element={<AiForwardingPage allGroups={allGroups} />}
               />
               <Route path="/auto-confirmation" element={<AutoConfirmationPage />} />
+              <Route path="/direct-forwarding" element={<DirectForwardingPage allGroups={allGroups} />} />
               <Route path="/chave-pix" element={<ChavePixPage />} />
               <Route path="/group-settings" element={<GroupSettingsPage />} />
               <Route path="*" element={<Navigate to="/invoices" replace />} />

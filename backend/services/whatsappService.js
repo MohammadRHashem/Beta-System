@@ -89,7 +89,12 @@ const invoiceWorker = new Worker(
       } catch (pythonError) { await fs.unlink(tempFilePath); throw pythonError; }
 
       const { amount, sender, recipient, transaction_id } = invoiceJson;
-      if (!amount || !recipient?.name) { await fs.unlink(tempFilePath); await connection.commit(); await originalMessage.react(''); return; }
+      if (!amount || !recipient?.name) { 
+          await fs.unlink(tempFilePath); 
+          await connection.commit(); 
+          await originalMessage.react(''); 
+          return; 
+      }
 
       let finalMediaPath = null;
       if (groupSettings.archiving_enabled) {
@@ -99,37 +104,55 @@ const invoiceWorker = new Worker(
         await connection.query(`INSERT INTO invoices (message_id, transaction_id, sender_name, recipient_name, pix_key, amount, source_group_jid, received_at, raw_json_data, media_path, is_deleted) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [messageId, transaction_id, sender?.name, recipient.name, recipient.pix_key, amount, chat.id._serialized, correctUtcDate, JSON.stringify(invoiceJson), finalMediaPath, false]);
       } else { await fs.unlink(tempFilePath); }
 
+      // === NEW TWO-TIERED FORWARDING LOGIC ===
       if (groupSettings.forwarding_enabled) {
-        const recipientNameLower = (recipient.name || "").toLowerCase().trim();
-        if (recipientNameLower) {
-          const [rules] = await connection.query("SELECT * FROM forwarding_rules WHERE is_enabled = 1");
-          for (const rule of rules) {
-            if (recipientNameLower.includes(rule.trigger_keyword.toLowerCase())) {
+          let forwarded = false;
+          const sourceGroupJid = chat.id._serialized;
+
+          // 1. HIGHEST PRIORITY: Check for a direct group-to-group rule.
+          const [[directRule]] = await connection.query(
+              'SELECT destination_group_jid FROM direct_forwarding_rules WHERE source_group_jid = ?',
+              [sourceGroupJid]
+          );
+
+          if (directRule) {
+              console.log(`[FORWARDING] Matched direct rule for source group "${chat.name}". Forwarding...`);
               const mediaToForward = new MessageMedia(media.mimetype, media.data, media.filename);
-
-              // === THE EDIT: Logic to extract number from group name for caption ===
-              let caption = '\u200C'; // Default invisible caption
-              const groupName = chat.name;
-              // Regex: find all sequences of 3 or more digits/hyphens that form a "word"
-              const numberRegex = /\b(\d[\d-]{2,})\b/g; 
-              const matches = groupName.match(numberRegex);
-
-              if (matches && matches.length > 0) {
-                  // If we find one or more matches, use the last one as the caption
-                  caption = matches[matches.length - 1];
-              }
-              // ===================================================================
-
-              const forwardedMessage = await client.sendMessage(rule.destination_group_jid, mediaToForward, { caption: caption });
+              const forwardedMessage = await client.sendMessage(directRule.destination_group_jid, mediaToForward, { caption: '\u200C' });
+              forwarded = true;
               
               if (isAutoConfirmationEnabled) {
-                await connection.query(`INSERT INTO forwarded_invoices (original_message_id, forwarded_message_id, destination_group_jid) VALUES (?, ?, ?)`, [messageId, forwardedMessage.id._serialized, rule.destination_group_jid]);
+                await connection.query(`INSERT INTO forwarded_invoices (original_message_id, forwarded_message_id, destination_group_jid) VALUES (?, ?, ?)`, [messageId, forwardedMessage.id._serialized, directRule.destination_group_jid]);
                 await originalMessage.react('🟡');
               }
-              break;
-            }
           }
-        }
+
+          // 2. FALLBACK: If not forwarded via direct rule, check AI keyword rules.
+          if (!forwarded) {
+              const recipientNameLower = (recipient.name || "").toLowerCase().trim();
+              if (recipientNameLower) {
+                  const [rules] = await connection.query("SELECT * FROM forwarding_rules WHERE is_enabled = 1");
+                  for (const rule of rules) {
+                      if (recipientNameLower.includes(rule.trigger_keyword.toLowerCase())) {
+                          console.log(`[FORWARDING] Matched AI keyword rule for recipient "${recipient.name}". Forwarding...`);
+                          const mediaToForward = new MessageMedia(media.mimetype, media.data, media.filename);
+                          let caption = '\u200C';
+                          const numberRegex = /\b(\d[\d-]{2,})\b/g;
+                          const matches = chat.name.match(numberRegex);
+                          if (matches && matches.length > 0) {
+                              caption = matches[matches.length - 1];
+                          }
+                          const forwardedMessage = await client.sendMessage(rule.destination_group_jid, mediaToForward, { caption: caption });
+                          
+                          if (isAutoConfirmationEnabled) {
+                            await connection.query(`INSERT INTO forwarded_invoices (original_message_id, forwarded_message_id, destination_group_jid) VALUES (?, ?, ?)`, [messageId, forwardedMessage.id._serialized, rule.destination_group_jid]);
+                            await originalMessage.react('🟡');
+                          }
+                          break;
+                      }
+                  }
+              }
+          }
       }
 
       await connection.commit();

@@ -17,6 +17,7 @@ const chavePixController = require('./controllers/chavePixController');
 const abbreviationController = require('./controllers/abbreviationController');
 const invoiceController = require('./controllers/invoiceController');
 const positionController = require('./controllers/positionController');
+const directForwardingController = require('./controllers/directForwardingController');
 
 const app = express();
 const server = http.createServer(app);
@@ -86,6 +87,10 @@ app.get('/api/invoices/recipients', invoiceController.getRecipientNames);
 app.get('/api/invoices/export', invoiceController.exportInvoices);
 app.get('/api/invoices/media/:id', invoiceController.getInvoiceMedia);
 app.get('/api/position', positionController.calculatePosition);
+
+app.get('/api/direct-forwarding', directForwardingController.getAllRules);
+app.post('/api/direct-forwarding', directForwardingController.createRule);
+app.delete('/api/direct-forwarding/:id', directForwardingController.deleteRule);
 
 const frontendPath = path.join(__dirname, '..', 'frontend', 'dist');
 if (fs.existsSync(frontendPath)) {

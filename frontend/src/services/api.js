@@ -89,4 +89,9 @@ export const exportInvoices = async (params) => {
     triggerBrowserDownload(blob, 'invoices.xlsx');
 };
 
+// === NEW: API functions for Direct Forwarding Rules ===
+export const getDirectForwardingRules = () => apiClient.get('/direct-forwarding');
+export const createDirectForwardingRule = (data) => apiClient.post('/direct-forwarding', data);
+export const deleteDirectForwardingRule = (id) => apiClient.delete(`/direct-forwarding/${id}`);
+
 export default apiClient;
