@@ -96,6 +96,34 @@ const invoiceWorker = new Worker(
           return; 
       }
 
+
+      // dup invoice check
+      if (transaction_id && amount) {
+        const [existingInvoices] = await connection.query(
+          'SELECT source_group_jid FROM invoices WHERE transaction_id = ? AND amount = ?',
+          [transaction_id, amount]
+        );
+
+        if (existingInvoices.length > 0) {
+          console.log(`[DUPLICATE] Invoice with TXN_ID ${transaction_id} and amount ${amount} already exists.`);
+          const existingSourceJid = existingInvoices[0].source_group_jid;
+          const currentSourceJid = chat.id._serialized;
+
+          if (existingSourceJid === currentSourceJid) {
+            await originalMessage.reply("Repeated");
+          } else {
+            await originalMessage.reply("repeated from another client");
+          }
+          
+          await fs.unlink(tempFilePath); // Clean up the temp file
+          await connection.commit(); // Commit the transaction (as we didn't change anything but want to finish)
+          return; // Stop all further processing for this duplicate invoice
+        }
+      }
+      // ==========================================
+
+      
+
       let finalMediaPath = null;
       if (groupSettings.archiving_enabled) {
         const archiveFileName = `${messageId}.${extension}`;
@@ -358,38 +386,6 @@ const handleMessage = async (message) => {
   try {
     const chat = await message.getChat();
     if (!chat.isGroup) return;
-
-
-    if (message.hasQuotedMsg && message.body.trim().toLowerCase() === 'repeated') {
-        const quotedMessage = await message.getQuotedMessage();
-        const quotedMessageId = quotedMessage.id._serialized;
-        
-        console.log(`[REPEATED] Detected "repeated" reply to message: ${quotedMessageId}`);
-
-        try {
-            const [[link]] = await pool.query(
-                'SELECT original_message_id FROM forwarded_invoices WHERE forwarded_message_id = ?',
-                [quotedMessageId]
-            );
-
-            if (link) {
-                console.log(`[REPEATED] Found linked original message: ${link.original_message_id}`);
-                const originalMessage = await client.getMessageById(link.original_message_id);
-                if (originalMessage) {
-                    await originalMessage.reply('repeated');
-                    // Mark the "repeated" reply itself as processed to avoid re-triggering
-                    await pool.query("INSERT INTO processed_messages (message_id) VALUES (?) ON DUPLICATE KEY UPDATE message_id=message_id", [message.id._serialized]);
-                    console.log(`[REPEATED] Successfully sent "repeated" reply to original message.`);
-                }
-            } else {
-                console.log(`[REPEATED] No linked original message found for ${quotedMessageId}. Ignoring.`);
-            }
-        } catch (error) {
-            console.error(`[REPEATED-ERROR] Failed to process "repeated" reply for ${quotedMessageId}:`, error);
-        }
-        return; // Stop further processing for this message
-    }
-
 
     
     if (message.body) {
