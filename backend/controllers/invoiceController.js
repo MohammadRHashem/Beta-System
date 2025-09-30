@@ -89,10 +89,10 @@ exports.exportInvoices = async (req, res) => {
         LEFT JOIN whatsapp_groups wg ON i.source_group_jid = wg.group_jid
         WHERE 
             i.is_deleted = 0
-            -- === THE EDIT: Changed MIN(id) to MAX(id) to get the latest duplicate ===
+            -- === THE EDIT: Changed MAX(id) to MIN(id) to get the oldest duplicate ===
             AND (
                 i.transaction_id IS NULL OR i.transaction_id = '' OR i.id IN (
-                    SELECT MAX(id) FROM invoices WHERE transaction_id IS NOT NULL AND transaction_id != '' GROUP BY transaction_id
+                    SELECT MIN(id) FROM invoices WHERE transaction_id IS NOT NULL AND transaction_id != '' GROUP BY transaction_id
                 )
             )
     `;
