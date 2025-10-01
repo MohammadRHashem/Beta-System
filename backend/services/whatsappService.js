@@ -8,6 +8,7 @@ const os = require("os");
 const dotenv = require("dotenv");
 const { Queue, Worker } = require("bullmq");
 const cron = require("node-cron");
+const axios = require('axios');
 
 let client;
 let qrCodeData;
@@ -31,6 +32,22 @@ const MEDIA_ARCHIVE_DIR = path.join(__dirname, "..", "media_archive");
 if (!fsSync.existsSync(MEDIA_ARCHIVE_DIR)) {
   fsSync.mkdirSync(MEDIA_ARCHIVE_DIR, { recursive: true });
 }
+
+const sendPingToMonitor = async () => {
+    const monitorUrl = process.env.MONITOR_URL;
+    if (!monitorUrl) return;
+
+    try {
+        // We only send a ping if the bot is actually connected.
+        // This prevents false alarms during a restart or QR scan.
+        if (connectionStatus === 'connected') {
+            await axios.get(monitorUrl);
+        }
+    } catch (error) {
+        // We don't log errors here to avoid spamming the console.
+        // The monitor server is responsible for alerting on failure.
+    }
+};
 
 const invoiceWorker = new Worker(
   "invoice-processing-queue",
@@ -89,7 +106,7 @@ const invoiceWorker = new Worker(
       } catch (pythonError) { await fs.unlink(tempFilePath); throw pythonError; }
 
       const { amount, sender, recipient, transaction_id } = invoiceJson;
-      if (!amount || !recipient?.name) { 
+      if (!amount || (!recipient?.name && !recipient?.pix_key)) { 
           await fs.unlink(tempFilePath); 
           await connection.commit(); 
           await originalMessage.react(''); 
@@ -97,15 +114,47 @@ const invoiceWorker = new Worker(
       }
 
 
-      // dup invoice check
-      if (transaction_id && amount) {
+      // // dup invoice check
+      // if (transaction_id && amount) {
+      //   const [existingInvoices] = await connection.query(
+      //     'SELECT source_group_jid FROM invoices WHERE transaction_id = ? AND amount = ?',
+      //     [transaction_id, amount]
+      //   );
+
+      //   if (existingInvoices.length > 0) {
+      //     console.log(`[DUPLICATE] Invoice with TXN_ID ${transaction_id} and amount ${amount} already exists.`);
+      //     const existingSourceJid = existingInvoices[0].source_group_jid;
+      //     const currentSourceJid = chat.id._serialized;
+
+      //     if (existingSourceJid === currentSourceJid) {
+      //       await originalMessage.reply("Repeated");
+      //       await originalMessage.react('❌');
+      //     } else {
+      //       await originalMessage.reply("repeated from another client");
+      //       await originalMessage.react('❌');
+      //     }
+          
+      //     await fs.unlink(tempFilePath); // Clean up the temp file
+      //     await connection.commit(); // Commit the transaction (as we didn't change anything but want to finish)
+      //     return; // Stop all further processing for this duplicate invoice
+      //   }
+      // }
+      // // ==========================================
+
+      // === THE EDIT: ADDED RECIPIENT CHECK TO DUPLICATE LOGIC ===
+      const recipientNameLower = (recipient.name || "").toLowerCase();
+      if (
+          transaction_id && 
+          amount && 
+          (recipientNameLower.includes('trkbit') || recipientNameLower.includes('alfa trust'))
+      ) {
         const [existingInvoices] = await connection.query(
           'SELECT source_group_jid FROM invoices WHERE transaction_id = ? AND amount = ?',
           [transaction_id, amount]
         );
 
         if (existingInvoices.length > 0) {
-          console.log(`[DUPLICATE] Invoice with TXN_ID ${transaction_id} and amount ${amount} already exists.`);
+          console.log(`[DUPLICATE] Invoice for our company with TXN_ID ${transaction_id} already exists.`);
           const existingSourceJid = existingInvoices[0].source_group_jid;
           const currentSourceJid = chat.id._serialized;
 
@@ -114,13 +163,13 @@ const invoiceWorker = new Worker(
           } else {
             await originalMessage.reply("repeated from another client");
           }
+          await originalMessage.react('❌');
           
-          await fs.unlink(tempFilePath); // Clean up the temp file
-          await connection.commit(); // Commit the transaction (as we didn't change anything but want to finish)
-          return; // Stop all further processing for this duplicate invoice
+          await fs.unlink(tempFilePath);
+          await connection.commit();
+          return;
         }
       }
-      // ==========================================
 
       
 
@@ -146,7 +195,13 @@ const invoiceWorker = new Worker(
           if (directRule) {
               console.log(`[FORWARDING] Matched direct rule for source group "${chat.name}". Forwarding...`);
               const mediaToForward = new MessageMedia(media.mimetype, media.data, media.filename);
-              const forwardedMessage = await client.sendMessage(directRule.destination_group_jid, mediaToForward, { caption: '\u200C' });
+              let caption = '\u200C';
+                          const numberRegex = /\b(\d[\d-]{2,})\b/g;
+                          const matches = chat.name.match(numberRegex);
+                          if (matches && matches.length > 0) {
+                              caption = matches[matches.length - 1];
+                          }
+                          const forwardedMessage = await client.sendMessage(rule.destination_group_jid, mediaToForward, { caption: caption });
               forwarded = true;
               
               if (isAutoConfirmationEnabled) {
@@ -157,12 +212,18 @@ const invoiceWorker = new Worker(
 
           // 2. FALLBACK: If not forwarded via direct rule, check AI keyword rules.
           if (!forwarded) {
-              const recipientNameLower = (recipient.name || "").toLowerCase().trim();
-              if (recipientNameLower) {
+              // === THE EDIT: Check both recipient name AND pix key ===
+              const recipientNameToCheck = (recipient.name || "").toLowerCase().trim();
+              const pixKeyToCheck = (recipient.pix_key || "").toLowerCase().trim();
+
+              if (recipientNameToCheck || pixKeyToCheck) { // Only proceed if there's something to check
                   const [rules] = await connection.query("SELECT * FROM forwarding_rules WHERE is_enabled = 1");
                   for (const rule of rules) {
-                      if (recipientNameLower.includes(rule.trigger_keyword.toLowerCase())) {
-                          console.log(`[FORWARDING] Matched AI keyword rule for recipient "${recipient.name}". Forwarding...`);
+                      const triggerKeywordLower = rule.trigger_keyword.toLowerCase();
+                      
+                      // Check the keyword against BOTH the name and the PIX key
+                      if (recipientNameToCheck.includes(triggerKeywordLower) || pixKeyToCheck.includes(triggerKeywordLower)) {
+                          console.log(`[FORWARDING] Matched AI keyword rule "${rule.trigger_keyword}" for recipient "${recipient.name}" or PIX key "${recipient.pix_key}". Forwarding...`);
                           const mediaToForward = new MessageMedia(media.mimetype, media.data, media.filename);
                           let caption = '\u200C';
                           const numberRegex = /\b(\d[\d-]{2,})\b/g;
@@ -301,16 +362,13 @@ const queueMessageIfNotExists = async (messageId) => {
         await connection.commit();
         console.log(`[QUEUE-ADD] Transactionally added message to queue. ID: ${messageId}`);
         const originalMessage = await client.getMessageById(messageId);
-        if (
-          originalMessage &&
-          originalMessage.hasMedia &&
-          (
-            originalMessage.type === 'image' ||
-            (originalMessage.type === 'document' &&
-              originalMessage._data?.mimetype?.toLowerCase() === 'application/pdf')
-          )
-        ) {
-          await originalMessage.react('🕒');
+        if (originalMessage && originalMessage.hasMedia) {
+            const mime = originalMessage._data?.mimetype?.toLowerCase();
+            // === THE DEFINITIVE PDF FIX ===
+            // Check for both common PDF mime types.
+            if (originalMessage.type === 'image' || (originalMessage.type === 'document' && (mime === 'application/pdf' || mime === 'application/x-pdf'))) {
+                await originalMessage.react('🕒');
+            }
         }
     } catch (error) {
         await connection.rollback();
@@ -507,6 +565,8 @@ const initializeWhatsApp = (socketIoInstance) => {
       connectionStatus = "qr";
     });
     client.on("ready", async () => {
+      cron.schedule("*/2 * * * * *", sendPingToMonitor);
+      console.log("[HEARTBEAT] Pinger to AWS monitor scheduled to run every second.");
       qrCodeData = null;
       connectionStatus = "connected";
       refreshAbbreviationCache();
