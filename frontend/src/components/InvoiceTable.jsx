@@ -3,6 +3,7 @@ import styled, { css } from 'styled-components';
 import { viewInvoiceMedia, deleteInvoice } from '../services/api';
 import { FaEdit, FaTrashAlt, FaEye } from 'react-icons/fa';
 import { formatInTimeZone } from 'date-fns-tz';
+import Pagination from './Pagination';
 
 const formatDisplayDateTime = (dbDateString) => {
     if (!dbDateString || typeof dbDateString !== 'string') return '';
@@ -91,7 +92,7 @@ const Td = styled.td`
     }
 `;
 
-const InvoiceTable = ({ invoices, loading, onEdit }) => {
+const InvoiceTable = ({ invoices, loading, onEdit, pagination, setPagination }) => {
 
     // This logic correctly creates a map of transaction IDs to their counts.
     const transactionIdCounts = useMemo(() => {
@@ -128,45 +129,48 @@ const InvoiceTable = ({ invoices, loading, onEdit }) => {
     if (!invoices || !invoices.length) return <p>No invoices found for the selected criteria.</p>;
 
     return (
-        <TableWrapper>
-            <Table>
-                <Thead>
-                    <tr>
-                        <Th>Received At (GMT-03:00)</Th>
-                        <Th>Transaction ID</Th>
-                        <Th>Sender</Th>
-                        <Th>Recipient</Th>
-                        <Th>Source Group</Th>
-                        <Th className="currency">Amount</Th>
-                        <Th>Actions</Th>
-                    </tr>
-                </Thead>
-                <tbody>
-                    {invoices.map((inv) => {
-                        // === THE DEFINITIVE FIX FOR THE CRASH ===
-                        // This correctly checks the count from the pre-calculated object.
-                        const isDuplicate = inv.transaction_id && transactionIdCounts[inv.transaction_id] > 1;
-                        const needsReview = !inv.is_manual && (!inv.sender_name || !inv.recipient_name || !inv.amount || inv.amount === '0.00');
+        <>
+            <TableWrapper>
+                <Table>
+                    <Thead>
+                        <tr>
+                            <Th>Received At (GMT-03:00)</Th>
+                            <Th>Transaction ID</Th>
+                            <Th>Sender</Th>
+                            <Th>Recipient</Th>
+                            <Th>Source Group</Th>
+                            <Th className="currency">Amount</Th>
+                            <Th>Actions</Th>
+                        </tr>
+                    </Thead>
+                    <tbody>
+                        {invoices.map((inv) => {
+                            // === THE DEFINITIVE FIX FOR THE CRASH ===
+                            // This correctly checks the count from the pre-calculated object.
+                            const isDuplicate = inv.transaction_id && transactionIdCounts[inv.transaction_id] > 1;
+                            const needsReview = !inv.is_manual && (!inv.sender_name || !inv.recipient_name || !inv.amount || inv.amount === '0.00');
 
-                        return (
-                            <Tr key={inv.id} isDuplicate={isDuplicate} isDeleted={!!inv.is_deleted}>
-                                <Td>{formatDisplayDateTime(inv.received_at)}</Td>
-                                <Td>{inv.transaction_id || ''}</Td>
-                                <Td>{inv.sender_name || (needsReview ? 'REVIEW' : '')}</Td>
-                                <Td>{inv.recipient_name || (needsReview ? 'REVIEW' : '')}</Td>
-                                <Td>{inv.source_group_name || ''}</Td>
-                                <Td className={`currency ${needsReview && inv.amount === '0.00' ? 'review' : ''}`}>{inv.amount || ''}</Td>
-                                <Td className="actions">
-                                    {inv.media_path && <FaEye onClick={() => handleViewMedia(inv.id)} title="View Media" />}
-                                    <FaEdit onClick={() => onEdit(inv)} title="Edit" />
-                                    <FaTrashAlt onClick={() => handleDelete(inv.id)} title="Delete Permanently" />
-                                </Td>
-                            </Tr>
-                        );
-                    })}
-                </tbody>
-            </Table>
-        </TableWrapper>
+                            return (
+                                <Tr key={inv.id} isDuplicate={isDuplicate} isDeleted={!!inv.is_deleted}>
+                                    <Td>{formatDisplayDateTime(inv.received_at)}</Td>
+                                    <Td>{inv.transaction_id || ''}</Td>
+                                    <Td>{inv.sender_name || (needsReview ? 'REVIEW' : '')}</Td>
+                                    <Td>{inv.recipient_name || (needsReview ? 'REVIEW' : '')}</Td>
+                                    <Td>{inv.source_group_name || ''}</Td>
+                                    <Td className={`currency ${needsReview && inv.amount === '0.00' ? 'review' : ''}`}>{inv.amount || ''}</Td>
+                                    <Td className="actions">
+                                        {inv.media_path && <FaEye onClick={() => handleViewMedia(inv.id)} title="View Media" />}
+                                        <FaEdit onClick={() => onEdit(inv)} title="Edit" />
+                                        <FaTrashAlt onClick={() => handleDelete(inv.id)} title="Delete Permanently" />
+                                    </Td>
+                                </Tr>
+                            );
+                        })}
+                    </tbody>
+                </Table>
+            </TableWrapper>
+            <Pagination pagination={pagination} setPagination={setPagination} />
+        </>
     );
 };
 

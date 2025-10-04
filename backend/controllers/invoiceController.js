@@ -7,19 +7,25 @@ const { parseFormattedCurrency } = require('../utils/currencyParser');
 // === THE EDIT: Simplified for faster initial loads ===
 exports.getAllInvoices = async (req, res) => {
     const {
-        page = 1, limit = 10000, sortOrder = 'desc',
-        dateFrom, dateTo, timeFrom, timeTo
+        page = 1, limit = 50, sortOrder = 'desc',
+        search, dateFrom, dateTo, timeFrom, timeTo,
+        sourceGroups, recipientNames, reviewStatus, status,
     } = req.query;
 
     const offset = (page - 1) * limit;
-    // The query now focuses primarily on the date range, which is fast and indexable.
-    // Complex text searches are now handled on the client.
     let query = `
         FROM invoices i
         LEFT JOIN whatsapp_groups wg ON i.source_group_jid = wg.group_jid
         WHERE 1=1
     `;
     const params = [];
+
+    // All filters are now applied on the backend
+    if (search) {
+        query += ` AND (i.transaction_id LIKE ? OR i.sender_name LIKE ? OR i.recipient_name LIKE ? OR i.pix_key LIKE ? OR i.notes LIKE ? OR i.amount LIKE ?)`;
+        const searchTerm = `%${search}%`;
+        params.push(searchTerm, searchTerm, searchTerm, searchTerm, searchTerm, searchTerm);
+    }
     
     if (dateFrom) {
         const startDateTime = `${dateFrom} ${timeFrom || '00:00:00'}`;
@@ -32,6 +38,34 @@ exports.getAllInvoices = async (req, res) => {
         params.push(endDateTime);
     }
 
+    if (sourceGroups && sourceGroups.length > 0) {
+        query += ` AND i.source_group_jid IN (?)`;
+        // Ensure sourceGroups is an array, as it comes from query string
+        params.push(Array.isArray(sourceGroups) ? sourceGroups : [sourceGroups]);
+    }
+    if (recipientNames && recipientNames.length > 0) {
+        query += ` AND i.recipient_name IN (?)`;
+        params.push(Array.isArray(recipientNames) ? recipientNames : [recipientNames]);
+    }
+    
+    const reviewCondition = "(i.sender_name IS NULL OR i.sender_name = '' OR i.recipient_name IS NULL OR i.recipient_name = '' OR i.amount IS NULL OR i.amount = '0.00')";
+    if (reviewStatus === 'only_review') {
+        query += ` AND ${reviewCondition}`;
+    } else if (reviewStatus === 'hide_review') {
+        query += ` AND NOT ${reviewCondition}`;
+    }
+
+    if (status === 'only_deleted') {
+        query += ' AND i.is_deleted = 1';
+    } else if (status === 'only_duplicates') {
+        query += ` AND i.transaction_id IS NOT NULL AND i.transaction_id != '' AND i.id NOT IN (SELECT MIN(id) FROM invoices WHERE transaction_id IS NOT NULL AND transaction_id != '' GROUP BY transaction_id, amount)`;
+    } else {
+        // By default, do not show deleted invoices unless explicitly asked for.
+        if (status !== 'only_deleted') {
+            query += ' AND i.is_deleted = 0';
+        }
+    }
+
     const orderByClause = `i.received_at ${sortOrder === 'asc' ? 'ASC' : 'DESC'}`;
 
     try {
@@ -39,13 +73,14 @@ exports.getAllInvoices = async (req, res) => {
         const [[{ total }]] = await pool.query(countQuery, params);
 
         const dataQuery = `
-            SELECT i.id, i.message_id, i.transaction_id, i.sender_name, i.recipient_name, i.pix_key, i.amount, i.notes, i.is_manual, i.is_deleted, i.source_group_jid, i.received_at, i.media_path, wg.group_name as source_group_name
+            SELECT i.*, wg.group_name as source_group_name
             ${query}
             ORDER BY ${orderByClause}, i.id ${sortOrder === 'asc' ? 'ASC' : 'DESC'}
             LIMIT ? OFFSET ?
         `;
         const finalParams = [...params, parseInt(limit), parseInt(offset)];
         const [invoices] = await pool.query(dataQuery, finalParams);
+        
         res.json({
             invoices,
             totalPages: Math.ceil(total / limit),

@@ -146,7 +146,7 @@ const invoiceWorker = new Worker(
       if (
           transaction_id && 
           amount && 
-          (recipientNameLower.includes('trkbit') || recipientNameLower.includes('alfa trust'))
+          (recipientNameLower.includes('trkbit') || recipientNameLower.includes('alfa trust') || recipientNameLower.includes('escrow'))
       ) {
         const [existingInvoices] = await connection.query(
           'SELECT source_group_jid FROM invoices WHERE transaction_id = ? AND amount = ?',

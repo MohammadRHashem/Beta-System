@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import styled from 'styled-components';
 import { useAuth } from '../context/AuthContext';
 import { getInvoices, getRecipientNames, exportInvoices } from '../services/api';
@@ -6,6 +6,18 @@ import { FaPlus, FaFileExcel, FaSyncAlt } from 'react-icons/fa';
 import InvoiceFilter from '../components/InvoiceFilter';
 import InvoiceTable from '../components/InvoiceTable';
 import InvoiceModal from '../components/InvoiceModal';
+
+// Debounce hook to prevent excessive API calls while typing
+const useDebounce = (value, delay) => {
+    const [debouncedValue, setDebouncedValue] = useState(value);
+    useEffect(() => {
+        const handler = setTimeout(() => {
+            setDebouncedValue(value);
+        }, delay);
+        return () => clearTimeout(handler);
+    }, [value, delay]);
+    return debouncedValue;
+};
 
 const PageContainer = styled.div`
     display: flex;
@@ -70,54 +82,65 @@ const RefreshBanner = styled.div`
 `;
 
 const InvoicesPage = ({ allGroups, socket }) => {
-    const [allInvoices, setAllInvoices] = useState([]); // Holds all data from the server
-    const [filteredInvoices, setFilteredInvoices] = useState([]); // Holds data to be displayed
+    const [invoices, setInvoices] = useState([]);
     const [loading, setLoading] = useState(true);
     const [isExporting, setIsExporting] = useState(false);
     const [recipientNames, setRecipientNames] = useState([]);
     const [hasNewInvoices, setHasNewInvoices] = useState(false);
+    const [pagination, setPagination] = useState({ page: 1, limit: 50, totalPages: 1, totalRecords: 0 });
     
     const [filters, setFilters] = useState({
         search: '', dateFrom: '', dateTo: '', timeFrom: '', timeTo: '',
-        sourceGroups: [],
-        recipientNames: [],
-        reviewStatus: '',
-        status: '',
+        sourceGroups: [], recipientNames: [],
+        reviewStatus: '', status: '',
     });
     
     const { isAuthenticated } = useAuth();
     const [isInvoiceModalOpen, setIsInvoiceModalOpen] = useState(false);
     const [editingInvoice, setEditingInvoice] = useState(null);
 
+    // Debounce the text search to avoid API calls on every keystroke
+    const debouncedSearch = useDebounce(filters.search, 500);
+
     const fetchInvoices = useCallback(async () => {
         setLoading(true);
         setHasNewInvoices(false);
         try {
-            const params = { limit: 10000 }; 
+            const params = { 
+                ...filters,
+                search: debouncedSearch,
+                page: pagination.page, 
+                limit: pagination.limit 
+            };
+            // Clean up empty params before sending
+            Object.keys(params).forEach(key => (!params[key] || (Array.isArray(params[key]) && params[key].length === 0)) && delete params[key]);
+            
             const { data } = await getInvoices(params);
-            setAllInvoices(data.invoices || []);
-            setFilteredInvoices(data.invoices || []);
+            setInvoices(data.invoices || []);
+            setPagination(prev => ({ ...prev, totalPages: data.totalPages, totalRecords: data.totalRecords }));
         } catch (error) {
             console.error("Failed to fetch invoices:", error);
-            setAllInvoices([]);
-            setFilteredInvoices([]);
+            setInvoices([]);
         } finally {
             setLoading(false);
         }
-    }, []);
+    }, [pagination.page, pagination.limit, filters, debouncedSearch]); // Removed isAuthenticated as it's handled in the calling effect
 
+    // Effect to fetch data whenever a filter, debounced search, or page number changes.
     useEffect(() => {
         if (isAuthenticated) { 
             fetchInvoices(); 
         }
     }, [fetchInvoices, isAuthenticated]);
     
+    // Effect to fetch dropdown data for filters only once on page load.
     useEffect(() => {
         if (isAuthenticated) {
             getRecipientNames().then(response => setRecipientNames(response.data || [])).catch(err => console.error(err));
         }
     }, [isAuthenticated]);
 
+    // Effect for WebSocket listener.
     useEffect(() => {
         if (isAuthenticated && socket) {
             const handleInvoiceUpdate = () => setHasNewInvoices(true);
@@ -126,49 +149,9 @@ const InvoicesPage = ({ allGroups, socket }) => {
         }
     }, [isAuthenticated, socket]);
 
-    useEffect(() => {
-        setLoading(true);
-        let invoicesToFilter = [...allInvoices];
-        
-        const { search, dateFrom, dateTo, timeFrom, timeTo, sourceGroups, recipientNames: recipientFilter, reviewStatus, status } = filters;
-        
-        // This logic correctly compares UTC time from DB with local time from the filter inputs
-        const startDateTimeFilter = dateFrom ? new Date(`${dateFrom}T${timeFrom || '00:00:00'}`).getTime() : null;
-        const endDateTimeFilter = dateTo ? new Date(`${dateTo}T${timeTo || '23:59:59'}`).getTime() : null;
-
-        const filtered = invoicesToFilter.filter(inv => {
-            const searchTerm = search.toLowerCase();
-
-            if (searchTerm && !(inv.transaction_id?.toLowerCase().includes(searchTerm) || inv.sender_name?.toLowerCase().includes(searchTerm) || inv.recipient_name?.toLowerCase().includes(searchTerm) || inv.amount?.toLowerCase().includes(searchTerm))) return false;
-            
-            if (inv.received_at) {
-                const invoiceDateTime = new Date(inv.received_at + 'Z').getTime();
-                if (startDateTimeFilter && invoiceDateTime < startDateTimeFilter) return false;
-                if (endDateTimeFilter && invoiceDateTime > endDateTimeFilter) return false;
-            }
-
-            if (sourceGroups.length > 0 && !sourceGroups.includes(inv.source_group_jid)) return false;
-            if (recipientFilter.length > 0 && !recipientFilter.includes(inv.recipient_name)) return false;
-            
-            const needsReview = !inv.is_manual && (!inv.sender_name || !inv.recipient_name || !inv.amount || inv.amount === '0.00');
-            if (reviewStatus === 'only_review' && !needsReview) return false;
-            if (reviewStatus === 'hide_review' && needsReview) return false;
-            if (status === 'only_deleted' && !inv.is_deleted) return false;
-            if (status === 'only_duplicates') {
-                // Correctly check for duplicates within the full dataset
-                const isDuplicate = allInvoices.filter(i => i.transaction_id && i.transaction_id === inv.transaction_id).length > 1;
-                if (!isDuplicate) return false;
-            }
-
-            return true;
-        });
-
-        setFilteredInvoices(filtered);
-        setLoading(false);
-    }, [allInvoices, filters]);
-
-
+    // This is now the ONLY way filters are changed.
     const handleFilterChange = (newFilters) => {
+        setPagination(p => ({ ...p, page: 1 })); // Reset to page 1 on any filter change
         setFilters(newFilters);
     };
 
@@ -218,9 +201,11 @@ const InvoicesPage = ({ allGroups, socket }) => {
                     recipientNames={recipientNames}
                 />
                 <InvoiceTable
-                    invoices={filteredInvoices}
+                    invoices={invoices}
                     loading={loading}
                     onEdit={openEditModal}
+                    pagination={pagination}
+                    setPagination={setPagination}
                 />
             </PageContainer>
             
