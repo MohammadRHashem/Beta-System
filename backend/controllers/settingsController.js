@@ -195,3 +195,37 @@ exports.setAutoConfirmationStatus = async (req, res) => {
         res.status(500).json({ message: 'Failed to update status.' });
     }
 };
+
+exports.getAlfaApiConfirmationStatus = async (req, res) => {
+    try {
+        const [[setting]] = await pool.query(
+            "SELECT setting_value FROM system_settings WHERE setting_key = 'alfa_api_confirmation_enabled'"
+        );
+        const isEnabled = setting ? setting.setting_value === 'true' : false;
+        res.json({ isEnabled });
+    } catch (error) {
+        console.error('[ERROR] Failed to fetch Alfa API confirmation status:', error);
+        res.status(500).json({ message: 'Failed to fetch status.' });
+    }
+};
+
+exports.setAlfaApiConfirmationStatus = async (req, res) => {
+    const { isEnabled } = req.body;
+    if (typeof isEnabled !== 'boolean') {
+        return res.status(400).json({ message: 'A boolean `isEnabled` value is required.' });
+    }
+
+    try {
+        const query = `
+            INSERT INTO system_settings (setting_key, setting_value) VALUES (?, ?)
+            ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value);
+        `;
+        await pool.query(query, ['alfa_api_confirmation_enabled', isEnabled.toString()]);
+        
+        whatsappService.refreshAlfaApiConfirmationStatus(); // Notify the service of the change
+        res.json({ message: `Alfa API confirmation successfully ${isEnabled ? 'enabled' : 'disabled'}.` });
+    } catch (error) {
+        console.error('[ERROR] Failed to update Alfa API confirmation status:', error);
+        res.status(500).json({ message: 'Failed to update status.' });
+    }
+};

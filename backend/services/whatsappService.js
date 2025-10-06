@@ -9,6 +9,7 @@ const dotenv = require("dotenv");
 const { Queue, Worker } = require("bullmq");
 const cron = require("node-cron");
 const axios = require('axios');
+const alfaAuthService = require('./alfaAuthService'); 
 
 let client;
 let qrCodeData;
@@ -18,6 +19,7 @@ let io; // To hold the socket.io instance
 
 // === NEW: State for Auto Confirmation ===
 let isAutoConfirmationEnabled = false;
+let isAlfaApiConfirmationEnabled = false;
 
 const redisConnection = {
   host: "localhost",
@@ -48,6 +50,7 @@ const sendPingToMonitor = async () => {
         // The monitor server is responsible for alerting on failure.
     }
 };
+
 
 const invoiceWorker = new Worker(
   "invoice-processing-queue",
@@ -143,6 +146,26 @@ const invoiceWorker = new Worker(
 
       // === THE EDIT: ADDED RECIPIENT CHECK TO DUPLICATE LOGIC ===
       const recipientNameLower = (recipient.name || "").toLowerCase();
+
+      // === NEW: ALFA TRUST API CONFIRMATION LOGIC ===
+      if (isAlfaApiConfirmationEnabled && recipientNameLower.includes('alfa trust')) {
+          const isConfirmed = await alfaAuthService.findTransaction(invoiceJson);
+
+          if (isConfirmed) {
+              console.log(`[ALFA-CONFIRM] Confirmed invoice via API for TXN_ID: ${transaction_id}`);
+              await originalMessage.reply('Caiu');
+              await originalMessage.react(''); // Clear other reactions
+              await originalMessage.react('🟢');
+          } else {
+              console.log(`[ALFA-CONFIRM] Invoice NOT found via API for TXN_ID: ${transaction_id}`);
+              await originalMessage.react('🔴');
+          }
+          
+          // Since confirmation is handled, we end the processing for this job here.
+          // We still need to archive it below.
+      }
+      // === END OF NEW LOGIC ===
+
       if (
           transaction_id && 
           amount && 
@@ -260,6 +283,21 @@ const invoiceWorker = new Worker(
 
 invoiceWorker.on("failed", (job, err) => console.error(`[QUEUE-FAIL] Job ${job?.id} failed: ${err.message}`));
 invoiceWorker.on("completed", (job) => console.log(`[QUEUE-SUCCESS] Job ${job.id} has completed.`));
+
+
+const refreshAlfaApiConfirmationStatus = async () => {
+  try {
+    const [[setting]] = await pool.query(
+        "SELECT setting_value FROM system_settings WHERE setting_key = 'alfa_api_confirmation_enabled'"
+    );
+    isAlfaApiConfirmationEnabled = setting ? setting.setting_value === 'true' : false;
+    console.log(`[SETTINGS] Alfa API Confirmation is now ${isAlfaApiConfirmationEnabled ? 'ENABLED' : 'DISABLED'}.`);
+  } catch (error) {
+    console.error("[SETTINGS-ERROR] Failed to refresh Alfa API confirmation status:", error);
+    isAlfaApiConfirmationEnabled = false; // Default to off on error
+  }
+};
+
 
 // === NEW: Function to check and cache the auto-confirmation setting ===
 const refreshAutoConfirmationStatus = async () => {
@@ -569,6 +607,7 @@ const initializeWhatsApp = (socketIoInstance) => {
       console.log("[HEARTBEAT] Pinger to AWS monitor scheduled to run every second.");
       qrCodeData = null;
       connectionStatus = "connected";
+      refreshAlfaApiConfirmationStatus();
       refreshAbbreviationCache();
       refreshAutoConfirmationStatus();
 
@@ -666,4 +705,5 @@ module.exports = {
   broadcast,
   refreshAbbreviationCache,
   refreshAutoConfirmationStatus,
+  refreshAlfaApiConfirmationStatus,
 };

@@ -92,6 +92,9 @@ app.get('/api/direct-forwarding', directForwardingController.getAllRules);
 app.post('/api/direct-forwarding', directForwardingController.createRule);
 app.delete('/api/direct-forwarding/:id', directForwardingController.deleteRule);
 
+app.get('/api/settings/alfa-api-confirmation', settingsController.getAlfaApiConfirmationStatus);
+app.post('/api/settings/alfa-api-confirmation', settingsController.setAlfaApiConfirmationStatus);
+
 const frontendPath = path.join(__dirname, '..', 'frontend', 'dist');
 if (fs.existsSync(frontendPath)) {
     app.use(express.static(frontendPath));

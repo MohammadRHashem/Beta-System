@@ -80,36 +80,51 @@ const Slider = styled.span`
 `;
 
 const AutoConfirmationPage = () => {
-    const [isEnabled, setIsEnabled] = useState(false);
+    const [isAutoConfEnabled, setIsAutoConfEnabled] = useState(false);
+    const [isAlfaApiEnabled, setIsAlfaApiEnabled] = useState(false); // New state
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        const fetchStatus = async () => {
+        const fetchAllStatuses = async () => {
             try {
-                const { data } = await api.get('/settings/auto-confirmation');
-                setIsEnabled(data.isEnabled);
+                const [autoConfRes, alfaApiRes] = await Promise.all([
+                    api.get('/settings/auto-confirmation'),
+                    api.get('/settings/alfa-api-confirmation') // Fetch new setting status
+                ]);
+                setIsAutoConfEnabled(autoConfRes.data.isEnabled);
+                setIsAlfaApiEnabled(alfaApiRes.data.isEnabled);
             } catch (error) {
-                console.error("Failed to fetch status:", error);
-                alert("Could not load auto-confirmation status.");
+                console.error("Failed to fetch statuses:", error);
+                alert("Could not load confirmation statuses.");
             } finally {
                 setLoading(false);
             }
         };
-        fetchStatus();
+        fetchAllStatuses();
     }, []);
 
-    const handleToggle = async () => {
-        const newStatus = !isEnabled;
-        setIsEnabled(newStatus); // Optimistic UI update
-
+    const handleAutoConfToggle = async () => {
+        const newStatus = !isAutoConfEnabled;
+        setIsAutoConfEnabled(newStatus);
         try {
             await api.post('/settings/auto-confirmation', { isEnabled: newStatus });
         } catch (error) {
-            console.error("Failed to update status:", error);
             alert("Failed to update setting. Reverting change.");
-            setIsEnabled(!newStatus); // Revert on failure
+            setIsAutoConfEnabled(!newStatus);
         }
     };
+
+    const handleAlfaApiToggle = async () => {
+        const newStatus = !isAlfaApiEnabled;
+        setIsAlfaApiEnabled(newStatus);
+        try {
+            await api.post('/settings/alfa-api-confirmation', { isEnabled: newStatus });
+        } catch (error) {
+            alert("Failed to update Alfa API setting. Reverting change.");
+            setIsAlfaApiEnabled(!newStatus);
+        }
+    };
+
 
     if (loading) {
         return <p>Loading settings...</p>;
@@ -118,22 +133,42 @@ const AutoConfirmationPage = () => {
     return (
         <PageContainer>
             <Card>
-                <Header>Auto Confirmation Settings</Header>
+                <Header>Confirmation Settings</Header>
                 <Description>
-                    Enable this feature to automate the confirmation process for forwarded invoices.
-                    When enabled, forwarded invoices will be reacted to, and a 'like' in the destination group will trigger a confirmation reply in the origin group.
+                    Configure how forwarded invoices are confirmed.
                 </Description>
+
                 <SettingRow>
-                    <SettingLabel>Enable Auto Confirmation</SettingLabel>
+                    <SettingLabel>Enable Standard Auto-Confirmation</SettingLabel>
                     <SwitchContainer>
                         <SwitchInput 
                             type="checkbox" 
-                            checked={isEnabled}
-                            onChange={handleToggle}
+                            checked={isAutoConfEnabled}
+                            onChange={handleAutoConfToggle}
                         />
                         <Slider />
                     </SwitchContainer>
                 </SettingRow>
+                <Description style={{ fontSize: '0.9rem', marginTop: '0.5rem' }}>
+                    Forwards will get a '🟡' reaction. A '👍' in the destination group triggers a "Caiu" reply in the origin group.
+                </Description>
+
+                <hr style={{ margin: '2rem 0', border: 'none', borderTop: '1px solid #e6ebf1' }}/>
+
+                <SettingRow>
+                    <SettingLabel>Enable Alfa Trust API Confirmation</SettingLabel>
+                    <SwitchContainer>
+                        <SwitchInput 
+                            type="checkbox" 
+                            checked={isAlfaApiEnabled}
+                            onChange={handleAlfaApiToggle}
+                        />
+                        <Slider />
+                    </SwitchContainer>
+                </SettingRow>
+                 <Description style={{ fontSize: '0.9rem', marginTop: '0.5rem' }}>
+                    When enabled, invoices for "Alfa Trust" will be confirmed automatically via the bank's API, overriding the standard method. A '🟢' reaction indicates success, a '🔴' indicates the transaction was not found.
+                </Description>
             </Card>
         </PageContainer>
     );
