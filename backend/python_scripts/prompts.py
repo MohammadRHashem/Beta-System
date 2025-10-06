@@ -36,6 +36,7 @@ prompt_2 = f"""
 
     - **sender:** Information about the entity sending the payment.
         - name: The full name of the sender.
+        **CRITICAL RULE**: if sender name is not found, 
 
     - **recipient:** Information about the entity receiving the payment.
         - name: The full name of the recipient.

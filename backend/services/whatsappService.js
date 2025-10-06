@@ -65,217 +65,169 @@ const invoiceWorker = new Worker(
       console.warn(`[WORKER] Could not find message by ID ${messageId}.`);
       return;
     }
-    
-    const connection = await pool.getConnection();
+
+    const chat = await originalMessage.getChat();
+    const tempFilePaths = []; // Keep track of temp files for cleanup
+
     try {
-      await connection.beginTransaction();
-      const chat = await originalMessage.getChat();
-      const correctUtcDate = new Date(originalMessage.timestamp * 1000);
-
-      const [tombstoneRows] = await connection.query("SELECT message_id FROM deleted_message_ids WHERE message_id = ?", [messageId]);
-      if (tombstoneRows.length > 0) {
-        await connection.query(`INSERT INTO invoices (message_id, source_group_jid, received_at, is_deleted, notes) VALUES (?, ?, ?, ?, ?)`,[messageId, chat.id._serialized, correctUtcDate, true, "Message deleted before processing."]);
-        await connection.query("DELETE FROM deleted_message_ids WHERE message_id = ?", [messageId]);
-        await connection.commit();
-        if (io) io.emit("invoices:updated");
-        return;
-      }
-
-      const [settings] = await connection.query("SELECT * FROM group_settings WHERE group_jid = ?", [chat.id._serialized]);
-      const groupSettings = settings[0] || { forwarding_enabled: true, archiving_enabled: true };
-
-      if (!groupSettings.forwarding_enabled && !groupSettings.archiving_enabled) {
-        await connection.commit(); return;
-      }
-
+      // --- Initial Download and OCR ---
       const media = await originalMessage.downloadMedia();
-      if (!media) { await connection.commit(); return; }
+      if (!media) return;
 
       const cleanMimeType = media.mimetype.split(';')[0];
       const extension = cleanMimeType.split('/')[1] || 'bin';
       const tempFilePath = path.join(os.tmpdir(), `${originalMessage.id.id}.${extension}`);
+      tempFilePaths.push(tempFilePath); // Add to cleanup list
       await fs.writeFile(tempFilePath, Buffer.from(media.data, "base64"));
-      
+
       const pythonScriptsDir = path.join(__dirname, "..", "python_scripts");
       const pythonExecutable = process.platform === 'win32' ? 'python.exe' : 'python3';
       const pythonScriptPath = path.join(pythonScriptsDir, "main.py");
-      const pythonEnv = dotenv.config({ path: path.join(pythonScriptsDir, ".env"), }).parsed;
+      const pythonEnv = dotenv.config({ path: path.join(pythonScriptsDir, ".env") }).parsed;
       if (!pythonEnv || !pythonEnv.GOOGLE_API_KEY) throw new Error("Could not load GOOGLE_API_KEY.");
-      
-      let invoiceJson;
-      try {
-        const { stdout } = await execa(pythonExecutable, [pythonScriptPath, tempFilePath], { cwd: pythonScriptsDir, env: pythonEnv });
-        invoiceJson = JSON.parse(stdout);
-      } catch (pythonError) { await fs.unlink(tempFilePath); throw pythonError; }
 
+      const { stdout } = await execa(pythonExecutable, [pythonScriptPath, tempFilePath]);
+      const invoiceJson = JSON.parse(stdout);
+
+      // --- 1. PRE-CHECK: OCR Validity ---
       const { amount, sender, recipient, transaction_id } = invoiceJson;
-      if (!amount || (!recipient?.name && !recipient?.pix_key)) { 
-          await fs.unlink(tempFilePath); 
-          await connection.commit(); 
-          await originalMessage.react(''); 
-          return; 
+      if (!amount || (!recipient?.name && !recipient?.pix_key)) {
+        console.log(`[WORKER] OCR failed for message ${messageId}. Stopping.`);
+        await originalMessage.react(''); // Clear processing reaction
+        return;
       }
 
-
-      // // dup invoice check
-      // if (transaction_id && amount) {
-      //   const [existingInvoices] = await connection.query(
-      //     'SELECT source_group_jid FROM invoices WHERE transaction_id = ? AND amount = ?',
-      //     [transaction_id, amount]
-      //   );
-
-      //   if (existingInvoices.length > 0) {
-      //     console.log(`[DUPLICATE] Invoice with TXN_ID ${transaction_id} and amount ${amount} already exists.`);
-      //     const existingSourceJid = existingInvoices[0].source_group_jid;
-      //     const currentSourceJid = chat.id._serialized;
-
-      //     if (existingSourceJid === currentSourceJid) {
-      //       await originalMessage.reply("Repeated");
-      //       await originalMessage.react('❌');
-      //     } else {
-      //       await originalMessage.reply("repeated from another client");
-      //       await originalMessage.react('❌');
-      //     }
-          
-      //     await fs.unlink(tempFilePath); // Clean up the temp file
-      //     await connection.commit(); // Commit the transaction (as we didn't change anything but want to finish)
-      //     return; // Stop all further processing for this duplicate invoice
-      //   }
-      // }
-      // // ==========================================
-
-      // === THE EDIT: ADDED RECIPIENT CHECK TO DUPLICATE LOGIC ===
       const recipientNameLower = (recipient.name || "").toLowerCase();
-
-      // === NEW: ALFA TRUST API CONFIRMATION LOGIC ===
-      if (isAlfaApiConfirmationEnabled && recipientNameLower.includes('alfa trust')) {
-          const isConfirmed = await alfaAuthService.findTransaction(invoiceJson);
-
-          if (isConfirmed) {
-              console.log(`[ALFA-CONFIRM] Confirmed invoice via API for TXN_ID: ${transaction_id}`);
-              await originalMessage.reply('Caiu');
-              await originalMessage.react(''); // Clear other reactions
-              await originalMessage.react('🟢');
-          } else {
-              console.log(`[ALFA-CONFIRM] Invoice NOT found via API for TXN_ID: ${transaction_id}`);
-              await originalMessage.react('🔴');
-          }
-          
-          // Since confirmation is handled, we end the processing for this job here.
-          // We still need to archive it below.
-      }
-      // === END OF NEW LOGIC ===
-
+      
+      // --- 2. PRIORITY 1: DUPLICATE CHECK ---
       if (
-          transaction_id && 
-          amount && 
-          (recipientNameLower.includes('trkbit') || recipientNameLower.includes('alfa trust') || recipientNameLower.includes('escrow'))
+        transaction_id &&
+        amount &&
+        (recipientNameLower.includes('trkbit') || recipientNameLower.includes('alfa trust') || recipientNameLower.includes('escrow'))
       ) {
-        const [existingInvoices] = await connection.query(
-          'SELECT source_group_jid FROM invoices WHERE transaction_id = ? AND amount = ?',
-          [transaction_id, amount]
-        );
-
-        if (existingInvoices.length > 0) {
-          console.log(`[DUPLICATE] Invoice for our company with TXN_ID ${transaction_id} already exists.`);
-          const existingSourceJid = existingInvoices[0].source_group_jid;
-          const currentSourceJid = chat.id._serialized;
-
-          if (existingSourceJid === currentSourceJid) {
-            await originalMessage.reply("Repeated");
-          } else {
-            await originalMessage.reply("repeated from another client");
-          }
-          await originalMessage.react('❌');
-          
-          await fs.unlink(tempFilePath);
-          await connection.commit();
-          return;
+        const [existing] = await pool.query('SELECT id FROM invoices WHERE transaction_id = ? AND amount = ?', [transaction_id, amount]);
+        if (existing.length > 0) {
+          console.log(`[DUPLICATE] Invoice with TXN_ID ${transaction_id} already exists. Stopping.`);
+          await originalMessage.reply("Repeated");
+          await originalMessage.react('❌'); // Standardized "Repeated" emoji
+          return; // Stop all further processing
         }
       }
 
-      
+      let runStandardForwarding = true; // Flag to control fallback to manual confirmation
 
-      let finalMediaPath = null;
-      if (groupSettings.archiving_enabled) {
-        const archiveFileName = `${messageId}.${extension}`;
-        finalMediaPath = path.join(MEDIA_ARCHIVE_DIR, archiveFileName);
-        await fs.rename(tempFilePath, finalMediaPath);
-        await connection.query(`INSERT INTO invoices (message_id, transaction_id, sender_name, recipient_name, pix_key, amount, source_group_jid, received_at, raw_json_data, media_path, is_deleted) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [messageId, transaction_id, sender?.name, recipient.name, recipient.pix_key, amount, chat.id._serialized, correctUtcDate, JSON.stringify(invoiceJson), finalMediaPath, false]);
-      } else { await fs.unlink(tempFilePath); }
+      // --- 3. PRIORITY 2: ALFA TRUST API CONFIRMATION ---
+      if (isAlfaApiConfirmationEnabled && recipientNameLower.includes('alfa trust')) {
+        console.log('[WORKER] "Alfa Trust" recipient detected. Initiating API confirmation...');
+        const apiResult = await alfaAuthService.findTransaction(invoiceJson);
 
-      // === NEW TWO-TIERED FORWARDING LOGIC ===
-      if (groupSettings.forwarding_enabled) {
-          let forwarded = false;
-          const sourceGroupJid = chat.id._serialized;
-
-          // 1. HIGHEST PRIORITY: Check for a direct group-to-group rule.
-          const [[directRule]] = await connection.query(
-              'SELECT destination_group_jid FROM direct_forwarding_rules WHERE source_group_jid = ?',
-              [sourceGroupJid]
-          );
-
-          if (directRule) {
-              console.log(`[FORWARDING] Matched direct rule for source group "${chat.name}". Forwarding...`);
-              const mediaToForward = new MessageMedia(media.mimetype, media.data, media.filename);
-              let caption = '\u200C';
-                          const numberRegex = /\b(\d[\d-]{2,})\b/g;
-                          const matches = chat.name.match(numberRegex);
-                          if (matches && matches.length > 0) {
-                              caption = matches[matches.length - 1];
-                          }
-                          const forwardedMessage = await client.sendMessage(rule.destination_group_jid, mediaToForward, { caption: caption });
-              forwarded = true;
-              
-              if (isAutoConfirmationEnabled) {
-                await connection.query(`INSERT INTO forwarded_invoices (original_message_id, forwarded_message_id, destination_group_jid) VALUES (?, ?, ?)`, [messageId, forwardedMessage.id._serialized, directRule.destination_group_jid]);
-                await originalMessage.react('🟡');
-              }
-          }
-
-          // 2. FALLBACK: If not forwarded via direct rule, check AI keyword rules.
-          if (!forwarded) {
-              // === THE EDIT: Check both recipient name AND pix key ===
-              const recipientNameToCheck = (recipient.name || "").toLowerCase().trim();
-              const pixKeyToCheck = (recipient.pix_key || "").toLowerCase().trim();
-
-              if (recipientNameToCheck || pixKeyToCheck) { // Only proceed if there's something to check
-                  const [rules] = await connection.query("SELECT * FROM forwarding_rules WHERE is_enabled = 1");
-                  for (const rule of rules) {
-                      const triggerKeywordLower = rule.trigger_keyword.toLowerCase();
-                      
-                      // Check the keyword against BOTH the name and the PIX key
-                      if (recipientNameToCheck.includes(triggerKeywordLower) || pixKeyToCheck.includes(triggerKeywordLower)) {
-                          console.log(`[FORWARDING] Matched AI keyword rule "${rule.trigger_keyword}" for recipient "${recipient.name}" or PIX key "${recipient.pix_key}". Forwarding...`);
-                          const mediaToForward = new MessageMedia(media.mimetype, media.data, media.filename);
-                          let caption = '\u200C';
-                          const numberRegex = /\b(\d[\d-]{2,})\b/g;
-                          const matches = chat.name.match(numberRegex);
-                          if (matches && matches.length > 0) {
-                              caption = matches[matches.length - 1];
-                          }
-                          const forwardedMessage = await client.sendMessage(rule.destination_group_jid, mediaToForward, { caption: caption });
-                          
-                          if (isAutoConfirmationEnabled) {
-                            await connection.query(`INSERT INTO forwarded_invoices (original_message_id, forwarded_message_id, destination_group_jid) VALUES (?, ?, ?)`, [messageId, forwardedMessage.id._serialized, rule.destination_group_jid]);
-                            await originalMessage.react('🟡');
-                          }
-                          break;
-                      }
-                  }
-              }
-          }
+        switch (apiResult.status) {
+          case 'found':
+            console.log(`[ALFA-CONFIRM] Confirmed via API. Replying "Caiu".`);
+            await originalMessage.reply('Caiu');
+            await originalMessage.react('🟢'); // API "Caiu" emoji
+            runStandardForwarding = false; // Prevent fallback
+            break;
+          case 'not_found':
+            console.log(`[ALFA-CONFIRM] Not found via API.`);
+            await originalMessage.react('🔴'); // API "Not Found" emoji
+            runStandardForwarding = false; // Prevent fallback
+            break;
+          case 'error':
+            console.warn('[ALFA-CONFIRM] API call failed. Falling back to standard manual confirmation logic.');
+            // Let runStandardForwarding remain true to trigger fallback
+            break;
+        }
       }
 
-      await connection.commit();
-      if (io) io.emit("invoices:updated");
+      // --- 4. PRIORITY 3: STANDARD FORWARDING & MANUAL CONFIRMATION (Fallback) ---
+      if (runStandardForwarding) {
+        const [settings] = await pool.query("SELECT * FROM group_settings WHERE group_jid = ?", [chat.id._serialized]);
+        const groupSettings = settings[0] || { forwarding_enabled: true };
+
+        if (groupSettings.forwarding_enabled) {
+          let forwarded = false;
+          
+          // Tier 1: Direct Forwarding Rule
+          const [[directRule]] = await pool.query('SELECT destination_group_jid FROM direct_forwarding_rules WHERE source_group_jid = ?', [chat.id._serialized]);
+          if (directRule) {
+            console.log(`[FORWARDING] Matched direct rule for group "${chat.name}".`);
+            const mediaToForward = new MessageMedia(media.mimetype, media.data, media.filename);
+            let caption = '\u200C';
+                          const numberRegex = /\b(\d[\d-]{2,})\b/g;
+                          const matches = chat.name.match(numberRegex);
+                          if (matches && matches.length > 0) {
+                              caption = matches[matches.length - 1];
+                          }
+                          const forwardedMessage = await client.sendMessage(directRule.destination_group_jid, mediaToForward, { caption: caption });
+            forwarded = true;
+            if (isAutoConfirmationEnabled) {
+              await pool.query(`INSERT INTO forwarded_invoices (original_message_id, forwarded_message_id, destination_group_jid) VALUES (?, ?, ?)`, [messageId, forwardedMessage.id._serialized, directRule.destination_group_jid]);
+              await originalMessage.react('🟡'); // Waiting for manual confirmation emoji
+            }
+          }
+
+          // Tier 2: AI Keyword Forwarding
+          if (!forwarded) {
+            const recipientNameToCheck = (recipient.name || "").toLowerCase().trim();
+            const pixKeyToCheck = (recipient.pix_key || "").toLowerCase().trim();
+            if (recipientNameToCheck || pixKeyToCheck) {
+              const [rules] = await pool.query("SELECT * FROM forwarding_rules WHERE is_enabled = 1");
+              for (const rule of rules) {
+                const triggerKeywordLower = rule.trigger_keyword.toLowerCase();
+                if (recipientNameToCheck.includes(triggerKeywordLower) || pixKeyToCheck.includes(triggerKeywordLower)) {
+                  console.log(`[FORWARDING] Matched AI keyword rule "${rule.trigger_keyword}".`);
+                  const mediaToForward = new MessageMedia(media.mimetype, media.data, media.filename);
+                  let caption = '\u200C';
+                          const numberRegex = /\b(\d[\d-]{2,})\b/g;
+                          const matches = chat.name.match(numberRegex);
+                          if (matches && matches.length > 0) {
+                              caption = matches[matches.length - 1];
+                          }
+                          const forwardedMessage = await client.sendMessage(rule.destination_group_jid, mediaToForward, { caption: caption });
+                  if (isAutoConfirmationEnabled) {
+                    await pool.query(`INSERT INTO forwarded_invoices (original_message_id, forwarded_message_id, destination_group_jid) VALUES (?, ?, ?)`, [messageId, forwardedMessage.id._serialized, rule.destination_group_jid]);
+                    await originalMessage.react('🟡'); // Waiting for manual confirmation emoji
+                  }
+                  break; // Stop after first match
+                }
+              }
+            }
+          }
+        }
+      }
+
+      // --- 5. FINAL STEP: ARCHIVING ---
+      const [archiveSettings] = await pool.query("SELECT archiving_enabled FROM group_settings WHERE group_jid = ?", [chat.id._serialized]);
+      const groupArchiveSettings = archiveSettings[0] || { archiving_enabled: true };
+      
+      if (groupArchiveSettings.archiving_enabled) {
+        const archiveFileName = `${messageId}.${extension}`;
+        const finalMediaPath = path.join(MEDIA_ARCHIVE_DIR, archiveFileName);
+        
+        // Move the file from temp to archive
+        await fs.rename(tempFilePath, finalMediaPath);
+        tempFilePaths.pop(); // Remove from cleanup list as it's now archived
+
+        const correctUtcDate = new Date(originalMessage.timestamp * 1000);
+        await pool.query(`INSERT INTO invoices (message_id, transaction_id, sender_name, recipient_name, pix_key, amount, source_group_jid, received_at, raw_json_data, media_path, is_deleted) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, 
+          [messageId, transaction_id, sender?.name, recipient.name, recipient.pix_key, amount, chat.id._serialized, correctUtcDate, JSON.stringify(invoiceJson), finalMediaPath, false]
+        );
+        console.log(`[ARCHIVE] Successfully archived invoice for message ${messageId}.`);
+      }
+
     } catch (error) {
-      await connection.rollback();
-      if (error.code === "ER_DUP_ENTRY") { return; }
-      console.error(`[WORKER-ERROR] Critical error processing job ${messageId}:`, error);
-      throw error;
+      console.error(`[WORKER-ERROR] Critical error processing job ${job?.id}:`, error);
+      await originalMessage.react(''); // Clear reaction on any unhandled failure
+      throw error; // Re-throw to let BullMQ handle the job failure
     } finally {
-      connection.release();
+      // Cleanup: always delete any remaining temp files
+      for (const tempPath of tempFilePaths) {
+          if (fsSync.existsSync(tempPath)) {
+              await fs.unlink(tempPath);
+          }
+      }
+      if (io) io.emit("invoices:updated");
     }
   },
   { connection: redisConnection, lockDuration: 120000, concurrency: 2 }
@@ -405,7 +357,7 @@ const queueMessageIfNotExists = async (messageId) => {
             // === THE DEFINITIVE PDF FIX ===
             // Check for both common PDF mime types.
             if (originalMessage.type === 'image' || (originalMessage.type === 'document' && (mime === 'application/pdf' || mime === 'application/x-pdf'))) {
-                await originalMessage.react('🕒');
+                await originalMessage.react('⏳');
             }
         }
     } catch (error) {
