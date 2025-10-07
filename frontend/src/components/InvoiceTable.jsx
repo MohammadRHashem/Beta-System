@@ -95,12 +95,16 @@ const Td = styled.td`
 const InvoiceTable = ({ invoices, loading, onEdit, pagination, setPagination }) => {
 
     // This logic correctly creates a map of transaction IDs to their counts.
-    const transactionIdCounts = useMemo(() => {
+    const duplicateCounts = useMemo(() => {
         const counts = {};
-        if (!invoices || !Array.isArray(invoices)) return {}; // Safety check
+        if (!invoices || !Array.isArray(invoices)) return {};
+
         invoices.forEach(inv => {
+            // Only non-manual invoices with a transaction_id can be duplicates.
             if (inv.transaction_id && !inv.is_manual) {
-                counts[inv.transaction_id] = (counts[inv.transaction_id] || 0) + 1;
+                // Create a unique key from all three fields.
+                const compositeKey = `${inv.transaction_id}|${inv.amount}|${inv.sender_name}`;
+                counts[compositeKey] = (counts[compositeKey] || 0) + 1;
             }
         });
         return counts;
@@ -145,9 +149,14 @@ const InvoiceTable = ({ invoices, loading, onEdit, pagination, setPagination }) 
                     </Thead>
                     <tbody>
                         {invoices.map((inv) => {
-                            // === THE DEFINITIVE FIX FOR THE CRASH ===
-                            // This correctly checks the count from the pre-calculated object.
-                            const isDuplicate = inv.transaction_id && transactionIdCounts[inv.transaction_id] > 1;
+                            let isDuplicate = false;
+                            if (inv.transaction_id && !inv.is_manual) {
+                                const compositeKey = `${inv.transaction_id}|${inv.amount}|${inv.sender_name}`;
+                                if (duplicateCounts[compositeKey] > 1) {
+                                    isDuplicate = true;
+                                }
+                            }
+
                             const needsReview = !inv.is_manual && (!inv.sender_name || !inv.recipient_name || !inv.amount || inv.amount === '0.00');
 
                             return (
