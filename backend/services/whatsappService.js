@@ -121,22 +121,18 @@ const invoiceWorker = new Worker(
         console.log('[WORKER] "Alfa Trust" recipient detected. Initiating API confirmation...');
         const apiResult = await alfaAuthService.findTransaction(invoiceJson);
 
-        switch (apiResult.status) {
-          case 'found':
+        // Only a definitive 'found' status will stop the forwarding process.
+        if (apiResult.status === 'found') {
             console.log(`[ALFA-CONFIRM] Confirmed via API. Replying "Caiu".`);
             await originalMessage.reply('Caiu');
-            await originalMessage.react('🟢'); // API "Caiu" emoji
+            await originalMessage.react('🟢');
             runStandardForwarding = false; // Prevent fallback
-            break;
-          case 'not_found':
-            console.log(`[ALFA-CONFIRM] Not found via API.`);
-            await originalMessage.react('🔴'); // API "Not Found" emoji
-            runStandardForwarding = false; // Prevent fallback
-            break;
-          case 'error':
+        } else if (apiResult.status === 'not_found') {
+            console.log(`[ALFA-CONFIRM] Not found via API. Falling back to standard manual confirmation.`);
+            // Let runStandardForwarding remain true to trigger the fallback.
+        } else { // 'error'
             console.warn('[ALFA-CONFIRM] API call failed. Falling back to standard manual confirmation logic.');
-            // Let runStandardForwarding remain true to trigger fallback
-            break;
+            // Let runStandardForwarding remain true to trigger the fallback.
         }
       }
 
