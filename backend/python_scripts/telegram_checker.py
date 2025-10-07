@@ -5,10 +5,12 @@ import re
 from pathlib import Path
 from dotenv import load_dotenv
 from telethon.sync import TelegramClient
+import asyncio
 
 # --- Load Environment Variables ---
 script_dir = Path(__file__).resolve().parent
-dotenv_path = script_dir / '.env'
+project_root = script_dir.parent 
+dotenv_path = project_root / '.env'
 load_dotenv(dotenv_path=dotenv_path)
 
 # --- Telegram Configuration ---
@@ -19,10 +21,13 @@ TARGET_GROUP_ID = os.getenv('TELEGRAM_TARGET_GROUP_ID')
 
 # --- Helper Functions ---
 def parse_brl_amount(amount_str):
-    """Converts a BRL string like 'R$ 6,500.00' to a float."""
+    """Converts a BRL string to a float, handling various formats."""
     try:
-        # Remove "R$", trim whitespace, replace thousands separator, and use dot for decimal
-        cleaned_str = amount_str.replace("R$", "").strip().replace(".", "").replace(",", ".")
+        cleaned_str = re.sub(r'[^\d,.]', '', amount_str).strip()
+        if ',' in cleaned_str and '.' in cleaned_str and cleaned_str.rfind('.') < cleaned_str.rfind(','):
+            cleaned_str = cleaned_str.replace(".", "").replace(",", ".")
+        else:
+            cleaned_str = cleaned_str.replace(",", ".")
         return float(cleaned_str)
     except (ValueError, TypeError):
         return 0.0
@@ -31,8 +36,12 @@ def find_match(messages, target_amount, target_sender):
     """Searches through Telegram messages for a matching transaction."""
     target_sender_lower = target_sender.lower().strip()
     
-    amount_regex = re.compile(r"Amount: R\$ ([\d.,]+)")
-    sender_regex = re.compile(r"Name: (.+)")
+    # Regex for the entire message
+    amount_regex = re.compile(r"Amount:\s*R\$\s*([\d.,]+)")
+    # Regex to find the "Sender Information" block
+    sender_block_regex = re.compile(r"Sender Information:\s*-+\s*(.+?)(?=\n\n|\Z)", re.DOTALL)
+    # Regex to find the Name ONLY within the sender block
+    sender_name_regex = re.compile(r"Name:\s*(.+)")
 
     for message in messages:
         if not message or not message.text:
@@ -41,25 +50,34 @@ def find_match(messages, target_amount, target_sender):
         text = message.text
         
         amount_match = amount_regex.search(text)
-        sender_match = sender_regex.search(text)
+        if not amount_match:
+            continue
+        
+        sender_block_match = sender_block_regex.search(text)
+        if not sender_block_match:
+            continue
 
-        if amount_match and sender_match:
+        sender_block_text = sender_block_match.group(1)
+        sender_name_match = sender_name_regex.search(sender_block_text)
+
+        if sender_name_match:
             try:
                 msg_amount_str = amount_match.group(1)
-                msg_sender_name = sender_match.group(1).strip()
+                msg_sender_name = sender_name_match.group(1).strip()
 
                 msg_amount_float = parse_brl_amount(msg_amount_str)
                 msg_sender_lower = msg_sender_name.lower()
                 
-                # Check for a match
-                if msg_amount_float == target_amount and msg_sender_lower == target_sender_lower:
+                # The corrected matching logic
+                if msg_amount_float == target_amount and target_sender_lower in msg_sender_lower:
                     return True
             except Exception:
-                continue # Ignore malformed messages
+                # Ignore any message that fails to parse
+                continue
     return False
 
-# --- Main Execution ---
 async def main():
+    """Main execution function."""
     if not all([API_ID, API_HASH, TARGET_GROUP_ID]):
         print(json.dumps({"status": "error", "message": "Telegram API credentials are not configured in .env"}))
         return
@@ -77,14 +95,18 @@ async def main():
 
     try:
         await client.connect()
-        # If not authorized, it will prompt for phone/code/password in the console on first run
-        if not await client.is_user_authorized():
-             print(json.dumps({"status": "error", "message": f"Telegram session '{SESSION_NAME}' is not authorized. Please run the backend manually once to log in."}), file=sys.stderr)
-             return
-
-        target_group = await client.get_entity(int(TARGET_GROUP_ID))
+        target_group = None
+        target_id_int = int(TARGET_GROUP_ID)
         
-        # Fetch a reasonable number of recent messages to check against
+        async for dialog in client.iter_dialogs():
+            if dialog.id == target_id_int:
+                target_group = dialog.entity
+                break
+        
+        if target_group is None:
+            print(json.dumps({"status": "error", "message": f"Could not find group with ID {TARGET_GROUP_ID}."}), file=sys.stderr)
+            return
+        
         messages = await client.get_messages(target_group, limit=200)
 
         if find_match(messages, target_amount_float, target_sender_name):
@@ -99,5 +121,4 @@ async def main():
             await client.disconnect()
 
 if __name__ == "__main__":
-    import asyncio
     asyncio.run(main())

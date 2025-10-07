@@ -106,11 +106,28 @@ const invoiceWorker = new Worker(
         amount &&
         (recipientNameLower.includes('trkbit') || recipientNameLower.includes('alfa trust') || recipientNameLower.includes('escrow'))
       ) {
-        const [existing] = await pool.query('SELECT id FROM invoices WHERE transaction_id = ? AND amount = ?', [transaction_id, amount]);
-        if (existing.length > 0) {
-          console.log(`[DUPLICATE] Invoice with TXN_ID ${transaction_id} already exists. Stopping.`);
-          await originalMessage.reply("Repeated");
-          await originalMessage.react('❌'); // Standardized "Repeated" emoji
+        // Find the source group JID of any existing invoice
+        const [[existingInvoice]] = await pool.query(
+          'SELECT source_group_jid FROM invoices WHERE transaction_id = ? AND amount = ? LIMIT 1', 
+          [transaction_id, amount]
+        );
+        
+        if (existingInvoice) {
+          const currentSourceJid = chat.id._serialized;
+          const existingSourceJid = existingInvoice.source_group_jid;
+
+          // Case 1: Repeated from the same client
+          if (currentSourceJid === existingSourceJid) {
+            console.log(`[DUPLICATE] Invoice from SAME client. TXN_ID: ${transaction_id}.`);
+            await originalMessage.reply("❌Repeated❌");
+          } 
+          // Case 2: Repeated from a different client
+          else {
+            console.log(`[DUPLICATE] Invoice from DIFFERENT client. Current: ${currentSourceJid}, Existing: ${existingSourceJid}.`);
+            await originalMessage.reply("❌Repeated from another client❌");
+          }
+          
+          await originalMessage.react('❌');
           return; // Stop all further processing
         }
       }
@@ -523,16 +540,14 @@ const handleMessageRevoke = async (message, revoked_msg) => {
   }
 };
 
+// === THIS FUNCTION IS THE ONLY ONE WITH CHANGES ===
 const handleReaction = async (reaction) => {
-  if (
-    !isAutoConfirmationEnabled ||
-    (reaction.reaction !== '👍' && reaction.reaction !== '✅')
-  ) {
+  if (!isAutoConfirmationEnabled) {
     return;
   }
 
   const reactedMessageId = reaction.msgId._serialized;
-  console.log(`[REACTION] Detected 'like' on message: ${reactedMessageId}`);
+  const reactionEmoji = reaction.reaction;
 
   try {
     const [[link]] = await pool.query(
@@ -540,31 +555,85 @@ const handleReaction = async (reaction) => {
       [reactedMessageId]
     );
 
-    if (!link) {
-      // This was a 'like' on a message we are not tracking, so we ignore it.
+    if (!link || link.is_confirmed !== 0) {
       return;
     }
 
-    if (link.is_confirmed !== 0) {
-      // Already confirmed, do not send "Caiu" again
-      return;
+    // --- LOGIC FOR "CAIU" (CONFIRMATION) ---
+    if (reactionEmoji === '👍' || reactionEmoji === '✅') {
+      console.log(`[REACTION] Detected 'like/check' on message: ${reactedMessageId}`);
+      
+      const originalMessage = await client.getMessageById(link.original_message_id);
+      if (originalMessage) {
+        await originalMessage.reply('Caiu');
+        await originalMessage.react('');
+        await originalMessage.react('🟢');
+        
+        await pool.query(
+          'UPDATE forwarded_invoices SET is_confirmed = 1 WHERE forwarded_message_id = ?',
+          [reactedMessageId]
+        );
+        console.log(`[REACTION] Successfully processed 'Caiu' confirmation for ${link.original_message_id}`);
+      }
+    }
+    
+    // --- NEW LOGIC FOR "NO CAIU" (DELETION) ---
+    else if (reactionEmoji === '❌') {
+      console.log(`[REACTION] Detected 'cross' (reject/delete) on message: ${reactedMessageId}`);
+      
+      const originalMessage = await client.getMessageById(link.original_message_id);
+      
+      const connection = await pool.getConnection();
+      try {
+        await connection.beginTransaction();
+
+        // Step 1: Find the invoice record to get the media path
+        const [[invoiceToDelete]] = await connection.query(
+          'SELECT id, media_path FROM invoices WHERE message_id = ?',
+          [link.original_message_id]
+        );
+
+        if (invoiceToDelete) {
+          // Step 2: Delete the main invoice record from the database
+          await connection.query('DELETE FROM invoices WHERE id = ?', [invoiceToDelete.id]);
+          console.log(`[REACTION-DELETE] Deleted invoice record ID: ${invoiceToDelete.id}`);
+
+          // Step 3 (Optional but recommended): Delete the associated media file
+          if (invoiceToDelete.media_path && fsSync.existsSync(invoiceToDelete.media_path)) {
+            await fs.unlink(invoiceToDelete.media_path);
+            console.log(`[REACTION-DELETE] Deleted media file: ${invoiceToDelete.media_path}`);
+          }
+        }
+        
+        // Step 4: Mark the forwarded link as actioned to prevent repeats
+        await connection.query(
+          'UPDATE forwarded_invoices SET is_confirmed = 2 WHERE forwarded_message_id = ?',
+          [reactedMessageId]
+        );
+        
+        await connection.commit();
+
+        // Step 5: Notify the original sender
+        if (originalMessage) {
+          await originalMessage.reply('no caiu');
+          await originalMessage.react('');
+          await originalMessage.react('🔴');
+        }
+        
+        // Notify the frontend to refresh the invoice list
+        if (io) io.emit("invoices:updated");
+        console.log(`[REACTION-DELETE] Successfully processed 'No Caiu' deletion for ${link.original_message_id}`);
+        
+      } catch (dbError) {
+        await connection.rollback();
+        console.error(`[REACTION-DELETE-ERROR] Database transaction failed for ${link.original_message_id}:`, dbError);
+      } finally {
+        connection.release();
+      }
     }
 
-    console.log(`[REACTION] Found linked original message: ${link.original_message_id}`);
-    const originalMessage = await client.getMessageById(link.original_message_id);
-
-    if (originalMessage) {
-      await originalMessage.reply('Caiu');
-      await originalMessage.react(''); // Remove previous reactions
-      await originalMessage.react('🟢'); // Add final confirmation reaction
-      await pool.query(
-        'UPDATE forwarded_invoices SET is_confirmed = 1 WHERE forwarded_message_id = ?',
-        [reactedMessageId]
-      );
-      console.log(`[REACTION] Successfully processed confirmation for ${link.original_message_id}`);
-    }
   } catch (error) {
-    console.error(`[REACTION-ERROR] Failed to process 'like' confirmation for ${reactedMessageId}:`, error);
+    console.error(`[REACTION-ERROR] Failed to process reaction for ${reactedMessageId}:`, error);
   }
 };
 

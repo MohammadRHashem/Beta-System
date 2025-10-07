@@ -11,3 +11,4 @@ backend/.env
 backend/package-lock.json
 frontend/package-lock.json
 node_modules/
+backend/python_scripts/beta_troca_confirmation.session

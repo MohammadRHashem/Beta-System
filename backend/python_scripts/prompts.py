@@ -14,7 +14,7 @@ prompt_2 = f"""
     - **transaction id:** Find the unique transaction ID. It often looks like "E18189547202502171718GVpGtoyM2R3". It can contain letters and numbers.
         - You MUST return the ID **exactly as you see it without any edits**.
         - If no such ID is found, use the "transaction number" as a fallback.
-        - If neither is found, fallback to authentication number.
+        - If neither is found, create an id from current utc timestamp and day letter, and make it about 10 characters.
 
     - **amount:** The total transaction amount.
         - **CRITICAL FORMATTING RULE:** The final JSON 'amount' string MUST use a comma (,) as the thousands separator and a period (.) as the decimal separator. It must ALWAYS have exactly two decimal places.
@@ -36,13 +36,11 @@ prompt_2 = f"""
 
     - **sender:** Information about the entity sending the payment.
         - name: The full name of the sender.
-        **CRITICAL RULE**: if sender name is not found, 
+        **CRITICAL RULE**: if sender name is not found, fallback to sender institution
 
     - **recipient:** Information about the entity receiving the payment.
         - name: The full name of the recipient.
-        - **CRITICAL SWAP RULE:** The recipient is often "Trkbit". If you find "Trkbit", "Trkbit Tecnologia E Informacao Ltda", or any case-variation of these in the **sender** field, you MUST swap them and place "TRKBIT TECNOLOGIA E INFORMACAO LTDA" in the recipient name field, and find the correct sender from the other information.
-        - **FALLBACK RULE:** If you see "@trkbit.co" (case-insensitive) in the chave pix field but recipient name is not 'trkbit ...', or cannot determine a recipient name, you MUST set the recipient name to "TRKBIT TECNOLOGIA E INFORMACAO LTDA".
-        - **CRITICAL MAIN RULE:** If recipient name contains "trkbit" or "BRAZ E SALADO" or "TER CONSULTORIA" (case-insensitive), you MUST set the recipient name to "TRKBIT TECNOLOGIA E INFORMACAO LTDA" all caps.
+        - **CRITICAL SWAP RULE:** the recipient name often includes "troca coin" or "alfa trust" or "mks intermediacoes" (case-insensitive), if it contains "troca coin" or "mks intermediacoes" make it "TROCA COIN NEGÓCIOS DIGITAIS E INTERMEDIAÇÕES LTDA", and if it contains "alfa trust" make it "ALFA TRUST INTERMEDIACAO DE NEGOCIOS LTDA".
 
     - **image_type:** Classify the image's context.
         - **replay:** A photo of another screen (phone, monitor). Look for glare, screen borders, or moiré patterns.
