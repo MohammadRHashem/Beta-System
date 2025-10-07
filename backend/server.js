@@ -95,6 +95,9 @@ app.delete('/api/direct-forwarding/:id', directForwardingController.deleteRule);
 app.get('/api/settings/alfa-api-confirmation', settingsController.getAlfaApiConfirmationStatus);
 app.post('/api/settings/alfa-api-confirmation', settingsController.setAlfaApiConfirmationStatus);
 
+app.get('/api/settings/troca-coin-confirmation', settingsController.getTrocaCoinConfirmationStatus);
+app.post('/api/settings/troca-coin-confirmation', settingsController.setTrocaCoinConfirmationStatus);
+
 const frontendPath = path.join(__dirname, '..', 'frontend', 'dist');
 if (fs.existsSync(frontendPath)) {
     app.use(express.static(frontendPath));

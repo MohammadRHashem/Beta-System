@@ -229,3 +229,39 @@ exports.setAlfaApiConfirmationStatus = async (req, res) => {
         res.status(500).json({ message: 'Failed to update status.' });
     }
 };
+
+
+// === NEW: Troca Coin Telegram Confirmation Endpoints ===
+exports.getTrocaCoinConfirmationStatus = async (req, res) => {
+    try {
+        const [[setting]] = await pool.query(
+            "SELECT setting_value FROM system_settings WHERE setting_key = 'troca_coin_telegram_enabled'"
+        );
+        const isEnabled = setting ? setting.setting_value === 'true' : false;
+        res.json({ isEnabled });
+    } catch (error) {
+        console.error('[ERROR] Failed to fetch Troca Coin confirmation status:', error);
+        res.status(500).json({ message: 'Failed to fetch status.' });
+    }
+};
+
+exports.setTrocaCoinConfirmationStatus = async (req, res) => {
+    const { isEnabled } = req.body;
+    if (typeof isEnabled !== 'boolean') {
+        return res.status(400).json({ message: 'A boolean `isEnabled` value is required.' });
+    }
+
+    try {
+        const query = `
+            INSERT INTO system_settings (setting_key, setting_value) VALUES (?, ?)
+            ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value);
+        `;
+        await pool.query(query, ['troca_coin_telegram_enabled', isEnabled.toString()]);
+        
+        whatsappService.refreshTrocaCoinStatus(); // Notify the service of the change
+        res.json({ message: `Troca Coin Telegram confirmation successfully ${isEnabled ? 'enabled' : 'disabled'}.` });
+    } catch (error) {
+        console.error('[ERROR] Failed to update Troca Coin confirmation status:', error);
+        res.status(500).json({ message: 'Failed to update status.' });
+    }
+};

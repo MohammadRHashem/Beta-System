@@ -20,6 +20,7 @@ let io; // To hold the socket.io instance
 // === NEW: State for Auto Confirmation ===
 let isAutoConfirmationEnabled = false;
 let isAlfaApiConfirmationEnabled = false;
+let isTrocaCoinTelegramEnabled = false;
 
 const redisConnection = {
   host: "localhost",
@@ -116,8 +117,34 @@ const invoiceWorker = new Worker(
 
       let runStandardForwarding = true; // Flag to control fallback to manual confirmation
 
-      // --- 3. PRIORITY 2: ALFA TRUST API CONFIRMATION ---
-      if (isAlfaApiConfirmationEnabled && recipientNameLower.includes('alfa trust')) {
+
+      // --- NEW: PRIORITY 2: TROCA COIN TELEGRAM CONFIRMATION ---
+      if (
+          isTrocaCoinTelegramEnabled &&
+          (recipientNameLower.includes('troca coin') || recipientNameLower.includes('mks intermediacoes'))
+      ) {
+          console.log('[WORKER] "Troca Coin/MKS" recipient detected. Initiating Telegram check...');
+          try {
+              const telegramCheckerPath = path.join(pythonScriptsDir, "telegram_checker.py");
+              const { stdout: tgStdout } = await execa(pythonExecutable, [telegramCheckerPath, amount, sender.name]);
+              const tgResult = JSON.parse(tgStdout);
+
+              if (tgResult.status === 'found') {
+                  console.log('[TELEGRAM-CONFIRM] Confirmed via Telegram. Replying "Caiu".');
+                  await originalMessage.reply('Caiu');
+                  await originalMessage.react('🟢');
+                  runStandardForwarding = false; // Prevent fallback
+              } else {
+                  // If not found or script has an error, fall back to manual confirmation
+                  console.log(`[TELEGRAM-CONFIRM] Not found via Telegram (Status: ${tgResult.status}). Falling back to manual confirmation.`);
+              }
+          } catch (error) {
+              console.error('[TELEGRAM-CONFIRM-ERROR] Python script execution failed. Falling back to manual confirmation.', error.stderr || error.message);
+          }
+      }
+
+      // --- 3. PRIORITY 2.5: ALFA TRUST API CONFIRMATION ---
+      if (runStandardForwarding && isAlfaApiConfirmationEnabled && recipientNameLower.includes('alfa trust')) {
         console.log('[WORKER] "Alfa Trust" recipient detected. Initiating API confirmation...');
         const apiResult = await alfaAuthService.findTransaction(invoiceJson);
 
@@ -231,6 +258,20 @@ const invoiceWorker = new Worker(
 
 invoiceWorker.on("failed", (job, err) => console.error(`[QUEUE-FAIL] Job ${job?.id} failed: ${err.message}`));
 invoiceWorker.on("completed", (job) => console.log(`[QUEUE-SUCCESS] Job ${job.id} has completed.`));
+
+
+const refreshTrocaCoinStatus = async () => {
+  try {
+    const [[setting]] = await pool.query(
+        "SELECT setting_value FROM system_settings WHERE setting_key = 'troca_coin_telegram_enabled'"
+    );
+    isTrocaCoinTelegramEnabled = setting ? setting.setting_value === 'true' : false;
+    console.log(`[SETTINGS] Troca Coin Telegram Confirmation is now ${isTrocaCoinTelegramEnabled ? 'ENABLED' : 'DISABLED'}.`);
+  } catch (error) {
+    console.error("[SETTINGS-ERROR] Failed to refresh Troca Coin status:", error);
+    isTrocaCoinTelegramEnabled = false;
+  }
+};
 
 
 const refreshAlfaApiConfirmationStatus = async () => {
@@ -556,6 +597,7 @@ const initializeWhatsApp = (socketIoInstance) => {
       qrCodeData = null;
       connectionStatus = "connected";
       refreshAlfaApiConfirmationStatus();
+      refreshTrocaCoinStatus();
       refreshAbbreviationCache();
       refreshAutoConfirmationStatus();
 
@@ -654,4 +696,5 @@ module.exports = {
   refreshAbbreviationCache,
   refreshAutoConfirmationStatus,
   refreshAlfaApiConfirmationStatus,
+  refreshTrocaCoinStatus,
 };

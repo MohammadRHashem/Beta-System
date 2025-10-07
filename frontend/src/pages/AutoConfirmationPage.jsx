@@ -82,17 +82,20 @@ const Slider = styled.span`
 const AutoConfirmationPage = () => {
     const [isAutoConfEnabled, setIsAutoConfEnabled] = useState(false);
     const [isAlfaApiEnabled, setIsAlfaApiEnabled] = useState(false); // New state
+    const [isTrocaCoinEnabled, setIsTrocaCoinEnabled] = useState(false);
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
         const fetchAllStatuses = async () => {
             try {
-                const [autoConfRes, alfaApiRes] = await Promise.all([
+                const [autoConfRes, alfaApiRes, trocaCoinRes] = await Promise.all([
                     api.get('/settings/auto-confirmation'),
-                    api.get('/settings/alfa-api-confirmation') // Fetch new setting status
+                    api.get('/settings/alfa-api-confirmation'), // Fetch new setting status
+                    api.get('/settings/troca-coin-confirmation')
                 ]);
                 setIsAutoConfEnabled(autoConfRes.data.isEnabled);
                 setIsAlfaApiEnabled(alfaApiRes.data.isEnabled);
+                setIsTrocaCoinEnabled(trocaCoinRes.data.isEnabled);
             } catch (error) {
                 console.error("Failed to fetch statuses:", error);
                 alert("Could not load confirmation statuses.");
@@ -122,6 +125,17 @@ const AutoConfirmationPage = () => {
         } catch (error) {
             alert("Failed to update Alfa API setting. Reverting change.");
             setIsAlfaApiEnabled(!newStatus);
+        }
+    };
+
+    const handleTrocaCoinToggle = async () => {
+        const newStatus = !isTrocaCoinEnabled;
+        setIsTrocaCoinEnabled(newStatus);
+        try {
+            await api.post('/settings/troca-coin-confirmation', { isEnabled: newStatus });
+        } catch (error) {
+            alert("Failed to update Troca Coin setting. Reverting change.");
+            setIsTrocaCoinEnabled(!newStatus);
         }
     };
 
@@ -169,6 +183,18 @@ const AutoConfirmationPage = () => {
                  <Description style={{ fontSize: '0.9rem', marginTop: '0.5rem' }}>
                     When enabled, invoices for "Alfa Trust" will be confirmed automatically via the bank's API, overriding the standard method. A '🟢' reaction indicates success, a '🔴' indicates the transaction was not found.
                 </Description>
+
+                <SettingRow>
+                        <SettingLabel>Enable Troca Coin Telegram Confirmation</SettingLabel>
+                        <SwitchContainer>
+                            <SwitchInput 
+                                type="checkbox" 
+                                checked={isTrocaCoinEnabled}
+                                onChange={() => handleTrocaCoinToggle('Troca Coin', isTrocaCoinEnabled, setIsTrocaCoinEnabled, '/settings/troca-coin-confirmation')}
+                            />
+                            <Slider />
+                        </SwitchContainer>
+                    </SettingRow>
             </Card>
         </PageContainer>
     );
