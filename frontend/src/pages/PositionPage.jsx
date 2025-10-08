@@ -1,164 +1,136 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import styled from 'styled-components';
-import api from '../services/api';
-import { format } from 'date-fns';
-import { FaCalculator } from 'react-icons/fa';
+import { getPositionCounters, createPositionCounter, updatePositionCounter, deletePositionCounter } from '../services/api';
+import PositionCounterCard from '../components/PositionCounterCard';
+import PositionCounterModal from '../components/PositionCounterModal';
+import { FaPlus } from 'react-icons/fa';
 
 const PageContainer = styled.div`
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 2rem;
-    padding-top: 2rem;
-`;
-
-const Card = styled.div`
-    background: #fff;
-    padding: 2rem;
-    border-radius: 8px;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.08);
-    width: 100%;
-    max-width: 600px;
     display: flex;
     flex-direction: column;
     gap: 1.5rem;
 `;
 
-const InputContainer = styled.div`
+const Header = styled.div`
     display: flex;
-    gap: 1rem;
-    align-items: flex-end;
+    justify-content: space-between;
+    align-items: center;
 `;
 
-const InputGroup = styled.div`
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-    flex-grow: 1;
-`;
-
-const Label = styled.label`
-    font-weight: 600;
-    color: ${({ theme }) => theme.primary};
-`;
-
-const Input = styled.input`
-    padding: 0.75rem;
-    border: 1px solid ${({ theme }) => theme.border};
-    border-radius: 4px;
-    font-size: 1rem;
-`;
+const Title = styled.h2` margin: 0; `;
 
 const Button = styled.button`
     display: inline-flex;
     align-items: center;
     gap: 0.5rem;
-    padding: 0.75rem 1.5rem;
+    padding: 0.6rem 1.2rem;
     border: none;
-    border-radius: 4px;
+    border-radius: 6px;
     font-weight: 600;
     cursor: pointer;
-    background-color: ${({ theme, primary }) => theme.secondary};
+    background-color: ${({ theme }) => theme.secondary};
     color: white;
-    font-size: 1rem;
-    
-    &:disabled {
-        opacity: 0.6;
-        cursor: not-allowed;
-    }
+    font-size: 0.9rem;
 `;
 
-const ResultCard = styled(Card)`
-    text-align: center;
-    border-top: 4px solid ${({ theme }) => theme.secondary};
-`;
-
-const ResultValue = styled.p`
-    font-size: 2.5rem;
-    font-weight: 700;
-    color: ${({ theme }) => theme.primary};
-    margin: 0;
-`;
-
-const ResultLabel = styled.p`
-    font-size: 1rem;
-    color: ${({ theme }) => theme.lightText};
-    margin: 0;
-`;
-
-const CalculationPeriod = styled.p`
-    font-size: 0.85rem;
-    color: #888;
-    margin-top: 1rem;
-    background-color: ${({ theme }) => theme.background};
-    padding: 0.5rem;
-    border-radius: 4px;
+const CountersGrid = styled.div`
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+    gap: 1.5rem;
 `;
 
 const PositionPage = () => {
-    const [selectedDate, setSelectedDate] = useState(format(new Date(), 'yyyy-MM-dd'));
-    const [result, setResult] = useState(null);
-    const [loading, setLoading] = useState(false);
-    const [error, setError] = useState('');
+    const [counters, setCounters] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [isModalOpen, setIsModalOpen] = useState(false);
+    const [editingCounter, setEditingCounter] = useState(null);
 
-    const handleCalculate = async () => {
+    const fetchCounters = useCallback(async () => {
         setLoading(true);
-        setError('');
-        setResult(null);
         try {
-            const { data } = await api.get('/position', { params: { date: selectedDate } });
-            setResult(data);
-        } catch (err) {
-            setError(err.response?.data?.message || 'Failed to calculate position.');
+            const { data } = await getPositionCounters();
+            setCounters(data);
+        } catch (error) {
+            console.error("Failed to fetch counters", error);
         } finally {
             setLoading(false);
         }
-    };
-    
-    // Automatically calculate on first page load for today's date
-    useEffect(() => {
-        handleCalculate();
     }, []);
 
-    const formatDisplayDateTime = (isoString) => {
-        return format(new Date(isoString), 'MMM dd, yyyy, HH:mm:ss');
+    useEffect(() => {
+        fetchCounters();
+    }, [fetchCounters]);
+
+    const handleOpenModal = (counter = null) => {
+        setEditingCounter(counter);
+        setIsModalOpen(true);
+    };
+
+    const handleCloseModal = () => {
+        setEditingCounter(null);
+        setIsModalOpen(false);
+    };
+
+    const handleSaveCounter = async (formData) => {
+        try {
+            if (editingCounter) {
+                await updatePositionCounter(editingCounter.id, formData);
+            } else {
+                await createPositionCounter(formData);
+            }
+            fetchCounters(); // Refresh the list
+            handleCloseModal();
+        } catch (error) {
+            alert(error.response?.data?.message || 'Failed to save counter.');
+        }
+    };
+
+    const handleDeleteCounter = async (counterToDelete) => {
+        if (window.confirm(`Are you sure you want to delete the "${counterToDelete.name}" counter?`)) {
+            try {
+                await deletePositionCounter(counterToDelete.id);
+                fetchCounters(); // Refresh the list
+            } catch (error) {
+                alert('Failed to delete counter.');
+            }
+        }
     };
 
     return (
-        <PageContainer>
-            <Card>
-                <h2>Calculate Net Position</h2>
-                <InputContainer>
-                    <InputGroup>
-                        <Label>Select Business Day</Label>
-                        <Input 
-                            type="date"
-                            value={selectedDate}
-                            onChange={(e) => setSelectedDate(e.target.value)}
-                        />
-                    </InputGroup>
-                    <Button onClick={handleCalculate} disabled={loading}>
-                        <FaCalculator /> {loading ? 'Calculating...' : 'Calculate'}
+        <>
+            <PageContainer>
+                <Header>
+                    <Title>Position Dashboard</Title>
+                    <Button onClick={() => handleOpenModal()}>
+                        <FaPlus /> Create New Counter
                     </Button>
-                </InputContainer>
-            </Card>
+                </Header>
 
-            {result && (
-                <ResultCard>
-                    <ResultLabel>Net Position</ResultLabel>
-                    <ResultValue>
-                        {new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(result.netPosition).replace('$', '')}
-                    </ResultValue>
-                    <ResultLabel>from {result.transactionCount} transactions</ResultLabel>
+                {loading ? <p>Loading counters...</p> : (
+                    counters.length > 0 ? (
+                        <CountersGrid>
+                            {counters.map(counter => (
+                                <PositionCounterCard 
+                                    key={counter.id}
+                                    counter={counter}
+                                    onEdit={handleOpenModal}
+                                    onDelete={handleDeleteCounter}
+                                />
+                            ))}
+                        </CountersGrid>
+                    ) : (
+                        <p>No position counters created yet. Click "Create New Counter" to get started.</p>
+                    )
+                )}
+            </PageContainer>
 
-                    <CalculationPeriod>
-                        <strong>Period:</strong> {formatDisplayDateTime(result.calculationPeriod.start)} <br/>
-                        <strong>To:</strong> {formatDisplayDateTime(result.calculationPeriod.end)}
-                    </CalculationPeriod>
-                </ResultCard>
-            )}
-             {error && <p style={{color: 'red'}}>{error}</p>}
-        </PageContainer>
+            <PositionCounterModal
+                isOpen={isModalOpen}
+                onClose={handleCloseModal}
+                onSave={handleSaveCounter}
+                editingCounter={editingCounter}
+            />
+        </>
     );
 };
 

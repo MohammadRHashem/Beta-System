@@ -14,7 +14,7 @@ prompt_2 = f"""
     - **transaction id:** Find the unique transaction ID. It often looks like "E18189547202502171718GVpGtoyM2R3". It can contain letters and numbers.
         - You MUST return the ID **exactly as you see it without any edits**.
         - If no such ID is found, use the "transaction number" as a fallback.
-        - If neither is found, create an id from current utc timestamp and day letter, and make it about 10 characters.
+        - If neither is found, create an id from current utc timestamp and day letter, and make it about 10 characters like (20251008011200T) which is (tuesday 08/10/2025 01:12:00Pm.m).
 
     - **amount:** The total transaction amount.
         - **CRITICAL FORMATTING RULE:** The final JSON 'amount' string MUST use a comma (,) as the thousands separator and a period (.) as the decimal separator. It must ALWAYS have exactly two decimal places.
@@ -41,6 +41,7 @@ prompt_2 = f"""
     - **recipient:** Information about the entity receiving the payment.
         - name: The full name of the recipient.
         - **CRITICAL SWAP RULE:** the recipient name often includes "troca coin" or "alfa trust" or "mks intermediacoes" (case-insensitive), if it contains "troca coin" or "mks intermediacoes" make it "TROCA COIN NEGÓCIOS DIGITAIS E INTERMEDIAÇÕES LTDA", and if it contains "alfa trust" make it "ALFA TRUST INTERMEDIACAO DE NEGOCIOS LTDA".
+        - **CRITICAL RULE**: if recipient name contains at the end "...", remove the "..." from the recipient name.
 
     - **image_type:** Classify the image's context.
         - **replay:** A photo of another screen (phone, monitor). Look for glare, screen borders, or moiré patterns.

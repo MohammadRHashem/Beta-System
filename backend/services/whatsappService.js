@@ -102,61 +102,178 @@ const invoiceWorker = new Worker(
       
       // --- 2. PRIORITY 1: DUPLICATE CHECK ---
       if (
-        transaction_id &&
         amount &&
         (recipientNameLower.includes('trkbit') || recipientNameLower.includes('alfa trust') || recipientNameLower.includes('escrow'))
       ) {
-        // Find the source group JID of any existing invoice
-        const [[existingInvoice]] = await pool.query(
-          'SELECT source_group_jid FROM invoices WHERE transaction_id = ? AND amount = ? LIMIT 1', 
-          [transaction_id, amount]
-        );
-        
-        if (existingInvoice) {
-          const currentSourceJid = chat.id._serialized;
-          const existingSourceJid = existingInvoice.source_group_jid;
+          let isDuplicate = false;
+          let existingSourceJid = '';
 
-          // Case 1: Repeated from the same client
-          if (currentSourceJid === existingSourceJid) {
-            console.log(`[DUPLICATE] Invoice from SAME client. TXN_ID: ${transaction_id}.`);
-            await originalMessage.reply("❌Repeated❌");
-          } 
-          // Case 2: Repeated from a different client
-          else {
-            console.log(`[DUPLICATE] Invoice from DIFFERENT client. Current: ${currentSourceJid}, Existing: ${existingSourceJid}.`);
-            await originalMessage.reply("❌Repeated from another client❌");
+          // --- Sub-logic 1: Check by Transaction ID (most reliable) ---
+          if (transaction_id) {
+              const [[existingById]] = await pool.query(
+                  'SELECT source_group_jid FROM invoices WHERE transaction_id = ? AND amount = ? LIMIT 1', 
+                  [transaction_id, amount]
+              );
+              if (existingById) {
+                  isDuplicate = true;
+                  existingSourceJid = existingById.source_group_jid;
+              }
           }
-          
-          await originalMessage.react('❌');
-          return; // Stop all further processing
-        }
+
+          // --- Sub-logic 2: If no ID match, check by fuzzy name + amount in last 24 hours (fallback) ---
+          if (!isDuplicate && sender.name) {
+              const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+              const [potentialDuplicates] = await pool.query(
+                  'SELECT source_group_jid, sender_name FROM invoices WHERE amount = ? AND received_at >= ?', 
+                  [amount, twentyFourHoursAgo]
+              );
+              
+              if (potentialDuplicates.length > 0) {
+                  const newSenderName = (sender.name || '').toLowerCase().replace(/[,.]/g, '');
+                  const levenshteinDistance = (s1, s2) => {
+              const costs = [];
+              for (let i = 0; i <= s1.length; i++) {
+                  let lastValue = i;
+                  for (let j = 0; j <= s2.length; j++) {
+                      if (i === 0) costs[j] = j;
+                      else if (j > 0) {
+                          let newValue = costs[j - 1];
+                          if (s1.charAt(i - 1) !== s2.charAt(j - 1)) newValue = Math.min(newValue, lastValue, costs[j]) + 1;
+                          costs[j - 1] = lastValue;
+                          lastValue = newValue;
+                      }
+                  }
+                  if (i > 0) costs[s2.length] = lastValue;
+              }
+              return costs[s2.length];
+          };
+          const calculateSimilarity = (s1, s2) => {
+              let longer = s1, shorter = s2;
+              if (s1.length < s2.length) { longer = s2; shorter = s1; }
+              if (longer.length === 0) return 1.0;
+              return (longer.length - levenshteinDistance(longer, shorter)) / parseFloat(longer.length);
+          };
+
+                  const DUPLICATE_SIMILARITY_THRESHOLD = 0.90; 
+
+                  for (const existing of potentialDuplicates) {
+                      const existingSenderName = (existing.sender_name || '').toLowerCase().replace(/[,.]/g, '');
+                      const similarity = calculateSimilarity(newSenderName, existingSenderName);
+                      if (similarity >= DUPLICATE_SIMILARITY_THRESHOLD) {
+                          isDuplicate = true;
+                          existingSourceJid = existing.source_group_jid;
+                          console.log(`[DUPLICATE-CHECK] Found FUZZY duplicate. Similarity: ${similarity.toFixed(2)}`);
+                          break;
+                      }
+                  }
+              }
+          }
+
+          if (isDuplicate) {
+              const currentSourceJid = chat.id._serialized;
+              if (currentSourceJid === existingSourceJid) {
+                  await originalMessage.reply("❌Repeated❌");
+              } else {
+                  await originalMessage.reply("❌Repeated from another client❌");
+              }
+              await originalMessage.react('❌');
+              return;
+          }
       }
 
       let runStandardForwarding = true; // Flag to control fallback to manual confirmation
-
+      wasActioned = false;
 
       // --- NEW: PRIORITY 2: TROCA COIN TELEGRAM CONFIRMATION ---
       if (
           isTrocaCoinTelegramEnabled &&
           (recipientNameLower.includes('troca coin') || recipientNameLower.includes('mks intermediacoes'))
       ) {
-          console.log('[WORKER] "Troca Coin/MKS" recipient detected. Initiating Telegram check...');
-          try {
-              const telegramCheckerPath = path.join(pythonScriptsDir, "telegram_checker.py");
-              const { stdout: tgStdout } = await execa(pythonExecutable, [telegramCheckerPath, amount, sender.name]);
-              const tgResult = JSON.parse(tgStdout);
+          console.log('[WORKER] "Troca Coin/MKS" recipient detected. Checking local DB...');
+          
+          const searchAmount = parseFloat(amount.replace(",", ""));
+          const searchSender = sender.name;
 
-              if (tgResult.status === 'found') {
-                  console.log('[TELEGRAM-CONFIRM] Confirmed via Telegram. Replying "Caiu".');
+          try {
+              const [foundTxs] = await pool.query(
+                  `SELECT id, sender_name FROM telegram_transactions 
+                   WHERE amount = ? AND is_used = FALSE`,
+                  [searchAmount]
+              );
+              
+              let matchId = null;
+
+              // === THE FUZZY MATCHING FIX ===
+              const calculateSimilarity = (s1, s2) => {
+                  let longer = s1;
+                  let shorter = s2;
+                  if (s1.length < s2.length) {
+                      longer = s2;
+                      shorter = s1;
+                  }
+                  const longerLength = longer.length;
+                  if (longerLength === 0) {
+                      return 1.0;
+                  }
+                  const distance = (longer.length - levenshteinDistance(longer, shorter)) / parseFloat(longerLength);
+                  return distance;
+              };
+
+              const levenshteinDistance = (s1, s2) => {
+                  s1 = s1.toLowerCase();
+                  s2 = s2.toLowerCase();
+                  const costs = [];
+                  for (let i = 0; i <= s1.length; i++) {
+                      let lastValue = i;
+                      for (let j = 0; j <= s2.length; j++) {
+                          if (i === 0) {
+                              costs[j] = j;
+                          } else {
+                              if (j > 0) {
+                                  let newValue = costs[j - 1];
+                                  if (s1.charAt(i - 1) !== s2.charAt(j - 1)) {
+                                      newValue = Math.min(Math.min(newValue, lastValue), costs[j]) + 1;
+                                  }
+                                  costs[j - 1] = lastValue;
+                                  lastValue = newValue;
+                              }
+                          }
+                      }
+                      if (i > 0) {
+                          costs[s2.length] = lastValue;
+                      }
+                  }
+                  return costs[s2.length];
+              };
+              
+              const SIMILARITY_THRESHOLD = 0.75; // 75% match required
+
+              for (const tx of foundTxs) {
+                  const ocrName = searchSender.toLowerCase().replace(/[,.]/g, '');
+                  const telegramName = tx.sender_name.toLowerCase().replace(/[,.]/g, '');
+                  
+                  const similarity = calculateSimilarity(ocrName, telegramName);
+                  console.log(`[FUZZY-CHECK] Comparing "${ocrName}" vs "${telegramName}". Similarity: ${similarity.toFixed(2)}`);
+
+                  if (similarity >= SIMILARITY_THRESHOLD) {
+                      matchId = tx.id;
+                      break; // Found a sufficiently similar match
+                  }
+              }
+              // === END OF FIX ===
+
+              if (matchId) {
+                  console.log(`[DB-CONFIRM] Found fuzzy match in DB (ID: ${matchId}). Replying "Caiu".`);
+                  await pool.query('UPDATE telegram_transactions SET is_used = TRUE WHERE id = ?', [matchId]);
                   await originalMessage.reply('Caiu');
                   await originalMessage.react('🟢');
-                  runStandardForwarding = false; // Prevent fallback
+                  runStandardForwarding = false;
+                  wasActioned = true;
               } else {
-                  // If not found or script has an error, fall back to manual confirmation
-                  console.log(`[TELEGRAM-CONFIRM] Not found via Telegram (Status: ${tgResult.status}). Falling back to manual confirmation.`);
+                  console.log(`[DB-CONFIRM] No sufficiently similar TX found in DB. Falling back.`);
               }
-          } catch (error) {
-              console.error('[TELEGRAM-CONFIRM-ERROR] Python script execution failed. Falling back to manual confirmation.', error.stderr || error.message);
+          } catch (dbError) {
+              console.error("[DB-CONFIRM-ERROR] Error querying DB:", dbError);
           }
       }
 
@@ -168,8 +285,9 @@ const invoiceWorker = new Worker(
         // Only a definitive 'found' status will stop the forwarding process.
         if (apiResult.status === 'found') {
             console.log(`[ALFA-CONFIRM] Confirmed via API. Replying "Caiu".`);
-            await originalMessage.reply('Caiu');
             await originalMessage.react('🟢');
+            await originalMessage.reply('Caiu');
+            wasActioned = true;
             runStandardForwarding = false; // Prevent fallback
         } else if (apiResult.status === 'not_found') {
             console.log(`[ALFA-CONFIRM] Not found via API. Falling back to standard manual confirmation.`);
@@ -181,6 +299,7 @@ const invoiceWorker = new Worker(
       }
 
       // --- 4. PRIORITY 3: STANDARD FORWARDING & MANUAL CONFIRMATION (Fallback) ---
+      // let wasActioned = false;
       if (runStandardForwarding) {
         const [settings] = await pool.query("SELECT * FROM group_settings WHERE group_jid = ?", [chat.id._serialized]);
         const groupSettings = settings[0] || { forwarding_enabled: true };
@@ -203,6 +322,7 @@ const invoiceWorker = new Worker(
             forwarded = true;
             if (isAutoConfirmationEnabled) {
               await pool.query(`INSERT INTO forwarded_invoices (original_message_id, forwarded_message_id, destination_group_jid) VALUES (?, ?, ?)`, [messageId, forwardedMessage.id._serialized, directRule.destination_group_jid]);
+              wasActioned = true;
               await originalMessage.react('🟡'); // Waiting for manual confirmation emoji
             }
           }
@@ -227,6 +347,7 @@ const invoiceWorker = new Worker(
                           const forwardedMessage = await client.sendMessage(rule.destination_group_jid, mediaToForward, { caption: caption });
                   if (isAutoConfirmationEnabled) {
                     await pool.query(`INSERT INTO forwarded_invoices (original_message_id, forwarded_message_id, destination_group_jid) VALUES (?, ?, ?)`, [messageId, forwardedMessage.id._serialized, rule.destination_group_jid]);
+                    wasActioned = true;
                     await originalMessage.react('🟡'); // Waiting for manual confirmation emoji
                   }
                   break; // Stop after first match
@@ -240,7 +361,7 @@ const invoiceWorker = new Worker(
       // --- 5. FINAL STEP: ARCHIVING ---
       const [archiveSettings] = await pool.query("SELECT archiving_enabled FROM group_settings WHERE group_jid = ?", [chat.id._serialized]);
       const groupArchiveSettings = archiveSettings[0] || { archiving_enabled: true };
-      
+      let wasArchived = false;
       if (groupArchiveSettings.archiving_enabled) {
         const archiveFileName = `${messageId}.${extension}`;
         const finalMediaPath = path.join(MEDIA_ARCHIVE_DIR, archiveFileName);
@@ -253,7 +374,14 @@ const invoiceWorker = new Worker(
         await pool.query(`INSERT INTO invoices (message_id, transaction_id, sender_name, recipient_name, pix_key, amount, source_group_jid, received_at, raw_json_data, media_path, is_deleted) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, 
           [messageId, transaction_id, sender?.name, recipient.name, recipient.pix_key, amount, chat.id._serialized, correctUtcDate, JSON.stringify(invoiceJson), finalMediaPath, false]
         );
+        wasArchived = true;
         console.log(`[ARCHIVE] Successfully archived invoice for message ${messageId}.`);
+      }
+
+      if (wasArchived && !wasActioned) {
+          console.log(`[WORKER] Invoice was archived but not forwarded. Applying final checkmark.`);
+          await originalMessage.react('⚠️');
+          await originalMessage.reply("⚠️Ainda *não considerado* — espera Suporte responder p ver condição do comprovante.⚠️");
       }
 
     } catch (error) {
@@ -561,13 +689,13 @@ const handleReaction = async (reaction) => {
 
     // --- LOGIC FOR "CAIU" (CONFIRMATION) ---
     if (reactionEmoji === '👍' || reactionEmoji === '✅') {
-      console.log(`[REACTION] Detected 'like/check' on message: ${reactedMessageId}`);
-      
       const originalMessage = await client.getMessageById(link.original_message_id);
       if (originalMessage) {
+        // === THE FIX: Reply BEFORE reacting ===
         await originalMessage.reply('Caiu');
-        await originalMessage.react('');
+        await originalMessage.react(''); 
         await originalMessage.react('🟢');
+        // === END FIX ===
         
         await pool.query(
           'UPDATE forwarded_invoices SET is_confirmed = 1 WHERE forwarded_message_id = ?',
@@ -577,7 +705,7 @@ const handleReaction = async (reaction) => {
       }
     }
     
-    // --- NEW LOGIC FOR "NO CAIU" (DELETION) ---
+    // --- LOGIC FOR "NO CAIU" (DELETION) ---
     else if (reactionEmoji === '❌') {
       console.log(`[REACTION] Detected 'cross' (reject/delete) on message: ${reactedMessageId}`);
       
@@ -615,9 +743,11 @@ const handleReaction = async (reaction) => {
 
         // Step 5: Notify the original sender
         if (originalMessage) {
-          await originalMessage.reply('no caiu');
-          await originalMessage.react('');
-          await originalMessage.react('🔴');
+          // === THE FIX: Reply BEFORE reacting ===
+          await originalMessage.reply("no caiu");
+          await originalMessage.react("");
+          await originalMessage.react("🔴");
+          // === END FIX ===
         }
         
         // Notify the frontend to refresh the invoice list

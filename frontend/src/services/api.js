@@ -94,4 +94,14 @@ export const getDirectForwardingRules = () => apiClient.get('/direct-forwarding'
 export const createDirectForwardingRule = (data) => apiClient.post('/direct-forwarding', data);
 export const deleteDirectForwardingRule = (id) => apiClient.delete(`/direct-forwarding/${id}`);
 
+
+// === NEW: API functions for Position Counters ===
+export const getPositionCounters = () => apiClient.get('/positions/counters');
+export const createPositionCounter = (data) => apiClient.post('/positions/counters', data);
+export const updatePositionCounter = (id, data) => apiClient.put(`/positions/counters/${id}`, data);
+export const deletePositionCounter = (id) => apiClient.delete(`/positions/counters/${id}`);
+export const calculateLocalPosition = (params) => apiClient.get('/position/local', { params });
+export const calculateRemotePosition = (id, params) => apiClient.get(`/position/remote/${id}`, { params });
+
+
 export default apiClient;

@@ -5,6 +5,7 @@ import re
 from pathlib import Path
 from dotenv import load_dotenv
 from telethon.sync import TelegramClient
+from telethon.sessions import StringSession
 import asyncio
 
 # --- Load Environment Variables ---
@@ -16,12 +17,12 @@ load_dotenv(dotenv_path=dotenv_path)
 # --- Telegram Configuration ---
 API_ID = os.getenv('TELEGRAM_API_ID')
 API_HASH = os.getenv('TELEGRAM_API_HASH')
-SESSION_NAME = os.getenv('TELEGRAM_SESSION_NAME', 'telegram_session')
+# IMPORTANT: This is now loaded from .env to avoid storing it in a file
+SESSION_STRING = os.getenv('TELEGRAM_SESSION_STRING')
 TARGET_GROUP_ID = os.getenv('TELEGRAM_TARGET_GROUP_ID')
 
-# --- Helper Functions ---
+# --- Helper Functions (Unchanged) ---
 def parse_brl_amount(amount_str):
-    """Converts a BRL string to a float, handling various formats."""
     try:
         cleaned_str = re.sub(r'[^\d,.]', '', amount_str).strip()
         if ',' in cleaned_str and '.' in cleaned_str and cleaned_str.rfind('.') < cleaned_str.rfind(','):
@@ -33,53 +34,37 @@ def parse_brl_amount(amount_str):
         return 0.0
 
 def find_match(messages, target_amount, target_sender):
-    """Searches through Telegram messages for a matching transaction."""
     target_sender_lower = target_sender.lower().strip()
-    
-    # Regex for the entire message
     amount_regex = re.compile(r"Amount:\s*R\$\s*([\d.,]+)")
-    # Regex to find the "Sender Information" block
     sender_block_regex = re.compile(r"Sender Information:\s*-+\s*(.+?)(?=\n\n|\Z)", re.DOTALL)
-    # Regex to find the Name ONLY within the sender block
-    sender_name_regex = re.compile(r"Name:\s*(.+)")
+    sender_name_regex = re.compile(r"Name:\s*([^\n]+)")
 
     for message in messages:
         if not message or not message.text:
             continue
-
         text = message.text
-        
         amount_match = amount_regex.search(text)
-        if not amount_match:
-            continue
-        
         sender_block_match = sender_block_regex.search(text)
-        if not sender_block_match:
+        if not (amount_match and sender_block_match):
             continue
-
         sender_block_text = sender_block_match.group(1)
         sender_name_match = sender_name_regex.search(sender_block_text)
-
         if sender_name_match:
             try:
                 msg_amount_str = amount_match.group(1)
                 msg_sender_name = sender_name_match.group(1).strip()
-
                 msg_amount_float = parse_brl_amount(msg_amount_str)
                 msg_sender_lower = msg_sender_name.lower()
-                
-                # The corrected matching logic
                 if msg_amount_float == target_amount and target_sender_lower in msg_sender_lower:
                     return True
             except Exception:
-                # Ignore any message that fails to parse
                 continue
     return False
 
+# --- Main Execution ---
 async def main():
-    """Main execution function."""
-    if not all([API_ID, API_HASH, TARGET_GROUP_ID]):
-        print(json.dumps({"status": "error", "message": "Telegram API credentials are not configured in .env"}))
+    if not all([API_ID, API_HASH, TARGET_GROUP_ID, SESSION_STRING]):
+        print(json.dumps({"status": "error", "message": "Telegram API credentials or SESSION_STRING are not configured."}))
         return
 
     try:
@@ -91,23 +76,18 @@ async def main():
         
     target_amount_float = parse_brl_amount(target_amount_str)
     
-    client = TelegramClient(str(script_dir / SESSION_NAME), int(API_ID), API_HASH)
+    # === THE DEFINITIVE CACHING FIX ===
+    # Use an in-memory StringSession to force a fresh connection every time.
+    client = TelegramClient(StringSession(SESSION_STRING), int(API_ID), API_HASH)
+    # === END FIX ===
 
     try:
         await client.connect()
-        target_group = None
-        target_id_int = int(TARGET_GROUP_ID)
+        # No need to check for authorization, the string session handles it.
+        target_group = await client.get_input_entity(int(TARGET_GROUP_ID))
         
-        async for dialog in client.iter_dialogs():
-            if dialog.id == target_id_int:
-                target_group = dialog.entity
-                break
-        
-        if target_group is None:
-            print(json.dumps({"status": "error", "message": f"Could not find group with ID {TARGET_GROUP_ID}."}), file=sys.stderr)
-            return
-        
-        messages = await client.get_messages(target_group, limit=200)
+        # This will now always be a fresh call to the server.
+        messages = await client.get_messages(target_group, limit=50) # Limit can be smaller now
 
         if find_match(messages, target_amount_float, target_sender_name):
             print(json.dumps({"status": "found"}))

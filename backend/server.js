@@ -86,7 +86,6 @@ app.delete('/api/invoices/:id', invoiceController.deleteInvoice);
 app.get('/api/invoices/recipients', invoiceController.getRecipientNames);
 app.get('/api/invoices/export', invoiceController.exportInvoices);
 app.get('/api/invoices/media/:id', invoiceController.getInvoiceMedia);
-app.get('/api/position', positionController.calculatePosition);
 
 app.get('/api/direct-forwarding', directForwardingController.getAllRules);
 app.post('/api/direct-forwarding', directForwardingController.createRule);
@@ -97,6 +96,13 @@ app.post('/api/settings/alfa-api-confirmation', settingsController.setAlfaApiCon
 
 app.get('/api/settings/troca-coin-confirmation', settingsController.getTrocaCoinConfirmationStatus);
 app.post('/api/settings/troca-coin-confirmation', settingsController.setTrocaCoinConfirmationStatus);
+
+app.get('/api/position/local', positionController.calculateLocalPosition); // Renamed for clarity
+app.get('/api/position/remote/:id', positionController.calculateRemotePosition); // New remote endpoint
+app.get('/api/positions/counters', positionController.getAllCounters);
+app.post('/api/positions/counters', positionController.createCounter);
+app.put('/api/positions/counters/:id', positionController.updateCounter);
+app.delete('/api/positions/counters/:id', positionController.deleteCounter);
 
 const frontendPath = path.join(__dirname, '..', 'frontend', 'dist');
 if (fs.existsSync(frontendPath)) {
