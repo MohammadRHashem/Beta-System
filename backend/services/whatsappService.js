@@ -380,8 +380,8 @@ const invoiceWorker = new Worker(
 
       if (wasArchived && !wasActioned) {
           console.log(`[WORKER] Invoice was archived but not forwarded. Applying final checkmark.`);
-          await originalMessage.react('⚠️');
-          await originalMessage.reply("⚠️Ainda *não considerado* — espera Suporte responder p ver condição do comprovante.⚠️");
+          // await originalMessage.react('⚠️');
+          // await originalMessage.reply("⚠️Ainda *não considerado* — espera Suporte responder p ver condição do comprovante.⚠️");
       }
 
     } catch (error) {
