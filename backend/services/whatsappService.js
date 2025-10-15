@@ -53,6 +53,67 @@ const sendPingToMonitor = async () => {
 };
 
 
+// === NEW: Helper function for the smart matching logic ===
+const findBestTelegramMatch = async (searchAmount, searchSender) => {
+    if (!searchSender || !searchAmount) {
+        return null;
+    }
+
+    try {
+        const [foundTxs] = await pool.query(
+            `SELECT id, sender_name_normalized FROM telegram_transactions 
+             WHERE amount = ? AND is_used = FALSE`,
+            [searchAmount]
+        );
+
+        if (foundTxs.length === 0) {
+            return null;
+        }
+
+        // 1. Normalize the incoming OCR sender name
+        const ocrNameNormalized = searchSender
+            .toLowerCase()
+            .replace(/[,.]/g, '')
+            .replace(/\b(ltda|me|sa|eireli|epp)\b/g, '') // Remove common business suffixes
+            .replace(/\s+/g, ' ').trim(); // Standardize whitespace
+
+        let bestMatchId = null;
+
+        // Iterate through potential matches from the DB
+        for (const tx of foundTxs) {
+            const telegramNameNormalized = tx.sender_name_normalized;
+
+            // Match 1: Direct Substring Check (handles cases like "Name" vs "Name 12345")
+            if (telegramNameNormalized.includes(ocrNameNormalized)) {
+                console.log(`[SMART-MATCH] Found via Substring Match.`);
+                bestMatchId = tx.id;
+                break; 
+            }
+
+            // Match 2: Word Set (Subset) Check (handles missing words or different order)
+            const ocrWords = new Set(ocrNameNormalized.split(' ').filter(w => w.length > 1));
+            const telegramWords = new Set(telegramNameNormalized.split(' ').filter(w => w.length > 1));
+            const isSubset = (setA, setB) => {
+                for (const elem of setA) { if (!setB.has(elem)) return false; }
+                return true;
+            };
+
+            if (ocrWords.size > 0 && isSubset(ocrWords, telegramWords)) {
+                console.log(`[SMART-MATCH] Found via Word Subset Match.`);
+                bestMatchId = tx.id;
+                break;
+            }
+        }
+        
+        return bestMatchId;
+
+    } catch (dbError) {
+        console.error("[DB-CONFIRM-ERROR] Error querying telegram_transactions table:", dbError);
+        return null;
+    }
+};
+
+
 const invoiceWorker = new Worker(
   "invoice-processing-queue",
   async (job) => {
@@ -100,16 +161,18 @@ const invoiceWorker = new Worker(
 
       const recipientNameLower = (recipient.name || "").toLowerCase();
       
-      // --- 2. PRIORITY 1: UNIVERSAL DUPLICATE CHECK (THE FIX) ---
-      // The check now runs if a transaction_id exists, regardless of recipient.
-      if (transaction_id && amount) {
+      let isDuplicate = false;
+      let existingSourceJid = "";
+
+      // --- PRIORITY 1: STRICT DUPLICATE CHECK (transaction_id + amount) ---
+      if (transaction_id && transaction_id.trim() !== '' && amount) {
+          const trimmedTransactionId = transaction_id.trim();
           const [[existingById]] = await pool.query(
               'SELECT source_group_jid FROM invoices WHERE transaction_id = ? AND amount = ? LIMIT 1', 
-              [transaction_id, amount]
+              [trimmedTransactionId, amount]
           );
 
           if (existingById) {
-              // This is a definitive duplicate. Stop everything.
               const currentSourceJid = chat.id._serialized;
               if (currentSourceJid === existingById.source_group_jid) {
                   await originalMessage.reply("❌Repeated❌");
@@ -120,175 +183,27 @@ const invoiceWorker = new Worker(
               return; // EXIT WORKER
           }
       }
-      // Fuzzy check for missing ID (This logic can be removed if transaction_id is reliable enough)
-      // For now, we keep it as a fallback for specific cases.
-      else if (
-          !transaction_id && 
-          sender.name && 
-          amount &&
-          (recipientNameLower.includes('trkbit') || recipientNameLower.includes('alfa trust') || recipientNameLower.includes('escrow'))
-      ) {
-          const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
-          const [potentialDuplicates] = await pool.query(
-              'SELECT source_group_jid, sender_name FROM invoices WHERE amount = ? AND received_at >= ?', 
-              [amount, twentyFourHoursAgo]
-          );
 
-          if (potentialDuplicates.length > 0) {
-            const newSenderName = sender.name
-              .toLowerCase()
-              .replace(/[,.]/g, "");
-            const levenshteinDistance = (s1, s2) => {
-              const costs = [];
-              for (let i = 0; i <= s1.length; i++) {
-                let lastValue = i;
-                for (let j = 0; j <= s2.length; j++) {
-                  if (i === 0) costs[j] = j;
-                  else if (j > 0) {
-                    let newValue = costs[j - 1];
-                    if (s1.charAt(i - 1) !== s2.charAt(j - 1))
-                      newValue = Math.min(newValue, lastValue, costs[j]) + 1;
-                    costs[j - 1] = lastValue;
-                    lastValue = newValue;
-                  }
-                }
-                if (i > 0) costs[s2.length] = lastValue;
-              }
-              return costs[s2.length];
-            };
-            const calculateSimilarity = (s1, s2) => {
-              let longer = s1,
-                shorter = s2;
-              if (s1.length < s2.length) {
-                longer = s2;
-                shorter = s1;
-              }
-              if (longer.length === 0) return 1.0;
-              return (
-                (longer.length - levenshteinDistance(longer, shorter)) /
-                parseFloat(longer.length)
-              );
-            };
-            const DUPLICATE_SIMILARITY_THRESHOLD = 0.9;
+      let runStandardForwarding = true;
+      let wasActioned = false;
 
-            for (const existing of potentialDuplicates) {
-              const existingSenderName = (existing.sender_name || "")
-                .toLowerCase()
-                .replace(/[,.]/g, "");
-              const similarity = calculateSimilarity(
-                newSenderName,
-                existingSenderName
-              );
-              if (similarity >= DUPLICATE_SIMILARITY_THRESHOLD) {
-                // Found a fuzzy duplicate. Stop everything.
-                const currentSourceJid = chat.id._serialized;
-                if (currentSourceJid === existing.source_group_jid) {
-                  await originalMessage.reply("❌Repeated❌");
-                } else {
-                  await originalMessage.reply(
-                    "❌Repeated from another client❌"
-                  );
-                }
-                await originalMessage.react("❌");
-                return; // EXIT WORKER
-              }
-            }
-          }
-      }
-
-      let runStandardForwarding = true; // Flag to control fallback to manual confirmation
-      wasActioned = false;
-
-      // --- NEW: PRIORITY 2: TROCA COIN TELEGRAM CONFIRMATION ---
+      // --- PRIORITY 2: TROCA COIN TELEGRAM CONFIRMATION (Using Smart Match) ---
       if (
           isTrocaCoinTelegramEnabled &&
           (recipientNameLower.includes('troca coin') || recipientNameLower.includes('mks intermediacoes'))
       ) {
-          console.log('[WORKER] "Troca Coin/MKS" recipient detected. Checking local DB...');
-          
-          const searchAmount = parseFloat(amount.replace(",", ""));
-          const searchSender = sender.name;
+          console.log('[WORKER] "Troca Coin/MKS" recipient detected. Checking DB with Smart Match...');
+          const matchId = await findBestTelegramMatch(parseFloat(amount.replace(",", "")), sender.name);
 
-          try {
-              const [foundTxs] = await pool.query(
-                  `SELECT id, sender_name FROM telegram_transactions 
-                   WHERE amount = ? AND is_used = FALSE`,
-                  [searchAmount]
-              );
-              
-              let matchId = null;
-
-              // === THE FUZZY MATCHING FIX ===
-              const calculateSimilarity = (s1, s2) => {
-                  let longer = s1;
-                  let shorter = s2;
-                  if (s1.length < s2.length) {
-                      longer = s2;
-                      shorter = s1;
-                  }
-                  const longerLength = longer.length;
-                  if (longerLength === 0) {
-                      return 1.0;
-                  }
-                  const distance = (longer.length - levenshteinDistance(longer, shorter)) / parseFloat(longerLength);
-                  return distance;
-              };
-
-              const levenshteinDistance = (s1, s2) => {
-                  s1 = s1.toLowerCase();
-                  s2 = s2.toLowerCase();
-                  const costs = [];
-                  for (let i = 0; i <= s1.length; i++) {
-                      let lastValue = i;
-                      for (let j = 0; j <= s2.length; j++) {
-                          if (i === 0) {
-                              costs[j] = j;
-                          } else {
-                              if (j > 0) {
-                                  let newValue = costs[j - 1];
-                                  if (s1.charAt(i - 1) !== s2.charAt(j - 1)) {
-                                      newValue = Math.min(Math.min(newValue, lastValue), costs[j]) + 1;
-                                  }
-                                  costs[j - 1] = lastValue;
-                                  lastValue = newValue;
-                              }
-                          }
-                      }
-                      if (i > 0) {
-                          costs[s2.length] = lastValue;
-                      }
-                  }
-                  return costs[s2.length];
-              };
-              
-              const SIMILARITY_THRESHOLD = 0.75; // 75% match required
-
-              for (const tx of foundTxs) {
-                  const ocrName = searchSender.toLowerCase().replace(/[,.]/g, '');
-                  const telegramName = tx.sender_name.toLowerCase().replace(/[,.]/g, '');
-                  
-                  const similarity = calculateSimilarity(ocrName, telegramName);
-                  console.log(`[FUZZY-CHECK] Comparing "${ocrName}" vs "${telegramName}". Similarity: ${similarity.toFixed(2)}`);
-
-                  if (similarity >= SIMILARITY_THRESHOLD) {
-                      matchId = tx.id;
-                      break; // Found a sufficiently similar match
-                  }
-              }
-              // === END OF FIX ===
-
-              if (matchId) {
-                  console.log(`[DB-CONFIRM] Found fuzzy match in DB (ID: ${matchId}). Replying "Caiu".`);
-                  await pool.query('UPDATE telegram_transactions SET is_used = TRUE WHERE id = ?', [matchId]);
-                  await originalMessage.reply('Caiu');
-                  await originalMessage.react('🟢');
-                  runStandardForwarding = false;
-                  wasActioned = true;
-              } else {
-                  console.log(`[DB-CONFIRM] No sufficiently similar TX found in DB. Falling back.`);
-              }
-          } catch (dbError) {
-              console.error("[DB-CONFIRM-ERROR] Error querying DB:", dbError);
+          if (matchId) {
+              console.log(`[DB-CONFIRM] Smart Match successful (ID: ${matchId}). Replying "Caiu".`);
+              await pool.query('UPDATE telegram_transactions SET is_used = TRUE WHERE id = ?', [matchId]);
+              await originalMessage.reply('Caiu');
+              await originalMessage.react('🟢');
+              runStandardForwarding = false;
+              wasActioned = true;
+          } else {
+              console.log(`[DB-CONFIRM] No Smart Match found in DB. Falling back to manual confirmation.`);
           }
       }
 

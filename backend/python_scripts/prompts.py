@@ -14,7 +14,7 @@ prompt_2 = f"""
     - **transaction id:** Find the unique transaction ID. It often looks like "E18189547202502171718GVpGtoyM2R3". It can contain letters and numbers.
         - You MUST return the ID **exactly as you see it without any edits**.
         - If no such ID is found, use the "transaction number" as a fallback.
-        - If neither is found, create an id from a combo of amount-date-sender in the following format (amount-date(dmy)-sender(first letter)).
+        - If neither is found, create an id from a combo of amount-invoicedate-invoicetime-sender in the following format (amount-date(dmy)-time(hms)-sender(first letter)).
 
     - **amount:** The total transaction amount.
         - **CRITICAL FORMATTING RULE:** The final JSON 'amount' string MUST use a comma (,) as the thousands separator and a period (.) as the decimal separator. It must ALWAYS have exactly two decimal places.
