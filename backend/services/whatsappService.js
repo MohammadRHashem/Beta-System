@@ -105,79 +105,81 @@ const invoiceWorker = new Worker(
         amount &&
         (recipientNameLower.includes('trkbit') || recipientNameLower.includes('alfa trust') || recipientNameLower.includes('escrow'))
       ) {
-          let isDuplicate = false;
-          let existingSourceJid = '';
+          // --- THE FIX: Create a separate block for each logic path ---
 
-          // --- Sub-logic 1: Check by Transaction ID (most reliable) ---
+          // --- Path A: Transaction ID is present (The Golden Path) ---
           if (transaction_id) {
               const [[existingById]] = await pool.query(
                   'SELECT source_group_jid FROM invoices WHERE transaction_id = ? AND amount = ? LIMIT 1', 
                   [transaction_id, amount]
               );
-              if (existingById) {
-                  isDuplicate = true;
-                  existingSourceJid = existingById.source_group_jid;
-              }
-          }
 
-          // --- Sub-logic 2: If no ID match, check by fuzzy name + amount in last 24 hours (fallback) ---
-          if (!isDuplicate && sender.name) {
+              if (existingById) {
+                  // This is a definitive duplicate. Stop everything.
+                  const currentSourceJid = chat.id._serialized;
+                  if (currentSourceJid === existingById.source_group_jid) {
+                      await originalMessage.reply("❌Repeated❌");
+                  } else {
+                      await originalMessage.reply("❌Repeated from another client❌");
+                  }
+                  await originalMessage.react('❌');
+                  return; // EXIT WORKER
+              }
+              // If not found, we do nothing and proceed. The invoice is unique.
+
+          } 
+          // --- Path B: Transaction ID is MISSING (Fuzzy Fallback Path) ---
+          else if (sender.name) {
               const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
               const [potentialDuplicates] = await pool.query(
                   'SELECT source_group_jid, sender_name FROM invoices WHERE amount = ? AND received_at >= ?', 
                   [amount, twentyFourHoursAgo]
               );
-              
-              if (potentialDuplicates.length > 0) {
-                  const newSenderName = (sender.name || '').toLowerCase().replace(/[,.]/g, '');
-                  const levenshteinDistance = (s1, s2) => {
-              const costs = [];
-              for (let i = 0; i <= s1.length; i++) {
-                  let lastValue = i;
-                  for (let j = 0; j <= s2.length; j++) {
-                      if (i === 0) costs[j] = j;
-                      else if (j > 0) {
-                          let newValue = costs[j - 1];
-                          if (s1.charAt(i - 1) !== s2.charAt(j - 1)) newValue = Math.min(newValue, lastValue, costs[j]) + 1;
-                          costs[j - 1] = lastValue;
-                          lastValue = newValue;
-                      }
-                  }
-                  if (i > 0) costs[s2.length] = lastValue;
-              }
-              return costs[s2.length];
-          };
-          const calculateSimilarity = (s1, s2) => {
-              let longer = s1, shorter = s2;
-              if (s1.length < s2.length) { longer = s2; shorter = s1; }
-              if (longer.length === 0) return 1.0;
-              return (longer.length - levenshteinDistance(longer, shorter)) / parseFloat(longer.length);
-          };
 
+
+              if (potentialDuplicates.length > 0) {
+                  const newSenderName = sender.name.toLowerCase().replace(/[,.]/g, '');
+                  const levenshteinDistance = (s1, s2) => {
+                      const costs = [];
+                      for (let i = 0; i <= s1.length; i++) {
+                          let lastValue = i;
+                          for (let j = 0; j <= s2.length; j++) {
+                              if (i === 0) costs[j] = j;
+                              else if (j > 0) {
+                                  let newValue = costs[j - 1];
+                                  if (s1.charAt(i - 1) !== s2.charAt(j - 1)) newValue = Math.min(newValue, lastValue, costs[j]) + 1;
+                                  costs[j - 1] = lastValue;
+                                  lastValue = newValue;
+                              }
+                          }
+                          if (i > 0) costs[s2.length] = lastValue;
+                      }
+                      return costs[s2.length];
+                  };
+                  const calculateSimilarity = (s1, s2) => {
+                      let longer = s1, shorter = s2;
+                      if (s1.length < s2.length) { longer = s2; shorter = s1; }
+                      if (longer.length === 0) return 1.0;
+                      return (longer.length - levenshteinDistance(longer, shorter)) / parseFloat(longer.length);
+                  };
                   const DUPLICATE_SIMILARITY_THRESHOLD = 0.90; 
 
                   for (const existing of potentialDuplicates) {
                       const existingSenderName = (existing.sender_name || '').toLowerCase().replace(/[,.]/g, '');
                       const similarity = calculateSimilarity(newSenderName, existingSenderName);
                       if (similarity >= DUPLICATE_SIMILARITY_THRESHOLD) {
-                          isDuplicate = true;
-                          existingSourceJid = existing.source_group_jid;
-                          console.log(`[DUPLICATE-CHECK] Found FUZZY duplicate. Similarity: ${similarity.toFixed(2)}`);
-                          break;
+                          // Found a fuzzy duplicate. Stop everything.
+                          const currentSourceJid = chat.id._serialized;
+                          if (currentSourceJid === existing.source_group_jid) {
+                              await originalMessage.reply("❌Repeated❌");
+                          } else {
+                              await originalMessage.reply("❌Repeated from another client❌");
+                          }
+                          await originalMessage.react('❌');
+                          return; // EXIT WORKER
                       }
                   }
               }
-          }
-
-          if (isDuplicate) {
-              const currentSourceJid = chat.id._serialized;
-              if (currentSourceJid === existingSourceJid) {
-                  await originalMessage.reply("❌Repeated❌");
-              } else {
-                  await originalMessage.reply("❌Repeated from another client❌");
-              }
-              await originalMessage.react('❌');
-              return;
           }
       }
 

@@ -14,7 +14,7 @@ prompt_2 = f"""
     - **transaction id:** Find the unique transaction ID. It often looks like "E18189547202502171718GVpGtoyM2R3". It can contain letters and numbers.
         - You MUST return the ID **exactly as you see it without any edits**.
         - If no such ID is found, use the "transaction number" as a fallback.
-        - If neither is found, create an id from current utc timestamp and day letter, and make it about 10 characters like (20251008011200T) which is (tuesday 08/10/2025 01:12:00Pm.m).
+        - If neither is found, create an id from a combo of amount-date-sender in the following format (amount-date(dmy)-sender(first letter)).
 
     - **amount:** The total transaction amount.
         - **CRITICAL FORMATTING RULE:** The final JSON 'amount' string MUST use a comma (,) as the thousands separator and a period (.) as the decimal separator. It must ALWAYS have exactly two decimal places.

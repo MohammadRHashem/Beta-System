@@ -20,7 +20,6 @@ exports.getAllInvoices = async (req, res) => {
     `;
     const params = [];
 
-    // All filters are now applied on the backend
     if (search) {
         query += ` AND (i.transaction_id LIKE ? OR i.sender_name LIKE ? OR i.recipient_name LIKE ? OR i.pix_key LIKE ? OR i.notes LIKE ? OR i.amount LIKE ?)`;
         const searchTerm = `%${search}%`;
@@ -40,7 +39,6 @@ exports.getAllInvoices = async (req, res) => {
 
     if (sourceGroups && sourceGroups.length > 0) {
         query += ` AND i.source_group_jid IN (?)`;
-        // Ensure sourceGroups is an array, as it comes from query string
         params.push(Array.isArray(sourceGroups) ? sourceGroups : [sourceGroups]);
     }
     if (recipientNames && recipientNames.length > 0) {
@@ -58,9 +56,9 @@ exports.getAllInvoices = async (req, res) => {
     if (status === 'only_deleted') {
         query += ' AND i.is_deleted = 1';
     } else if (status === 'only_duplicates') {
+        // === THE FIX: Use the corrected duplicate definition here as well ===
         query += ` AND i.transaction_id IS NOT NULL AND i.transaction_id != '' AND i.id NOT IN (SELECT MIN(id) FROM invoices WHERE transaction_id IS NOT NULL AND transaction_id != '' GROUP BY transaction_id, amount)`;
     } else {
-        // By default, do not show deleted invoices unless explicitly asked for.
         if (status !== 'only_deleted') {
             query += ' AND i.is_deleted = 0';
         }
@@ -108,8 +106,8 @@ const getBusinessDay = (transactionDate) => {
 
 exports.exportInvoices = async (req, res) => {
     const {
-        search = '', dateFrom, dateTo,
-        sourceGroups, recipientNames,
+        search, dateFrom, dateTo, timeFrom, timeTo,
+        sourceGroups, recipientNames, reviewStatus, status,
     } = req.query;
 
     let query = `
@@ -122,44 +120,66 @@ exports.exportInvoices = async (req, res) => {
             i.amount
         FROM invoices i
         LEFT JOIN whatsapp_groups wg ON i.source_group_jid = wg.group_jid
-        WHERE 
-            i.is_deleted = 0
-            -- === THE EDIT: Changed MAX(id) to MIN(id) to get the oldest duplicate ===
-            AND (
-                i.transaction_id IS NULL OR i.transaction_id = '' OR i.id IN (
-                    SELECT MIN(id) FROM invoices WHERE transaction_id IS NOT NULL AND transaction_id != '' GROUP BY transaction_id
-                )
-            )
+        WHERE 1=1
     `;
     
     const params = [];
 
+    // Apply identical filtering logic from getAllInvoices
     if (search) {
-        query += ` AND (i.transaction_id LIKE ? OR i.sender_name LIKE ? OR i.recipient_name LIKE ? OR i.amount LIKE ?)`;
+        query += ` AND (i.transaction_id LIKE ? OR i.sender_name LIKE ? OR i.recipient_name LIKE ? OR i.pix_key LIKE ? OR i.notes LIKE ? OR i.amount LIKE ?)`;
         const searchTerm = `%${search}%`;
-        params.push(searchTerm, searchTerm, searchTerm, searchTerm);
+        params.push(searchTerm, searchTerm, searchTerm, searchTerm, searchTerm, searchTerm);
     }
+    
     if (dateFrom) {
-        query += ' AND DATE(CONVERT_TZ(i.received_at, "+00:00", "-03:00")) >= ?';
-        params.push(dateFrom);
+        const startDateTime = `${dateFrom} ${timeFrom || '00:00:00'}`;
+        query += ' AND CONVERT_TZ(i.received_at, "+00:00", "-03:00") >= ?';
+        params.push(startDateTime);
     }
     if (dateTo) {
-        query += ' AND DATE(CONVERT_TZ(i.received_at, "+00:00", "-03:00")) <= ?';
-        params.push(dateTo);
+        const endDateTime = `${dateTo} ${timeTo || '23:59:59'}`;
+        query += ' AND CONVERT_TZ(i.received_at, "+00:00", "-03:00") <= ?';
+        params.push(endDateTime);
     }
+
     if (sourceGroups && typeof sourceGroups === 'string' && sourceGroups.length > 0) {
-        query += ' AND i.source_group_jid IN (?)';
+        query += ` AND i.source_group_jid IN (?)`;
         params.push(sourceGroups.split(','));
     }
     if (recipientNames && typeof recipientNames === 'string' && recipientNames.length > 0) {
-        query += ' AND i.recipient_name IN (?)';
+        query += ` AND i.recipient_name IN (?)`;
         params.push(recipientNames.split(','));
     }
     
+    const reviewCondition = "(i.sender_name IS NULL OR i.sender_name = '' OR i.recipient_name IS NULL OR i.recipient_name = '' OR i.amount IS NULL OR i.amount = '0.00')";
+    if (reviewStatus === 'only_review') {
+        query += ` AND ${reviewCondition}`;
+    } else if (reviewStatus === 'hide_review') {
+        query += ` AND NOT ${reviewCondition}`;
+    }
+
+    if (status === 'only_deleted') {
+        query += ' AND i.is_deleted = 1';
+    } else if (status === 'only_duplicates') {
+        // If user ASKS for duplicates, export ONLY the newer copies.
+        query += ` AND i.is_deleted = 0 AND i.transaction_id IS NOT NULL AND i.transaction_id != '' AND i.id NOT IN (SELECT MIN(id) FROM invoices WHERE transaction_id IS NOT NULL AND transaction_id != '' GROUP BY transaction_id, amount)`;
+    } else {
+        // DEFAULT BEHAVIOR: Export only the FIRST instance of any transaction.
+        // This prevents double-counting in spreadsheets.
+        query += ` AND i.is_deleted = 0 AND i.id IN (
+            SELECT id FROM (
+                SELECT MIN(id) as id FROM invoices GROUP BY transaction_id, amount
+            ) as unique_invoices
+        )`;
+    }
+    
+    // Crucial for the separator logic: data MUST be sorted chronologically.
     query += ' ORDER BY i.received_at ASC';
 
     try {
         const [invoicesFromDb] = await pool.query(query, params);
+        
         const workbook = new ExcelJS.Workbook();
         const worksheet = workbook.addWorksheet('Invoices', {
             views: [{ state: 'frozen', ySplit: 1 }]
@@ -167,33 +187,37 @@ exports.exportInvoices = async (req, res) => {
 
         worksheet.columns = [
             { header: 'TimeDate', key: 'received_at', width: 22, style: { numFmt: 'dd/mm/yyyy hh:mm:ss', alignment: { horizontal: 'right' } } },
-            { header: 'Transaction ID', key: 'transaction_id', width: 35, style: { alignment: { horizontal: 'left' } } },
-            { header: 'Sender', key: 'sender_name', width: 30, style: { alignment: { horizontal: 'left' } } },
-            { header: 'Recipient', key: 'recipient_name', width: 30, style: { alignment: { horizontal: 'left' } } },
-            { header: 'Source Grp Name', key: 'source_group_name', width: 25, style: { alignment: { horizontal: 'left' } } },
-            { header: 'Amount', key: 'amount', width: 18, style: { numFmt: '#,##0.00;[Red]-#,##0.00', alignment: { horizontal: 'right' } } },
+            { header: 'Transaction ID', key: 'transaction_id', width: 35 },
+            { header: 'Sender', key: 'sender_name', width: 30 },
+            { header: 'Recipient', key: 'recipient_name', width: 30 },
+            { header: 'Source Grp Name', key: 'source_group_name', width: 25 },
+            { header: 'Amount', key: 'amount', width: 18, style: { numFmt: '#,##0.00', alignment: { horizontal: 'right' } } },
         ];
 
         worksheet.getRow(1).font = { name: 'Calibri', bold: true, color: { argb: 'FFFFFFFF' } };
         worksheet.getRow(1).fill = { type: 'pattern', pattern:'solid', fgColor:{argb:'FF0A2540'} };
         worksheet.getRow(1).alignment = { vertical: 'middle', horizontal: 'center' };
 
+        // === RE-INTEGRATED: Business Day Separator Logic ===
         let lastBusinessDay = null;
         for (const invoice of invoicesFromDb) {
-            
+            // The received_at from the DB is already a string in São Paulo time (e.g., "2025-10-11 15:30:00")
             const saoPauloDateString = invoice.received_at;
-            const comparisonDate = new Date(saoPauloDateString + '-03:00');
+            // Create a JS Date object that correctly interprets this string as being in GMT-3
+            const comparisonDate = new Date(saoPauloDateString + '-03:00'); 
             const currentBusinessDay = getBusinessDay(comparisonDate);
 
+            // If the business day has changed since the last row, add the separator.
             if (lastBusinessDay && currentBusinessDay.getTime() !== lastBusinessDay.getTime()) {
-                const splitterRow = worksheet.addRow({ transaction_id: `--- Day of ${currentBusinessDay.toLocaleDateString('en-CA')} ---` });
-                splitterRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFF00' } };
+                const splitterRow = worksheet.addRow({ transaction_id: `--- Business Day of ${currentBusinessDay.toLocaleDateString('en-CA')} ---` });
+                splitterRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFF00' } }; // Yellow fill
                 splitterRow.font = { name: 'Calibri', bold: true };
                 worksheet.mergeCells(`B${splitterRow.number}:F${splitterRow.number}`);
                 splitterRow.getCell('B').alignment = { horizontal: 'center' };
             }
             
-            const newRow = worksheet.addRow({
+            // Add the actual invoice data row
+            worksheet.addRow({
                 received_at: saoPauloDateString,
                 transaction_id: invoice.transaction_id,
                 sender_name: invoice.sender_name,
@@ -201,21 +225,14 @@ exports.exportInvoices = async (req, res) => {
                 source_group_name: invoice.source_group_name,
                 amount: parseFormattedCurrency(invoice.amount)
             });
-            
-            newRow.font = { name: 'Calibri', size: 11 };
-            newRow.eachCell({ includeEmpty: true }, (cell) => {
-                cell.border = {
-                    top: { style: 'thin' }, left: { style: 'thin' },
-                    bottom: { style: 'thin' }, right: { style: 'thin' }
-                };
-            });
 
+            // Update the state for the next iteration
             lastBusinessDay = currentBusinessDay;
         }
+        // === END of Separator Logic ===
 
         res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
         res.setHeader('Content-Disposition', 'attachment; filename="invoices_export.xlsx"');
-
         await workbook.xlsx.write(res);
 
     } catch (error) {

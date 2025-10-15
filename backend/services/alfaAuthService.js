@@ -10,8 +10,8 @@ const TOKEN_URL = process.env.INTER_TOKEN_URL || "https://cdpj.partners.bancoint
 const EXTRATO_URL = process.env.INTER_EXTRATO_URL || "https://cdpj.partners.bancointer.com.br/banking/v2/extrato";
 const CLIENT_ID = process.env.INTER_CLIENT_ID;
 const CLIENT_SECRET = process.env.INTER_CLIENT_SECRET;
-const CERT_FILE = path.resolve(__dirname, process.env.INTER_CERT_FILE || 'Inter_API_Certificado.crt');
-const KEY_FILE = path.resolve(__dirname, process.env.INTER_KEY_FILE || 'Inter_API_Chave.key');
+const CERT_FILE = path.resolve(__dirname, '..', process.env.INTER_CERT_FILE);
+const KEY_FILE = path.resolve(__dirname, '..', process.env.INTER_KEY_FILE);
 const CONTA_CORRENTE = process.env.INTER_CONTA_CORRENTE || null;
 const API_CONFIRM_DELAY = parseInt(process.env.API_CONFIRM_DELAY, 10) || 7000;
 
