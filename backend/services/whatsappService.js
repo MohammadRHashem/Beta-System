@@ -55,62 +55,71 @@ const sendPingToMonitor = async () => {
 
 // === NEW: Helper function for the smart matching logic ===
 const findBestTelegramMatch = async (searchAmount, searchSender) => {
-    if (!searchSender || !searchAmount) {
-        return null;
-    }
+  if (!searchSender || !searchAmount) {
+    return null;
+  }
 
-    try {
-        const [foundTxs] = await pool.query(
-            `SELECT id, sender_name_normalized FROM telegram_transactions 
+  try {
+    const [foundTxs] = await pool.query(
+      `SELECT id, sender_name_normalized FROM telegram_transactions 
              WHERE amount = ? AND is_used = FALSE`,
-            [searchAmount]
-        );
+      [searchAmount]
+    );
 
-        if (foundTxs.length === 0) {
-            return null;
-        }
-
-        // 1. Normalize the incoming OCR sender name
-        const ocrNameNormalized = searchSender
-            .toLowerCase()
-            .replace(/[,.]/g, '')
-            .replace(/\b(ltda|me|sa|eireli|epp)\b/g, '') // Remove common business suffixes
-            .replace(/\s+/g, ' ').trim(); // Standardize whitespace
-
-        let bestMatchId = null;
-
-        // Iterate through potential matches from the DB
-        for (const tx of foundTxs) {
-            const telegramNameNormalized = tx.sender_name_normalized;
-
-            // Match 1: Direct Substring Check (handles cases like "Name" vs "Name 12345")
-            if (telegramNameNormalized.includes(ocrNameNormalized)) {
-                console.log(`[SMART-MATCH] Found via Substring Match.`);
-                bestMatchId = tx.id;
-                break; 
-            }
-
-            // Match 2: Word Set (Subset) Check (handles missing words or different order)
-            const ocrWords = new Set(ocrNameNormalized.split(' ').filter(w => w.length > 1));
-            const telegramWords = new Set(telegramNameNormalized.split(' ').filter(w => w.length > 1));
-            const isSubset = (setA, setB) => {
-                for (const elem of setA) { if (!setB.has(elem)) return false; }
-                return true;
-            };
-
-            if (ocrWords.size > 0 && isSubset(ocrWords, telegramWords)) {
-                console.log(`[SMART-MATCH] Found via Word Subset Match.`);
-                bestMatchId = tx.id;
-                break;
-            }
-        }
-        
-        return bestMatchId;
-
-    } catch (dbError) {
-        console.error("[DB-CONFIRM-ERROR] Error querying telegram_transactions table:", dbError);
-        return null;
+    if (foundTxs.length === 0) {
+      return null;
     }
+
+    const ocrNameNormalized = searchSender
+      .toLowerCase()
+      .replace(/[,.]/g, "")
+      .replace(/\b(ltda|me|sa|eireli|epp)\b/g, "")
+      .replace(/\s+/g, " ")
+      .trim();
+
+    let bestMatchId = null;
+
+    for (const tx of foundTxs) {
+      const telegramNameNormalized = tx.sender_name_normalized;
+
+      // === THE DEFINITIVE FIX: Add a guard clause to check for null ===
+      if (!telegramNameNormalized) {
+        // If the name from the DB is null or empty for this row, skip it.
+        continue;
+      }
+      // === END FIX ===
+
+      // Now we can safely perform the checks
+      if (telegramNameNormalized.includes(ocrNameNormalized)) {
+        console.log(`[SMART-MATCH] Found via Substring Match.`);
+        bestMatchId = tx.id;
+        break;
+      }
+
+      const ocrWords = new Set(ocrNameNormalized.split(" ").filter((w) => w.length > 1));
+      const telegramWords = new Set(telegramNameNormalized.split(" ").filter((w) => w.length > 1));
+      const isSubset = (setA, setB) => {
+        for (const elem of setA) {
+          if (!setB.has(elem)) return false;
+        }
+        return true;
+      };
+
+      if (ocrWords.size > 0 && isSubset(ocrWords, telegramWords)) {
+        console.log(`[SMART-MATCH] Found via Word Subset Match.`);
+        bestMatchId = tx.id;
+        break;
+      }
+    }
+
+    return bestMatchId;
+  } catch (dbError) {
+    console.error(
+      "[DB-CONFIRM-ERROR] Error querying telegram_transactions table:",
+      dbError
+    );
+    return null;
+  }
 };
 
 
@@ -136,52 +145,69 @@ const invoiceWorker = new Worker(
       const media = await originalMessage.downloadMedia();
       if (!media) return;
 
-      const cleanMimeType = media.mimetype.split(';')[0];
-      const extension = cleanMimeType.split('/')[1] || 'bin';
-      const tempFilePath = path.join(os.tmpdir(), `${originalMessage.id.id}.${extension}`);
+      const cleanMimeType = media.mimetype.split(";")[0];
+      const extension = cleanMimeType.split("/")[1] || "bin";
+      const tempFilePath = path.join(
+        os.tmpdir(),
+        `${originalMessage.id.id}.${extension}`
+      );
       tempFilePaths.push(tempFilePath); // Add to cleanup list
       await fs.writeFile(tempFilePath, Buffer.from(media.data, "base64"));
 
       const pythonScriptsDir = path.join(__dirname, "..", "python_scripts");
-      const pythonExecutable = process.platform === 'win32' ? 'python.exe' : 'python3';
+      const pythonExecutable =
+        process.platform === "win32" ? "python.exe" : "python3";
       const pythonScriptPath = path.join(pythonScriptsDir, "main.py");
-      const pythonEnv = dotenv.config({ path: path.join(pythonScriptsDir, ".env") }).parsed;
-      if (!pythonEnv || !pythonEnv.GOOGLE_API_KEY) throw new Error("Could not load GOOGLE_API_KEY.");
+      const pythonEnv = dotenv.config({
+        path: path.join(pythonScriptsDir, ".env"),
+      }).parsed;
+      if (!pythonEnv || !pythonEnv.GOOGLE_API_KEY)
+        throw new Error("Could not load GOOGLE_API_KEY.");
 
-      const { stdout } = await execa(pythonExecutable, [pythonScriptPath, tempFilePath]);
+      const { stdout } = await execa(pythonExecutable, [
+        pythonScriptPath,
+        tempFilePath,
+      ]);
       const invoiceJson = JSON.parse(stdout);
 
       // --- 1. PRE-CHECK: OCR Validity ---
       const { amount, sender, recipient, transaction_id } = invoiceJson;
       if (!amount || (!recipient?.name && !recipient?.pix_key)) {
         console.log(`[WORKER] OCR failed for message ${messageId}. Stopping.`);
-        await originalMessage.react(''); // Clear processing reaction
+        await originalMessage.react(""); // Clear processing reaction
         return;
       }
 
       const recipientNameLower = (recipient.name || "").toLowerCase();
-      
+
       let isDuplicate = false;
       let existingSourceJid = "";
 
       // --- PRIORITY 1: STRICT DUPLICATE CHECK (transaction_id + amount) ---
-      if (transaction_id && transaction_id.trim() !== '' && amount) {
+      if (
+        recipientNameLower.includes("troca") ||
+        recipientNameLower.includes("mks intermediacoes") ||
+        recipientNameLower.includes("alfa trust") ||
+        recipientNameLower.includes("trkbit")
+      ) {
+        if (transaction_id && transaction_id.trim() !== "" && amount) {
           const trimmedTransactionId = transaction_id.trim();
           const [[existingById]] = await pool.query(
-              'SELECT source_group_jid FROM invoices WHERE transaction_id = ? AND amount = ? LIMIT 1', 
-              [trimmedTransactionId, amount]
+            "SELECT source_group_jid FROM invoices WHERE transaction_id = ? AND amount = ? LIMIT 1",
+            [trimmedTransactionId, amount]
           );
 
           if (existingById) {
-              const currentSourceJid = chat.id._serialized;
-              if (currentSourceJid === existingById.source_group_jid) {
-                  await originalMessage.reply("❌Repeated❌");
-              } else {
-                  await originalMessage.reply("❌Repeated from another client❌");
-              }
-              await originalMessage.react('❌');
-              return; // EXIT WORKER
+            const currentSourceJid = chat.id._serialized;
+            if (currentSourceJid === existingById.source_group_jid) {
+              await originalMessage.reply("❌Repeated❌");
+            } else {
+              await originalMessage.reply("❌Repeated from another client❌");
+            }
+            await originalMessage.react("❌");
+            return; // EXIT WORKER
           }
+        }
       }
 
       let runStandardForwarding = true;
@@ -189,96 +215,169 @@ const invoiceWorker = new Worker(
 
       // --- PRIORITY 2: TROCA COIN TELEGRAM CONFIRMATION (Using Smart Match) ---
       if (
-          isTrocaCoinTelegramEnabled &&
-          (recipientNameLower.includes('troca coin') || recipientNameLower.includes('mks intermediacoes'))
+        isTrocaCoinTelegramEnabled &&
+        (recipientNameLower.includes("troca") ||
+          recipientNameLower.includes("mks intermediacoes"))
       ) {
-          console.log('[WORKER] "Troca Coin/MKS" recipient detected. Checking DB with Smart Match...');
-          const matchId = await findBestTelegramMatch(parseFloat(amount.replace(",", "")), sender.name);
+        console.log(
+          '[WORKER] "Troca Coin/MKS" recipient detected. Checking DB with Smart Match...'
+        );
+        const matchId = await findBestTelegramMatch(
+          parseFloat(amount.replace(",", "")),
+          sender.name
+        );
 
-          if (matchId) {
-              console.log(`[DB-CONFIRM] Smart Match successful (ID: ${matchId}). Replying "Caiu".`);
-              await pool.query('UPDATE telegram_transactions SET is_used = TRUE WHERE id = ?', [matchId]);
-              await originalMessage.reply('Caiu');
-              await originalMessage.react('🟢');
-              runStandardForwarding = false;
-              wasActioned = true;
-          } else {
-              console.log(`[DB-CONFIRM] No Smart Match found in DB. Falling back to manual confirmation.`);
-          }
+        if (matchId) {
+          console.log(
+            `[DB-CONFIRM] Smart Match successful (ID: ${matchId}). Replying "Caiu".`
+          );
+          await pool.query(
+            "UPDATE telegram_transactions SET is_used = TRUE WHERE id = ?",
+            [matchId]
+          );
+          await originalMessage.reply("Caiu");
+          await originalMessage.react("🟢");
+          runStandardForwarding = false;
+          wasActioned = true;
+        } else {
+          console.log(
+            `[DB-CONFIRM] No Smart Match found in DB. Falling back to manual confirmation.`
+          );
+        }
       }
 
       // --- 3. PRIORITY 2.5: ALFA TRUST API CONFIRMATION ---
-      if (runStandardForwarding && isAlfaApiConfirmationEnabled && recipientNameLower.includes('alfa trust')) {
-        console.log('[WORKER] "Alfa Trust" recipient detected. Initiating API confirmation...');
+      if (
+        runStandardForwarding &&
+        isAlfaApiConfirmationEnabled &&
+        recipientNameLower.includes("alfa trust")
+      ) {
+        console.log(
+          '[WORKER] "Alfa Trust" recipient detected. Initiating API confirmation...'
+        );
         const apiResult = await alfaAuthService.findTransaction(invoiceJson);
 
         // Only a definitive 'found' status will stop the forwarding process.
-        if (apiResult.status === 'found') {
-            console.log(`[ALFA-CONFIRM] Confirmed via API. Replying "Caiu".`);
-            await originalMessage.react('🟢');
-            await originalMessage.reply('Caiu');
-            wasActioned = true;
-            runStandardForwarding = false; // Prevent fallback
-        } else if (apiResult.status === 'not_found') {
-            console.log(`[ALFA-CONFIRM] Not found via API. Falling back to standard manual confirmation.`);
-            // Let runStandardForwarding remain true to trigger the fallback.
-        } else { // 'error'
-            console.warn('[ALFA-CONFIRM] API call failed. Falling back to standard manual confirmation logic.');
-            // Let runStandardForwarding remain true to trigger the fallback.
+        if (apiResult.status === "found") {
+          console.log(`[ALFA-CONFIRM] Confirmed via API. Replying "Caiu".`);
+          await originalMessage.react("🟢");
+          await originalMessage.reply("Caiu");
+          wasActioned = true;
+          runStandardForwarding = false; // Prevent fallback
+        } else if (apiResult.status === "not_found") {
+          console.log(
+            `[ALFA-CONFIRM] Not found via API. Falling back to standard manual confirmation.`
+          );
+          // Let runStandardForwarding remain true to trigger the fallback.
+        } else {
+          // 'error'
+          console.warn(
+            "[ALFA-CONFIRM] API call failed. Falling back to standard manual confirmation logic."
+          );
+          // Let runStandardForwarding remain true to trigger the fallback.
         }
       }
 
       // --- 4. PRIORITY 3: STANDARD FORWARDING & MANUAL CONFIRMATION (Fallback) ---
       // let wasActioned = false;
       if (runStandardForwarding) {
-        const [settings] = await pool.query("SELECT * FROM group_settings WHERE group_jid = ?", [chat.id._serialized]);
+        const [settings] = await pool.query(
+          "SELECT * FROM group_settings WHERE group_jid = ?",
+          [chat.id._serialized]
+        );
         const groupSettings = settings[0] || { forwarding_enabled: true };
 
         if (groupSettings.forwarding_enabled) {
           let forwarded = false;
-          
+
           // Tier 1: Direct Forwarding Rule
-          const [[directRule]] = await pool.query('SELECT destination_group_jid FROM direct_forwarding_rules WHERE source_group_jid = ?', [chat.id._serialized]);
+          const [[directRule]] = await pool.query(
+            "SELECT destination_group_jid FROM direct_forwarding_rules WHERE source_group_jid = ?",
+            [chat.id._serialized]
+          );
           if (directRule) {
-            console.log(`[FORWARDING] Matched direct rule for group "${chat.name}".`);
-            const mediaToForward = new MessageMedia(media.mimetype, media.data, media.filename);
-            let caption = '\u200C';
-                          const numberRegex = /\b(\d[\d-]{2,})\b/g;
-                          const matches = chat.name.match(numberRegex);
-                          if (matches && matches.length > 0) {
-                              caption = matches[matches.length - 1];
-                          }
-                          const forwardedMessage = await client.sendMessage(directRule.destination_group_jid, mediaToForward, { caption: caption });
+            console.log(
+              `[FORWARDING] Matched direct rule for group "${chat.name}".`
+            );
+            const mediaToForward = new MessageMedia(
+              media.mimetype,
+              media.data,
+              media.filename
+            );
+            let caption = "\u200C";
+            const numberRegex = /\b(\d[\d-]{2,})\b/g;
+            const matches = chat.name.match(numberRegex);
+            if (matches && matches.length > 0) {
+              caption = matches[matches.length - 1];
+            }
+            const forwardedMessage = await client.sendMessage(
+              directRule.destination_group_jid,
+              mediaToForward,
+              { caption: caption }
+            );
             forwarded = true;
             if (isAutoConfirmationEnabled) {
-              await pool.query(`INSERT INTO forwarded_invoices (original_message_id, forwarded_message_id, destination_group_jid) VALUES (?, ?, ?)`, [messageId, forwardedMessage.id._serialized, directRule.destination_group_jid]);
+              await pool.query(
+                `INSERT INTO forwarded_invoices (original_message_id, forwarded_message_id, destination_group_jid) VALUES (?, ?, ?)`,
+                [
+                  messageId,
+                  forwardedMessage.id._serialized,
+                  directRule.destination_group_jid,
+                ]
+              );
               wasActioned = true;
-              await originalMessage.react('🟡'); // Waiting for manual confirmation emoji
+              await originalMessage.react("🟡"); // Waiting for manual confirmation emoji
             }
           }
 
           // Tier 2: AI Keyword Forwarding
           if (!forwarded) {
-            const recipientNameToCheck = (recipient.name || "").toLowerCase().trim();
-            const pixKeyToCheck = (recipient.pix_key || "").toLowerCase().trim();
+            const recipientNameToCheck = (recipient.name || "")
+              .toLowerCase()
+              .trim();
+            const pixKeyToCheck = (recipient.pix_key || "")
+              .toLowerCase()
+              .trim();
             if (recipientNameToCheck || pixKeyToCheck) {
-              const [rules] = await pool.query("SELECT * FROM forwarding_rules WHERE is_enabled = 1");
+              const [rules] = await pool.query(
+                "SELECT * FROM forwarding_rules WHERE is_enabled = 1"
+              );
               for (const rule of rules) {
                 const triggerKeywordLower = rule.trigger_keyword.toLowerCase();
-                if (recipientNameToCheck.includes(triggerKeywordLower) || pixKeyToCheck.includes(triggerKeywordLower)) {
-                  console.log(`[FORWARDING] Matched AI keyword rule "${rule.trigger_keyword}".`);
-                  const mediaToForward = new MessageMedia(media.mimetype, media.data, media.filename);
-                  let caption = '\u200C';
-                          const numberRegex = /\b(\d[\d-]{2,})\b/g;
-                          const matches = chat.name.match(numberRegex);
-                          if (matches && matches.length > 0) {
-                              caption = matches[matches.length - 1];
-                          }
-                          const forwardedMessage = await client.sendMessage(rule.destination_group_jid, mediaToForward, { caption: caption });
+                if (
+                  recipientNameToCheck.includes(triggerKeywordLower) ||
+                  pixKeyToCheck.includes(triggerKeywordLower)
+                ) {
+                  console.log(
+                    `[FORWARDING] Matched AI keyword rule "${rule.trigger_keyword}".`
+                  );
+                  const mediaToForward = new MessageMedia(
+                    media.mimetype,
+                    media.data,
+                    media.filename
+                  );
+                  let caption = "\u200C";
+                  const numberRegex = /\b(\d[\d-]{2,})\b/g;
+                  const matches = chat.name.match(numberRegex);
+                  if (matches && matches.length > 0) {
+                    caption = matches[matches.length - 1];
+                  }
+                  const forwardedMessage = await client.sendMessage(
+                    rule.destination_group_jid,
+                    mediaToForward,
+                    { caption: caption }
+                  );
                   if (isAutoConfirmationEnabled) {
-                    await pool.query(`INSERT INTO forwarded_invoices (original_message_id, forwarded_message_id, destination_group_jid) VALUES (?, ?, ?)`, [messageId, forwardedMessage.id._serialized, rule.destination_group_jid]);
+                    await pool.query(
+                      `INSERT INTO forwarded_invoices (original_message_id, forwarded_message_id, destination_group_jid) VALUES (?, ?, ?)`,
+                      [
+                        messageId,
+                        forwardedMessage.id._serialized,
+                        rule.destination_group_jid,
+                      ]
+                    );
                     wasActioned = true;
-                    await originalMessage.react('🟡'); // Waiting for manual confirmation emoji
+                    await originalMessage.react("🟡"); // Waiting for manual confirmation emoji
                   }
                   break; // Stop after first match
                 }
@@ -289,31 +388,52 @@ const invoiceWorker = new Worker(
       }
 
       // --- 5. FINAL STEP: ARCHIVING ---
-      const [archiveSettings] = await pool.query("SELECT archiving_enabled FROM group_settings WHERE group_jid = ?", [chat.id._serialized]);
-      const groupArchiveSettings = archiveSettings[0] || { archiving_enabled: true };
+      const [archiveSettings] = await pool.query(
+        "SELECT archiving_enabled FROM group_settings WHERE group_jid = ?",
+        [chat.id._serialized]
+      );
+      const groupArchiveSettings = archiveSettings[0] || {
+        archiving_enabled: true,
+      };
       let wasArchived = false;
       if (groupArchiveSettings.archiving_enabled) {
         const archiveFileName = `${messageId}.${extension}`;
         const finalMediaPath = path.join(MEDIA_ARCHIVE_DIR, archiveFileName);
-        
+
         // Move the file from temp to archive
         await fs.rename(tempFilePath, finalMediaPath);
         tempFilePaths.pop(); // Remove from cleanup list as it's now archived
 
         const correctUtcDate = new Date(originalMessage.timestamp * 1000);
-        await pool.query(`INSERT INTO invoices (message_id, transaction_id, sender_name, recipient_name, pix_key, amount, source_group_jid, received_at, raw_json_data, media_path, is_deleted) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, 
-          [messageId, transaction_id, sender?.name, recipient.name, recipient.pix_key, amount, chat.id._serialized, correctUtcDate, JSON.stringify(invoiceJson), finalMediaPath, false]
+        await pool.query(
+          `INSERT INTO invoices (message_id, transaction_id, sender_name, recipient_name, pix_key, amount, source_group_jid, received_at, raw_json_data, media_path, is_deleted) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            messageId,
+            transaction_id,
+            sender?.name,
+            recipient.name,
+            recipient.pix_key,
+            amount,
+            chat.id._serialized,
+            correctUtcDate,
+            JSON.stringify(invoiceJson),
+            finalMediaPath,
+            false,
+          ]
         );
         wasArchived = true;
-        console.log(`[ARCHIVE] Successfully archived invoice for message ${messageId}.`);
+        console.log(
+          `[ARCHIVE] Successfully archived invoice for message ${messageId}.`
+        );
       }
 
       if (wasArchived && !wasActioned) {
-          console.log(`[WORKER] Invoice was archived but not forwarded. Applying final checkmark.`);
-          // await originalMessage.react('⚠️');
-          // await originalMessage.reply("⚠️Ainda *não considerado* — espera Suporte responder p ver condição do comprovante.⚠️");
+        console.log(
+          `[WORKER] Invoice was archived but not forwarded. Applying final checkmark.`
+        );
+        // await originalMessage.react('⚠️');
+        // await originalMessage.reply("⚠️Ainda *não considerado* — espera Suporte responder p ver condição do comprovante.⚠️");
       }
-
     } catch (error) {
       console.error(`[WORKER-ERROR] Critical error processing job ${job?.id}:`, error);
       await originalMessage.react(''); // Clear reaction on any unhandled failure
