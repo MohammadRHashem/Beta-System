@@ -53,7 +53,7 @@ def get_db_connection():
     )
 
 def parse_and_store_message(message_text, message_id, channel_id):
-    """Parses a message and stores the transaction in the database."""
+    """Parses a message and stores the transaction in the database with a normalized name."""
     amount_regex = re.compile(r"Amount:\s*R\$\s*([\d.,]+)")
     sender_block_regex = re.compile(r"Sender Information:\s*-+\s*(.+?)(?=\n\n|\Z)", re.DOTALL)
     sender_name_regex = re.compile(r"Name:\s*([^\n]+)")
@@ -70,11 +70,22 @@ def parse_and_store_message(message_text, message_id, channel_id):
     sender_name_match = sender_name_regex.search(sender_block_text)
 
     if not sender_name_match:
+        print(f"[PARSE-WARN] Could not find sender name in message ID {message_id}. Skipping.")
         return False
 
     try:
         amount = parse_brl_amount(amount_match.group(1))
-        sender_name = sender_name_match.group(1).strip()
+        sender_name_raw = sender_name_match.group(1).strip()
+        
+        if not sender_name_raw:
+            print(f"[PARSE-WARN] Found empty sender name in message ID {message_id}. Skipping.")
+            return False
+
+        # --- Perform normalization ---
+        normalized_name = re.sub(r'[\d.,-]', '', sender_name_raw)
+        normalized_name = re.sub(r'\b(ltda|me|sa|eireli|epp)\b', '', normalized_name, flags=re.IGNORECASE)
+        normalized_name = re.sub(r'\s+', ' ', normalized_name).strip().lower()
+        
         tx_date = datetime.strptime(date_match.group(1), '%d/%m/%Y %H:%M:%S')
 
         db = get_db_connection()
@@ -82,11 +93,11 @@ def parse_and_store_message(message_text, message_id, channel_id):
         
         sql = """
             INSERT INTO telegram_transactions 
-            (telegram_message_id, channel_id, amount, sender_name, transaction_date, raw_text)
-            VALUES (%s, %s, %s, %s, %s, %s)
+            (telegram_message_id, channel_id, amount, sender_name, sender_name_normalized, transaction_date, raw_text)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
             ON DUPLICATE KEY UPDATE telegram_message_id=telegram_message_id;
         """
-        values = (message_id, channel_id, amount, sender_name, tx_date, message_text)
+        values = (message_id, channel_id, amount, sender_name_raw, normalized_name, tx_date, message_text)
         
         cursor.execute(sql, values)
         db.commit()
@@ -94,7 +105,7 @@ def parse_and_store_message(message_text, message_id, channel_id):
         cursor.close()
         db.close()
         
-        print(f"[DB INSERT] Stored TX from Msg ID {message_id}: Amount={amount}, Sender='{sender_name}'")
+        print(f"[DB INSERT] Stored TX from Msg ID {message_id}: Amount={amount}, Sender='{sender_name_raw}'")
         return True
     except Exception as e:
         print(f"[ERROR] Failed to parse or store message ID {message_id}: {e}")
@@ -108,9 +119,11 @@ if not all([API_ID, API_HASH, SESSION_STRING, TARGET_GROUP_NAMES, DB_HOST]):
 
 client = TelegramClient(StringSession(SESSION_STRING), int(API_ID), API_HASH)
 
+@client.on(events.NewMessage(chats=resolved_group_ids))
 async def new_message_handler(event):
     """Handles real-time new messages from any of the resolved groups."""
     print(f"\n[REAL-TIME] New message detected (ID: {event.message.id}) in Group ID {event.chat_id}.")
+    # This function already contains the correct normalization and DB insertion logic.
     parse_and_store_message(event.raw_text, event.message.id, event.chat_id)
 
 async def sync_history():
