@@ -103,5 +103,45 @@ export const deletePositionCounter = (id) => apiClient.delete(`/positions/counte
 export const calculateLocalPosition = (params) => apiClient.get('/position/local', { params });
 export const calculateRemotePosition = (id, params) => apiClient.get(`/position/remote/${id}`, { params });
 
+// === NEW: API functions for Alfa Trust Page ===
+export const triggerAlfaSync = () => apiClient.post('/alfa-trust/trigger-sync');
+export const getAlfaTransactions = (params) => apiClient.get('/alfa-trust/transactions', { params });
+export const exportAlfaPdf = async (params) => {
+    try {
+        const { data } = await apiClient.get('/alfa-trust/export-pdf', {
+            params,
+            responseType: 'blob', // Crucial for file downloads
+        });
+
+        // Create a URL for the blob object
+        const file = new Blob([data], { type: 'application/pdf' });
+        const fileURL = URL.createObjectURL(file);
+
+        // Create a temporary link to trigger the download
+        const link = document.createElement('a');
+        link.href = fileURL;
+        link.setAttribute('download', `extrato_${params.dateFrom}_a_${params.dateTo}.pdf`);
+        document.body.appendChild(link);
+        link.click();
+
+        // Clean up the temporary link and URL
+        link.remove();
+        URL.revokeObjectURL(fileURL);
+
+    } catch (error) {
+        console.error("PDF Export failed:", error);
+        // Try to read the error message from the blob if it's a JSON error
+        if (error.response && error.response.data) {
+            const errText = await error.response.data.text();
+            try {
+                const errJson = JSON.parse(errText);
+                alert(`Export failed: ${errJson.message}`);
+            } catch (e) {
+                alert('An unknown error occurred during export.');
+            }
+        }
+    }
+};
+
 
 export default apiClient;

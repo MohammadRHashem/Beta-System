@@ -16,6 +16,7 @@ import InvoicesPage from "./InvoicesPage";
 import PositionPage from "./PositionPage"; // Add this import
 import AutoConfirmationPage from "./AutoConfirmationPage";
 import DirectForwardingPage from "./DirectForwardingPage";
+import AlfaTrustPage from "./AlfaTrustPage";
 
 const AppLayout = styled.div`
   display: flex;
@@ -162,6 +163,7 @@ const MainLayout = () => {
                   <InvoicesPage allGroups={allGroups} socket={socket.current} />
                 }
               />
+              <Route path="/alfa-trust" element={<AlfaTrustPage />} />
               <Route
                 path="/broadcaster"
                 element={<BroadcasterPage allGroups={allGroups} />}

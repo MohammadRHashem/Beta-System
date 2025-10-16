@@ -18,6 +18,7 @@ const abbreviationController = require('./controllers/abbreviationController');
 const invoiceController = require('./controllers/invoiceController');
 const positionController = require('./controllers/positionController');
 const directForwardingController = require('./controllers/directForwardingController');
+const alfaTrustController = require('./controllers/alfaTrustController');
 
 const app = express();
 const server = http.createServer(app);
@@ -103,6 +104,13 @@ app.get('/api/positions/counters', positionController.getAllCounters);
 app.post('/api/positions/counters', positionController.createCounter);
 app.put('/api/positions/counters/:id', positionController.updateCounter);
 app.delete('/api/positions/counters/:id', positionController.deleteCounter);
+
+//
+app.get('/api/alfa-trust/transactions', alfaTrustController.getTransactions);
+app.get('/api/alfa-trust/export-pdf', alfaTrustController.exportPdf);
+app.post('/api/alfa-trust/trigger-sync', alfaTrustController.triggerManualSync);
+
+
 
 const frontendPath = path.join(__dirname, '..', 'frontend', 'dist');
 if (fs.existsSync(frontendPath)) {
