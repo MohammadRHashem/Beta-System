@@ -1,5 +1,7 @@
 const pool = require('../config/db');
 const alfaApiService = require('../services/alfaApiService');
+const ExcelJS = require('exceljs');
+const { parseFormattedCurrency } = require('../utils/currencyParser');
 
 exports.getTransactions = async (req, res) => {
     const {
@@ -53,7 +55,7 @@ exports.getTransactions = async (req, res) => {
         }
 
         const dataQuery = `
-            SELECT id, end_to_end_id, inclusion_date, type, operation, value, title, payer_name
+            SELECT id, end_to_end_id, inclusion_date, type, operation, value, title, payer_name, raw_details
             ${query}
             ORDER BY inclusion_date ${sortOrder === 'asc' ? 'ASC' : 'DESC'}
             LIMIT ? OFFSET ?
@@ -95,6 +97,13 @@ exports.exportPdf = async (req, res) => {
         console.error('[ERROR] Failed to export Alfa Trust PDF:', error.message);
         res.status(500).json({ message: 'Failed to export PDF statement.' });
     }
+};
+
+exports.notifyUpdate = (req, res) => {
+    // req.io is the global socket.io instance attached in server.js
+    req.io.emit('alfa-trust:updated');
+    console.log('[SERVER] Emitted alfa-trust:updated event to all clients.');
+    res.status(200).json({ message: 'Event emitted.' });
 };
 
 exports.triggerManualSync = (req, res) => {

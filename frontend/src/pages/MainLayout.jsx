@@ -163,7 +163,7 @@ const MainLayout = () => {
                   <InvoicesPage allGroups={allGroups} socket={socket.current} />
                 }
               />
-              <Route path="/alfa-trust" element={<AlfaTrustPage />} />
+              <Route path="/alfa-trust" element={<AlfaTrustPage socket={socket.current} />} />
               <Route
                 path="/broadcaster"
                 element={<BroadcasterPage allGroups={allGroups} />}

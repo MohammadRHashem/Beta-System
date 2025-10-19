@@ -4,7 +4,7 @@ const path = require('path');
 const https = require('https');
 const { URLSearchParams } = require('url');
 
-// --- CONFIGURATION ---
+// --- CONFIGURATION (with fallbacks) ---
 const TOKEN_URL = process.env.INTER_TOKEN_URL || "https://cdpj.partners.bancointer.com.br/oauth/v2/token";
 const ENRICH_URL = process.env.INTER_ENRICH_URL || "https://cdpj.partners.bancointer.com.br/banking/v2/extrato/completo";
 const EXPORT_URL = process.env.INTER_EXTRATO_EXPORT_URL || "https://cdpj.partners.bancointer.com.br/banking/v2/extrato/exportar";
@@ -21,10 +21,14 @@ let apiClient = null;
 const getApiClient = () => {
     if (apiClient) return apiClient;
     if (!fs.existsSync(CERT_FILE) || !fs.existsSync(KEY_FILE)) {
-        throw new Error('Alfa API certificate or key file not found.');
+        throw new Error('Alfa API certificate or key file not found. Check .env paths.');
     }
-    const httpsAgent = new https.Agent({ cert: fs.readFileSync(CERT_FILE), key: fs.readFileSync(KEY_FILE) });
-    apiClient = axios.create({ httpsAgent, timeout: 60000 });
+    const httpsAgent = new https.Agent({
+        cert: fs.readFileSync(CERT_FILE),
+        key: fs.readFileSync(KEY_FILE),
+        rejectUnauthorized: true,
+    });
+    apiClient = axios.create({ httpsAgent, timeout: 90000 });
     return apiClient;
 };
 
@@ -50,51 +54,46 @@ const getToken = async (client) => {
 const fetchAllTransactions = async (filters) => {
     const client = getApiClient();
     const token = await getToken(client);
-    const headers = { 'Authorization': `Bearer ${token}` };
+    const headers = { 'Authorization': `Bearer ${token}`, 'Accept': 'application/json' };
     if (CONTA_CORRENTE) headers['x-conta-corrente'] = CONTA_CORRENTE;
 
     let allItems = [];
-    let page = 0;
-    const pageSize = 1000;
+    let pagina = 0;
+    const tamanhoPagina = 1000;
+
+    console.log(`[ALFA-API] Starting full pagination fetch from ${filters.dateFrom} to ${filters.dateTo}.`);
 
     while (true) {
         const params = {
             dataInicio: filters.dateFrom,
             dataFim: filters.dateTo,
-            page: page,
-            pageSize: pageSize,
+            pagina: pagina,
+            tamanhoPagina: tamanhoPagina,
         };
         if (filters.operation) params.tipoOperacao = filters.operation;
         if (filters.txType) params.tipoTransacao = filters.txType;
 
-        console.log(`[ALFA-API] Fetching page ${page} of transactions...`);
+        console.log(`[ALFA-API] Fetching pagina ${pagina} with tamanhoPagina ${tamanhoPagina}...`);
+        
         const { data: jsonData } = await client.get(ENRICH_URL, { headers, params });
         
-        // Replicate the robust key-finding logic from your Python script
-        let items = [];
-        const possibleKeys = ["itens", "items", "movimentos", "transacoes", "content", "dados"];
-        for (const key of possibleKeys) {
-            if (jsonData[key] && Array.isArray(jsonData[key])) {
-                items = jsonData[key];
-                break;
-            }
-        }
+        // === THE DEFINITIVE FIX: Use the correct 'transacoes' key ===
+        const items = jsonData.transacoes || [];
+        // === END FIX ===
         
         if (items.length > 0) {
             allItems.push(...items);
         }
 
-        // Replicate the robust pagination-ending logic
-        const totalPages = jsonData.totalPages || jsonData.total_paginas;
-        const lastPage = jsonData.ultimaPagina;
-
-        if (items.length === 0) break;
-        if (lastPage === true) break;
-        if (totalPages !== undefined && (page + 1) >= totalPages) break;
-        if (items.length < pageSize) break;
+        const isLastPage = jsonData.ultimaPagina === true || items.length < tamanhoPagina;
+        if (isLastPage) {
+            console.log(`[ALFA-API] Last page reached.`);
+            break;
+        }
         
-        page++;
+        pagina++;
     }
+
     console.log(`[ALFA-API] Finished fetching. Total items found: ${allItems.length}`);
     return allItems;
 };
@@ -105,15 +104,12 @@ const downloadPdfStatement = async (dateFrom, dateTo) => {
     const headers = { 'Authorization': `Bearer ${token}`, 'Accept': 'application/json' };
     if (CONTA_CORRENTE) headers['x-conta-corrente'] = CONTA_CORRENTE;
 
-    // 1. Request the JSON object that contains the download info
     console.log(`[ALFA-PDF] Requesting PDF info for ${dateFrom} to ${dateTo}...`);
     const { data: jsonResponse } = await client.get(EXPORT_URL, {
         headers,
         params: { dataInicio: dateFrom, dataFim: dateTo, formato: 'PDF' },
-        // IMPORTANT: We expect JSON first, not a raw buffer
     });
 
-    // 2. Find the base64 content in the response, just like the Python script
     const possibleKeys = ["arquivo", "conteudo", "pdf", "file", "base64"];
     let base64Data = null;
     for (const key of possibleKeys) {
@@ -129,8 +125,6 @@ const downloadPdfStatement = async (dateFrom, dateTo) => {
     }
     console.log("[ALFA-PDF] Found base64 data in response. Decoding...");
 
-    // 3. Decode the base64 string into a binary Buffer
-    // Handle cases where the string includes a data URI prefix
     if (base64Data.startsWith("data:")) {
         base64Data = base64Data.split(",", 1)[1];
     }

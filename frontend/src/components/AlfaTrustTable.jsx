@@ -7,8 +7,11 @@ const TableWrapper = styled.div`
     background: #fff;
     border-radius: 8px;
     box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-    overflow-x: auto;
     border: 1px solid ${({ theme }) => theme.border};
+    /* This is crucial: Make the wrapper a flex container that grows and allows scrolling */
+    flex-grow: 1;
+    overflow-y: auto; /* Enable vertical scrolling ONLY on the table wrapper */
+    position: relative; /* Needed for the sticky header */
 `;
 
 const Table = styled.table`
@@ -68,7 +71,6 @@ const AlfaTrustTable = ({ transactions, loading, pagination, setPagination }) =>
     const formatDateTime = (isoString) => {
         if (!isoString) return 'N/A';
         try {
-            // Correctly handle the MySQL DATETIME format
             return new Date(isoString).toLocaleString('pt-BR', {
                 year: 'numeric', month: '2-digit', day: '2-digit',
                 hour: '2-digit', minute: '2-digit', second: '2-digit'
@@ -79,7 +81,7 @@ const AlfaTrustTable = ({ transactions, loading, pagination, setPagination }) =>
     };
     
     const handleDownloadReceipt = (tx) => {
-        alert(`Receipt download for individual transactions is not yet implemented.`);
+        alert(`Receipt download for individual transactions is not supported by the bank's API at this time.`);
     };
 
     if (loading) return <p style={{ textAlign: 'center', padding: '2rem' }}>Loading transactions...</p>;
@@ -92,29 +94,46 @@ const AlfaTrustTable = ({ transactions, loading, pagination, setPagination }) =>
                     <Thead>
                         <tr>
                             <Th>Date/Time</Th>
-                            <Th>Transaction ID (endToEndId)</Th>
-                            <Th>Sender/Recipient Name</Th>
+                            <Th>Transaction ID</Th>
+                            <Th>Counterparty Name</Th>
                             <Th className="currency" style={{color: '#32325D'}}>Amount</Th>
                             <Th>Actions</Th>
                         </tr>
                     </Thead>
                     <tbody>
-                        {transactions.map((tx) => (
-                            // === THE FIX: Use the correct field names from the database ===
-                            <Tr key={tx.id}>
-                                <Td>{formatDateTime(tx.inclusion_date)}</Td>
-                                <Td>{tx.end_to_end_id || 'N/A'}</Td>
-                                <Td>{tx.payer_name || tx.title || 'N/A'}</Td>
-                                <Td className="currency" isCredit={tx.operation === 'C'}>
-                                    {tx.operation === 'D' ? '-' : ''}
-                                    {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(tx.value)}
-                                </Td>
-                                <Td className="actions">
-                                    <FaDownload onClick={() => handleDownloadReceipt(tx)} title="Download Receipt (Not Available)" />
-                                </Td>
-                            </Tr>
+                        {transactions.map((tx) => {
+                            // === THE DEFINITIVE FIX for N/A values ===
+                            let counterpartyName = 'N/A';
+                            let transactionId = tx.end_to_end_id || tx.transaction_id || 'N/A';
+
+                            if (tx.operation === 'C') { // Credit (IN)
+                                counterpartyName = tx.payer_name || tx.description || 'N/A';
+                            } else { // Debit (OUT)
+                                try {
+                                    // The backend sends the full JSON object now
+                                    const details = tx.raw_details; 
+                                    counterpartyName = details?.detalhes?.nomeRecebedor || tx.description || 'N/A';
+                                } catch (e) {
+                                    counterpartyName = tx.description || 'N/A';
+                                }
+                            }
                             // === END FIX ===
-                        ))}
+
+                            return (
+                                <Tr key={tx.id}>
+                                    <Td>{formatDateTime(tx.inclusion_date)}</Td>
+                                    <Td>{transactionId}</Td>
+                                    <Td>{counterpartyName}</Td>
+                                    <Td className="currency" isCredit={tx.operation === 'C'}>
+                                        {tx.operation === 'D' ? '-' : ''}
+                                        {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(tx.value)}
+                                    </Td>
+                                    <Td className="actions">
+                                        <FaDownload onClick={() => handleDownloadReceipt(tx)} title="Download Receipt (Not Available)" />
+                                    </Td>
+                                </Tr>
+                            );
+                        })}
                     </tbody>
                 </Table>
             </TableWrapper>

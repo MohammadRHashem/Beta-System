@@ -1,5 +1,6 @@
 import React from 'react';
 import styled from 'styled-components';
+import { format } from 'date-fns';
 
 const FilterContainer = styled.div`
     background: #fff;
@@ -32,6 +33,21 @@ const InputGroup = styled.div`
     }
 `;
 
+const FetchAllButton = styled.button`
+    padding: 0.75rem 1rem;
+    border: none;
+    background: ${({ theme }) => theme.secondary};
+    color: white;
+    border-radius: 4px;
+    cursor: pointer;
+    font-weight: 600;
+    height: 45px;
+    
+    &:hover {
+        opacity: 0.9;
+    }
+`;
+
 const ClearButton = styled.button`
     padding: 0.75rem 1rem;
     border: 1px solid ${({ theme }) => theme.lightText};
@@ -55,14 +71,11 @@ const AlfaTrustFilter = ({ filters, onFilterChange }) => {
     };
 
     const handleClear = () => {
-        const today = new Date();
-        const lastWeek = new Date(today);
-        lastWeek.setDate(today.getDate() - 7);
+        // Reset to the new default date
         onFilterChange({ 
             search: '', 
-            dateFrom: format(lastWeek, 'yyyy-MM-dd'), 
-            dateTo: format(today, 'yyyy-MM-dd'),
-            txType: '', 
+            dateFrom: '2025-09-30', 
+            dateTo: format(new Date(), 'yyyy-MM-dd'),
             operation: '' 
         });
     };
@@ -72,16 +85,9 @@ const AlfaTrustFilter = ({ filters, onFilterChange }) => {
             <InputGroup><label>Search (ID, Name, Amount)</label><input name="search" type="text" value={filters.search} onChange={handleChange} /></InputGroup>
             <InputGroup><label>From Date</label><input name="dateFrom" type="date" value={filters.dateFrom} onChange={handleChange} /></InputGroup>
             <InputGroup><label>To Date</label><input name="dateTo" type="date" value={filters.dateTo} onChange={handleChange} /></InputGroup>
-            <InputGroup>
-                <label>Transaction Type</label>
-                <select name="txType" value={filters.txType} onChange={handleChange}>
-                    <option value="">All Types</option>
-                    <option value="PIX">PIX</option>
-                    <option value="PAYMENT">Payment</option>
-                    <option value="TRANSFER">Transfer</option>
-                    <option value="OTHERS">Others</option>
-                </select>
-            </InputGroup>
+            
+            {/* Transaction Type dropdown is now removed */}
+            
             <InputGroup>
                 <label>Operation</label>
                 <select name="operation" value={filters.operation} onChange={handleChange}>
@@ -91,6 +97,8 @@ const AlfaTrustFilter = ({ filters, onFilterChange }) => {
                 </select>
             </InputGroup>
             <ClearButton onClick={handleClear}>Clear Filters</ClearButton>
+            
+            {/* Fetch All button is now removed */}
         </FilterContainer>
     );
 };

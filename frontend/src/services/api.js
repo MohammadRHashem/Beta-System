@@ -105,6 +105,7 @@ export const calculateRemotePosition = (id, params) => apiClient.get(`/position/
 
 // === NEW: API functions for Alfa Trust Page ===
 export const triggerAlfaSync = () => apiClient.post('/alfa-trust/trigger-sync');
+
 export const getAlfaTransactions = (params) => apiClient.get('/alfa-trust/transactions', { params });
 export const exportAlfaPdf = async (params) => {
     try {

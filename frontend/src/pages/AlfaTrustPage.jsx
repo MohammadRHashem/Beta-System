@@ -21,6 +21,8 @@ const PageContainer = styled.div`
     display: flex;
     flex-direction: column;
     gap: 1.5rem;
+    /* This is crucial: Set a fixed height for the page container */
+    height: calc(100vh - 120px); /* Full viewport height minus header and padding */
 `;
 
 const Header = styled.div`
@@ -29,6 +31,7 @@ const Header = styled.div`
     align-items: center;
     flex-wrap: wrap;
     gap: 1rem;
+    flex-shrink: 0; /* Header should not shrink */
 `;
 
 const Title = styled.h2`
@@ -96,29 +99,30 @@ const ExportForm = styled.div`
     }
 `;
 
-const AlfaTrustPage = () => {
+const AlfaTrustPage = ({ socket }) => { // Accept socket as a prop
     const [transactions, setTransactions] = useState([]);
     const [loading, setLoading] = useState(true);
     const [isExportModalOpen, setIsExportModalOpen] = useState(false);
     const [isSyncing, setIsSyncing] = useState(false);
+    const [hasNewData, setHasNewData] = useState(false); // State for the banner
     const [pagination, setPagination] = useState({ page: 1, limit: 50, totalPages: 1, totalRecords: 0 });
     
+    // === THE FIX: Set the new default date range ===
     const [filters, setFilters] = useState({
         search: '', 
-        dateFrom: format(subDays(new Date(), 7), 'yyyy-MM-dd'), 
+        dateFrom: '2025-09-30', 
         dateTo: format(new Date(), 'yyyy-MM-dd'),
-        txType: '', 
         operation: ''
+        // txType is now removed
     });
     
     const debouncedSearch = useDebounce(filters.search, 500);
 
-    const fetchTransactions = useCallback(async () => {
-        if (!filters.dateFrom || !filters.dateTo) {
-            return;
-        }
-
-        setLoading(true);
+    const fetchTransactions = useCallback(async (showLoading = true) => {
+        if (!filters.dateFrom || !filters.dateTo) return;
+        
+        if (showLoading) setLoading(true);
+        setHasNewData(false); // Hide banner on fetch
         try {
             const params = { 
                 ...filters,
@@ -134,13 +138,25 @@ const AlfaTrustPage = () => {
             alert(error.response?.data?.message || "Failed to fetch transactions.");
             setTransactions([]);
         } finally {
-            setLoading(false);
+            if (showLoading) setLoading(false);
         }
     }, [pagination.page, pagination.limit, filters, debouncedSearch]);
 
     useEffect(() => {
         fetchTransactions();
     }, [fetchTransactions]);
+
+    // === THE FIX: Add WebSocket listener for the banner ===
+    useEffect(() => {
+        if (socket) {
+            const handleUpdate = () => {
+                console.log("Received alfa-trust:updated event from server.");
+                setHasNewData(true);
+            };
+            socket.on('alfa-trust:updated', handleUpdate);
+            return () => socket.off('alfa-trust:updated', handleUpdate);
+        }
+    }, [socket]);
 
     const handleFilterChange = (newFilters) => {
         setPagination(p => ({ ...p, page: 1 }));
@@ -185,6 +201,11 @@ const AlfaTrustPage = () => {
                         <Button onClick={() => setIsExportModalOpen(true)}><FaFilePdf/> Export PDF</Button>
                     </div>
                 </Header>
+                {hasNewData && (
+                    <RefreshBanner onClick={() => fetchTransactions()}>
+                        <FaSyncAlt /> New data is available. Click to refresh.
+                    </RefreshBanner>
+                )}
                 <AlfaTrustFilter filters={filters} onFilterChange={handleFilterChange} />
                 <AlfaTrustTable 
                     transactions={transactions}
