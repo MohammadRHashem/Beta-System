@@ -5,13 +5,14 @@ const { parseFormattedCurrency } = require('../utils/currencyParser');
 
 const getBusinessDay = (transactionDate) => {
     const businessDay = new Date(transactionDate);
-    const hour = transactionDate.getUTCHours(); // Use UTC hours for consistent comparison
-    const minute = transactionDate.getUTCMinutes();
-    // Assuming the cutoff is 16:15 in GMT-3, which is 19:15 UTC
-    if (hour > 19 || (hour === 19 && minute >= 15)) {
-        businessDay.setUTCDate(businessDay.getUTCDate() + 1);
+    const hour = transactionDate.getHours(); // Use local hours
+    const minute = transactionDate.getMinutes(); // Use local minutes
+    
+    // Cutoff is now 16:15 local time
+    if (hour > 16 || (hour === 16 && minute >= 15)) {
+        businessDay.setDate(businessDay.getDate() + 1);
     }
-    businessDay.setUTCHours(0, 0, 0, 0); 
+    businessDay.setHours(0, 0, 0, 0); 
     return businessDay;
 };
 
@@ -141,7 +142,7 @@ exports.exportTransactionsExcel = async (req, res) => {
         
         let lastBusinessDay = null;
         for (const tx of transactions) {
-            const comparisonDate = new Date(tx.inclusion_date); // DB stores in UTC
+            const comparisonDate = new Date(tx.inclusion_date);
             const currentBusinessDay = getBusinessDay(comparisonDate);
 
             if (lastBusinessDay && currentBusinessDay.getTime() !== lastBusinessDay.getTime()) {
