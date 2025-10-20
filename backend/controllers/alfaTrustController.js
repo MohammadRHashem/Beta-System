@@ -3,6 +3,18 @@ const alfaApiService = require('../services/alfaApiService');
 const ExcelJS = require('exceljs');
 const { parseFormattedCurrency } = require('../utils/currencyParser');
 
+const getBusinessDay = (transactionDate) => {
+    const businessDay = new Date(transactionDate);
+    const hour = transactionDate.getUTCHours(); // Use UTC hours for consistent comparison
+    const minute = transactionDate.getUTCMinutes();
+    // Assuming the cutoff is 16:15 in GMT-3, which is 19:15 UTC
+    if (hour > 19 || (hour === 19 && minute >= 15)) {
+        businessDay.setUTCDate(businessDay.getUTCDate() + 1);
+    }
+    businessDay.setUTCHours(0, 0, 0, 0); 
+    return businessDay;
+};
+
 exports.getTransactions = async (req, res) => {
     const {
         page = 1, limit = 50, sortOrder = 'desc',
