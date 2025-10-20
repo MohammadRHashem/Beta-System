@@ -105,8 +105,11 @@ export const calculateRemotePosition = (id, params) => apiClient.get(`/position/
 
 // === NEW: API functions for Alfa Trust Page ===
 export const triggerAlfaSync = () => apiClient.post('/alfa-trust/trigger-sync');
-
 export const getAlfaTransactions = (params) => apiClient.get('/alfa-trust/transactions', { params });
+export const exportAlfaExcel = async (params) => {
+    const blob = await downloadFile('/alfa-trust/export-excel', params);
+    triggerBrowserDownload(blob, 'alfa_trust_export.xlsx');
+};
 export const exportAlfaPdf = async (params) => {
     try {
         const { data } = await apiClient.get('/alfa-trust/export-pdf', {

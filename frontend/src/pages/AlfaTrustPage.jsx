@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import styled from 'styled-components';
-import { getAlfaTransactions, exportAlfaPdf, triggerAlfaSync } from '../services/api';
+import { getAlfaTransactions, exportAlfaPdf, triggerAlfaSync, exportAlfaExcel } from '../services/api';
 import AlfaTrustFilter from '../components/AlfaTrustFilter';
 import AlfaTrustTable from '../components/AlfaTrustTable';
 import Modal from '../components/Modal';
-import { FaFilePdf, FaSyncAlt } from 'react-icons/fa';
+import { FaFilePdf, FaSyncAlt, FaFileExcel } from 'react-icons/fa';
 import { format, subDays } from 'date-fns';
 
 // Helper Hook - It's good practice to move this to its own file: /src/hooks/useDebounce.js
@@ -104,6 +104,7 @@ const AlfaTrustPage = ({ socket }) => { // Accept socket as a prop
     const [loading, setLoading] = useState(true);
     const [isExportModalOpen, setIsExportModalOpen] = useState(false);
     const [isSyncing, setIsSyncing] = useState(false);
+    const [isExporting, setIsExporting] = useState(false);
     const [hasNewData, setHasNewData] = useState(false); // State for the banner
     const [pagination, setPagination] = useState({ page: 1, limit: 50, totalPages: 1, totalRecords: 0 });
     
@@ -172,6 +173,18 @@ const AlfaTrustPage = ({ socket }) => { // Accept socket as a prop
         }
     };
 
+    const handleExportExcel = async () => {
+        setIsExporting(true);
+        try {
+            await exportAlfaExcel(filters); // Pass the current filters
+        } catch (error) {
+            console.error("Failed to export Excel:", error);
+            alert("Failed to export Excel file.");
+        } finally {
+            setIsExporting(false);
+        }
+    };
+
     const handleManualSync = async () => {
         setIsSyncing(true);
         try {
@@ -198,6 +211,9 @@ const AlfaTrustPage = ({ socket }) => { // Accept socket as a prop
                             <FaSyncAlt style={{ animation: isSyncing ? 'spin 1s linear infinite' : 'none' }} /> 
                             {isSyncing ? 'Syncing...' : 'Refresh Data'}
                         </SyncButton>
+                        <Button color="excel" onClick={handleExportExcel} disabled={isExporting}>
+                            <FaFileExcel /> {isExporting ? 'Exporting...' : 'Export Excel'}
+                        </Button>
                         <Button onClick={() => setIsExportModalOpen(true)}><FaFilePdf/> Export PDF</Button>
                     </div>
                 </Header>

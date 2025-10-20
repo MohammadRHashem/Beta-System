@@ -110,6 +110,7 @@ app.get('/api/alfa-trust/transactions', alfaTrustController.getTransactions);
 app.get('/api/alfa-trust/export-pdf', alfaTrustController.exportPdf);
 app.post('/api/alfa-trust/trigger-sync', alfaTrustController.triggerManualSync);
 app.post('/api/alfa-trust/notify-update', alfaTrustController.notifyUpdate);
+app.get('/api/alfa-trust/export-excel', alfaTrustController.exportTransactionsExcel);
 
 
 

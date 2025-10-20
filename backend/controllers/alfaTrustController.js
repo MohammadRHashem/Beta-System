@@ -77,6 +77,105 @@ exports.getTransactions = async (req, res) => {
     }
 };
 
+exports.exportTransactionsExcel = async (req, res) => {
+    const { search, dateFrom, dateTo, operation } = req.query;
+
+    let query = `
+        SELECT end_to_end_id, inclusion_date, operation, value, payer_name, raw_details
+        FROM alfa_transactions
+        WHERE 1=1
+    `;
+    const params = [];
+
+    if (search) {
+        query += ` AND (end_to_end_id LIKE ? OR payer_name LIKE ? OR value LIKE ?)`;
+        const searchTerm = `%${search}%`;
+        params.push(searchTerm, searchTerm, searchTerm);
+    }
+    if (dateFrom) {
+        query += ' AND DATE(inclusion_date) >= ?';
+        params.push(dateFrom);
+    }
+    if (dateTo) {
+        query += ' AND DATE(inclusion_date) <= ?';
+        params.push(dateTo);
+    }
+    if (operation) {
+        query += ' AND operation = ?';
+        params.push(operation);
+    }
+
+    // Crucial for the separator logic: data MUST be sorted chronologically.
+    query += ' ORDER BY inclusion_date ASC';
+
+    try {
+        const [transactions] = await pool.query(query, params);
+        const workbook = new ExcelJS.Workbook();
+        const worksheet = workbook.addWorksheet('AlfaTrust_Statement', {
+            views: [{ state: 'frozen', ySplit: 1 }]
+        });
+
+        worksheet.columns = [
+            { header: 'Date/Time', key: 'inclusion_date', width: 22, style: { numFmt: 'dd/mm/yyyy hh:mm:ss', alignment: { horizontal: 'right' } } },
+            { header: 'Transaction ID', key: 'transaction_id', width: 35 },
+            { header: 'Sender Name', key: 'sender_name', width: 40 },
+            { header: 'Recipient Name', key: 'recipient_name', width: 40 },
+            { header: 'Amount', key: 'amount', width: 18, style: { numFmt: '#,##0.00', alignment: { horizontal: 'right' } } },
+        ];
+
+        worksheet.getRow(1).font = { name: 'Calibri', bold: true, color: { argb: 'FFFFFFFF' } };
+        worksheet.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0A2540' } };
+        worksheet.getRow(1).alignment = { vertical: 'middle', horizontal: 'center' };
+        
+        let lastBusinessDay = null;
+        for (const tx of transactions) {
+            const comparisonDate = new Date(tx.inclusion_date); // DB stores in UTC
+            const currentBusinessDay = getBusinessDay(comparisonDate);
+
+            if (lastBusinessDay && currentBusinessDay.getTime() !== lastBusinessDay.getTime()) {
+                const splitterRow = worksheet.addRow({ transaction_id: `--- Business Day of ${currentBusinessDay.toLocaleDateString('en-CA')} ---` });
+                splitterRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFF00' } }; // Yellow
+                splitterRow.font = { name: 'Calibri', bold: true };
+                worksheet.mergeCells(`B${splitterRow.number}:E${splitterRow.number}`);
+                splitterRow.getCell('B').alignment = { horizontal: 'center' };
+            }
+
+            let senderName = 'N/A';
+            let recipientName = 'N/A';
+
+            if (tx.operation === 'C') { // Credit (Money In)
+                senderName = tx.payer_name || 'N/A';
+                recipientName = 'ALFA TRUST (Receiver)';
+            } else { // Debit (Money Out)
+                senderName = 'ALFA TRUST (Sender)';
+                try {
+                    const details = JSON.parse(tx.raw_details);
+                    recipientName = details?.detalhes?.nomeRecebedor || 'N/A';
+                } catch {
+                    recipientName = 'N/A';
+                }
+            }
+
+            worksheet.addRow({
+                inclusion_date: comparisonDate, // Pass as a Date object for correct formatting
+                transaction_id: tx.end_to_end_id,
+                sender_name: senderName,
+                recipient_name: recipientName,
+                amount: tx.operation === 'C' ? parseFloat(tx.value) : -parseFloat(tx.value)
+            });
+            
+            lastBusinessDay = currentBusinessDay;
+        }
+
+        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        res.setHeader('Content-Disposition', 'attachment; filename="alfa_trust_export.xlsx"');
+        await workbook.xlsx.write(res);
+    } catch (error) {
+        console.error('[EXPORT-ERROR] Failed to export Alfa Trust transactions:', error);
+        res.status(500).json({ message: 'Failed to export transactions.' });
+    }
+};
+
 exports.exportPdf = async (req, res) => {
     const { dateFrom, dateTo } = req.query;
     if (!dateFrom || !dateTo) {
