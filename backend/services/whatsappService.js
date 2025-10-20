@@ -193,7 +193,7 @@ const invoiceWorker = new Worker(
         if (transaction_id && transaction_id.trim() !== "" && amount) {
           const trimmedTransactionId = transaction_id.trim();
           const [[existingById]] = await pool.query(
-            "SELECT source_group_jid FROM invoices WHERE transaction_id = ? AND amount = ? LIMIT 1",
+            "SELECT source_group_jid FROM invoices WHERE transaction_id = ? AND amount = ? AND is_deleted = 0 LIMIT 1",
             [trimmedTransactionId, amount]
           );
 
