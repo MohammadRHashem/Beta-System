@@ -91,7 +91,6 @@ exports.getTransactions = async (req, res) => {
 exports.exportTransactionsExcel = async (req, res) => {
     const { search, dateFrom, dateTo, operation } = req.query;
 
-    // === FIX 1: Add 'description' to the SELECT statement ===
     let query = `
         SELECT end_to_end_id, inclusion_date, operation, value, payer_name, payer_document, description, raw_details
         FROM alfa_transactions
@@ -153,21 +152,25 @@ exports.exportTransactionsExcel = async (req, res) => {
             let senderName = 'N/A';
             let recipientName = 'N/A';
             let payerDocument = '';
+            let details = null;
+            try {
+                details = JSON.parse(tx.raw_details);
+            } catch {
+                details = null;
+            }
 
+            // === THE FIX: Fully corrected logic for all cases ===
             if (tx.operation === 'C') { // Credit (Money In)
-                senderName = tx.payer_name || 'N/A';
+                senderName = tx.payer_name || tx.description || 'N/A';
                 recipientName = 'ALFA TRUST (Receiver)';
                 payerDocument = tx.payer_document || '';
             } else { // Debit (Money Out)
                 senderName = 'ALFA TRUST (Sender)';
-                // === FIX 2: Add fallback to tx.description for debit transactions ===
-                try {
-                    const details = JSON.parse(tx.raw_details);
-                    recipientName = details?.detalhes?.nomeRecebedor || tx.description || 'N/A';
-                } catch {
-                    recipientName = tx.description || 'N/A';
-                }
+                recipientName = details?.detalhes?.nomeRecebedor || tx.description || 'N/A';
+                // Explicitly get the payer document for debit transactions
+                payerDocument = details?.detalhes?.cpfCnpjPagador || '';
             }
+            // === END OF FIX ===
             
             worksheet.addRow({
                 inclusion_date: tx.inclusion_date,

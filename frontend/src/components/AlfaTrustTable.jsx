@@ -123,7 +123,11 @@ const AlfaTrustTable = ({ transactions, loading, pagination, setPagination }) =>
                                 
                                 // For debits, try to get the recipient name first. 
                                 // If it doesn't exist (like in a fee), fall back to the top-level description.
-                                counterpartyName = details?.detalhes?.nomeRecebedor || tx.description || 'N/A';
+                                if (tx.operation === 'C') { // Credit (IN)
+                                counterpartyName = tx.payer_name || tx.description || 'N/A';
+                                } else { // Debit (OUT)
+                                    counterpartyName = details?.detalhes?.nomeRecebedor || tx.description || 'N/A';
+                                }
                             }
                             // === END OF FIX ===
 
