@@ -91,8 +91,9 @@ exports.getTransactions = async (req, res) => {
 exports.exportTransactionsExcel = async (req, res) => {
     const { search, dateFrom, dateTo, operation } = req.query;
 
+    // === FIX 1: Add 'description' to the SELECT statement ===
     let query = `
-        SELECT end_to_end_id, inclusion_date, operation, value, payer_name, payer_document, raw_details
+        SELECT end_to_end_id, inclusion_date, operation, value, payer_name, payer_document, description, raw_details
         FROM alfa_transactions
         WHERE 1=1
     `;
@@ -140,27 +141,26 @@ exports.exportTransactionsExcel = async (req, res) => {
         
         let lastBusinessDay = null;
         for (const tx of transactions) {
-            // Use the correct helper function on the raw database string
             const currentBusinessDay = getBusinessDayFromLocalString(tx.inclusion_date);
 
             if (lastBusinessDay && currentBusinessDay.getTime() !== lastBusinessDay.getTime()) {
                 const splitterRow = worksheet.addRow({ transaction_id: `--- Business Day of ${currentBusinessDay.toLocaleDateString('en-CA')} ---` });
                 splitterRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFF00' } };
-                // === FIX 3: Adjust the cell merge to span the new column ===
                 worksheet.mergeCells(`B${splitterRow.number}:F${splitterRow.number}`);
                 splitterRow.getCell('B').alignment = { horizontal: 'center' };
             }
 
             let senderName = 'N/A';
             let recipientName = 'N/A';
-            let payerDocument = 'N/A';
+            let payerDocument = '';
 
             if (tx.operation === 'C') { // Credit (Money In)
                 senderName = tx.payer_name || 'N/A';
                 recipientName = 'ALFA TRUST (Receiver)';
-                payerDocument = tx.payer_document || ''; // Get the document
+                payerDocument = tx.payer_document || '';
             } else { // Debit (Money Out)
                 senderName = 'ALFA TRUST (Sender)';
+                // === FIX 2: Add fallback to tx.description for debit transactions ===
                 try {
                     const details = JSON.parse(tx.raw_details);
                     recipientName = details?.detalhes?.nomeRecebedor || tx.description || 'N/A';
@@ -168,8 +168,7 @@ exports.exportTransactionsExcel = async (req, res) => {
                     recipientName = tx.description || 'N/A';
                 }
             }
-
-            // === FIX 4: Add the 'payer_document' to the row data ===
+            
             worksheet.addRow({
                 inclusion_date: tx.inclusion_date,
                 transaction_id: tx.end_to_end_id,
