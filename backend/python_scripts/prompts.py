@@ -12,7 +12,7 @@ prompt_2 = f"""
     If the pre-check rules are not met, extract the following fields:
 
     - **transaction id:** Find the unique transaction ID. It often looks like "E18189547202502171718GVpGtoyM2R3". It can contain letters and numbers.
-        - You MUST return the ID **exactly as you see it without any edits**.
+        - You MUST return the ID **exactly as you see it without any edits or additions, especially when reading zeros in the id, read them correctly dont add or remove a zero from your own mind**.
         - If transaction ID is not found, create an id from a combo of amount-invoicedate-invoicetime-sender in the following format (amount-date(dmy)-time(hms)-sender(first letter)).
 
     - **amount:** The total transaction amount.
@@ -77,6 +77,7 @@ prompt_2 = f"""
       "additional_data": "",
       "image_type": ""
     }}
+    
     ```
 
     **EXAMPLE OF A CORRECT, FULL OUTPUT:**

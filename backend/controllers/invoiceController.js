@@ -4,7 +4,7 @@ const path = require('path');
 const fs = require('fs');
 const { parseFormattedCurrency } = require('../utils/currencyParser');
 
-// === THE EDIT: Simplified for faster initial loads ===
+// getAllInvoices function remains the same...
 exports.getAllInvoices = async (req, res) => {
     const {
         page = 1, limit = 50, sortOrder = 'desc',
@@ -56,7 +56,6 @@ exports.getAllInvoices = async (req, res) => {
     if (status === 'only_deleted') {
         query += ' AND i.is_deleted = 1';
     } else if (status === 'only_duplicates') {
-        // === THE FIX: Use the corrected duplicate definition here as well ===
         query += ` AND i.transaction_id IS NOT NULL AND i.transaction_id != '' AND i.id NOT IN (SELECT MIN(id) FROM invoices WHERE transaction_id IS NOT NULL AND transaction_id != '' GROUP BY transaction_id, amount)`;
     } else {
         if (status !== 'only_deleted') {
@@ -92,6 +91,7 @@ exports.getAllInvoices = async (req, res) => {
 };
 
 
+// getBusinessDay function remains the same...
 const getBusinessDay = (transactionDate) => {
     const businessDay = new Date(transactionDate);
     const hour = transactionDate.getHours();
@@ -104,6 +104,7 @@ const getBusinessDay = (transactionDate) => {
 };
 
 
+// === THIS IS THE ONLY FUNCTION WITH CHANGES ===
 exports.exportInvoices = async (req, res) => {
     const {
         search, dateFrom, dateTo, timeFrom, timeTo,
@@ -159,20 +160,25 @@ exports.exportInvoices = async (req, res) => {
         query += ` AND NOT ${reviewCondition}`;
     }
 
+    // === FIX START: This logic has been completely rewritten ===
     if (status === 'only_deleted') {
         query += ' AND i.is_deleted = 1';
     } else if (status === 'only_duplicates') {
-        // If user ASKS for duplicates, export ONLY the newer copies.
-        query += ` AND i.is_deleted = 0 AND i.transaction_id IS NOT NULL AND i.transaction_id != '' AND i.id NOT IN (SELECT MIN(id) FROM invoices WHERE transaction_id IS NOT NULL AND transaction_id != '' GROUP BY transaction_id, amount)`;
+        // Show ONLY the copies (not the first one)
+        query += ` AND i.is_deleted = 0 AND i.transaction_id IS NOT NULL AND i.transaction_id != '' AND i.id NOT IN (
+            SELECT min_id FROM (SELECT MIN(id) as min_id FROM invoices WHERE transaction_id IS NOT NULL AND transaction_id != '' GROUP BY transaction_id) as t
+        )`;
     } else {
-        // DEFAULT BEHAVIOR: Export only the FIRST instance of any transaction.
-        // This prevents double-counting in spreadsheets.
-        query += ` AND i.is_deleted = 0 AND i.id IN (
-            SELECT id FROM (
-                SELECT MIN(id) as id FROM invoices GROUP BY transaction_id, amount
-            ) as unique_invoices
+        // DEFAULT BEHAVIOR: Show all non-deleted invoices, but only the FIRST instance for any given transaction_id.
+        query += ` AND i.is_deleted = 0 AND (
+            -- Condition 1: Include all invoices that DO NOT have a transaction ID
+            (i.transaction_id IS NULL OR i.transaction_id = '') 
+            OR 
+            -- Condition 2: For invoices that DO have a transaction ID, only include the one with the smallest ID
+            i.id IN (SELECT min_id FROM (SELECT MIN(id) as min_id FROM invoices WHERE transaction_id IS NOT NULL AND transaction_id != '' GROUP BY transaction_id) as t)
         )`;
     }
+    // === FIX END ===
     
     // Crucial for the separator logic: data MUST be sorted chronologically.
     query += ' ORDER BY i.received_at ASC';
@@ -198,25 +204,20 @@ exports.exportInvoices = async (req, res) => {
         worksheet.getRow(1).fill = { type: 'pattern', pattern:'solid', fgColor:{argb:'FF0A2540'} };
         worksheet.getRow(1).alignment = { vertical: 'middle', horizontal: 'center' };
 
-        // === RE-INTEGRATED: Business Day Separator Logic ===
         let lastBusinessDay = null;
         for (const invoice of invoicesFromDb) {
-            // The received_at from the DB is already a string in São Paulo time (e.g., "2025-10-11 15:30:00")
             const saoPauloDateString = invoice.received_at;
-            // Create a JS Date object that correctly interprets this string as being in GMT-3
             const comparisonDate = new Date(saoPauloDateString + '-03:00'); 
             const currentBusinessDay = getBusinessDay(comparisonDate);
 
-            // If the business day has changed since the last row, add the separator.
             if (lastBusinessDay && currentBusinessDay.getTime() !== lastBusinessDay.getTime()) {
                 const splitterRow = worksheet.addRow({ transaction_id: `--- Business Day of ${currentBusinessDay.toLocaleDateString('en-CA')} ---` });
-                splitterRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFF00' } }; // Yellow fill
+                splitterRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFF00' } };
                 splitterRow.font = { name: 'Calibri', bold: true };
                 worksheet.mergeCells(`B${splitterRow.number}:F${splitterRow.number}`);
                 splitterRow.getCell('B').alignment = { horizontal: 'center' };
             }
             
-            // Add the actual invoice data row
             worksheet.addRow({
                 received_at: saoPauloDateString,
                 transaction_id: invoice.transaction_id,
@@ -226,10 +227,8 @@ exports.exportInvoices = async (req, res) => {
                 amount: parseFormattedCurrency(invoice.amount)
             });
 
-            // Update the state for the next iteration
             lastBusinessDay = currentBusinessDay;
         }
-        // === END of Separator Logic ===
 
         res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
         res.setHeader('Content-Disposition', 'attachment; filename="invoices_export.xlsx"');
@@ -241,6 +240,7 @@ exports.exportInvoices = async (req, res) => {
     }
 };
 
+// ... The rest of the file (getRecipientNames, createInvoice, etc.) remains unchanged ...
 exports.getRecipientNames = async (req, res) => {
     try {
         const [recipients] = await pool.query(

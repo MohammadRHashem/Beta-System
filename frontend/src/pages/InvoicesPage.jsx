@@ -6,6 +6,7 @@ import { FaPlus, FaFileExcel, FaSyncAlt } from 'react-icons/fa';
 import InvoiceFilter from '../components/InvoiceFilter';
 import InvoiceTable from '../components/InvoiceTable';
 import InvoiceModal from '../components/InvoiceModal';
+import { useSocket } from '../context/SocketContext';
 
 // Debounce hook to prevent excessive API calls while typing
 const useDebounce = (value, delay) => {
@@ -81,7 +82,8 @@ const RefreshBanner = styled.div`
     gap: 0.75rem;
 `;
 
-const InvoicesPage = ({ allGroups, socket }) => {
+const InvoicesPage = ({ allGroups }) => { // No longer accepts socket as a prop
+    const socket = useSocket(); // <-- USE THE HOOK
     const [invoices, setInvoices] = useState([]);
     const [loading, setLoading] = useState(true);
     const [isExporting, setIsExporting] = useState(false);
@@ -99,7 +101,6 @@ const InvoicesPage = ({ allGroups, socket }) => {
     const [isInvoiceModalOpen, setIsInvoiceModalOpen] = useState(false);
     const [editingInvoice, setEditingInvoice] = useState(null);
 
-    // Debounce the text search to avoid API calls on every keystroke
     const debouncedSearch = useDebounce(filters.search, 500);
 
     const fetchInvoices = useCallback(async () => {
@@ -112,7 +113,6 @@ const InvoicesPage = ({ allGroups, socket }) => {
                 page: pagination.page, 
                 limit: pagination.limit 
             };
-            // Clean up empty params before sending
             Object.keys(params).forEach(key => (!params[key] || (Array.isArray(params[key]) && params[key].length === 0)) && delete params[key]);
             
             const { data } = await getInvoices(params);
@@ -124,23 +124,21 @@ const InvoicesPage = ({ allGroups, socket }) => {
         } finally {
             setLoading(false);
         }
-    }, [pagination.page, pagination.limit, filters, debouncedSearch]); // Removed isAuthenticated as it's handled in the calling effect
+    }, [pagination.page, pagination.limit, filters, debouncedSearch]);
 
-    // Effect to fetch data whenever a filter, debounced search, or page number changes.
     useEffect(() => {
         if (isAuthenticated) { 
             fetchInvoices(); 
         }
     }, [fetchInvoices, isAuthenticated]);
     
-    // Effect to fetch dropdown data for filters only once on page load.
     useEffect(() => {
         if (isAuthenticated) {
             getRecipientNames().then(response => setRecipientNames(response.data || [])).catch(err => console.error(err));
         }
     }, [isAuthenticated]);
 
-    // Effect for WebSocket listener.
+    // This listener is now reliable
     useEffect(() => {
         if (isAuthenticated && socket) {
             const handleInvoiceUpdate = () => setHasNewInvoices(true);

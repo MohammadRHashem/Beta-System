@@ -6,6 +6,7 @@ import AlfaTrustTable from '../components/AlfaTrustTable';
 import Modal from '../components/Modal';
 import { FaFilePdf, FaSyncAlt, FaFileExcel } from 'react-icons/fa';
 import { format, subDays } from 'date-fns';
+import { useSocket } from '../context/SocketContext';
 
 // Helper Hook - It's good practice to move this to its own file: /src/hooks/useDebounce.js
 const useDebounce = (value, delay) => {
@@ -99,22 +100,21 @@ const ExportForm = styled.div`
     }
 `;
 
-const AlfaTrustPage = ({ socket }) => { // Accept socket as a prop
+const AlfaTrustPage = () => { // No longer accepts socket as a prop
+    const socket = useSocket(); // <-- USE THE HOOK TO GET THE SOCKET INSTANCE
     const [transactions, setTransactions] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [isExporting, setIsExporting] = useState(false);
     const [isExportModalOpen, setIsExportModalOpen] = useState(false);
     const [isSyncing, setIsSyncing] = useState(false);
-    const [isExporting, setIsExporting] = useState(false);
-    const [hasNewData, setHasNewData] = useState(false); // State for the banner
+    const [hasNewData, setHasNewData] = useState(false);
     const [pagination, setPagination] = useState({ page: 1, limit: 50, totalPages: 1, totalRecords: 0 });
     
-    // === THE FIX: Set the new default date range ===
     const [filters, setFilters] = useState({
         search: '', 
         dateFrom: '2025-09-30', 
         dateTo: format(new Date(), 'yyyy-MM-dd'),
         operation: ''
-        // txType is now removed
     });
     
     const debouncedSearch = useDebounce(filters.search, 500);
@@ -123,7 +123,7 @@ const AlfaTrustPage = ({ socket }) => { // Accept socket as a prop
         if (!filters.dateFrom || !filters.dateTo) return;
         
         if (showLoading) setLoading(true);
-        setHasNewData(false); // Hide banner on fetch
+        setHasNewData(false);
         try {
             const params = { 
                 ...filters,
@@ -147,7 +147,7 @@ const AlfaTrustPage = ({ socket }) => { // Accept socket as a prop
         fetchTransactions();
     }, [fetchTransactions]);
 
-    // === THE FIX: Add WebSocket listener for the banner ===
+    // This listener setup is now reliable
     useEffect(() => {
         if (socket) {
             const handleUpdate = () => {
@@ -157,7 +157,7 @@ const AlfaTrustPage = ({ socket }) => { // Accept socket as a prop
             socket.on('alfa-trust:updated', handleUpdate);
             return () => socket.off('alfa-trust:updated', handleUpdate);
         }
-    }, [socket]);
+    }, [socket]); // The effect correctly depends on the socket instance
 
     const handleFilterChange = (newFilters) => {
         setPagination(p => ({ ...p, page: 1 }));

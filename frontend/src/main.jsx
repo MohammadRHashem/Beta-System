@@ -6,15 +6,18 @@ import { AuthProvider } from './context/AuthContext';
 import { GlobalStyles, theme } from './GlobalStyles';
 import { ThemeProvider } from 'styled-components';
 import 'react-datepicker/dist/react-datepicker.css';
+import { SocketProvider } from './context/SocketContext';
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
     <BrowserRouter>
       <AuthProvider>
-        <ThemeProvider theme={theme}>
-          <GlobalStyles />
-          <App />
-        </ThemeProvider>
+        <SocketProvider>
+          <ThemeProvider theme={theme}>
+            <GlobalStyles />
+            <App />
+          </ThemeProvider>
+        </SocketProvider>
       </AuthProvider>
     </BrowserRouter>
   </React.StrictMode>

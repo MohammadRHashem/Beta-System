@@ -25,7 +25,7 @@ const getBusinessDayFromLocalString = (localDateString) => {
 exports.getTransactions = async (req, res) => {
     const {
         page = 1, limit = 50, sortOrder = 'desc',
-        search, dateFrom, dateTo, txType, operation
+        search, dateFrom, dateTo, operation
     } = req.query;
 
     try {
@@ -48,10 +48,6 @@ exports.getTransactions = async (req, res) => {
             query += ' AND DATE(inclusion_date) <= ?';
             params.push(dateTo);
         }
-        if (txType) {
-            query += ' AND type = ?';
-            params.push(txType);
-        }
         if (operation) {
             query += ' AND operation = ?';
             params.push(operation);
@@ -71,7 +67,7 @@ exports.getTransactions = async (req, res) => {
         }
 
         const dataQuery = `
-            SELECT id, end_to_end_id, inclusion_date, type, operation, value, title, payer_name, raw_details
+            SELECT id, end_to_end_id, inclusion_date, type, operation, value, title, description, payer_name, raw_details
             ${query}
             ORDER BY inclusion_date ${sortOrder === 'asc' ? 'ASC' : 'DESC'}
             LIMIT ? OFFSET ?
@@ -96,7 +92,7 @@ exports.exportTransactionsExcel = async (req, res) => {
     const { search, dateFrom, dateTo, operation } = req.query;
 
     let query = `
-        SELECT end_to_end_id, inclusion_date, operation, value, payer_name, raw_details
+        SELECT end_to_end_id, inclusion_date, operation, value, payer_name, payer_document, raw_details
         FROM alfa_transactions
         WHERE 1=1
     `;
@@ -133,6 +129,7 @@ exports.exportTransactionsExcel = async (req, res) => {
             { header: 'Date/Time', key: 'inclusion_date', width: 22, style: { numFmt: 'dd/mm/yyyy hh:mm:ss', alignment: { horizontal: 'right' } } },
             { header: 'Transaction ID', key: 'transaction_id', width: 35 },
             { header: 'Sender Name', key: 'sender_name', width: 40 },
+            { header: 'Payer Document', key: 'payer_document', width: 20 },
             { header: 'Recipient Name', key: 'recipient_name', width: 40 },
             { header: 'Amount', key: 'amount', width: 18, style: { numFmt: '#,##0.00', alignment: { horizontal: 'right' } } },
         ];
@@ -148,40 +145,39 @@ exports.exportTransactionsExcel = async (req, res) => {
 
             if (lastBusinessDay && currentBusinessDay.getTime() !== lastBusinessDay.getTime()) {
                 const splitterRow = worksheet.addRow({ transaction_id: `--- Business Day of ${currentBusinessDay.toLocaleDateString('en-CA')} ---` });
-                splitterRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFF00' } }; // Yellow
-                splitterRow.font = { name: 'Calibri', bold: true };
-                worksheet.mergeCells(`B${splitterRow.number}:E${splitterRow.number}`);
+                splitterRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFF00' } };
+                // === FIX 3: Adjust the cell merge to span the new column ===
+                worksheet.mergeCells(`B${splitterRow.number}:F${splitterRow.number}`);
                 splitterRow.getCell('B').alignment = { horizontal: 'center' };
             }
 
             let senderName = 'N/A';
             let recipientName = 'N/A';
+            let payerDocument = 'N/A';
 
             if (tx.operation === 'C') { // Credit (Money In)
                 senderName = tx.payer_name || 'N/A';
                 recipientName = 'ALFA TRUST (Receiver)';
+                payerDocument = tx.payer_document || ''; // Get the document
             } else { // Debit (Money Out)
                 senderName = 'ALFA TRUST (Sender)';
                 try {
                     const details = JSON.parse(tx.raw_details);
-                    recipientName = details?.detalhes?.nomeRecebedor || 'N/A';
+                    recipientName = details?.detalhes?.nomeRecebedor || tx.description || 'N/A';
                 } catch {
-                    recipientName = 'N/A';
+                    recipientName = tx.description || 'N/A';
                 }
             }
-            
-            // === THE PERMANENT FIX ===
-            // Pass the raw string from the database directly to ExcelJS.
-            // The library will parse it correctly according to the column style.
-            // This prevents any timezone interpretation by the Node.js server.
+
+            // === FIX 4: Add the 'payer_document' to the row data ===
             worksheet.addRow({
                 inclusion_date: tx.inclusion_date,
                 transaction_id: tx.end_to_end_id,
                 sender_name: senderName,
+                payer_document: payerDocument,
                 recipient_name: recipientName,
                 amount: tx.operation === 'C' ? parseFloat(tx.value) : -parseFloat(tx.value)
             });
-            // === END OF FIX ===
             
             lastBusinessDay = currentBusinessDay;
         }

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import styled from "styled-components";
 import { Routes, Route, useLocation, Navigate } from "react-router-dom";
 import { io } from "socket.io-client";
@@ -81,27 +81,7 @@ const MainLayout = () => {
   const { logout } = useAuth();
   const pageName = location.pathname.replace("/", "").replace(/-/g, " ") || "invoices";
 
-  const socket = useRef(null);
-  useEffect(() => {
-    const token = localStorage.getItem('authToken');
-    if (!socket.current && token) {
-      
-      socket.current = io(API_URL, {
-          path: "/socket.io/",
-          transports: ["websocket", "polling"], // Allow polling as a fallback
-          auth: { token }
-      });
-
-      socket.current.on("connect", () => { console.log("WebSocket connected successfully:", socket.current.id); });
-      socket.current.on("connect_error", (err) => {
-          console.error("WebSocket connection error:", err.message);
-      });
-    }
-    return () => {
-      socket.current?.disconnect();
-      socket.current = null;
-    };
-  }, []);
+  // === REMOVED ALL socket useRef and useEffect logic from here ===
 
   const fetchAllGroupsForConfig = useCallback(async () => {
     try {
@@ -157,13 +137,14 @@ const MainLayout = () => {
             <Routes>
               <Route path="/position" element={<PositionPage />} />
 
+              {/* The socket prop is no longer passed to the child components */}
               <Route
                 path="/invoices"
                 element={
-                  <InvoicesPage allGroups={allGroups} socket={socket.current} />
+                  <InvoicesPage allGroups={allGroups} />
                 }
               />
-              <Route path="/alfa-trust" element={<AlfaTrustPage socket={socket.current} />} />
+              <Route path="/alfa-trust" element={<AlfaTrustPage />} />
               <Route
                 path="/broadcaster"
                 element={<BroadcasterPage allGroups={allGroups} />}

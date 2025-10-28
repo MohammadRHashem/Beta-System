@@ -102,22 +102,30 @@ const AlfaTrustTable = ({ transactions, loading, pagination, setPagination }) =>
                     </Thead>
                     <tbody>
                         {transactions.map((tx) => {
-                            // === THE DEFINITIVE FIX for N/A values ===
+                            // === THE FIX: Robust counterparty name logic with fallback ===
                             let counterpartyName = 'N/A';
                             let transactionId = tx.end_to_end_id || tx.transaction_id || 'N/A';
 
                             if (tx.operation === 'C') { // Credit (IN)
                                 counterpartyName = tx.payer_name || tx.description || 'N/A';
                             } else { // Debit (OUT)
+                                let details = null;
                                 try {
-                                    // The backend sends the full JSON object now
-                                    const details = tx.raw_details; 
-                                    counterpartyName = details?.detalhes?.nomeRecebedor || tx.description || 'N/A';
+                                    // The backend sends raw_details as a JSON string, so we must parse it.
+                                    if (tx.raw_details && typeof tx.raw_details === 'string') {
+                                        details = JSON.parse(tx.raw_details);
+                                    } else {
+                                        details = tx.raw_details; // It's already an object or null
+                                    }
                                 } catch (e) {
-                                    counterpartyName = tx.description || 'N/A';
+                                    details = null; // Ensure details is null on JSON parsing error
                                 }
+                                
+                                // For debits, try to get the recipient name first. 
+                                // If it doesn't exist (like in a fee), fall back to the top-level description.
+                                counterpartyName = details?.detalhes?.nomeRecebedor || tx.description || 'N/A';
                             }
-                            // === END FIX ===
+                            // === END OF FIX ===
 
                             return (
                                 <Tr key={tx.id}>

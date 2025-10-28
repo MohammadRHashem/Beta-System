@@ -17,14 +17,13 @@ const notifyServerOfUpdate = async () => {
     }
 };
 
-const syncTransactions = async (isFirstRun = false) => {
+const syncTransactions = async (isFirstRun = true) => {
     console.log(`[ALFA-SYNC] Starting ${isFirstRun ? 'initial bootstrap' : 'scheduled'} sync...`);
     try {
         const dateTo = format(new Date(), 'yyyy-MM-dd');
-        // === THE FIX: Fetch a much larger range on the first run ===
         const dateFrom = isFirstRun
-            ? '2025-09-30' // On first run, go way back
-            : format(subDays(new Date(), 7), 'yyyy-MM-dd'); // Subsequent runs only need last 7 days
+            ? '2025-09-29'
+            : format(subDays(new Date(), 7), 'yyyy-MM-dd');
 
         console.log(`[ALFA-SYNC] Fetching all transactions from ${dateFrom} to ${dateTo}. This may take a while...`);
         const transactions = await alfaApiService.fetchAllTransactions({ dateFrom, dateTo });
@@ -38,23 +37,27 @@ const syncTransactions = async (isFirstRun = false) => {
         let upsertedCount = 0;
 
         try {
-            // === THE FIX: Use a prepared statement for much faster bulk inserts ===
+            // === THE FIX: The INSERT and ON DUPLICATE KEY UPDATE logic is now much more robust ===
             const query = `
                 INSERT INTO alfa_transactions (
                     end_to_end_id, transaction_id, inclusion_date, transaction_date, type, 
                     operation, value, title, description, payer_name, payer_document, raw_details
                 ) VALUES ?
                 ON DUPLICATE KEY UPDATE
+                    end_to_end_id = VALUES(end_to_end_id),
                     inclusion_date = VALUES(inclusion_date),
                     value = VALUES(value),
                     description = VALUES(description),
-                    raw_details = VALUES(raw_details);
+                    payer_name = VALUES(payer_name),
+                    payer_document = VALUES(payer_document),
+                    raw_details = VALUES(raw_details),
+                    updated_at = NOW();
             `;
 
-            // Map all transactions to the format needed for bulk insert
             const values = transactions.map(tx => [
+                // Prioritize the real endToEndId, but it no longer affects uniqueness. Fallback is now just for safety.
                 tx.detalhes?.endToEndId || tx.idTransacao,
-                tx.idTransacao,
+                tx.idTransacao, // This is now the UNIQUE key for the upsert
                 tx.dataInclusao,
                 tx.dataTransacao,
                 tx.tipoTransacao,
@@ -89,7 +92,6 @@ const syncTransactions = async (isFirstRun = false) => {
 const main = async () => {
     console.log('--- Alfa Trust Sync Service Started ---');
     
-    // Check if the table is empty to decide if this is the first run
     const [rows] = await pool.query("SELECT COUNT(*) as count FROM alfa_transactions");
     const isBootstrapNeeded = rows[0].count === 0;
 
@@ -98,11 +100,9 @@ const main = async () => {
         setTimeout(() => syncTransactions(true), 10000);
     } else {
         console.log('[ALFA-SYNC] Data already exists. Starting with an immediate incremental sync...');
-        // Run once on startup
         syncTransactions(false);
     }
 
-    // Schedule to run every minute for incremental updates
     cron.schedule('* * * * *', () => syncTransactions(false));
 };
 
