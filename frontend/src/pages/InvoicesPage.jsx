@@ -156,7 +156,12 @@ const InvoicesPage = ({ allGroups }) => { // No longer accepts socket as a prop
     const handleExport = async () => {
         setIsExporting(true);
         try {
-            await exportInvoices(filters);
+            // Create a fresh params object using the FINAL debounced search value
+            const exportParams = {
+                ...filters,
+                search: debouncedSearch, // Use the debounced value!
+            };
+            await exportInvoices(exportParams);
         } catch (error) {
             console.error("Failed to export invoices:", error);
             alert("Failed to export invoices.");

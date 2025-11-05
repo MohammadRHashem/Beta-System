@@ -17,6 +17,7 @@ import PositionPage from "./PositionPage"; // Add this import
 import AutoConfirmationPage from "./AutoConfirmationPage";
 import DirectForwardingPage from "./DirectForwardingPage";
 import AlfaTrustPage from "./AlfaTrustPage";
+import SubaccountsPage from "./SubaccountsPage";
 
 const AppLayout = styled.div`
   display: flex;
@@ -135,6 +136,10 @@ const MainLayout = () => {
             </QRContainer>
           ) : (
             <Routes>
+              <Route
+                path="/subaccounts"
+                element={<SubaccountsPage allGroups={allGroups} />}
+              />
               <Route path="/position" element={<PositionPage />} />
 
               {/* The socket prop is no longer passed to the child components */}

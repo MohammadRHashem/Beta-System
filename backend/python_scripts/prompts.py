@@ -11,7 +11,7 @@ prompt_2 = f"""
     **EXTRACTION FIELDS AND RULES:**
     If the pre-check rules are not met, extract the following fields:
 
-    - **transaction id:** Find the unique transaction ID. It often looks like "E18189547202502171718GVpGtoyM2R3". It can contain letters and numbers.
+    - **transaction id:** **(or numero de controle)**: Find the unique transaction ID. It often looks like "E18189547202502171718GVpGtoyM2R3". It can contain letters and numbers.
         - You MUST return the ID **exactly as you see it without any edits or additions, especially when reading zeros in the id, read them correctly dont add or remove a zero from your own mind**.
         - If transaction ID is not found, create an id from a combo of amount-invoicedate-invoicetime-sender in the following format (amount-date(dmy)-time(hms)-sender(first letter)).
 
@@ -31,7 +31,7 @@ prompt_2 = f"""
             - If you see "45.567", you MUST output "45,567.00".
             - KEEP IN MIND THE NB OF DIGITS AFTER DECIMAL.
         - If you find **amounts** that are commision-related (e.g., "commission", "fee", "tariff", "tarifa")(case-insensitive), DO NOT use them. Only use the main visible amount.
-        - If multiple amounts (valor) are present, maybe if 1 image has 2 or 3 invoice papers, add all valors together. 
+        - If multiple amounts (valor) are present, maybe if 1 image has 2 or 3 invoice papers, add all valors together.
 
     - **sender:** Information about the entity sending the payment.
         - name: The full name of the sender.
@@ -39,7 +39,7 @@ prompt_2 = f"""
 
     - **recipient:** Information about the entity receiving the payment.
         - name: The full name of the recipient.
-        - **CRITICAL SWAP RULE:** the recipient name often includes "troca coin" or "alfa trust" or "mks intermediacoes" (case-insensitive), if it contains "troca coin" or "mks intermediacoes" make it "TROCA COIN NEGÓCIOS DIGITAIS E INTERMEDIAÇÕES LTDA", and if it contains "alfa trust" make it "ALFA TRUST INTERMEDIACAO DE NEGOCIOS LTDA".
+        - **CRITICAL SWAP RULE:** the recipient name often includes "troca coin" or "alfa trust" or "mks intermediacoes" (case-insensitive), if it contains "troca coin" or "mks intermediacoes" make it "TROCA COIN NEGÓCIOS DIGITAIS E INTERMEDIAÇÕES LTDA", and if it contains "alfa trust" make it "ALFA TRUST INTERMEDIACAO DE NEGOCIOS LTDA", and if it contains "upgrade zone" make it "UPGRADE ZONE SERVICOS E COMERCIO DE EQUIPAMENTOS LTDA".
         - **CRITICAL RULE**: if recipient name contains at the end "...", remove the "..." from the recipient name.
 
     - **image_type:** Classify the image's context.
@@ -51,6 +51,7 @@ prompt_2 = f"""
     - If any field is not found, its value in the JSON must be an empty string "".
     - VERY IMPORTANT: Do not fabricate or guess any information. Only extract what is clearly visible in the image.
     - VERY IMPORTANT: If the image is not a receipt or does not contain relevant transaction information, return the empty JSON structure.
+    *****- VERY IMPORTANT:***** if recipient institution is "CARTOS SCD S.A." (case insensitive) you MUST set recipient name to "UPGRADE ZONE SERVICOS E COMERCIO DE EQUIPAMENTOS LTDA".
 
     **JSON OUTPUT FORMAT (Return only this):**
     ```json

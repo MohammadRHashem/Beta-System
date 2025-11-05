@@ -130,13 +130,13 @@ const Pagination = ({ pagination, setPagination }) => {
         const lastPageIndex = totalPages;
 
         if (!shouldShowLeftDots && shouldShowRightDots) {
-            let leftItemCount = 5;
+            let leftItemCount = 2;
             let leftRange = Array.from({ length: leftItemCount }, (_, i) => i + 1);
             return [...leftRange, '...', totalPages];
         }
 
         if (shouldShowLeftDots && !shouldShowRightDots) {
-            let rightItemCount = 5;
+            let rightItemCount = 2;
             let rightRange = Array.from({ length: rightItemCount }, (_, i) => totalPages - rightItemCount + i + 1);
             return [firstPageIndex, '...', ...rightRange];
         }
@@ -164,7 +164,7 @@ const Pagination = ({ pagination, setPagination }) => {
             </PageInfo>
             <PageControls>
                 <PageButton onClick={() => handlePageChange(currentPage - 1)} disabled={currentPage <= 1}>
-                    « Previous
+                    «
                 </PageButton>
 
                 {pageRange.map((page, index) => {
@@ -183,7 +183,7 @@ const Pagination = ({ pagination, setPagination }) => {
                 })}
 
                 <PageButton onClick={() => handlePageChange(currentPage + 1)} disabled={currentPage >= totalPages}>
-                    Next »
+                    »
                 </PageButton>
             </PageControls>
             

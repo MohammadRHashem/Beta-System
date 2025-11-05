@@ -1,7 +1,7 @@
 import React from "react";
 import { NavLink } from "react-router-dom";
 import styled from "styled-components";
-import { FaWhatsapp, FaBullhorn, FaRobot, FaCog, FaKey, FaKeyboard, FaFileInvoiceDollar, FaChartLine, FaCheckCircle, FaRoute, FaUniversity } from "react-icons/fa";
+import { FaWhatsapp, FaBullhorn, FaRobot, FaCog, FaKey, FaKeyboard, FaFileInvoiceDollar, FaChartLine, FaCheckCircle, FaRoute, FaUniversity, FaUsers } from "react-icons/fa";
 
 const SidebarContainer = styled.nav`
   width: 250px;
@@ -60,20 +60,24 @@ const NavItem = styled(NavLink)`
 
 const Sidebar = () => {
     return (
-        <SidebarContainer>
-            <Title><FaWhatsapp /> Beta Suite</Title>
-            <NavItem to="/broadcaster"><FaBullhorn /><span>Broadcaster</span></NavItem>
-            <NavItem to="/ai-forwarding"><FaRobot /><span>AI Forwarding</span></NavItem>
-            {/* === NEW: Link to the Auto Confirmation Page === */}
-            <NavItem to="/auto-confirmation"><FaCheckCircle /><span>Auto Confirmation</span></NavItem>
-            <NavItem to="/direct-forwarding"><FaRoute /><span>Direct Forwarding</span></NavItem>
-            <NavItem to="/abbreviations"><FaKeyboard /><span>Abbreviations</span></NavItem>
-            <NavItem to="/chave-pix"><FaKey /><span>Chave PIX</span></NavItem>
-            <NavItem to="/position"><FaChartLine /><span>Position</span></NavItem>
-            <NavItem to="/invoices"><FaFileInvoiceDollar /><span>Invoices</span></NavItem>
-            <NavItem to="/alfa-trust"><FaUniversity /><span>Alfa Trust</span></NavItem>
-            <NavItem to="/group-settings"><FaCog /><span>Group Settings</span></NavItem>
-        </SidebarContainer>
+      <SidebarContainer>
+        <Title><FaWhatsapp /> Beta Suite</Title>
+        <NavItem to="/broadcaster"><FaBullhorn /><span>Broadcaster</span></NavItem>
+        <NavItem to="/subaccounts"><FaUsers /><span>Subaccounts</span></NavItem>
+        <NavItem to="/ai-forwarding"><FaRobot /><span>AI Forwarding</span></NavItem>
+        {/* === NEW: Link to the Auto Confirmation Page === */}
+        <NavItem to="/auto-confirmation"><FaCheckCircle /><span>Auto Confirmation</span></NavItem>
+        <NavItem to="/direct-forwarding"><FaRoute /><span>Direct Forwarding</span></NavItem>
+        <NavItem to="/abbreviations"><FaKeyboard /><span>Abbreviations</span></NavItem>
+        {/* Chave PIX disabled: render as non-interactive element */}
+        <NavItem as="div" aria-disabled="true" style={{ opacity: 0.5, cursor: 'not-allowed', pointerEvents: 'none' }}>
+          <FaKey /><span>Chave PIX</span>
+        </NavItem>
+        <NavItem to="/position"><FaChartLine /><span>Position</span></NavItem>
+        <NavItem to="/invoices"><FaFileInvoiceDollar /><span>Invoices</span></NavItem>
+        <NavItem to="/alfa-trust"><FaUniversity /><span>Alfa Trust</span></NavItem>
+        <NavItem to="/group-settings"><FaCog /><span>Group Settings</span></NavItem>
+      </SidebarContainer>
     );
 };
 

@@ -3,6 +3,8 @@ import axios from 'axios';
 // === THE DEFINITIVE FIX: Use the full URL with the custom port ===
 const apiClient = axios.create({ baseURL: 'https://platform.betaserver.dev:4433/api' });
 
+const portalApiClient = axios.create({ baseURL: 'https://platform.betaserver.dev:4433/portal' });
+
 apiClient.interceptors.request.use(config => {
     const token = localStorage.getItem('authToken');
     if (token) {
@@ -22,6 +24,64 @@ apiClient.interceptors.response.use(
         return Promise.reject(error);
     }
 );
+
+export const portalLogin = (credentials) => portalApiClient.post('/auth/login', credentials);
+export const getPortalTransactions = (params) => {
+    const token = localStorage.getItem('portalAuthToken'); // Client token
+    return portalApiClient.get('/transactions', {
+        params,
+        headers: {
+            Authorization: `Bearer ${token}`
+        }
+    });
+};
+
+export const getPortalFilteredVolume = (params) => {
+    const token = localStorage.getItem('portalAuthToken');
+    return portalApiClient.get('/filtered-volume', {
+        params,
+        headers: { Authorization: `Bearer ${token}` }
+    });
+};
+
+export const exportPortalTransactions = async (params, format = 'excel') => {
+    const token = localStorage.getItem('portalAuthToken');
+    try {
+        const response = await portalApiClient.get('/export-excel', {
+            // Pass the format to the backend
+            params: { ...params, format },
+            headers: { Authorization: `Bearer ${token}` },
+            responseType: 'blob',
+        });
+        
+        const clientData = JSON.parse(localStorage.getItem('portalClient')) || {};
+        const clientName = clientData.username;
+        const cleanFilename = `accountBalance_${clientName}`;
+        
+        const extension = format === 'pdf' ? 'pdf' : 'xlsx';
+        const filename = `${cleanFilename}.${extension}`;
+        
+        const url = window.URL.createObjectURL(new Blob([response.data]));
+        const link = document.createElement('a');
+        link.href = url;
+        link.setAttribute('download', filename);
+        document.body.appendChild(link);
+        link.click();
+        link.parentNode.removeChild(link);
+        window.URL.revokeObjectURL(url);
+
+    } catch (error) {
+        console.error("Export failed:", error);
+        throw error;
+    }
+};
+
+export const getPortalTotalVolume = () => {
+    const token = localStorage.getItem('portalAuthToken');
+    return portalApiClient.get('/total-volume', {
+        headers: { Authorization: `Bearer ${token}` }
+    });
+};
 
 // ... (the rest of the file remains exactly the same) ...
 
@@ -102,6 +162,14 @@ export const updatePositionCounter = (id, data) => apiClient.put(`/positions/cou
 export const deletePositionCounter = (id) => apiClient.delete(`/positions/counters/${id}`);
 export const calculateLocalPosition = (params) => apiClient.get('/position/local', { params });
 export const calculateRemotePosition = (id, params) => apiClient.get(`/position/remote/${id}`, { params });
+
+
+export const getSubaccounts = () => apiClient.get('/subaccounts');
+export const createSubaccount = (data) => apiClient.post('/subaccounts', data);
+export const updateSubaccount = (id, data) => apiClient.put(`/subaccounts/${id}`, data);
+export const deleteSubaccount = (id) => apiClient.delete(`/subaccounts/${id}`);
+export const getSubaccountCredentials = (id) => apiClient.get(`/subaccounts/${id}/credentials`);
+export const resetSubaccountPassword = (id) => apiClient.post(`/subaccounts/${id}/credentials/reset`);
 
 // === NEW: API functions for Alfa Trust Page ===
 export const triggerAlfaSync = () => apiClient.post('/alfa-trust/trigger-sync');

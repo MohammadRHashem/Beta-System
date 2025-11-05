@@ -19,6 +19,13 @@ const invoiceController = require('./controllers/invoiceController');
 const positionController = require('./controllers/positionController');
 const directForwardingController = require('./controllers/directForwardingController');
 const alfaTrustController = require('./controllers/alfaTrustController');
+const subaccountController = require('./controllers/subaccountController');
+
+const portalController = require('./controllers/portalController');
+const portalAuthMiddleware = require('./middleware/portalAuthMiddleware');
+
+const portalRoutes = require('./routes/portalRoutes');
+
 
 const app = express();
 const server = http.createServer(app);
@@ -44,74 +51,96 @@ io.on('connection', (socket) => {
 });
 
 // --- ROUTES ---
+
+app.use('/portal', portalRoutes);
+
+
+// --- ADMIN API ROUTES ---
 app.post('/api/auth/register', authController.register);
 app.post('/api/auth/login', authController.login);
-app.use(authMiddleware);
-app.get('/api/status', whatsappController.getStatus);
-app.post('/api/logout', whatsappController.logout);
-app.get('/api/groups', whatsappController.getGroups);
-app.post('/api/groups/sync', whatsappController.syncGroups);
-app.post('/api/broadcast', whatsappController.broadcastMessage);
-app.get('/api/batches', batchController.getAllBatches);
-app.post('/api/batches', batchController.createBatch);
-app.get('/api/batches/:id', batchController.getGroupIdsByBatch);
-app.put('/api/batches/:id', batchController.updateBatch);
-app.delete('/api/batches/:id', batchController.deleteBatch);
-app.get('/api/templates', templateController.getAllTemplates);
-app.post('/api/templates', templateController.createTemplate);
-app.put('/api/templates/:id', templateController.updateTemplate);
-app.delete('/api/templates/:id', templateController.deleteTemplate);
-app.get('/api/settings/forwarding', settingsController.getForwardingRules);
-app.post('/api/settings/forwarding', settingsController.createForwardingRule);
-app.put('/api/settings/forwarding/:id', settingsController.updateForwardingRule);
-app.patch('/api/settings/forwarding/:id/toggle', settingsController.toggleForwardingRule);
-app.delete('/api/settings/forwarding/:id', settingsController.deleteForwardingRule);
-app.get('/api/settings/groups', settingsController.getGroupSettings);
-app.post('/api/settings/groups', settingsController.updateGroupSetting);
-// === NEW: Auto Confirmation Routes ===
-app.get('/api/settings/auto-confirmation', settingsController.getAutoConfirmationStatus);
-app.post('/api/settings/auto-confirmation', settingsController.setAutoConfirmationStatus);
-// ===================================
-app.get('/api/chave-pix', chavePixController.getAllKeys);
-app.post('/api/chave-pix', chavePixController.createKey);
-app.put('/api/chave-pix/:id', chavePixController.updateKey);
-app.delete('/api/chave-pix/:id', chavePixController.deleteKey);
-app.get('/api/abbreviations', abbreviationController.getAll);
-app.post('/api/abbreviations', abbreviationController.create);
-app.put('/api/abbreviations/:id', abbreviationController.update);
-app.delete('/api/abbreviations/:id', abbreviationController.delete);
-app.get('/api/invoices', invoiceController.getAllInvoices);
-app.post('/api/invoices', invoiceController.createInvoice);
-app.put('/api/invoices/:id', invoiceController.updateInvoice);
-app.delete('/api/invoices/:id', invoiceController.deleteInvoice);
-app.get('/api/invoices/recipients', invoiceController.getRecipientNames);
-app.get('/api/invoices/export', invoiceController.exportInvoices);
-app.get('/api/invoices/media/:id', invoiceController.getInvoiceMedia);
 
-app.get('/api/direct-forwarding', directForwardingController.getAllRules);
-app.post('/api/direct-forwarding', directForwardingController.createRule);
-app.delete('/api/direct-forwarding/:id', directForwardingController.deleteRule);
+// All subsequent /api routes are protected by the admin middleware
+app.use('/api', authMiddleware);
 
-app.get('/api/settings/alfa-api-confirmation', settingsController.getAlfaApiConfirmationStatus);
-app.post('/api/settings/alfa-api-confirmation', settingsController.setAlfaApiConfirmationStatus);
+// --- NOTE: We will now define API routes on a separate router for clarity ---
+const apiRouter = express.Router();
 
-app.get('/api/settings/troca-coin-confirmation', settingsController.getTrocaCoinConfirmationStatus);
-app.post('/api/settings/troca-coin-confirmation', settingsController.setTrocaCoinConfirmationStatus);
+apiRouter.get('/status', whatsappController.getStatus);
+apiRouter.post('/logout', whatsappController.logout);
+apiRouter.get('/groups', whatsappController.getGroups);
+apiRouter.post('/groups/sync', whatsappController.syncGroups);
+apiRouter.post('/broadcast', whatsappController.broadcastMessage);
+// ... (all your other existing API routes will be moved here)
+// Batches
+apiRouter.get('/batches', batchController.getAllBatches);
+apiRouter.post('/batches', batchController.createBatch);
+apiRouter.get('/batches/:id', batchController.getGroupIdsByBatch);
+apiRouter.put('/batches/:id', batchController.updateBatch);
+apiRouter.delete('/batches/:id', batchController.deleteBatch);
+// Templates
+apiRouter.get('/templates', templateController.getAllTemplates);
+apiRouter.post('/templates', templateController.createTemplate);
+apiRouter.put('/templates/:id', templateController.updateTemplate);
+apiRouter.delete('/templates/:id', templateController.deleteTemplate);
+// Settings
+apiRouter.get('/settings/forwarding', settingsController.getForwardingRules);
+apiRouter.post('/settings/forwarding', settingsController.createForwardingRule);
+apiRouter.put('/settings/forwarding/:id', settingsController.updateForwardingRule);
+apiRouter.patch('/settings/forwarding/:id/toggle', settingsController.toggleForwardingRule);
+apiRouter.delete('/settings/forwarding/:id', settingsController.deleteForwardingRule);
+apiRouter.get('/settings/groups', settingsController.getGroupSettings);
+apiRouter.post('/settings/groups', settingsController.updateGroupSetting);
+apiRouter.get('/settings/auto-confirmation', settingsController.getAutoConfirmationStatus);
+apiRouter.post('/settings/auto-confirmation', settingsController.setAutoConfirmationStatus);
+apiRouter.get('/settings/alfa-api-confirmation', settingsController.getAlfaApiConfirmationStatus);
+apiRouter.post('/settings/alfa-api-confirmation', settingsController.setAlfaApiConfirmationStatus);
+apiRouter.get('/settings/troca-coin-method', settingsController.getTrocaCoinMethod);
+apiRouter.post('/settings/troca-coin-method', settingsController.setTrocaCoinMethod);
+// Chave PIX
+apiRouter.get('/chave-pix', chavePixController.getAllKeys);
+apiRouter.post('/chave-pix', chavePixController.createKey);
+apiRouter.put('/chave-pix/:id', chavePixController.updateKey);
+apiRouter.delete('/chave-pix/:id', chavePixController.deleteKey);
+// Abbreviations
+apiRouter.get('/abbreviations', abbreviationController.getAll);
+apiRouter.post('/abbreviations', abbreviationController.create);
+apiRouter.put('/abbreviations/:id', abbreviationController.update);
+apiRouter.delete('/abbreviations/:id', abbreviationController.delete);
+// Invoices
+apiRouter.get('/invoices', invoiceController.getAllInvoices);
+apiRouter.post('/invoices', invoiceController.createInvoice);
+apiRouter.put('/invoices/:id', invoiceController.updateInvoice);
+apiRouter.delete('/invoices/:id', invoiceController.deleteInvoice);
+apiRouter.get('/invoices/recipients', invoiceController.getRecipientNames);
+apiRouter.get('/invoices/export', invoiceController.exportInvoices);
+apiRouter.get('/invoices/media/:id', invoiceController.getInvoiceMedia);
+// Direct Forwarding
+apiRouter.get('/direct-forwarding', directForwardingController.getAllRules);
+apiRouter.post('/direct-forwarding', directForwardingController.createRule);
+apiRouter.delete('/direct-forwarding/:id', directForwardingController.deleteRule);
+// Position
+apiRouter.get('/position/local', positionController.calculateLocalPosition);
+apiRouter.get('/position/remote/:id', positionController.calculateRemotePosition);
+apiRouter.get('/positions/counters', positionController.getAllCounters);
+apiRouter.post('/positions/counters', positionController.createCounter);
+apiRouter.put('/positions/counters/:id', positionController.updateCounter);
+apiRouter.delete('/positions/counters/:id', positionController.deleteCounter);
+// Alfa Trust
+apiRouter.get('/alfa-trust/transactions', alfaTrustController.getTransactions);
+apiRouter.get('/alfa-trust/export-pdf', alfaTrustController.exportPdf);
+apiRouter.get('/alfa-trust/export-excel', alfaTrustController.exportTransactionsExcel);
+apiRouter.post('/alfa-trust/trigger-sync', alfaTrustController.triggerManualSync);
+apiRouter.post('/alfa-trust/notify-update', alfaTrustController.notifyUpdate);
+// Subaccounts
+apiRouter.get('/subaccounts', subaccountController.getAll);
+apiRouter.post('/subaccounts', subaccountController.create);
+apiRouter.put('/subaccounts/:id', subaccountController.update);
+apiRouter.delete('/subaccounts/:id', subaccountController.delete);
+apiRouter.get('/subaccounts/:id/credentials', subaccountController.getCredentials);
+apiRouter.post('/subaccounts/:id/credentials/reset', subaccountController.resetPassword);
 
-app.get('/api/position/local', positionController.calculateLocalPosition); // Renamed for clarity
-app.get('/api/position/remote/:id', positionController.calculateRemotePosition); // New remote endpoint
-app.get('/api/positions/counters', positionController.getAllCounters);
-app.post('/api/positions/counters', positionController.createCounter);
-app.put('/api/positions/counters/:id', positionController.updateCounter);
-app.delete('/api/positions/counters/:id', positionController.deleteCounter);
-
-//
-app.get('/api/alfa-trust/transactions', alfaTrustController.getTransactions);
-app.get('/api/alfa-trust/export-pdf', alfaTrustController.exportPdf);
-app.post('/api/alfa-trust/trigger-sync', alfaTrustController.triggerManualSync);
-app.post('/api/alfa-trust/notify-update', alfaTrustController.notifyUpdate);
-app.get('/api/alfa-trust/export-excel', alfaTrustController.exportTransactionsExcel);
-
+// Use the new apiRouter for all routes starting with /api
+app.use('/api', apiRouter);
 
 
 const frontendPath = path.join(__dirname, '..', 'frontend', 'dist');

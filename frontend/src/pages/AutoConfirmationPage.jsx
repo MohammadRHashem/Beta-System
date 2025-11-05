@@ -44,6 +44,22 @@ const SwitchContainer = styled.label`
     height: 34px;
 `;
 
+const RadioGroup = styled.div`
+    display: flex;
+    gap: 1.5rem;
+    border: 1px solid ${({ theme }) => theme.border};
+    border-radius: 6px;
+    padding: 1rem;
+`;
+
+const RadioLabel = styled.label`
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-weight: 500;
+    cursor: pointer;
+`;
+
 const SwitchInput = styled.input`
     opacity: 0;
     width: 0;
@@ -82,7 +98,7 @@ const Slider = styled.span`
 const AutoConfirmationPage = () => {
     const [isAutoConfEnabled, setIsAutoConfEnabled] = useState(false);
     const [isAlfaApiEnabled, setIsAlfaApiEnabled] = useState(false); // New state
-    const [isTrocaCoinEnabled, setIsTrocaCoinEnabled] = useState(false);
+    const [trocaCoinMethod, setTrocaCoinMethod] = useState('telegram'); 
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
@@ -91,11 +107,11 @@ const AutoConfirmationPage = () => {
                 const [autoConfRes, alfaApiRes, trocaCoinRes] = await Promise.all([
                     api.get('/settings/auto-confirmation'),
                     api.get('/settings/alfa-api-confirmation'), // Fetch new setting status
-                    api.get('/settings/troca-coin-confirmation')
+                    api.get('/settings/troca-coin-method')
                 ]);
                 setIsAutoConfEnabled(autoConfRes.data.isEnabled);
                 setIsAlfaApiEnabled(alfaApiRes.data.isEnabled);
-                setIsTrocaCoinEnabled(trocaCoinRes.data.isEnabled);
+                setTrocaCoinMethod(trocaCoinRes.data.method);
             } catch (error) {
                 console.error("Failed to fetch statuses:", error);
                 alert("Could not load confirmation statuses.");
@@ -128,14 +144,15 @@ const AutoConfirmationPage = () => {
         }
     };
 
-    const handleTrocaCoinToggle = async () => {
-        const newStatus = !isTrocaCoinEnabled;
-        setIsTrocaCoinEnabled(newStatus);
+    const handleTrocaCoinMethodChange = async (event) => {
+        const newMethod = event.target.value;
+        const oldMethod = trocaCoinMethod;
+        setTrocaCoinMethod(newMethod); // Optimistically update UI
         try {
-            await api.post('/settings/troca-coin-confirmation', { isEnabled: newStatus });
+            await api.post('/settings/troca-coin-method', { method: newMethod });
         } catch (error) {
-            alert("Failed to update Troca Coin setting. Reverting change.");
-            setIsTrocaCoinEnabled(!newStatus);
+            alert("Failed to update Troca Coin method. Reverting change.");
+            setTrocaCoinMethod(oldMethod); // Revert on failure
         }
     };
 
@@ -184,17 +201,30 @@ const AutoConfirmationPage = () => {
                     When enabled, invoices for "Alfa Trust" will be confirmed automatically via the bank's API, overriding the standard method. A '🟢' reaction indicates success, a '🔴' indicates the transaction was not found.
                 </Description>
 
-                <SettingRow>
-                        <SettingLabel>Enable Troca Coin Telegram Confirmation</SettingLabel>
-                        <SwitchContainer>
-                            <SwitchInput 
-                                type="checkbox" 
-                                checked={isTrocaCoinEnabled}
-                                onChange={() => handleTrocaCoinToggle('Troca Coin', isTrocaCoinEnabled, setIsTrocaCoinEnabled, '/settings/troca-coin-confirmation')}
-                            />
-                            <Slider />
-                        </SwitchContainer>
-                    </SettingRow>
+                <SettingLabel style={{marginBottom: '1rem', display: 'block'}}>Troca Coin / MKS Confirmation Method</SettingLabel>
+                <RadioGroup>
+                    <RadioLabel>
+                        <input 
+                            type="radio" 
+                            value="telegram" 
+                            checked={trocaCoinMethod === 'telegram'} 
+                            onChange={handleTrocaCoinMethodChange}
+                        />
+                        Telegram Listener
+                    </RadioLabel>
+                    <RadioLabel>
+                        <input 
+                            type="radio" 
+                            value="xpayz" 
+                            checked={trocaCoinMethod === 'xpayz'} 
+                            onChange={handleTrocaCoinMethodChange}
+                        />
+                        XPayz API
+                    </RadioLabel>
+                </RadioGroup>
+                <Description style={{ fontSize: '0.9rem', marginTop: '0.5rem' }}>
+                    Select the data source to use for automatically confirming "Troca Coin" or "MKS" invoices.
+                </Description>
             </Card>
         </PageContainer>
     );

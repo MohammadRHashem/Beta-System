@@ -17,6 +17,16 @@ export const GlobalStyles = createGlobalStyle`
     margin: 0;
     padding: 0;
   }
+  
+  html {
+    font-size: 16px; // Default font size for desktop
+
+    // === THE FIX: Reduce base font size on smaller screens ===
+    @media (max-width: 768px) {
+      font-size: 14px;
+    }
+  }
+
   body {
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
     background-color: ${theme.background};

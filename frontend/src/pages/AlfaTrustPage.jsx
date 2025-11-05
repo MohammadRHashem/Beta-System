@@ -173,10 +173,15 @@ const AlfaTrustPage = () => { // No longer accepts socket as a prop
         }
     };
 
-    const handleExportExcel = async () => {
+     const handleExportExcel = async () => {
         setIsExporting(true);
         try {
-            await exportAlfaExcel(filters); // Pass the current filters
+            // Create a fresh params object using the FINAL debounced search value
+            const exportParams = {
+                ...filters,
+                search: debouncedSearch, // Use the debounced value!
+            };
+            await exportAlfaExcel(exportParams);
         } catch (error) {
             console.error("Failed to export Excel:", error);
             alert("Failed to export Excel file.");

@@ -265,3 +265,40 @@ exports.setTrocaCoinConfirmationStatus = async (req, res) => {
         res.status(500).json({ message: 'Failed to update status.' });
     }
 };
+
+
+exports.getTrocaCoinMethod = async (req, res) => {
+    try {
+        const [[setting]] = await pool.query(
+            "SELECT setting_value FROM system_settings WHERE setting_key = 'troca_coin_confirmation_method'"
+        );
+        // Default to 'telegram' if the setting doesn't exist for some reason
+        const method = setting ? setting.setting_value : 'telegram';
+        res.json({ method });
+    } catch (error) {
+        console.error('[ERROR] Failed to fetch Troca Coin confirmation method:', error);
+        res.status(500).json({ message: 'Failed to fetch method.' });
+    }
+};
+
+exports.setTrocaCoinMethod = async (req, res) => {
+    const { method } = req.body;
+    if (!['telegram', 'xpayz'].includes(method)) {
+        return res.status(400).json({ message: 'Invalid method specified. Must be "telegram" or "xpayz".' });
+    }
+
+    try {
+        const query = `
+            INSERT INTO system_settings (setting_key, setting_value) VALUES (?, ?)
+            ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value);
+        `;
+        await pool.query(query, ['troca_coin_confirmation_method', method]);
+        
+        // Notify the whatsapp service to refresh its internal state
+        whatsappService.refreshTrocaCoinMethod();
+        res.json({ message: `Troca Coin confirmation method successfully set to '${method}'.` });
+    } catch (error) {
+        console.error('[ERROR] Failed to update Troca Coin confirmation method:', error);
+        res.status(500).json({ message: 'Failed to update method.' });
+    }
+};

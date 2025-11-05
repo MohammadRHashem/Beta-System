@@ -9,7 +9,9 @@ const dotenv = require("dotenv");
 const { Queue, Worker } = require("bullmq");
 const cron = require("node-cron");
 const axios = require('axios');
-const alfaAuthService = require('./alfaAuthService'); 
+const alfaAuthService = require('./alfaAuthService');
+const { syncSingleSubaccount } = require('../xpayzSyncService');
+const { parseFormattedCurrency } = require('../utils/currencyParser');
 
 let client;
 let qrCodeData;
@@ -21,6 +23,8 @@ let io; // To hold the socket.io instance
 let isAutoConfirmationEnabled = false;
 let isAlfaApiConfirmationEnabled = false;
 let isTrocaCoinTelegramEnabled = false;
+let trocaCoinConfirmationMethod = 'telegram';
+const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms)); 
 
 const redisConnection = {
   host: "localhost",
@@ -49,6 +53,34 @@ const sendPingToMonitor = async () => {
     } catch (error) {
         // We don't log errors here to avoid spamming the console.
         // The monitor server is responsible for alerting on failure.
+    }
+};
+
+const findAlfaTrustMatchInDb = async (invoiceJson) => {
+    const searchAmount = parseFormattedCurrency(invoiceJson.amount);
+    const searchSender = (invoiceJson.sender?.name || '').trim();
+
+    if (searchAmount === 0 || !searchSender) {
+        return false;
+    }
+
+    // This query is optimized to check for recent, incoming transactions
+    const query = `
+        SELECT id FROM alfa_transactions
+        WHERE operation = 'C'
+        AND value = ?
+        AND payer_name = ?
+        AND inclusion_date >= NOW() - INTERVAL 48 HOUR
+        LIMIT 1;
+    `;
+    const params = [searchAmount, searchSender];
+
+    try {
+        const [[match]] = await pool.query(query, params);
+        return !!match; // Returns true if a match is found, false otherwise
+    } catch (dbError) {
+        console.error('[DB-CONFIRM-ERROR] Error querying alfa_transactions table:', dbError);
+        return false; // On error, we assume no match and proceed to API check
     }
 };
 
@@ -123,6 +155,50 @@ const findBestTelegramMatch = async (searchAmount, searchSender) => {
 };
 
 
+
+
+const findBestXPayzMatch = async (searchAmount, searchSender, subaccountPool = []) => {
+  if (!searchSender || !searchAmount) {
+    return null;
+  }
+  try {
+    let query = `
+      SELECT id, sender_name_normalized FROM xpayz_transactions 
+      WHERE amount = ? AND is_used = FALSE
+    `;
+    const params = [searchAmount];
+
+    // If a pool of subaccounts is provided, filter the search
+    if (subaccountPool.length > 0) {
+      query += ` AND subaccount_id IN (?)`;
+      params.push(subaccountPool);
+    }
+    
+    const [foundTxs] = await pool.query(query, params);
+
+    if (foundTxs.length === 0) return null;
+
+    const ocrNameNormalized = searchSender
+      .toLowerCase()
+      .replace(/[,.]/g, "")
+      .replace(/\b(ltda|me|sa|eireli|epp)\b/g, "")
+      .replace(/\s+/g, " ")
+      .trim();
+
+    for (const tx of foundTxs) {
+      if (tx.sender_name_normalized && tx.sender_name_normalized.includes(ocrNameNormalized)) {
+        console.log(`[XPAYZ-MATCH] Found match via Substring.`);
+        return tx.id;
+      }
+    }
+    return null;
+  } catch (dbError) {
+    console.error("[DB-CONFIRM-ERROR] Error querying xpayz_transactions table:", dbError);
+    return null;
+  }
+};
+
+
 const invoiceWorker = new Worker(
   "invoice-processing-queue",
   async (job) => {
@@ -188,7 +264,8 @@ const invoiceWorker = new Worker(
         recipientNameLower.includes("troca") ||
         recipientNameLower.includes("mks intermediacoes") ||
         recipientNameLower.includes("alfa trust") ||
-        recipientNameLower.includes("trkbit")
+        recipientNameLower.includes("trkbit") ||
+        recipientNameLower.includes("upgrade zone")
       ) {
         if (transaction_id && transaction_id.trim() !== "" && amount) {
           const trimmedTransactionId = transaction_id.trim();
@@ -214,67 +291,158 @@ const invoiceWorker = new Worker(
       let wasActioned = false;
 
       // --- PRIORITY 2: TROCA COIN TELEGRAM CONFIRMATION (Using Smart Match) ---
-      if (
-        isTrocaCoinTelegramEnabled &&
-        (recipientNameLower.includes("troca") ||
-          recipientNameLower.includes("mks intermediacoes"))
-      ) {
-        console.log(
-          '[WORKER] "Troca Coin/MKS" recipient detected. Checking DB with Smart Match...'
-        );
-        const matchId = await findBestTelegramMatch(
-          parseFloat(amount.replace(",", "")),
-          sender.name
+      if (recipientNameLower.includes("upgrade zone")) {
+        const sourceGroupJid = chat.id._serialized;
+        const searchAmount = parseFloat(amount.replace(/,/g, ""));
+        
+        const [[assignmentRule]] = await pool.query(
+            'SELECT subaccount_number FROM subaccounts WHERE assigned_group_jid = ?',
+            [sourceGroupJid]
         );
 
-        if (matchId) {
-          console.log(
-            `[DB-CONFIRM] Smart Match successful (ID: ${matchId}). Replying "Caiu".`
-          );
-          await pool.query(
-            "UPDATE telegram_transactions SET is_used = TRUE WHERE id = ?",
-            [matchId]
-          );
-          await originalMessage.reply("Caiu");
-          await originalMessage.react("🟢");
-          runStandardForwarding = false;
-          wasActioned = true;
+        if (assignmentRule) {
+            // SCENARIO 1: The Group IS Assigned
+            const targetSubaccountId = assignmentRule.subaccount_number;
+            console.log(`[WORKER][UPGRADE-ZONE] Group is assigned to subaccount ${targetSubaccountId}.`);
+            
+            // --- First Check ---
+            let matchId = await findBestXPayzMatch(searchAmount, sender.name, [targetSubaccountId]);
+            
+            // --- JIT SYNC & Second Check (if first check fails) ---
+            if (!matchId) {
+                console.log('[WORKER][JIT-SYNC] First check failed. Triggering immediate on-demand sync...');
+                await syncSingleSubaccount(targetSubaccountId);
+                await delay(2000); // Wait 2 seconds for DB to update
+                console.log('[WORKER][JIT-SYNC] Re-checking database after sync...');
+                matchId = await findBestXPayzMatch(searchAmount, sender.name, [targetSubaccountId]);
+            }
+            
+            if (matchId) {
+                // Correct payment!
+                await pool.query('UPDATE xpayz_transactions SET is_used = TRUE WHERE id = ?', [matchId]);
+                await originalMessage.reply("Caiu");
+                await originalMessage.react("🟢");
+                wasActioned = true;
+                runStandardForwarding = false;
+            } else {
+                // Incorrect payment (CONFIRMED after JIT sync)
+                await originalMessage.reply("no caiu, pix is wrong");
+                await originalMessage.react("🔴");
+                wasActioned = true;
+                runStandardForwarding = false;
+            }
+
         } else {
-          console.log(
-            `[DB-CONFIRM] No Smart Match found in DB. Falling back to manual confirmation.`
-          );
+            // SCENARIO 2: The Group is NOT Assigned (General Pool)
+            console.log('[WORKER][UPGRADE-ZONE] Group is not assigned. Searching in general pool...');
+            
+            const [unassignedSubaccounts] = await pool.query('SELECT subaccount_number FROM subaccounts WHERE assigned_group_jid IS NULL');
+            const unassignedPoolIds = unassignedSubaccounts.map(acc => acc.subaccount_number);
+
+            if (unassignedPoolIds.length > 0) {
+                // --- First Check ---
+                let matchId = await findBestXPayzMatch(searchAmount, sender.name, unassignedPoolIds);
+                
+                // --- JIT SYNC & Second Check (if first check fails) ---
+                if (!matchId) {
+                    console.log('[WORKER][JIT-SYNC] First check of general pool failed. Triggering on-demand sync for all unassigned accounts...');
+                    for (const subId of unassignedPoolIds) {
+                        await syncSingleSubaccount(subId);
+                    }
+                    await delay(2000); // Wait 2 seconds
+                    console.log('[WORKER][JIT-SYNC] Re-checking general pool after sync...');
+                    matchId = await findBestXPayzMatch(searchAmount, sender.name, unassignedPoolIds);
+                }
+
+                if (matchId) {
+                    await pool.query('UPDATE xpayz_transactions SET is_used = TRUE WHERE id = ?', [matchId]);
+                    await originalMessage.reply("Caiu");
+                    await originalMessage.react("🟢");
+                    wasActioned = true;
+                    runStandardForwarding = false;
+                } else {
+                    console.log('[DB-CONFIRM] No match found in general pool after JIT sync. Falling back to manual forwarding.');
+                }
+            } else {
+                console.log('[DB-CONFIRM] No unassigned subaccounts available to check. Falling back to manual forwarding.');
+            }
         }
-      }
+    }
+
+    // --- PRIORITY 2.5: ORIGINAL TROCA COIN / MKS CONFIRMATION (Fallback) ---
+    // (This block is now also upgraded with JIT logic for XPayz)
+    if (runStandardForwarding && (recipientNameLower.includes("troca") || recipientNameLower.includes("mks intermediacoes"))) {
+        let matchId = null;
+        let updateTable = '';
+
+        if (trocaCoinConfirmationMethod === 'telegram') {
+            console.log('[WORKER] "Troca Coin/MKS" detected. Using TELEGRAM confirmation method...');
+            matchId = await findBestTelegramMatch(parseFloat(amount.replace(/,/g, "")), sender.name);
+            updateTable = 'telegram_transactions';
+        } else if (trocaCoinConfirmationMethod === 'xpayz') {
+            console.log('[WORKER] "Troca Coin/MKS" detected. Using XPAYZ confirmation method...');
+            updateTable = 'xpayz_transactions';
+            const [unassignedSubaccounts] = await pool.query('SELECT subaccount_number FROM subaccounts WHERE assigned_group_jid IS NULL');
+            const unassignedPoolIds = unassignedSubaccounts.map(acc => acc.subaccount_number);
+            
+            // First check
+            matchId = await findBestXPayzMatch(parseFloat(amount.replace(/,/g, "")), sender.name, unassignedPoolIds);
+            
+            // JIT Sync and Re-check
+            if (!matchId && unassignedPoolIds.length > 0) {
+                console.log('[WORKER][JIT-SYNC] First check of general pool failed for Troca Coin. Syncing all unassigned accounts...');
+                for (const subId of unassignedPoolIds) {
+                    await syncSingleSubaccount(subId);
+                }
+                await delay(2000);
+                matchId = await findBestXPayzMatch(parseFloat(amount.replace(/,/g, "")), sender.name, unassignedPoolIds);
+            }
+        }
+
+        if (matchId) {
+            await pool.query(`UPDATE ${updateTable} SET is_used = TRUE WHERE id = ?`, [matchId]);
+            await originalMessage.reply("Caiu");
+            await originalMessage.react("🟢");
+            wasActioned = true;
+            runStandardForwarding = false;
+        } else {
+            console.log(`[DB-CONFIRM] No Smart Match found in ${trocaCoinConfirmationMethod} data after JIT sync. Falling back to manual forwarding.`);
+        }
+    }
 
       // --- 3. PRIORITY 2.5: ALFA TRUST API CONFIRMATION ---
       if (
-        runStandardForwarding &&
-        isAlfaApiConfirmationEnabled &&
-        recipientNameLower.includes("alfa trust")
+      runStandardForwarding &&
+      isAlfaApiConfirmationEnabled &&
+      recipientNameLower.includes("alfa trust")
       ) {
-        console.log(
-          '[WORKER] "Alfa Trust" recipient detected. Initiating API confirmation...'
-        );
-        const apiResult = await alfaAuthService.findTransaction(invoiceJson);
+        console.log('[WORKER] "Alfa Trust" recipient detected. Checking local DB first...');
+        
+        // Step 1: Check Local DB
+        const dbMatch = await findAlfaTrustMatchInDb(invoiceJson);
 
-        // Only a definitive 'found' status will stop the forwarding process.
-        if (apiResult.status === "found") {
-          console.log(`[ALFA-CONFIRM] Confirmed via API. Replying "Caiu".`);
-          await originalMessage.react("🟢");
-          await originalMessage.reply("Caiu");
-          wasActioned = true;
-          runStandardForwarding = false; // Prevent fallback
-        } else if (apiResult.status === "not_found") {
-          console.log(
-            `[ALFA-CONFIRM] Not found via API. Falling back to standard manual confirmation.`
-          );
-          // Let runStandardForwarding remain true to trigger the fallback.
+        if (dbMatch) {
+            // Found in DB - this is the fastest path
+            console.log(`[ALFA-CONFIRM-DB] Confirmed via local database. Replying "Caiu".`);
+            await originalMessage.reply("Caiu");
+            await originalMessage.react("🟢");
+            wasActioned = true;
+            runStandardForwarding = false;
         } else {
-          // 'error'
-          console.warn(
-            "[ALFA-CONFIRM] API call failed. Falling back to standard manual confirmation logic."
-          );
-          // Let runStandardForwarding remain true to trigger the fallback.
+            // Step 2: If not in DB, check the Live API as a fallback
+            console.log('[ALFA-CONFIRM-DB] Not found in local DB. Checking live API as a fallback...');
+            const apiResult = await alfaAuthService.findTransaction(invoiceJson);
+
+            if (apiResult.status === "found") {
+                console.log(`[ALFA-CONFIRM-API] Confirmed via live API. Replying "Caiu".`);
+                await originalMessage.reply("Caiu");
+                await originalMessage.react("🟢");
+                wasActioned = true;
+                runStandardForwarding = false;
+            } else {
+                // Step 3: If not found in API either, fall back to manual forwarding
+                console.log('[ALFA-CONFIRM-API] Not found via live API. Falling back to manual confirmation.');
+            }
         }
       }
 
@@ -532,7 +700,7 @@ const reconcileMissedMessages = async () => {
     const groups = chats.filter((chat) => chat.isGroup);
 
     for (const group of groups) {
-      const recentMessages = await group.fetchMessages({ limit: 100 }); 
+      const recentMessages = await group.fetchMessages({ limit: 500 }); 
       for (const msg of recentMessages) {
         if (msg.timestamp >= cutoffTimestamp && msg.hasMedia && !msg.fromMe) {
           allRecentMessageIds.add(msg.id._serialized);
@@ -662,8 +830,51 @@ const reconcileDeletedMessages = async () => {
     }
 };
 
+
+
+let isAuditing = false;
+const auditAndReconcileInternalLog = async () => {
+    if (isAuditing) {
+        console.log("[AUDITOR] Audit already in progress. Skipping.");
+        return;
+    }
+    isAuditing = true;
+    console.log("[AUDITOR] Starting internal audit of received vs. processed messages.");
+
+    try {
+        const connection = await pool.getConnection();
+        // Find message IDs that exist in our raw log but are NOT in the processed list.
+        const [missedMessages] = await connection.query(`
+            SELECT rml.message_id 
+            FROM raw_message_log rml
+            LEFT JOIN processed_messages pm ON rml.message_id = pm.message_id
+            WHERE pm.message_id IS NULL 
+            AND rml.received_at >= NOW() - INTERVAL 24 HOUR; 
+        `);
+        connection.release();
+
+        if (missedMessages.length > 0) {
+            console.log(`[AUDITOR] Found ${missedMessages.length} messages that were received but not queued. Processing them now.`);
+            for (const row of missedMessages) {
+                // We re-run the original, safe queueing function for each missed ID.
+                await queueMessageIfNotExists(row.message_id);
+            }
+        } else {
+            console.log("[AUDITOR] No discrepancies found. All received messages have been queued.");
+        }
+
+    } catch (error) {
+        console.error("[AUDITOR-ERROR] A critical error occurred during the internal audit:", error);
+    } finally {
+        isAuditing = false;
+    }
+};
+
+
+
 const handleMessage = async (message) => {
   try {
+    await pool.query("INSERT IGNORE INTO raw_message_log (message_id) VALUES (?)", [message.id._serialized]);
     const chat = await message.getChat();
     if (!chat.isGroup) return;
 
@@ -817,6 +1028,19 @@ const handleReaction = async (reaction) => {
   }
 };
 
+const refreshTrocaCoinMethod = async () => {
+  try {
+    const [[setting]] = await pool.query(
+        "SELECT setting_value FROM system_settings WHERE setting_key = 'troca_coin_confirmation_method'"
+    );
+    trocaCoinConfirmationMethod = setting ? setting.setting_value : 'telegram';
+    console.log(`[SETTINGS] Troca Coin Confirmation Method is now set to '${trocaCoinConfirmationMethod}'.`);
+  } catch (error) {
+    console.error("[SETTINGS-ERROR] Failed to refresh Troca Coin method:", error);
+    trocaCoinConfirmationMethod = 'telegram'; // Default to telegram on error
+  }
+};
+
 const initializeWhatsApp = (socketIoInstance) => {
     io = socketIoInstance;
     console.log("[WAPP] Initializing WhatsApp client...");
@@ -841,12 +1065,15 @@ const initializeWhatsApp = (socketIoInstance) => {
       connectionStatus = "qr";
     });
     client.on("ready", async () => {
-      cron.schedule("*/2 * * * * *", sendPingToMonitor);
-      console.log("[HEARTBEAT] Pinger to AWS monitor scheduled to run every second.");
+      cron.schedule("*/1 * * * *", auditAndReconcileInternalLog);
+      console.log("[AUDITOR] Internal message auditor scheduled to run every minute.");
+      // cron.schedule("*/2 * * * * *", sendPingToMonitor);
+      // console.log("[HEARTBEAT] Pinger to AWS monitor scheduled to run every second.");
       qrCodeData = null;
       connectionStatus = "connected";
       refreshAlfaApiConfirmationStatus();
       refreshTrocaCoinStatus();
+      refreshTrocaCoinMethod();
       refreshAbbreviationCache();
       refreshAutoConfirmationStatus();
 
@@ -946,4 +1173,5 @@ module.exports = {
   refreshAutoConfirmationStatus,
   refreshAlfaApiConfirmationStatus,
   refreshTrocaCoinStatus,
+  refreshTrocaCoinMethod,
 };
