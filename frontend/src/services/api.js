@@ -171,6 +171,16 @@ export const deleteSubaccount = (id) => apiClient.delete(`/subaccounts/${id}`);
 export const getSubaccountCredentials = (id) => apiClient.get(`/subaccounts/${id}/credentials`);
 export const resetSubaccountPassword = (id) => apiClient.post(`/subaccounts/${id}/credentials/reset`);
 
+
+
+//usdt
+export const getUsdtWallets = () => apiClient.get('/usdt-wallets');
+export const createUsdtWallet = (data) => apiClient.post('/usdt-wallets', data);
+export const updateUsdtWallet = (id, data) => apiClient.put(`/usdt-wallets/${id}`, data);
+export const deleteUsdtWallet = (id) => apiClient.delete(`/usdt-wallets/${id}`);
+export const toggleUsdtWallet = (id, is_enabled) => apiClient.patch(`/usdt-wallets/${id}/toggle`, { is_enabled });
+
+
 // === NEW: API functions for Alfa Trust Page ===
 export const triggerAlfaSync = () => apiClient.post('/alfa-trust/trigger-sync');
 export const getAlfaTransactions = (params) => apiClient.get('/alfa-trust/transactions', { params });

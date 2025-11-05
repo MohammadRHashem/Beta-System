@@ -18,6 +18,7 @@ import AutoConfirmationPage from "./AutoConfirmationPage";
 import DirectForwardingPage from "./DirectForwardingPage";
 import AlfaTrustPage from "./AlfaTrustPage";
 import SubaccountsPage from "./SubaccountsPage";
+import UsdtWalletsPage from "./UsdtWalletsPage";
 
 const AppLayout = styled.div`
   display: flex;
@@ -139,6 +140,10 @@ const MainLayout = () => {
               <Route
                 path="/subaccounts"
                 element={<SubaccountsPage allGroups={allGroups} />}
+              />
+              <Route
+                path="/usdt-wallets"
+                element={<UsdtWalletsPage />}
               />
               <Route path="/position" element={<PositionPage />} />
 

@@ -24,6 +24,8 @@ const subaccountController = require('./controllers/subaccountController');
 const portalController = require('./controllers/portalController');
 const portalAuthMiddleware = require('./middleware/portalAuthMiddleware');
 
+const usdtWalletRoutes = require('./routes/usdtWalletRoutes');
+
 const portalRoutes = require('./routes/portalRoutes');
 
 
@@ -138,6 +140,9 @@ apiRouter.put('/subaccounts/:id', subaccountController.update);
 apiRouter.delete('/subaccounts/:id', subaccountController.delete);
 apiRouter.get('/subaccounts/:id/credentials', subaccountController.getCredentials);
 apiRouter.post('/subaccounts/:id/credentials/reset', subaccountController.resetPassword);
+
+
+apiRouter.use('/usdt-wallets', usdtWalletRoutes);
 
 // Use the new apiRouter for all routes starting with /api
 app.use('/api', apiRouter);

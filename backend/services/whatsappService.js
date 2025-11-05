@@ -11,6 +11,7 @@ const cron = require("node-cron");
 const axios = require('axios');
 const alfaAuthService = require('./alfaAuthService');
 const { syncSingleSubaccount } = require('../xpayzSyncService');
+// const usdtService = require('./usdtService');
 const { parseFormattedCurrency } = require('../utils/currencyParser');
 
 let client;
@@ -231,6 +232,8 @@ const invoiceWorker = new Worker(
       await fs.writeFile(tempFilePath, Buffer.from(media.data, "base64"));
 
       const pythonScriptsDir = path.join(__dirname, "..", "python_scripts");
+      const mainScriptPath = path.join(pythonScriptsDir, "main.py");
+      const usdtScriptPath = path.join(pythonScriptsDir, "usdt_validator.py");
       const pythonExecutable =
         process.platform === "win32" ? "python.exe" : "python3";
       const pythonScriptPath = path.join(pythonScriptsDir, "main.py");
@@ -290,159 +293,277 @@ const invoiceWorker = new Worker(
       let runStandardForwarding = true;
       let wasActioned = false;
 
+      //USDT Transaction Confirmation
+      if (recipientNameLower.includes("usdt_recipient")) {
+        console.log('[WORKER] "USDT_RECIPIENT" detected. Running dedicated USDT validator...');
+        
+        const [wallets] = await pool.query('SELECT wallet_address FROM usdt_wallets WHERE is_enabled = 1');
+        if (wallets.length === 0) {
+            console.log('[USDT-WORKER] No wallets configured, falling back to manual forwarding.');
+        } else {
+            const ourWallets = wallets.map(w => w.wallet_address);
+            const discoverFlag = (!invoiceJson.transaction_id || invoiceJson.transaction_id.trim() === '') ? '--discover-txid' : '""';
+            const messageTimestamp = new Date(originalMessage.timestamp * 1000).toISOString();
+
+            try {
+                const { stdout: usdtStdout } = await execa(pythonExecutable, [
+                    usdtScriptPath,
+                    tempFilePath,
+                    discoverFlag,
+                    JSON.stringify(ourWallets),
+                    messageTimestamp
+                ]);
+                
+                const result = JSON.parse(usdtStdout);
+
+                if (result.status === 'CONFIRMED') {
+                    await originalMessage.reply(`${result.amount} USDT informed ✅`);
+                    await originalMessage.react("🟢");
+                    wasActioned = true;
+                    runStandardForwarding = false;
+                } else if (result.status === 'OUTGOING') {
+                    await originalMessage.react("📤");
+                    wasActioned = true;
+                    runStandardForwarding = false;
+                } else {
+                    console.log(`[USDT-VALIDATOR] Validation failed: ${result.reason}. Falling back to manual forwarding.`);
+                }
+            } catch (pyError) {
+                console.error('[USDT-VALIDATOR] Python script execution failed:', pyError.stderr || pyError.message);
+            }
+        }
+      }
+
       // --- PRIORITY 2: TROCA COIN TELEGRAM CONFIRMATION (Using Smart Match) ---
       if (recipientNameLower.includes("upgrade zone")) {
         const sourceGroupJid = chat.id._serialized;
         const searchAmount = parseFloat(amount.replace(/,/g, ""));
-        
+
         const [[assignmentRule]] = await pool.query(
-            'SELECT subaccount_number FROM subaccounts WHERE assigned_group_jid = ?',
-            [sourceGroupJid]
+          "SELECT subaccount_number FROM subaccounts WHERE assigned_group_jid = ?",
+          [sourceGroupJid]
         );
 
         if (assignmentRule) {
-            // SCENARIO 1: The Group IS Assigned
-            const targetSubaccountId = assignmentRule.subaccount_number;
-            console.log(`[WORKER][UPGRADE-ZONE] Group is assigned to subaccount ${targetSubaccountId}.`);
-            
-            // --- First Check ---
-            let matchId = await findBestXPayzMatch(searchAmount, sender.name, [targetSubaccountId]);
-            
-            // --- JIT SYNC & Second Check (if first check fails) ---
-            if (!matchId) {
-                console.log('[WORKER][JIT-SYNC] First check failed. Triggering immediate on-demand sync...');
-                await syncSingleSubaccount(targetSubaccountId);
-                await delay(2000); // Wait 2 seconds for DB to update
-                console.log('[WORKER][JIT-SYNC] Re-checking database after sync...');
-                matchId = await findBestXPayzMatch(searchAmount, sender.name, [targetSubaccountId]);
-            }
-            
-            if (matchId) {
-                // Correct payment!
-                await pool.query('UPDATE xpayz_transactions SET is_used = TRUE WHERE id = ?', [matchId]);
-                await originalMessage.reply("Caiu");
-                await originalMessage.react("🟢");
-                wasActioned = true;
-                runStandardForwarding = false;
-            } else {
-                // Incorrect payment (CONFIRMED after JIT sync)
-                await originalMessage.reply("no caiu, pix is wrong");
-                await originalMessage.react("🔴");
-                wasActioned = true;
-                runStandardForwarding = false;
-            }
+          // SCENARIO 1: The Group IS Assigned
+          const targetSubaccountId = assignmentRule.subaccount_number;
+          console.log(
+            `[WORKER][UPGRADE-ZONE] Group is assigned to subaccount ${targetSubaccountId}.`
+          );
 
-        } else {
-            // SCENARIO 2: The Group is NOT Assigned (General Pool)
-            console.log('[WORKER][UPGRADE-ZONE] Group is not assigned. Searching in general pool...');
-            
-            const [unassignedSubaccounts] = await pool.query('SELECT subaccount_number FROM subaccounts WHERE assigned_group_jid IS NULL');
-            const unassignedPoolIds = unassignedSubaccounts.map(acc => acc.subaccount_number);
+          // --- First Check ---
+          let matchId = await findBestXPayzMatch(searchAmount, sender.name, [
+            targetSubaccountId,
+          ]);
 
-            if (unassignedPoolIds.length > 0) {
-                // --- First Check ---
-                let matchId = await findBestXPayzMatch(searchAmount, sender.name, unassignedPoolIds);
-                
-                // --- JIT SYNC & Second Check (if first check fails) ---
-                if (!matchId) {
-                    console.log('[WORKER][JIT-SYNC] First check of general pool failed. Triggering on-demand sync for all unassigned accounts...');
-                    for (const subId of unassignedPoolIds) {
-                        await syncSingleSubaccount(subId);
-                    }
-                    await delay(2000); // Wait 2 seconds
-                    console.log('[WORKER][JIT-SYNC] Re-checking general pool after sync...');
-                    matchId = await findBestXPayzMatch(searchAmount, sender.name, unassignedPoolIds);
-                }
+          // --- JIT SYNC & Second Check (if first check fails) ---
+          if (!matchId) {
+            console.log(
+              "[WORKER][JIT-SYNC] First check failed. Triggering immediate on-demand sync..."
+            );
+            await syncSingleSubaccount(targetSubaccountId);
+            await delay(2000); // Wait 2 seconds for DB to update
+            console.log(
+              "[WORKER][JIT-SYNC] Re-checking database after sync..."
+            );
+            matchId = await findBestXPayzMatch(searchAmount, sender.name, [
+              targetSubaccountId,
+            ]);
+          }
 
-                if (matchId) {
-                    await pool.query('UPDATE xpayz_transactions SET is_used = TRUE WHERE id = ?', [matchId]);
-                    await originalMessage.reply("Caiu");
-                    await originalMessage.react("🟢");
-                    wasActioned = true;
-                    runStandardForwarding = false;
-                } else {
-                    console.log('[DB-CONFIRM] No match found in general pool after JIT sync. Falling back to manual forwarding.');
-                }
-            } else {
-                console.log('[DB-CONFIRM] No unassigned subaccounts available to check. Falling back to manual forwarding.');
-            }
-        }
-    }
-
-    // --- PRIORITY 2.5: ORIGINAL TROCA COIN / MKS CONFIRMATION (Fallback) ---
-    // (This block is now also upgraded with JIT logic for XPayz)
-    if (runStandardForwarding && (recipientNameLower.includes("troca") || recipientNameLower.includes("mks intermediacoes"))) {
-        let matchId = null;
-        let updateTable = '';
-
-        if (trocaCoinConfirmationMethod === 'telegram') {
-            console.log('[WORKER] "Troca Coin/MKS" detected. Using TELEGRAM confirmation method...');
-            matchId = await findBestTelegramMatch(parseFloat(amount.replace(/,/g, "")), sender.name);
-            updateTable = 'telegram_transactions';
-        } else if (trocaCoinConfirmationMethod === 'xpayz') {
-            console.log('[WORKER] "Troca Coin/MKS" detected. Using XPAYZ confirmation method...');
-            updateTable = 'xpayz_transactions';
-            const [unassignedSubaccounts] = await pool.query('SELECT subaccount_number FROM subaccounts WHERE assigned_group_jid IS NULL');
-            const unassignedPoolIds = unassignedSubaccounts.map(acc => acc.subaccount_number);
-            
-            // First check
-            matchId = await findBestXPayzMatch(parseFloat(amount.replace(/,/g, "")), sender.name, unassignedPoolIds);
-            
-            // JIT Sync and Re-check
-            if (!matchId && unassignedPoolIds.length > 0) {
-                console.log('[WORKER][JIT-SYNC] First check of general pool failed for Troca Coin. Syncing all unassigned accounts...');
-                for (const subId of unassignedPoolIds) {
-                    await syncSingleSubaccount(subId);
-                }
-                await delay(2000);
-                matchId = await findBestXPayzMatch(parseFloat(amount.replace(/,/g, "")), sender.name, unassignedPoolIds);
-            }
-        }
-
-        if (matchId) {
-            await pool.query(`UPDATE ${updateTable} SET is_used = TRUE WHERE id = ?`, [matchId]);
+          if (matchId) {
+            // Correct payment!
+            await pool.query(
+              "UPDATE xpayz_transactions SET is_used = TRUE WHERE id = ?",
+              [matchId]
+            );
             await originalMessage.reply("Caiu");
             await originalMessage.react("🟢");
             wasActioned = true;
             runStandardForwarding = false;
+          } else {
+            // Incorrect payment (CONFIRMED after JIT sync)
+            await originalMessage.reply("no caiu, pix is wrong");
+            await originalMessage.react("🔴");
+            wasActioned = true;
+            runStandardForwarding = false;
+          }
         } else {
-            console.log(`[DB-CONFIRM] No Smart Match found in ${trocaCoinConfirmationMethod} data after JIT sync. Falling back to manual forwarding.`);
+          // SCENARIO 2: The Group is NOT Assigned (General Pool)
+          console.log(
+            "[WORKER][UPGRADE-ZONE] Group is not assigned. Searching in general pool..."
+          );
+
+          const [unassignedSubaccounts] = await pool.query(
+            "SELECT subaccount_number FROM subaccounts WHERE assigned_group_jid IS NULL"
+          );
+          const unassignedPoolIds = unassignedSubaccounts.map(
+            (acc) => acc.subaccount_number
+          );
+
+          if (unassignedPoolIds.length > 0) {
+            // --- First Check ---
+            let matchId = await findBestXPayzMatch(
+              searchAmount,
+              sender.name,
+              unassignedPoolIds
+            );
+
+            // --- JIT SYNC & Second Check (if first check fails) ---
+            if (!matchId) {
+              console.log(
+                "[WORKER][JIT-SYNC] First check of general pool failed. Triggering on-demand sync for all unassigned accounts..."
+              );
+              for (const subId of unassignedPoolIds) {
+                await syncSingleSubaccount(subId);
+              }
+              await delay(2000); // Wait 2 seconds
+              console.log(
+                "[WORKER][JIT-SYNC] Re-checking general pool after sync..."
+              );
+              matchId = await findBestXPayzMatch(
+                searchAmount,
+                sender.name,
+                unassignedPoolIds
+              );
+            }
+
+            if (matchId) {
+              await pool.query(
+                "UPDATE xpayz_transactions SET is_used = TRUE WHERE id = ?",
+                [matchId]
+              );
+              await originalMessage.reply("Caiu");
+              await originalMessage.react("🟢");
+              wasActioned = true;
+              runStandardForwarding = false;
+            } else {
+              console.log(
+                "[DB-CONFIRM] No match found in general pool after JIT sync. Falling back to manual forwarding."
+              );
+            }
+          } else {
+            console.log(
+              "[DB-CONFIRM] No unassigned subaccounts available to check. Falling back to manual forwarding."
+            );
+          }
         }
-    }
+      }
+
+      // --- PRIORITY 2.5: ORIGINAL TROCA COIN / MKS CONFIRMATION (Fallback) ---
+      // (This block is now also upgraded with JIT logic for XPayz)
+      if (
+        runStandardForwarding &&
+        (recipientNameLower.includes("troca") ||
+          recipientNameLower.includes("mks intermediacoes"))
+      ) {
+        let matchId = null;
+        let updateTable = "";
+
+        if (trocaCoinConfirmationMethod === "telegram") {
+          console.log(
+            '[WORKER] "Troca Coin/MKS" detected. Using TELEGRAM confirmation method...'
+          );
+          matchId = await findBestTelegramMatch(
+            parseFloat(amount.replace(/,/g, "")),
+            sender.name
+          );
+          updateTable = "telegram_transactions";
+        } else if (trocaCoinConfirmationMethod === "xpayz") {
+          console.log(
+            '[WORKER] "Troca Coin/MKS" detected. Using XPAYZ confirmation method...'
+          );
+          updateTable = "xpayz_transactions";
+          const [unassignedSubaccounts] = await pool.query(
+            "SELECT subaccount_number FROM subaccounts WHERE assigned_group_jid IS NULL"
+          );
+          const unassignedPoolIds = unassignedSubaccounts.map(
+            (acc) => acc.subaccount_number
+          );
+
+          // First check
+          matchId = await findBestXPayzMatch(
+            parseFloat(amount.replace(/,/g, "")),
+            sender.name,
+            unassignedPoolIds
+          );
+
+          // JIT Sync and Re-check
+          if (!matchId && unassignedPoolIds.length > 0) {
+            console.log(
+              "[WORKER][JIT-SYNC] First check of general pool failed for Troca Coin. Syncing all unassigned accounts..."
+            );
+            for (const subId of unassignedPoolIds) {
+              await syncSingleSubaccount(subId);
+            }
+            await delay(2000);
+            matchId = await findBestXPayzMatch(
+              parseFloat(amount.replace(/,/g, "")),
+              sender.name,
+              unassignedPoolIds
+            );
+          }
+        }
+
+        if (matchId) {
+          await pool.query(
+            `UPDATE ${updateTable} SET is_used = TRUE WHERE id = ?`,
+            [matchId]
+          );
+          await originalMessage.reply("Caiu");
+          await originalMessage.react("🟢");
+          wasActioned = true;
+          runStandardForwarding = false;
+        } else {
+          console.log(
+            `[DB-CONFIRM] No Smart Match found in ${trocaCoinConfirmationMethod} data after JIT sync. Falling back to manual forwarding.`
+          );
+        }
+      }
 
       // --- 3. PRIORITY 2.5: ALFA TRUST API CONFIRMATION ---
       if (
-      runStandardForwarding &&
-      isAlfaApiConfirmationEnabled &&
-      recipientNameLower.includes("alfa trust")
+        runStandardForwarding &&
+        isAlfaApiConfirmationEnabled &&
+        recipientNameLower.includes("alfa trust")
       ) {
-        console.log('[WORKER] "Alfa Trust" recipient detected. Checking local DB first...');
-        
+        console.log(
+          '[WORKER] "Alfa Trust" recipient detected. Checking local DB first...'
+        );
+
         // Step 1: Check Local DB
         const dbMatch = await findAlfaTrustMatchInDb(invoiceJson);
 
         if (dbMatch) {
-            // Found in DB - this is the fastest path
-            console.log(`[ALFA-CONFIRM-DB] Confirmed via local database. Replying "Caiu".`);
+          // Found in DB - this is the fastest path
+          console.log(
+            `[ALFA-CONFIRM-DB] Confirmed via local database. Replying "Caiu".`
+          );
+          await originalMessage.reply("Caiu");
+          await originalMessage.react("🟢");
+          wasActioned = true;
+          runStandardForwarding = false;
+        } else {
+          // Step 2: If not in DB, check the Live API as a fallback
+          console.log(
+            "[ALFA-CONFIRM-DB] Not found in local DB. Checking live API as a fallback..."
+          );
+          const apiResult = await alfaAuthService.findTransaction(invoiceJson);
+
+          if (apiResult.status === "found") {
+            console.log(
+              `[ALFA-CONFIRM-API] Confirmed via live API. Replying "Caiu".`
+            );
             await originalMessage.reply("Caiu");
             await originalMessage.react("🟢");
             wasActioned = true;
             runStandardForwarding = false;
-        } else {
-            // Step 2: If not in DB, check the Live API as a fallback
-            console.log('[ALFA-CONFIRM-DB] Not found in local DB. Checking live API as a fallback...');
-            const apiResult = await alfaAuthService.findTransaction(invoiceJson);
-
-            if (apiResult.status === "found") {
-                console.log(`[ALFA-CONFIRM-API] Confirmed via live API. Replying "Caiu".`);
-                await originalMessage.reply("Caiu");
-                await originalMessage.react("🟢");
-                wasActioned = true;
-                runStandardForwarding = false;
-            } else {
-                // Step 3: If not found in API either, fall back to manual forwarding
-                console.log('[ALFA-CONFIRM-API] Not found via live API. Falling back to manual confirmation.');
-            }
+          } else {
+            // Step 3: If not found in API either, fall back to manual forwarding
+            console.log(
+              "[ALFA-CONFIRM-API] Not found via live API. Falling back to manual confirmation."
+            );
+          }
         }
       }
 
@@ -556,58 +677,30 @@ const invoiceWorker = new Worker(
       }
 
       // --- 5. FINAL STEP: ARCHIVING ---
-      const [archiveSettings] = await pool.query(
-        "SELECT archiving_enabled FROM group_settings WHERE group_jid = ?",
-        [chat.id._serialized]
-      );
-      const groupArchiveSettings = archiveSettings[0] || {
-        archiving_enabled: true,
-      };
-      let wasArchived = false;
+      const [archiveSettings] = await pool.query("SELECT archiving_enabled FROM group_settings WHERE group_jid = ?", [chat.id._serialized]);
+      const groupArchiveSettings = archiveSettings[0] || { archiving_enabled: true };
+
       if (groupArchiveSettings.archiving_enabled) {
         const archiveFileName = `${messageId}.${extension}`;
         const finalMediaPath = path.join(MEDIA_ARCHIVE_DIR, archiveFileName);
 
-        // Move the file from temp to archive
         await fs.rename(tempFilePath, finalMediaPath);
-        tempFilePaths.pop(); // Remove from cleanup list as it's now archived
+        tempFilePaths.pop(); 
 
         const correctUtcDate = new Date(originalMessage.timestamp * 1000);
         await pool.query(
           `INSERT INTO invoices (message_id, transaction_id, sender_name, recipient_name, pix_key, amount, source_group_jid, received_at, raw_json_data, media_path, is_deleted) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
-            messageId,
-            transaction_id,
-            sender?.name,
-            recipient.name,
-            recipient.pix_key,
-            amount,
-            chat.id._serialized,
-            correctUtcDate,
-            JSON.stringify(invoiceJson),
-            finalMediaPath,
-            false,
+            messageId, transaction_id, sender?.name, recipient.name, recipient.pix_key,
+            amount, chat.id._serialized, correctUtcDate, JSON.stringify(invoiceJson), finalMediaPath, false,
           ]
         );
-        wasArchived = true;
-        console.log(
-          `[ARCHIVE] Successfully archived invoice for message ${messageId}.`
-        );
-      }
-
-      if (wasArchived && !wasActioned) {
-        console.log(
-          `[WORKER] Invoice was archived but not forwarded. Applying final checkmark.`
-        );
-        // await originalMessage.react('⚠️');
-        // await originalMessage.reply("⚠️Ainda *não considerado* — espera Suporte responder p ver condição do comprovante.⚠️");
       }
     } catch (error) {
       console.error(`[WORKER-ERROR] Critical error processing job ${job?.id}:`, error);
-      await originalMessage.react(''); // Clear reaction on any unhandled failure
-      throw error; // Re-throw to let BullMQ handle the job failure
+      await originalMessage.react('');
+      throw error;
     } finally {
-      // Cleanup: always delete any remaining temp files
       for (const tempPath of tempFilePaths) {
           if (fsSync.existsSync(tempPath)) {
               await fs.unlink(tempPath);
@@ -681,62 +774,149 @@ const refreshAbbreviationCache = async () => {
   }
 };
 
-let isReconciling = false;
-const reconcileMissedMessages = async () => {
-  if (isReconciling) {
-    console.log("[RECONCILER] Missed message reconciliation already in progress. Skipping.");
-    return;
-  }
-  if (connectionStatus !== "connected") {
-    return;
-  }
-  isReconciling = true;
-  console.log("[RECONCILER] Starting check for missed messages from the last 10 hours.");
+// let isReconciling = false;
+// const reconcileMissedMessages = async () => {
+//   if (isReconciling) {
+//     console.log("[RECONCILER] Missed message reconciliation already in progress. Skipping.");
+//     return;
+//   }
+//   if (connectionStatus !== "connected") {
+//     return;
+//   }
+//   isReconciling = true;
+//   console.log("[RECONCILER] Starting check for missed messages from the last 10 hours.");
 
-  try {
-    const cutoffTimestamp = Math.floor((Date.now() - 10 * 60 * 60 * 1000) / 1000);
-    const allRecentMessageIds = new Set();
-    const chats = await client.getChats();
-    const groups = chats.filter((chat) => chat.isGroup);
+//   try {
+//     const cutoffTimestamp = Math.floor((Date.now() - 10 * 60 * 60 * 1000) / 1000);
+//     const allRecentMessageIds = new Set();
+//     const chats = await client.getChats();
+//     const groups = chats.filter((chat) => chat.isGroup);
 
-    for (const group of groups) {
-      const recentMessages = await group.fetchMessages({ limit: 500 }); 
-      for (const msg of recentMessages) {
-        if (msg.timestamp >= cutoffTimestamp && msg.hasMedia && !msg.fromMe) {
-          allRecentMessageIds.add(msg.id._serialized);
-        }
-      }
-    }
+//     for (const group of groups) {
+//       const recentMessages = await group.fetchMessages({ limit: 500 }); 
+//       for (const msg of recentMessages) {
+//         if (msg.timestamp >= cutoffTimestamp && msg.hasMedia && !msg.fromMe) {
+//           allRecentMessageIds.add(msg.id._serialized);
+//         }
+//       }
+//     }
 
-    if (allRecentMessageIds.size === 0) {
-      console.log("[RECONCILER] No recent media messages found. Check complete.");
-      isReconciling = false;
-      return;
-    }
+//     if (allRecentMessageIds.size === 0) {
+//       console.log("[RECONCILER] No recent media messages found. Check complete.");
+//       isReconciling = false;
+//       return;
+//     }
     
-    const [processedRows] = await pool.query(
-        `SELECT message_id FROM processed_messages WHERE message_id IN (?)`,
-        [[...allRecentMessageIds]]
-    );
-    const processedIds = new Set(processedRows.map(r => r.message_id));
-    const missedMessageIds = [...allRecentMessageIds].filter(id => !processedIds.has(id));
+//     const [processedRows] = await pool.query(
+//         `SELECT message_id FROM processed_messages WHERE message_id IN (?)`,
+//         [[...allRecentMessageIds]]
+//     );
+//     const processedIds = new Set(processedRows.map(r => r.message_id));
+//     const missedMessageIds = [...allRecentMessageIds].filter(id => !processedIds.has(id));
 
-    if (missedMessageIds.length > 0) {
-        console.log(`[RECONCILER] Found ${missedMessageIds.length} missed messages. Queuing them now.`);
-        for (const messageId of missedMessageIds) {
-            await queueMessageIfNotExists(messageId);
-        }
-        console.log(`[RECONCILER] Successfully queued ${missedMessageIds.length} missed jobs.`);
-    } else {
-        console.log("[RECONCILER] No missed messages found.");
+//     if (missedMessageIds.length > 0) {
+//         console.log(`[RECONCILER] Found ${missedMessageIds.length} missed messages. Queuing them now.`);
+//         for (const messageId of missedMessageIds) {
+//             await queueMessageIfNotExists(messageId);
+//         }
+//         console.log(`[RECONCILER] Successfully queued ${missedMessageIds.length} missed jobs.`);
+//     } else {
+//         console.log("[RECONCILER] No missed messages found.");
+//     }
+//   } catch (error) {
+//     console.error("[RECONCILER-ERROR] A critical error occurred during reconciliation:", error);
+//   } finally {
+//     isReconciling = false;
+//     console.log("[RECONCILER] Finished missed message reconciliation check.");
+//   }
+// };
+
+let isReconcilingStalledJobs = false;
+const reconcileStalledJobs = async () => {
+    if (isReconcilingStalledJobs) {
+        return;
     }
-  } catch (error) {
-    console.error("[RECONCILER-ERROR] A critical error occurred during reconciliation:", error);
-  } finally {
-    isReconciling = false;
-    console.log("[RECONCILER] Finished missed message reconciliation check.");
-  }
+    if (connectionStatus !== "connected") {
+        return;
+    }
+    isReconcilingStalledJobs = true;
+    console.log("[STALLED-RECONCILER] Starting check for jobs that are truly stalled in the queue.");
+
+    try {
+        const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
+        
+        // Get jobs that are in 'active' or 'waiting' state but are older than 5 minutes.
+        // This indicates a worker may have crashed while processing it.
+        const stalledJobs = await invoiceQueue.getJobs(['active', 'waiting'], 0, 100, true);
+
+        let requeuedCount = 0;
+        for (const job of stalledJobs) {
+            // Check if the job was created more than 5 minutes ago
+            if (job.timestamp < fiveMinutesAgo.getTime()) {
+                try {
+                    console.log(`[STALLED-RECONCILER] Found a potentially stalled job: ${job.id}. State: ${await job.getState()}`);
+                    
+                    // A safe way to handle this is to remove the old job and re-add it.
+                    // This avoids complex state management.
+                    await job.remove();
+                    await invoiceQueue.add("process-invoice", { messageId: job.id }, { jobId: job.id, removeOnComplete: true, removeOnFail: 50 });
+                    requeuedCount++;
+                    console.log(`[STALLED-RECONCILER] Successfully re-queued job ${job.id}.`);
+
+                } catch (error) {
+                    console.error(`[STALLED-RECONCILER] Failed to re-queue job ${job.id}:`, error.message);
+                }
+            }
+        }
+
+        if (requeuedCount > 0) {
+            console.log(`[STALLED-RECONCILER] Finished check. Re-queued ${requeuedCount} stalled jobs.`);
+        } else {
+            console.log("[STALLED-RECONCILER] Finished check. No stalled jobs found in the queue.");
+        }
+
+    } catch (error) {
+        console.error("[STALLED-RECONCILER-ERROR] A critical error occurred during stalled job reconciliation:", error);
+    } finally {
+        isReconcilingStalledJobs = false;
+    }
 };
+
+let isAuditing = false;
+const auditAndReconcileInternalLog = async () => {
+    if (isAuditing) {
+        return;
+    }
+    if (connectionStatus !== "connected") {
+        return;
+    }
+    isAuditing = true;
+
+    try {
+        const connection = await pool.getConnection();
+        const [missedMessages] = await connection.query(`
+            SELECT rml.message_id 
+            FROM raw_message_log rml
+            LEFT JOIN processed_messages pm ON rml.message_id = pm.message_id
+            WHERE pm.message_id IS NULL 
+            AND rml.received_at >= NOW() - INTERVAL 24 HOUR; 
+        `);
+        connection.release();
+
+        if (missedMessages.length > 0) {
+            console.log(`[AUDITOR] Found ${missedMessages.length} messages that were received but not queued. Processing them now.`);
+            for (const row of missedMessages) {
+                await queueMessageIfNotExists(row.message_id);
+            }
+        }
+
+    } catch (error) {
+        console.error("[AUDITOR-ERROR] A critical error occurred during the internal audit:", error);
+    } finally {
+        isAuditing = false;
+    }
+};
+
 
 const queueMessageIfNotExists = async (messageId) => {
     const connection = await pool.getConnection();
@@ -829,48 +1009,6 @@ const reconcileDeletedMessages = async () => {
         console.log("[DELETE-RECONCILER] Finished deletion reconciliation check.");
     }
 };
-
-
-
-let isAuditing = false;
-const auditAndReconcileInternalLog = async () => {
-    if (isAuditing) {
-        console.log("[AUDITOR] Audit already in progress. Skipping.");
-        return;
-    }
-    isAuditing = true;
-    console.log("[AUDITOR] Starting internal audit of received vs. processed messages.");
-
-    try {
-        const connection = await pool.getConnection();
-        // Find message IDs that exist in our raw log but are NOT in the processed list.
-        const [missedMessages] = await connection.query(`
-            SELECT rml.message_id 
-            FROM raw_message_log rml
-            LEFT JOIN processed_messages pm ON rml.message_id = pm.message_id
-            WHERE pm.message_id IS NULL 
-            AND rml.received_at >= NOW() - INTERVAL 24 HOUR; 
-        `);
-        connection.release();
-
-        if (missedMessages.length > 0) {
-            console.log(`[AUDITOR] Found ${missedMessages.length} messages that were received but not queued. Processing them now.`);
-            for (const row of missedMessages) {
-                // We re-run the original, safe queueing function for each missed ID.
-                await queueMessageIfNotExists(row.message_id);
-            }
-        } else {
-            console.log("[AUDITOR] No discrepancies found. All received messages have been queued.");
-        }
-
-    } catch (error) {
-        console.error("[AUDITOR-ERROR] A critical error occurred during the internal audit:", error);
-    } finally {
-        isAuditing = false;
-    }
-};
-
-
 
 const handleMessage = async (message) => {
   try {
@@ -1081,10 +1219,9 @@ const initializeWhatsApp = (socketIoInstance) => {
       await invoiceQueue.obliterate({ force: true });
       console.log('[STARTUP] Job queue cleared.');
 
-      cron.schedule("*/5 * * * *", reconcileMissedMessages); 
-      console.log("[RECONCILER] Safe, non-destructive message reconciler scheduled to run every 5 minutes.");
+      cron.schedule("*/5 * * * *", reconcileStalledJobs); 
+      console.log("[STALLED-RECONCILER] Stalled job reconciler scheduled to run every 5 minutes.");
 
-      // === THE EDIT: Schedule the new deletion reconciler ===
       cron.schedule("*/15 * * * *", reconcileDeletedMessages);
       console.log("[DELETE-RECONCILER] Proactive deletion-checking reconciler scheduled to run every 15 minutes.");
     });
