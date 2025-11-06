@@ -200,6 +200,27 @@ const findBestXPayzMatch = async (searchAmount, searchSender, subaccountPool = [
 };
 
 
+const findBestUsdtMatch = async (searchAmount, recipientAddress) => {
+    if (!searchAmount || !recipientAddress) {
+        return null;
+    }
+    try {
+        const query = `
+            SELECT id FROM usdt_transactions
+            WHERE to_address = ? 
+            AND amount_usdt = ? 
+            AND is_used = FALSE 
+            LIMIT 1;
+        `;
+        const [[match]] = await pool.query(query, [recipientAddress, searchAmount]);
+        return match ? match.id : null;
+    } catch (dbError) {
+        console.error("[DB-CONFIRM-ERROR] Error querying usdt_transactions table:", dbError);
+        return null;
+    }
+};
+
+
 const invoiceWorker = new Worker(
   "invoice-processing-queue",
   async (job) => {
@@ -295,42 +316,48 @@ const invoiceWorker = new Worker(
 
       //USDT Transaction Confirmation
       if (recipientNameLower.includes("usdt_recipient")) {
-        console.log('[WORKER] "USDT_RECIPIENT" detected. Running dedicated USDT validator...');
-        
-        const [wallets] = await pool.query('SELECT wallet_address FROM usdt_wallets WHERE is_enabled = 1');
-        if (wallets.length === 0) {
-            console.log('[USDT-WORKER] No wallets configured, falling back to manual forwarding.');
+        console.log('[WORKER] "USDT" type detected. Starting USDT logic...');
+        const { amount, recipient } = invoiceJson;
+        const recipientWallet = recipient ? recipient.wallet_address : null;
+
+        const [wallets] = await pool.query(
+          "SELECT wallet_address FROM usdt_wallets WHERE is_enabled = 1"
+        );
+        const ourWallets = new Set(wallets.map((w) => w.wallet_address));
+
+        if (recipientWallet && ourWallets.has(recipientWallet)) {
+          // It's an incoming transaction. Try to confirm it locally.
+          console.log(
+            "[USDT-WORKER] Detected INCOMING transaction. Checking local DB..."
+          );
+          const expectedAmount = parseFloat(amount);
+          const matchId = await findBestUsdtMatch(
+            expectedAmount,
+            recipientWallet
+          );
+
+          if (matchId) {
+            await pool.query(
+              "UPDATE usdt_transactions SET is_used = TRUE WHERE id = ?",
+              [matchId]
+            );
+            await originalMessage.reply(`Informed ✅`);
+            await originalMessage.react("🟢");
+            wasActioned = true;
+            runStandardForwarding = false;
+          } else {
+            console.log(
+              "[USDT-WORKER] No local match found. Falling back to manual forwarding."
+            );
+          }
         } else {
-            const ourWallets = wallets.map(w => w.wallet_address);
-            const discoverFlag = (!invoiceJson.transaction_id || invoiceJson.transaction_id.trim() === '') ? '--discover-txid' : '""';
-            const messageTimestamp = new Date(originalMessage.timestamp * 1000).toISOString();
-
-            try {
-                const { stdout: usdtStdout } = await execa(pythonExecutable, [
-                    usdtScriptPath,
-                    tempFilePath,
-                    discoverFlag,
-                    JSON.stringify(ourWallets),
-                    messageTimestamp
-                ]);
-                
-                const result = JSON.parse(usdtStdout);
-
-                if (result.status === 'CONFIRMED') {
-                    await originalMessage.reply(`${result.amount} USDT informed ✅`);
-                    await originalMessage.react("🟢");
-                    wasActioned = true;
-                    runStandardForwarding = false;
-                } else if (result.status === 'OUTGOING') {
-                    await originalMessage.react("📤");
-                    wasActioned = true;
-                    runStandardForwarding = false;
-                } else {
-                    console.log(`[USDT-VALIDATOR] Validation failed: ${result.reason}. Falling back to manual forwarding.`);
-                }
-            } catch (pyError) {
-                console.error('[USDT-VALIDATOR] Python script execution failed:', pyError.stderr || pyError.message);
-            }
+          // It's an outgoing transaction.
+          console.log(
+            "[USDT-WORKER] Detected OUTGOING transaction. Acknowledging."
+          );
+          await originalMessage.react("📤");
+          wasActioned = true;
+          runStandardForwarding = false;
         }
       }
 
@@ -1090,10 +1117,11 @@ const handleReaction = async (reaction) => {
     if (reactionEmoji === '👍' || reactionEmoji === '✅') {
       const originalMessage = await client.getMessageById(link.original_message_id);
       if (originalMessage) {
-        // === THE FIX: Reply BEFORE reacting ===
         await originalMessage.reply('Caiu');
         await originalMessage.react(''); 
         await originalMessage.react('🟢');
+        // === THE FIX: Reply BEFORE reacting ===
+        
         // === END FIX ===
         
         await pool.query(
