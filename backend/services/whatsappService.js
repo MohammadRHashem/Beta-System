@@ -169,7 +169,6 @@ const findBestXPayzMatch = async (searchAmount, searchSender, subaccountPool = [
     `;
     const params = [searchAmount];
 
-    // If a pool of subaccounts is provided, filter the search
     if (subaccountPool.length > 0) {
       query += ` AND subaccount_id IN (?)`;
       params.push(subaccountPool);
@@ -179,14 +178,18 @@ const findBestXPayzMatch = async (searchAmount, searchSender, subaccountPool = [
 
     if (foundTxs.length === 0) return null;
 
+    // --- BUG FIX IS HERE ---
+    // This logic is now identical to the Python script's normalization.
     const ocrNameNormalized = searchSender
       .toLowerCase()
-      .replace(/[,.]/g, "")
+      .replace(/[\d.,-]/g, "") // REMOVES digits, dots, commas, hyphens
       .replace(/\b(ltda|me|sa|eireli|epp)\b/g, "")
       .replace(/\s+/g, " ")
       .trim();
+    // --- END OF FIX ---
 
     for (const tx of foundTxs) {
+      // The .includes() check is still valuable for partial OCR reads
       if (tx.sender_name_normalized && tx.sender_name_normalized.includes(ocrNameNormalized)) {
         console.log(`[XPAYZ-MATCH] Found match via Substring.`);
         return tx.id;
@@ -197,6 +200,46 @@ const findBestXPayzMatch = async (searchAmount, searchSender, subaccountPool = [
     console.error("[DB-CONFIRM-ERROR] Error querying xpayz_transactions table:", dbError);
     return null;
   }
+};
+
+
+const findBestWalletMatch = (ocrAddress, ourWallets) => {
+    if (!ocrAddress || ourWallets.length === 0) {
+        return null;
+    }
+
+    const ocrLower = ocrAddress.toLowerCase();
+    const matches = [];
+
+    for (const wallet of ourWallets) {
+        const walletLower = wallet.toLowerCase();
+
+        // Tier 1: Exact match (highest confidence)
+        if (ocrLower === walletLower) {
+            return wallet; // Return immediately on perfect match
+        }
+
+        // Tier 2: Starts with and Ends with (high confidence for trimmed addresses)
+        if (ocrLower.includes('...') && 
+            walletLower.startsWith(ocrLower.split('...')[0]) && 
+            walletLower.endsWith(ocrLower.split('...')[1])) {
+            matches.push(wallet);
+            continue; 
+        }
+
+        // Tier 3: Contains (medium confidence)
+        if (walletLower.includes(ocrLower)) {
+            matches.push(wallet);
+        }
+    }
+
+    // Return a match only if it is unique to prevent ambiguity
+    if (matches.length === 1) {
+        return matches[0];
+    }
+
+    // If no matches or multiple ambiguous matches, return null
+    return null;
 };
 
 
@@ -1166,7 +1209,7 @@ const handleReaction = async (reaction) => {
         );
 
         if (invoiceToDelete) {
-          await connection.query('Update invoices SET is_deleted=1 WHERE id = ?', [invoiceToDelete.id]);
+          await connection.query('Update invoices SET is_deleted = 1 WHERE id = ?', [invoiceToDelete.id]);
           if (invoiceToDelete.media_path && fsSync.existsSync(invoiceToDelete.media_path)) {
             await fs.unlink(invoiceToDelete.media_path);
           }
