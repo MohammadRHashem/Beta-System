@@ -18,6 +18,7 @@ import AutoConfirmationPage from "./AutoConfirmationPage";
 import DirectForwardingPage from "./DirectForwardingPage";
 import AlfaTrustPage from "./AlfaTrustPage";
 import SubaccountsPage from "./SubaccountsPage";
+import ScheduledBroadcastsPage from "./ScheduledBroadcastsPage";
 import UsdtWalletsPage from "./UsdtWalletsPage";
 
 const AppLayout = styled.div`
@@ -137,6 +138,7 @@ const MainLayout = () => {
             </QRContainer>
           ) : (
             <Routes>
+              <Route path="/scheduled-broadcasts" element={<ScheduledBroadcastsPage />} />
               <Route
                 path="/subaccounts"
                 element={<SubaccountsPage allGroups={allGroups} />}

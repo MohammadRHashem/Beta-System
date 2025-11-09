@@ -6,6 +6,7 @@ const { Server } = require("socket.io");
 const authMiddleware = require('./middleware/authMiddleware');
 const path = require('path');
 const fs = require('fs');
+const pool = require('./config/db')
 
 // --- Controllers ---
 const authController = require('./controllers/authController');
@@ -28,6 +29,7 @@ const usdtWalletRoutes = require('./routes/usdtWalletRoutes');
 
 const portalRoutes = require('./routes/portalRoutes');
 
+const scheduledBroadcastRoutes = require('./routes/scheduledBroadcastRoutes');
 
 const app = express();
 const server = http.createServer(app);
@@ -148,6 +150,9 @@ apiRouter.use('/usdt-wallets', usdtWalletRoutes);
 app.use('/api', apiRouter);
 
 
+apiRouter.use('/scheduled-broadcasts', scheduledBroadcastRoutes);
+
+
 const frontendPath = path.join(__dirname, '..', 'frontend', 'dist');
 if (fs.existsSync(frontendPath)) {
     app.use(express.static(frontendPath));
@@ -156,10 +161,52 @@ if (fs.existsSync(frontendPath)) {
     });
 }
 
+io.on('connection', (socket) => {
+    console.log(`[Socket.io] User connected: ${socket.id}`);
+});
+
+io.on('run-scheduled-broadcast', async ({ jobId, nowUtc }) => {
+    console.log(`[SERVER] Received event to run scheduled job ID: ${jobId}`);
+    const connection = await pool.getConnection();
+    try {
+        const [[job]] = await connection.query('SELECT * FROM scheduled_broadcasts WHERE id = ?', [jobId]);
+        if (!job || !job.is_active) {
+            console.warn(`[SERVER] Job ${jobId} is no longer active or does not exist. Skipping.`);
+            return;
+        }
+
+        const [groups] = await connection.query('SELECT group_id FROM batch_group_link WHERE batch_id = ?', [job.batch_id]);
+        const [allGroups] = await connection.query('SELECT group_jid, group_name FROM whatsapp_groups');
+        const groupMap = new Map(allGroups.map(g => [g.group_jid, g.group_name]));
+        const groupObjects = groups
+            .map(g => ({ id: g.group_id, name: groupMap.get(g.group_id) || 'Unknown Group' }))
+            .filter(g => g.name !== 'Unknown Group');
+
+        if (groupObjects.length > 0) {
+            // Directly call the broadcast function from the already-loaded module
+            whatsappService.broadcast(io, null, groupObjects, job.message);
+
+            const updateQuery = 'UPDATE scheduled_broadcasts SET last_run_at = ?' + (job.schedule_type === 'ONCE' ? ', is_active = 0' : '') + ' WHERE id = ?';
+            await connection.query(updateQuery, [new Date(nowUtc), job.id]);
+
+            console.log(`[SERVER] Broadcast for job ID ${jobId} has been triggered.`);
+        } else {
+            console.warn(`[SERVER] Job ID ${jobId} skipped: No valid groups found for batch ID ${job.batch_id}.`);
+        }
+    } catch (error) {
+        console.error(`[SERVER] Failed to execute broadcast for job ID ${jobId}:`, error);
+    } finally {
+        connection.release();
+    }
+});
+
 const HOST = '0.0.0.0';
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, HOST, () => {
     console.log(`[SERVER] Server is running on http://${HOST}:${PORT}`);
     const whatsappService = require('./services/whatsappService');
     whatsappService.init(io);
+
+    const broadcastScheduler = require('./services/broadcastScheduler');
+    broadcastScheduler.initialize(io);
 });

@@ -362,51 +362,38 @@ const invoiceWorker = new Worker(
       //USDT Transaction Confirmation
       if (recipientNameLower.includes("usdt_recipient")) {
         console.log('[WORKER] "USDT" type detected. Starting USDT logic...');
-        const { amount, recipient } = invoiceJson;
-        const recipientWallet = recipient ? recipient.wallet_address : null;
+        const ocrRecipientWallet = recipient ? recipient.wallet_address : null;
 
-        const [wallets] = await pool.query(
-          "SELECT wallet_address FROM usdt_wallets WHERE is_enabled = 1"
-        );
-        const ourWallets = new Set(wallets.map((w) => w.wallet_address));
+        const [wallets] = await pool.query('SELECT wallet_address FROM usdt_wallets WHERE is_enabled = 1');
+        const ourWallets = wallets.map(w => w.wallet_address);
+        
+        const matchedWallet = findBestWalletMatch(ocrRecipientWallet, ourWallets);
 
-        if (recipientWallet && ourWallets.has(recipientWallet)) {
+        if (matchedWallet) {
           // It's an incoming transaction. Try to confirm it locally.
-          console.log(
-            "[USDT-WORKER] Detected INCOMING transaction. Checking local DB..."
-          );
+          console.log(`[USDT-WORKER] Detected INCOMING transaction via partial match to wallet ${matchedWallet}. Checking local DB...`);
           const expectedAmount = parseFloat(amount);
-          const matchId = await findBestUsdtMatch(
-            expectedAmount,
-            recipientWallet
-          );
+          const matchId = await findBestUsdtMatch(expectedAmount, matchedWallet);
 
           if (matchId) {
-            await pool.query(
-              "UPDATE usdt_transactions SET is_used = TRUE WHERE id = ?",
-              [matchId]
-            );
+            await pool.query('UPDATE usdt_transactions SET is_used = TRUE WHERE id = ?', [matchId]);
             await originalMessage.reply(`Informed ✅`);
             await originalMessage.react("🟢");
             wasActioned = true;
             runStandardForwarding = false;
           } else {
-            console.log(
-              "[USDT-WORKER] No local match found. Falling back to manual forwarding."
-            );
+            console.log('[USDT-WORKER] No local match found. Falling back to manual forwarding.');
           }
         } else {
-          // It's an outgoing transaction.
-          console.log(
-            "[USDT-WORKER] Detected OUTGOING transaction. Acknowledging."
-          );
+          // It's an outgoing transaction or an ambiguous match.
+          console.log('[USDT-WORKER] Detected OUTGOING or ambiguous transaction. Acknowledging.');
           await originalMessage.react("📤");
           wasActioned = true;
           runStandardForwarding = false;
         }
       }
 
-      // --- PRIORITY 2: TROCA COIN TELEGRAM CONFIRMATION (Using Smart Match) ---
+      // --- PRIORITY 2: UPGRADE ZONE CONFIRMATION (Using Smart Match) ---
       if (recipientNameLower.includes("upgrade zone")) {
         const sourceGroupJid = chat.id._serialized;
         const searchAmount = parseFloat(amount.replace(/,/g, ""));
@@ -434,7 +421,7 @@ const invoiceWorker = new Worker(
               "[WORKER][JIT-SYNC] First check failed. Triggering immediate on-demand sync..."
             );
             await syncSingleSubaccount(targetSubaccountId);
-            await delay(2000); // Wait 2 seconds for DB to update
+            await delay(4000); // Wait 2 seconds for DB to update
             console.log(
               "[WORKER][JIT-SYNC] Re-checking database after sync..."
             );
@@ -1179,8 +1166,8 @@ const handleReaction = async (reaction) => {
         }
     }
     
-    const confirmMessage = isUsdt ? "Informed" : "Caiu";
-    const rejectMessage = isUsdt ? "not informed" : "no caiu";
+    const confirmMessage = isUsdt ? "Informed ✅" : "Caiu";
+    const rejectMessage = isUsdt ? "Not Informed ❌" : "no caiu";
 
     if (reactionEmoji === '👍' || reactionEmoji === '✅') {
       const originalMessage = await client.getMessageById(link.original_message_id);
@@ -1344,10 +1331,18 @@ const initializeWhatsApp = (socketIoInstance) => {
     }
   };
 
-const broadcast = async (io, socketId, groupObjects, message) => {
+const broadcast = async (socketIo, socketId, groupObjects, message) => {
+  // This function is now perfect. It accepts the `io` instance as its first argument.
+  // The scheduler will pass the main `io` object, and the API controller will pass `req.io`.
+  const localIo = socketIo || io; // Use passed io, fallback to module-level
+  if (!localIo) {
+      console.error("[BROADCAST] IO object is not available.");
+      return;
+  }
+
   if (connectionStatus !== "connected") {
-    io.to(socketId).emit("broadcast:error", { message: "WhatsApp is not connected." });
-    return;
+      if(socketId) localIo.to(socketId).emit("broadcast:error", { message: "WhatsApp is not connected." });
+      return;
   }
   let successfulSends = 0;
   let failedSends = 0;

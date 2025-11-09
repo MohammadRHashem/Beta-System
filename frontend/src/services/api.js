@@ -181,6 +181,14 @@ export const deleteUsdtWallet = (id) => apiClient.delete(`/usdt-wallets/${id}`);
 export const toggleUsdtWallet = (id, is_enabled) => apiClient.patch(`/usdt-wallets/${id}/toggle`, { is_enabled });
 
 
+
+export const getScheduledBroadcasts = () => apiClient.get('/scheduled-broadcasts');
+export const createSchedule = (data) => apiClient.post('/scheduled-broadcasts', data);
+export const updateSchedule = (id, data) => apiClient.put(`/scheduled-broadcasts/${id}`, data);
+export const deleteSchedule = (id) => apiClient.delete(`/scheduled-broadcasts/${id}`);
+export const toggleSchedule = (id, is_active) => apiClient.patch(`/scheduled-broadcasts/${id}/toggle`, { is_active });
+
+
 // === NEW: API functions for Alfa Trust Page ===
 export const triggerAlfaSync = () => apiClient.post('/alfa-trust/trigger-sync');
 export const getAlfaTransactions = (params) => apiClient.get('/alfa-trust/transactions', { params });
