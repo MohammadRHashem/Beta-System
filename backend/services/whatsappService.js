@@ -57,6 +57,17 @@ const sendPingToMonitor = async () => {
     }
 };
 
+const normalizeNameForMatching = (name) => {
+    if (!name || typeof name !== 'string') return '';
+    return name
+        .toLowerCase()
+        .replace(/[\d.,-]/g, "") // Remove digits and common punctuation
+        .replace(/\b(ltda|me|sa|eireli|epp|s.a)\b/g, "") // Remove corporate suffixes
+        .replace(/\b(de|da|do|dos)\b/g, "") // Remove common articles
+        .replace(/\s+/g, " ") // Standardize whitespace
+        .trim();
+};
+
 const findAlfaTrustMatchInDb = async (invoiceJson) => {
     const searchAmount = parseFormattedCurrency(invoiceJson.amount);
     const searchSender = (invoiceJson.sender?.name || '').trim();
@@ -88,69 +99,39 @@ const findAlfaTrustMatchInDb = async (invoiceJson) => {
 
 // === NEW: Helper function for the smart matching logic ===
 const findBestTelegramMatch = async (searchAmount, searchSender) => {
-  if (!searchSender || !searchAmount) {
-    return null;
-  }
-
+  if (!searchSender || !searchAmount) return null;
   try {
     const [foundTxs] = await pool.query(
-      `SELECT id, sender_name_normalized FROM telegram_transactions 
-             WHERE amount = ? AND is_used = FALSE`,
+      `SELECT id, sender_name_normalized FROM telegram_transactions WHERE amount = ? AND is_used = FALSE`,
       [searchAmount]
     );
-
-    if (foundTxs.length === 0) {
-      return null;
-    }
-
-    const ocrNameNormalized = searchSender
-      .toLowerCase()
-      .replace(/[,.]/g, "")
-      .replace(/\b(ltda|me|sa|eireli|epp)\b/g, "")
-      .replace(/\s+/g, " ")
-      .trim();
-
-    let bestMatchId = null;
+    if (foundTxs.length === 0) return null;
+    
+    const ocrNameNormalized = normalizeNameForMatching(searchSender);
+    const ocrWords = new Set(ocrNameNormalized.split(' ').filter(w => w.length > 1));
 
     for (const tx of foundTxs) {
-      const telegramNameNormalized = tx.sender_name_normalized;
+      const dbNameNormalized = tx.sender_name_normalized;
+      if (!dbNameNormalized) continue;
 
-      // === THE DEFINITIVE FIX: Add a guard clause to check for null ===
-      if (!telegramNameNormalized) {
-        // If the name from the DB is null or empty for this row, skip it.
-        continue;
-      }
-      // === END FIX ===
+      // Vector 1: Exact Match
+      if (dbNameNormalized === ocrNameNormalized) return tx.id;
 
-      // Now we can safely perform the checks
-      if (telegramNameNormalized.includes(ocrNameNormalized)) {
-        console.log(`[SMART-MATCH] Found via Substring Match.`);
-        bestMatchId = tx.id;
-        break;
-      }
+      // Vector 2: Substring Match
+      if (dbNameNormalized.includes(ocrNameNormalized) || ocrNameNormalized.includes(dbNameNormalized)) return tx.id;
 
-      const ocrWords = new Set(ocrNameNormalized.split(" ").filter((w) => w.length > 1));
-      const telegramWords = new Set(telegramNameNormalized.split(" ").filter((w) => w.length > 1));
-      const isSubset = (setA, setB) => {
-        for (const elem of setA) {
-          if (!setB.has(elem)) return false;
-        }
-        return true;
-      };
-
-      if (ocrWords.size > 0 && isSubset(ocrWords, telegramWords)) {
-        console.log(`[SMART-MATCH] Found via Word Subset Match.`);
-        bestMatchId = tx.id;
-        break;
+      // Vector 3: Word Set Intersection
+      const dbWords = new Set(dbNameNormalized.split(' ').filter(w => w.length > 1));
+      const commonWords = new Set([...ocrWords].filter(word => dbWords.has(word)));
+      
+      const shorterWordCount = Math.min(ocrWords.size, dbWords.size);
+      if (shorterWordCount > 0 && commonWords.size / shorterWordCount >= 0.6 && commonWords.size >= 1) {
+          return tx.id;
       }
     }
-
-    return bestMatchId;
+    return null;
   } catch (dbError) {
-    console.error(
-      "[DB-CONFIRM-ERROR] Error querying telegram_transactions table:",
-      dbError
-    );
+    console.error("[DB-CONFIRM-ERROR] Error querying telegram_transactions table:", dbError);
     return null;
   }
 };
@@ -159,41 +140,47 @@ const findBestTelegramMatch = async (searchAmount, searchSender) => {
 
 
 const findBestXPayzMatch = async (searchAmount, searchSender, subaccountPool = []) => {
-  if (!searchSender || !searchAmount) {
-    return null;
-  }
+  if (!searchSender || !searchAmount) return null;
   try {
-    let query = `
-      SELECT id, sender_name_normalized FROM xpayz_transactions 
-      WHERE amount = ? AND is_used = FALSE
-    `;
+    let query = `SELECT id, sender_name_normalized FROM xpayz_transactions WHERE amount = ? AND is_used = FALSE`;
     const params = [searchAmount];
-
     if (subaccountPool.length > 0) {
       query += ` AND subaccount_id IN (?)`;
       params.push(subaccountPool);
     }
     
     const [foundTxs] = await pool.query(query, params);
-
     if (foundTxs.length === 0) return null;
 
-    // --- BUG FIX IS HERE ---
-    // This logic is now identical to the Python script's normalization.
-    const ocrNameNormalized = searchSender
-      .toLowerCase()
-      .replace(/[\d.,-]/g, "") // REMOVES digits, dots, commas, hyphens
-      .replace(/\b(ltda|me|sa|eireli|epp)\b/g, "")
-      .replace(/\s+/g, " ")
-      .trim();
-    // --- END OF FIX ---
+    const ocrNameNormalized = normalizeNameForMatching(searchSender);
+    const ocrWords = new Set(ocrNameNormalized.split(' ').filter(w => w.length > 1));
 
     for (const tx of foundTxs) {
-      // The .includes() check is still valuable for partial OCR reads
-      if (tx.sender_name_normalized && tx.sender_name_normalized.includes(ocrNameNormalized)) {
-        console.log(`[XPAYZ-MATCH] Found match via Substring.`);
-        return tx.id;
-      }
+        const dbNameNormalized = tx.sender_name_normalized;
+        if (!dbNameNormalized) continue;
+
+        // Vector 1: Exact Match
+        if (dbNameNormalized === ocrNameNormalized) {
+            console.log(`[XPAYZ-MATCH] Found via Exact Match.`);
+            return tx.id;
+        }
+
+        // Vector 2: Substring Match
+        if (dbNameNormalized.includes(ocrNameNormalized) || ocrNameNormalized.includes(dbNameNormalized)) {
+            console.log(`[XPAYZ-MATCH] Found via Substring Match.`);
+            return tx.id;
+        }
+
+        // Vector 3: Word Set Intersection
+        const dbWords = new Set(dbNameNormalized.split(' ').filter(w => w.length > 1));
+        const commonWords = new Set([...ocrWords].filter(word => dbWords.has(word)));
+        
+        // Rule: At least 1 common word, and common words make up >60% of the shorter name's words
+        const shorterWordCount = Math.min(ocrWords.size, dbWords.size);
+        if (shorterWordCount > 0 && commonWords.size / shorterWordCount >= 0.6 && commonWords.size >= 1) {
+            console.log(`[XPAYZ-MATCH] Found via Word Set Intersection.`);
+            return tx.id;
+        }
     }
     return null;
   } catch (dbError) {
@@ -394,118 +381,78 @@ const invoiceWorker = new Worker(
       }
 
       // --- PRIORITY 2: UPGRADE ZONE CONFIRMATION (Using Smart Match) ---
-      if (recipientNameLower.includes("upgrade zone")) {
+      if (runStandardForwarding && recipientNameLower.includes("upgrade zone")) {
         const sourceGroupJid = chat.id._serialized;
         const searchAmount = parseFloat(amount.replace(/,/g, ""));
-
+        
         const [[assignmentRule]] = await pool.query(
-          "SELECT subaccount_number FROM subaccounts WHERE assigned_group_jid = ?",
-          [sourceGroupJid]
+            "SELECT subaccount_number, name FROM subaccounts WHERE assigned_group_jid = ?", 
+            [sourceGroupJid]
         );
 
+        let targetPool = [];
+        let isAssigned = false;
+
         if (assignmentRule) {
-          // SCENARIO 1: The Group IS Assigned
-          const targetSubaccountId = assignmentRule.subaccount_number;
-          console.log(
-            `[WORKER][UPGRADE-ZONE] Group is assigned to subaccount ${targetSubaccountId}.`
-          );
-
-          // --- First Check ---
-          let matchId = await findBestXPayzMatch(searchAmount, sender.name, [
-            targetSubaccountId,
-          ]);
-
-          // --- JIT SYNC & Second Check (if first check fails) ---
-          if (!matchId) {
-            console.log(
-              "[WORKER][JIT-SYNC] First check failed. Triggering immediate on-demand sync..."
-            );
-            await syncSingleSubaccount(targetSubaccountId);
-            await delay(4000); // Wait 2 seconds for DB to update
-            console.log(
-              "[WORKER][JIT-SYNC] Re-checking database after sync..."
-            );
-            matchId = await findBestXPayzMatch(searchAmount, sender.name, [
-              targetSubaccountId,
-            ]);
-          }
-
-          if (matchId) {
-            // Correct payment!
-            await pool.query(
-              "UPDATE xpayz_transactions SET is_used = TRUE WHERE id = ?",
-              [matchId]
-            );
-            await originalMessage.reply("Caiu");
-            await originalMessage.react("🟢");
-            wasActioned = true;
-            runStandardForwarding = false;
-          } else {
-            // Incorrect payment (CONFIRMED after JIT sync)
-            await originalMessage.reply("no caiu, pix is wrong");
-            await originalMessage.react("🔴");
-            wasActioned = true;
-            runStandardForwarding = false;
-          }
+            targetPool.push(assignmentRule.subaccount_number);
+            isAssigned = true;
         } else {
-          // SCENARIO 2: The Group is NOT Assigned (General Pool)
-          console.log(
-            "[WORKER][UPGRADE-ZONE] Group is not assigned. Searching in general pool..."
-          );
+            const [unassigned] = await pool.query("SELECT subaccount_number FROM subaccounts WHERE assigned_group_jid IS NULL");
+            targetPool = unassigned.map(acc => acc.subaccount_number);
+        }
 
-          const [unassignedSubaccounts] = await pool.query(
-            "SELECT subaccount_number FROM subaccounts WHERE assigned_group_jid IS NULL"
-          );
-          const unassignedPoolIds = unassignedSubaccounts.map(
-            (acc) => acc.subaccount_number
-          );
+        if (targetPool.length > 0) {
+            let matchId = await findBestXPayzMatch(searchAmount, sender.name, targetPool);
 
-          if (unassignedPoolIds.length > 0) {
-            // --- First Check ---
-            let matchId = await findBestXPayzMatch(
-              searchAmount,
-              sender.name,
-              unassignedPoolIds
-            );
-
-            // --- JIT SYNC & Second Check (if first check fails) ---
             if (!matchId) {
-              console.log(
-                "[WORKER][JIT-SYNC] First check of general pool failed. Triggering on-demand sync for all unassigned accounts..."
-              );
-              for (const subId of unassignedPoolIds) {
-                await syncSingleSubaccount(subId);
-              }
-              await delay(2000); // Wait 2 seconds
-              console.log(
-                "[WORKER][JIT-SYNC] Re-checking general pool after sync..."
-              );
-              matchId = await findBestXPayzMatch(
-                searchAmount,
-                sender.name,
-                unassignedPoolIds
-              );
+                for (const subId of targetPool) { await syncSingleSubaccount(subId); }
+                const POLLING_ATTEMPTS = 4;
+                const POLLING_DELAY = 5000;
+                for (let i = 1; i <= POLLING_ATTEMPTS; i++) {
+                    await delay(POLLING_DELAY);
+                    matchId = await findBestXPayzMatch(searchAmount, sender.name, targetPool);
+                    if (matchId) break;
+                }
             }
 
             if (matchId) {
-              await pool.query(
-                "UPDATE xpayz_transactions SET is_used = TRUE WHERE id = ?",
-                [matchId]
-              );
-              await originalMessage.reply("Caiu");
-              await originalMessage.react("🟢");
-              wasActioned = true;
-              runStandardForwarding = false;
-            } else {
-              console.log(
-                "[DB-CONFIRM] No match found in general pool after JIT sync. Falling back to manual forwarding."
-              );
+                await pool.query("UPDATE xpayz_transactions SET is_used = TRUE WHERE id = ?", [matchId]);
+                await originalMessage.reply("Caiu");
+                await originalMessage.react("🟢");
+                wasActioned = true;
+                runStandardForwarding = false;
+            } else if (isAssigned) {
+                const [[escalationRule]] = await pool.query(
+                    "SELECT destination_group_jid FROM forwarding_rules WHERE trigger_keyword = 'system_escalation' AND is_enabled = 1"
+                );
+
+                if (escalationRule) {
+                    // --- THE FIX IS HERE ---
+                    const numberRegex = /\b(\d[\d-]{2,})\b/g;
+                    const matches = chat.name.match(numberRegex);
+                    const clientIdentifier = (matches && matches.length > 0) ? matches[matches.length - 1] : chat.name;
+                    
+                    // Correctly construct the rich caption
+                    const richCaption = `${clientIdentifier} (Expected: ${assignmentRule.name})`;
+
+                    const mediaToForward = new MessageMedia(media.mimetype, media.data, media.filename);
+                    
+                    // Use the 'richCaption' variable when sending the message
+                    const forwardedMessage = await client.sendMessage(escalationRule.destination_group_jid, mediaToForward, { caption: richCaption });
+                    // --- END OF FIX ---
+
+                    await pool.query(
+                      `INSERT INTO forwarded_invoices (original_message_id, forwarded_message_id, destination_group_jid) VALUES (?, ?, ?)`,
+                      [messageId, forwardedMessage.id._serialized, escalationRule.destination_group_jid]
+                    );
+                    
+                    await originalMessage.react("🟡");
+                    wasActioned = true;
+                    runStandardForwarding = false; 
+                } else {
+                    console.warn("[WORKER][ESCALATION] Failed to escalate: 'system_escalation' forwarding rule not found or is disabled.");
+                }
             }
-          } else {
-            console.log(
-              "[DB-CONFIRM] No unassigned subaccounts available to check. Falling back to manual forwarding."
-            );
-          }
         }
       }
 
