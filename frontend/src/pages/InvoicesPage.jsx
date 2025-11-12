@@ -1,6 +1,5 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import styled from 'styled-components';
-import { useAuth } from '../context/AuthContext';
 import { getInvoices, getRecipientNames, exportInvoices } from '../services/api';
 import { FaPlus, FaFileExcel, FaSyncAlt } from 'react-icons/fa';
 import InvoiceFilter from '../components/InvoiceFilter';
@@ -8,82 +7,73 @@ import InvoiceTable from '../components/InvoiceTable';
 import InvoiceModal from '../components/InvoiceModal';
 import { useSocket } from '../context/SocketContext';
 
-// Debounce hook to prevent excessive API calls while typing
 const useDebounce = (value, delay) => {
     const [debouncedValue, setDebouncedValue] = useState(value);
     useEffect(() => {
-        const handler = setTimeout(() => {
-            setDebouncedValue(value);
-        }, delay);
+        const handler = setTimeout(() => { setDebouncedValue(value); }, delay);
         return () => clearTimeout(handler);
     }, [value, delay]);
     return debouncedValue;
 };
 
 const PageContainer = styled.div`
-    display: flex;
-    flex-direction: column;
-    gap: 1.5rem;
-    height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  height: 100%;
 `;
-
 const Header = styled.div`
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 1rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 1rem;
 `;
-
 const Title = styled.h2`
-    margin: 0;
+  margin: 0;
 `;
-
 const Actions = styled.div`
-    display: flex;
-    gap: 1rem;
+  display: flex;
+  gap: 1rem;
 `;
-
 const Button = styled.button`
-    display: inline-flex;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 0.6rem 1.2rem;
-    border: none;
-    border-radius: 6px;
-    font-weight: 600;
-    cursor: pointer;
-    background-color: ${({ theme, primary }) => primary ? theme.secondary : theme.primary};
-    color: white;
-    font-size: 0.9rem;
-    
-    &:hover {
-        opacity: 0.9;
-    }
-
-    &:disabled {
-        opacity: 0.6;
-        cursor: not-allowed;
-    }
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.6rem 1.2rem;
+  border: none;
+  border-radius: 6px;
+  font-weight: 600;
+  cursor: pointer;
+  background-color: ${({ theme, primary }) =>
+    primary ? theme.secondary : theme.primary};
+  color: white;
+  font-size: 0.9rem;
+  &:hover {
+    opacity: 0.9;
+  }
+  &:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
 `;
-
 const RefreshBanner = styled.div`
-    background-color: ${({ theme }) => theme.secondary};
-    color: white;
-    padding: 0.75rem 1rem;
-    border-radius: 6px;
-    text-align: center;
-    font-weight: 600;
-    cursor: pointer;
-    margin-bottom: 1rem;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.75rem;
+  background-color: ${({ theme }) => theme.secondary};
+  color: white;
+  padding: 0.75rem 1rem;
+  border-radius: 6px;
+  text-align: center;
+  font-weight: 600;
+  cursor: pointer;
+  margin-bottom: 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
 `;
 
-const InvoicesPage = ({ allGroups }) => { // No longer accepts socket as a prop
-    const socket = useSocket(); // <-- USE THE HOOK
+const InvoicesPage = ({ allGroups }) => {
+    const socket = useSocket();
     const [invoices, setInvoices] = useState([]);
     const [loading, setLoading] = useState(true);
     const [isExporting, setIsExporting] = useState(false);
@@ -97,11 +87,11 @@ const InvoicesPage = ({ allGroups }) => { // No longer accepts socket as a prop
         reviewStatus: '', status: '',
     });
     
-    const { isAuthenticated } = useAuth();
     const [isInvoiceModalOpen, setIsInvoiceModalOpen] = useState(false);
     const [editingInvoice, setEditingInvoice] = useState(null);
 
     const debouncedSearch = useDebounce(filters.search, 500);
+    const isInitialMount = useRef(true);
 
     const fetchInvoices = useCallback(async () => {
         setLoading(true);
@@ -114,54 +104,58 @@ const InvoicesPage = ({ allGroups }) => { // No longer accepts socket as a prop
                 limit: pagination.limit 
             };
             Object.keys(params).forEach(key => (!params[key] || (Array.isArray(params[key]) && params[key].length === 0)) && delete params[key]);
-            
             const { data } = await getInvoices(params);
             setInvoices(data.invoices || []);
-            setPagination(prev => ({ ...prev, totalPages: data.totalPages, totalRecords: data.totalRecords }));
+            setPagination(prev => ({ ...prev, totalPages: data.totalPages, totalRecords: data.totalRecords, currentPage: data.currentPage }));
         } catch (error) {
             console.error("Failed to fetch invoices:", error);
             setInvoices([]);
         } finally {
             setLoading(false);
         }
-    }, [pagination.page, pagination.limit, filters, debouncedSearch]);
+    }, [pagination.page, pagination.limit, filters, debouncedSearch]); // This function depends on all filters and pagination
 
+    // Effect 1: Fetch recipient names on initial load
     useEffect(() => {
-        if (isAuthenticated) { 
-            fetchInvoices(); 
+        getRecipientNames().then(response => setRecipientNames(response.data || [])).catch(err => console.error(err));
+    }, []);
+
+    // Effect 2: The SINGLE source of truth for fetching data.
+    // It runs whenever the page, or any filter, changes.
+    useEffect(() => {
+        if (isInitialMount.current) {
+            isInitialMount.current = false;
+            return; // Don't run on the very first render
         }
-    }, [fetchInvoices, isAuthenticated]);
+        
+        // This effect's only job is to reset the page if it's not already 1
+        if (pagination.page !== 1) {
+            setPagination(p => ({ ...p, page: 1 }));
+        }
+        
+    }, [debouncedSearch, filters.dateFrom, filters.dateTo, filters.timeFrom, filters.timeTo, filters.sourceGroups, filters.recipientNames, filters.reviewStatus, filters.status]); // Note: pagination.page is NOT a dependency here
+
+    // Effect 3: This effect ONLY handles fetching for page changes.
+    useEffect(() => {
+        fetchInvoices();
+    }, [fetchInvoices]);
     
     useEffect(() => {
-        if (isAuthenticated) {
-            getRecipientNames().then(response => setRecipientNames(response.data || [])).catch(err => console.error(err));
-        }
-    }, [isAuthenticated]);
-
-    // This listener is now reliable
-    useEffect(() => {
-        if (isAuthenticated && socket) {
+        if (socket) {
             const handleInvoiceUpdate = () => setHasNewInvoices(true);
             socket.on('invoices:updated', handleInvoiceUpdate);
             return () => socket.off('invoices:updated', handleInvoiceUpdate);
         }
-    }, [isAuthenticated, socket]);
+    }, [socket]);
 
-    // This is now the ONLY way filters are changed.
     const handleFilterChange = (newFilters) => {
-        setPagination(p => ({ ...p, page: 1 })); // Reset to page 1 on any filter change
         setFilters(newFilters);
     };
 
     const handleExport = async () => {
         setIsExporting(true);
         try {
-            // Create a fresh params object using the FINAL debounced search value
-            const exportParams = {
-                ...filters,
-                search: debouncedSearch, // Use the debounced value!
-            };
-            await exportInvoices(exportParams);
+            await exportInvoices({ ...filters, search: debouncedSearch });
         } catch (error) {
             console.error("Failed to export invoices:", error);
             alert("Failed to export invoices.");
@@ -175,7 +169,10 @@ const InvoicesPage = ({ allGroups }) => { // No longer accepts socket as a prop
         setIsInvoiceModalOpen(true);
     };
 
-    const handleSave = () => { closeAllModals(); fetchInvoices(); };
+    const handleSave = () => { 
+        closeAllModals(); 
+        fetchInvoices(pagination.page, filters, debouncedSearch);
+    };
     const closeAllModals = () => { setIsInvoiceModalOpen(false); setEditingInvoice(null); };
 
     return (
@@ -187,12 +184,12 @@ const InvoicesPage = ({ allGroups }) => { // No longer accepts socket as a prop
                         <Button onClick={handleExport} disabled={isExporting}>
                             <FaFileExcel /> {isExporting ? 'Exporting...' : 'Export'}
                         </Button>
-                        <Button primary onClick={() => openEditModal(null)}><FaPlus /> Add Entry</Button>
+                        <Button primary="true" onClick={() => openEditModal(null)}><FaPlus /> Add Entry</Button>
                     </Actions>
                 </Header>
                 
                 {hasNewInvoices && (
-                    <RefreshBanner onClick={fetchInvoices}>
+                    <RefreshBanner onClick={() => fetchInvoices(pagination.page, filters, debouncedSearch)}>
                         <FaSyncAlt /> New invoices have arrived. Click to refresh the list.
                     </RefreshBanner>
                 )}

@@ -81,7 +81,7 @@ const InvoiceFilter = ({ filters, onFilterChange, allGroups, recipientNames }) =
     return (
         <FilterContainer>
             <InputGroup>
-                <Label>Search</Label>
+                <Label>Search (ID, Name, Amount, etc.)</Label> {/* <-- Reverted Label */}
                 <Input name="search" type="text" value={filters.search} onChange={handleChange} />
             </InputGroup>
             <InputGroup>

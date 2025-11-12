@@ -104,7 +104,7 @@ exports.getTransactions = async (req, res) => {
 // === ADD THIS NEW FUNCTION for the volume counter ===
 exports.getFilteredVolume = async (req, res) => {
     const subaccountNumber = req.client.subaccountNumber;
-    const { search, date } = req.query; // Filters are now used here
+    const { search, date } = req.query; 
 
     try {
         let query = `
@@ -114,7 +114,6 @@ exports.getFilteredVolume = async (req, res) => {
         `;
         const params = [subaccountNumber];
 
-        // Apply the same filters as the getTransactions endpoint
         if (search) {
             query += ` AND (sender_name LIKE ? OR amount LIKE ? OR xpayz_transaction_id LIKE ?)`;
             const searchTerm = `%${search}%`;
@@ -130,28 +129,6 @@ exports.getFilteredVolume = async (req, res) => {
 
     } catch (error) {
         console.error(`[PORTAL-VOLUME-ERROR] Failed to calculate filtered volume for subaccount ${subaccountNumber}:`, error);
-        res.status(500).json({ message: 'Failed to calculate volume.' });
-    }
-};
-
-// === NEW FUNCTION: This function calculates the GRAND TOTAL volume ===
-exports.getTotalVolume = async (req, res) => {
-    const subaccountNumber = req.client.subaccountNumber;
-
-    try {
-        // This query has NO filters except for the essential subaccount_id
-        const query = `
-            SELECT SUM(amount) as totalVolume 
-            FROM xpayz_transactions
-            WHERE subaccount_id = ?
-        `;
-        const params = [subaccountNumber];
-
-        const [[{ totalVolume }]] = await pool.query(query, params);
-        res.json({ totalVolume: totalVolume || 0 });
-
-    } catch (error) {
-        console.error(`[PORTAL-VOLUME-ERROR] Failed to calculate total volume for subaccount ${subaccountNumber}:`, error);
         res.status(500).json({ message: 'Failed to calculate volume.' });
     }
 };

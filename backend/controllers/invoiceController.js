@@ -21,6 +21,7 @@ exports.getAllInvoices = async (req, res) => {
     const params = [];
 
     if (search) {
+        // --- REVERTED: Added i.amount back to the general search ---
         query += ` AND (i.transaction_id LIKE ? OR i.sender_name LIKE ? OR i.recipient_name LIKE ? OR i.pix_key LIKE ? OR i.notes LIKE ? OR i.amount LIKE ?)`;
         const searchTerm = `%${search}%`;
         params.push(searchTerm, searchTerm, searchTerm, searchTerm, searchTerm, searchTerm);

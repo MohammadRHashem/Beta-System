@@ -94,7 +94,7 @@ const GoToPageButton = styled.button`
     }
 `;
 
-const Pagination = ({ pagination, setPagination }) => {
+const Pagination = ({ pagination, setPagination }) => { // Changed prop name to setPagination
     const { currentPage, totalPages, totalRecords } = pagination;
     const [goToPage, setGoToPage] = useState(currentPage);
 

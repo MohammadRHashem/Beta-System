@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import styled, { keyframes } from 'styled-components';
 import { motion } from 'framer-motion';
-import { getPortalTransactions, getPortalFilteredVolume, getPortalTotalVolume } from '../services/api';
+import { getPortalTransactions, getPortalFilteredVolume } from '../services/api';
 import { FaSyncAlt, FaSearch } from 'react-icons/fa';
 import Pagination from '../components/Pagination';
 import { usePortal } from '../context/PortalContext';
@@ -195,124 +195,73 @@ const SkeletonRow = () => (
 const ClientDashboard = () => {
     const [transactions, setTransactions] = useState([]);
     const [loading, setLoading] = useState(true);
-    const [filteredVolume, setFilteredVolume] = useState(0);
-    const [totalVolume, setTotalVolume] = useState(0);
-    const [pagination, setPagination] = useState({ page: 1, limit: 20, totalPages: 1, totalRecords: 0 });
+    const [volumeOfDay, setVolumeOfDay] = useState(0);
     const { filters, setFilters } = usePortal();
+    const [pagination, setPagination] = useState({ page: 1, limit: 20, totalPages: 1, totalRecords: 0 });
     
     const debouncedSearch = useDebounce(filters.search, 500);
 
-    const fetchData = useCallback(async (isRefresh = false) => {
-        if (!isRefresh) setLoading(true);
-        
+    const fetchData = useCallback(async (pageToFetch, dateToFetch, searchToFetch) => {
+        setLoading(true);
         const params = { 
-            search: debouncedSearch, 
-            date: filters.date,
+            search: searchToFetch, 
+            date: dateToFetch,
+            page: pageToFetch, 
+            limit: pagination.limit
         };
-        
         try {
-            // === THE FIX: If it's a manual refresh, fetch the total volume again ===
-            const requests = [
-                getPortalTransactions({ ...params, page: pagination.page, limit: pagination.limit }),
-                getPortalFilteredVolume(params)
-            ];
-
-            if (isRefresh) {
-                requests.push(getPortalTotalVolume());
-            }
-
-            const [transRes, volRes, totalVolRes] = await Promise.all(requests);
-
+            const [transRes, volRes] = await Promise.all([
+                getPortalTransactions(params),
+                getPortalFilteredVolume({ search: searchToFetch, date: dateToFetch })
+            ]);
             setTransactions(transRes.data.transactions || []);
-            setPagination(prev => ({ ...prev, totalPages: transRes.data.totalPages, totalRecords: transRes.data.totalRecords, currentPage: transRes.data.currentPage }));
-            setFilteredVolume(volRes.data.totalVolume || 0);
-
-            // If we fetched the total volume, update its state
-            if (totalVolRes) {
-                setTotalVolume(totalVolRes.data.totalVolume || 0);
-            }
-
+            setPagination(prev => ({ 
+                ...prev, 
+                totalPages: transRes.data.totalPages, 
+                totalRecords: transRes.data.totalRecords, 
+                currentPage: transRes.data.currentPage 
+            }));
+            setVolumeOfDay(volRes.data.totalVolume || 0);
         } catch (error) {
             console.error("Failed to fetch data:", error);
         } finally {
             setLoading(false);
         }
-    }, [pagination.page, pagination.limit, debouncedSearch, filters.date]);
+    }, [pagination.limit]); // The function itself only depends on limit.
 
-    // Fetch total volume ONLY on the initial load. It will be updated via the refresh button after that.
+    // Effect 1: Set initial date ONCE.
     useEffect(() => {
-        const fetchInitialTotalVolume = async () => {
-            try {
-                const { data } = await getPortalTotalVolume();
-                setTotalVolume(data.totalVolume || 0);
-            } catch (error) {
-                console.error("Failed to fetch initial total volume:", error);
-            }
-        };
-        fetchInitialTotalVolume();
-    }, []);
+        const today = new Date().toISOString().split('T')[0];
+        setFilters(prev => ({ ...prev, date: today }));
+    }, [setFilters]); // This is safe and follows the rules.
 
-    // This useEffect correctly fetches the filtered data when dependencies change
+    // Effect 2: Reset to page 1 ONLY when filters change.
     useEffect(() => {
-        fetchData();
-    }, [fetchData]);
-
-    useEffect(() => {
-        const fetchData = async () => {
-            setLoading(true);
-            const params = { 
-                search: debouncedSearch, 
-                date: filters.date,
-            };
-            
-            try {
-                const [transRes, volRes] = await Promise.all([
-                    // === THE FIX: Use pagination.limit from state ===
-                    getPortalTransactions({ ...params, page: pagination.page, limit: pagination.limit }),
-                    getPortalFilteredVolume(params)
-                ]);
-
-                setTransactions(transRes.data.transactions || []);
-                setPagination(prev => ({ ...prev, totalPages: transRes.data.totalPages, totalRecords: transRes.data.totalRecords, currentPage: transRes.data.currentPage }));
-                setFilteredVolume(volRes.data.totalVolume || 0);
-
-            } catch (error) {
-                console.error("Failed to fetch filtered data:", error);
-            } finally {
-                setLoading(false);
-            }
-        };
-        
-        fetchData();
-    }, [pagination.page, pagination.limit, debouncedSearch, filters.date]); // Correct dependencies
-
-
-     const handleFilterChange = (e) => {
         setPagination(p => ({ ...p, page: 1 }));
+    }, [debouncedSearch, filters.date]);
+
+    // Effect 3: The MAIN and ONLY data fetching effect.
+    // It runs when the page, or the filters that reset the page, change.
+    useEffect(() => {
+        // Don't fetch until the initial date has been set.
+        if (filters.date) {
+            fetchData(pagination.page, filters.date, debouncedSearch);
+        }
+    }, [pagination.page, filters.date, debouncedSearch, fetchData]);
+
+
+    const handleFilterChange = (e) => {
         setFilters(prevFilters => ({ ...prevFilters, [e.target.name]: e.target.value }));
     };
     
     const formatDateTime = (dbDateString) => {
         if (!dbDateString) return 'N/A';
         const date = new Date(dbDateString);
-        return new Intl.DateTimeFormat('en-GB', {
-            year: 'numeric', month: '2-digit', day: '2-digit',
-            hour: '2-digit', minute: '2-digit'
-        }).format(date);
+        return new Intl.DateTimeFormat('en-GB', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }).format(date);
     };
 
-    const containerVariants = {
-        hidden: { opacity: 0 },
-        visible: {
-            opacity: 1,
-            transition: { staggerChildren: 0.05 }
-        }
-    };
-
-    const itemVariants = {
-        hidden: { y: 20, opacity: 0 },
-        visible: { y: 0, opacity: 1 }
-    };
+    const containerVariants = { hidden: { opacity: 0 }, visible: { opacity: 1, transition: { staggerChildren: 0.05 } } };
+    const itemVariants = { hidden: { y: 20, opacity: 0 }, visible: { y: 0, opacity: 1 } };
 
     return (
         <PageContainer initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
@@ -322,18 +271,14 @@ const ClientDashboard = () => {
                         <FaSearch />
                         <Input as="input" name="search" type="text" value={filters.search} onChange={handleFilterChange} placeholder="Search..." />
                     </InputGroup>
-                    <DateInput name="date" value={filters.date} onChange={handleFilterChange} />
-                    {/* === THE FIX: The refresh button now calls fetchData with `true` === */}
-                    <RefreshButton onClick={() => fetchData(true)}><FaSyncAlt /> Refresh</RefreshButton>
+                    <DateInput name="date" value={filters.date || ''} onChange={handleFilterChange} />
+                    <RefreshButton onClick={() => fetchData(pagination.page, filters.date, debouncedSearch)}><FaSyncAlt /> Refresh</RefreshButton>
                 </FilterContainer>
+                
                 <VolumeContainer>
                     <VolumeCard>
-                        <h3>Filtered Volume (BRL)</h3>
-                        <p>{new Intl.NumberFormat('en-US', { minimumFractionDigits: 2 }).format(filteredVolume)}</p>
-                    </VolumeCard>
-                    <VolumeCard>
-                        <h3>Total Volume (BRL)</h3>
-                        <p>{new Intl.NumberFormat('en-US', { minimumFractionDigits: 2 }).format(totalVolume)}</p>
+                        <h3>Volume of Day (BRL)</h3>
+                        <p>{new Intl.NumberFormat('en-US', { minimumFractionDigits: 2 }).format(volumeOfDay)}</p>
                     </VolumeCard>
                 </VolumeContainer>
             </ControlsContainer>
@@ -348,26 +293,18 @@ const ClientDashboard = () => {
                                 <th>Amount (BRL)</th>
                             </tr>
                         </thead>
-                        <motion.tbody
-                            variants={containerVariants}
-                            initial="hidden"
-                            animate="visible"
-                        >
-                            {loading ? (
-                                [...Array(10)].map((_, i) => <SkeletonRow key={i} />)
-                            ) : transactions.length === 0 ? (
-                                <tr><td colSpan="3"><EmptyStateContainer><h3>No transactions found</h3></EmptyStateContainer></td></tr>
-                            ) : (
-                                transactions.map(tx => (
-                                    <motion.tr key={tx.id} variants={itemVariants}>
-                                        <td>{formatDateTime(tx.transaction_date)}</td>
-                                        <td>{tx.sender_name}</td>
-                                        <td style={{ color: '#00C49A', fontWeight: '600' }}>
-                                            {parseFloat(tx.amount).toFixed(2)}
-                                        </td>
-                                    </motion.tr>
-                                ))
-                            )}
+                        <motion.tbody variants={containerVariants} initial="hidden" animate="visible">
+                            {loading ? ([...Array(10)].map((_, i) => <SkeletonRow key={i} />)) : 
+                             transactions.length === 0 ? (<tr><td colSpan="3"><EmptyStateContainer><h3>No transactions found</h3></EmptyStateContainer></td></tr>) : 
+                             (transactions.map(tx => (
+                                <motion.tr key={tx.id} variants={itemVariants}>
+                                    <td>{formatDateTime(tx.transaction_date)}</td>
+                                    <td>{tx.sender_name}</td>
+                                    <td style={{ color: '#00C49A', fontWeight: '600' }}>
+                                        {parseFloat(tx.amount).toFixed(2)}
+                                    </td>
+                                </motion.tr>
+                            )))}
                         </motion.tbody>
                     </Table>
                 </TableWrapper>

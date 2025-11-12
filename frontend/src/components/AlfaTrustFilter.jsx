@@ -82,7 +82,10 @@ const AlfaTrustFilter = ({ filters, onFilterChange }) => {
 
     return (
         <FilterContainer>
-            <InputGroup><label>Search (ID, Name, Amount)</label><input name="search" type="text" value={filters.search} onChange={handleChange} /></InputGroup>
+            <InputGroup>
+                <Label>Search (ID, Name, Amount)</Label> {/* <-- Reverted Label */}
+                <Input name="search" type="text" value={filters.search} onChange={handleChange} />
+            </InputGroup>
             <InputGroup><label>From Date</label><input name="dateFrom" type="date" value={filters.dateFrom} onChange={handleChange} /></InputGroup>
             <InputGroup><label>To Date</label><input name="dateTo" type="date" value={filters.dateTo} onChange={handleChange} /></InputGroup>
             

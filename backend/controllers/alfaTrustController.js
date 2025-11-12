@@ -36,10 +36,12 @@ exports.getTransactions = async (req, res) => {
         const params = [];
 
         if (search) {
+            // --- REVERTED: Added value back to the general search ---
             query += ` AND (end_to_end_id LIKE ? OR payer_name LIKE ? OR value LIKE ?)`;
             const searchTerm = `%${search}%`;
             params.push(searchTerm, searchTerm, searchTerm);
         }
+
         if (dateFrom) {
             query += ' AND DATE(inclusion_date) >= ?';
             params.push(dateFrom);

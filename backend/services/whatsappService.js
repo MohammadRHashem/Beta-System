@@ -345,6 +345,8 @@ const invoiceWorker = new Worker(
 
       let runStandardForwarding = true;
       let wasActioned = false;
+      let isAssignedUpgradeZoneFailure = false; // <-- NEW FLAG
+      let assignmentRuleForEscalation = null; // <-- NEW variable to hold data
 
       //USDT Transaction Confirmation
       if (recipientNameLower.includes("usdt_recipient")) {
@@ -384,75 +386,76 @@ const invoiceWorker = new Worker(
       if (runStandardForwarding && recipientNameLower.includes("upgrade zone")) {
         const sourceGroupJid = chat.id._serialized;
         const searchAmount = parseFloat(amount.replace(/,/g, ""));
-        
+
         const [[assignmentRule]] = await pool.query(
-            "SELECT subaccount_number, name FROM subaccounts WHERE assigned_group_jid = ?", 
-            [sourceGroupJid]
+          "SELECT subaccount_number, name FROM subaccounts WHERE assigned_group_jid = ?",
+          [sourceGroupJid]
         );
 
         let targetPool = [];
         let isAssigned = false;
 
         if (assignmentRule) {
-            targetPool.push(assignmentRule.subaccount_number);
-            isAssigned = true;
+          targetPool.push(assignmentRule.subaccount_number);
+          isAssigned = true;
         } else {
-            const [unassigned] = await pool.query("SELECT subaccount_number FROM subaccounts WHERE assigned_group_jid IS NULL");
-            targetPool = unassigned.map(acc => acc.subaccount_number);
+          const [unassigned] = await pool.query("SELECT subaccount_number FROM subaccounts WHERE assigned_group_jid IS NULL");
+          targetPool = unassigned.map(acc => acc.subaccount_number);
         }
 
         if (targetPool.length > 0) {
-            let matchId = await findBestXPayzMatch(searchAmount, sender.name, targetPool);
+          let matchId = await findBestXPayzMatch(searchAmount, sender.name, targetPool);
 
-            if (!matchId) {
-                for (const subId of targetPool) { await syncSingleSubaccount(subId); }
-                const POLLING_ATTEMPTS = 4;
-                const POLLING_DELAY = 5000;
-                for (let i = 1; i <= POLLING_ATTEMPTS; i++) {
-                    await delay(POLLING_DELAY);
-                    matchId = await findBestXPayzMatch(searchAmount, sender.name, targetPool);
-                    if (matchId) break;
-                }
+          if (!matchId) {
+            for (const subId of targetPool) { await syncSingleSubaccount(subId); }
+            const POLLING_ATTEMPTS = 4;
+            const POLLING_DELAY = 5000;
+            for (let i = 1; i <= POLLING_ATTEMPTS; i++) {
+              await delay(POLLING_DELAY);
+              matchId = await findBestXPayzMatch(searchAmount, sender.name, targetPool);
+              if (matchId) break;
             }
+          }
 
-            if (matchId) {
-                await pool.query("UPDATE xpayz_transactions SET is_used = TRUE WHERE id = ?", [matchId]);
-                await originalMessage.reply("Caiu");
-                await originalMessage.react("🟢");
-                wasActioned = true;
-                runStandardForwarding = false;
-            } else if (isAssigned) {
-                const [[escalationRule]] = await pool.query(
-                    "SELECT destination_group_jid FROM forwarding_rules WHERE trigger_keyword = 'system_escalation' AND is_enabled = 1"
+          if (matchId) {
+            await pool.query("UPDATE xpayz_transactions SET is_used = TRUE WHERE id = ?", [matchId]);
+            await originalMessage.reply("Caiu");
+            await originalMessage.react("🟢");
+            wasActioned = true;
+            runStandardForwarding = false;
+          } else if (isAssigned) {
+            // Smart Escalation Logic
+            console.log("[WORKER][ESCALATION] No match for assigned group. Escalating to manual confirmation.");
+            
+            // THE FIX: Use the correct keyword for this context, which is "upgrade zone"
+            const [[escalationRule]] = await pool.query(
+                "SELECT destination_group_jid FROM forwarding_rules WHERE trigger_keyword = 'upgrade zone' AND is_enabled = 1"
+            );
+
+            if (escalationRule) {
+                const numberRegex = /\b(\d[\d-]{2,})\b/g;
+                const matches = chat.name.match(numberRegex);
+                const clientIdentifier = (matches && matches.length > 0) ? matches[matches.length - 1] : chat.name;
+                
+                const richCaption = `${clientIdentifier}\u200C (Chave: ${assignmentRule.name})`;
+
+                const mediaToForward = new MessageMedia(media.mimetype, media.data, media.filename);
+                
+                const forwardedMessage = await client.sendMessage(escalationRule.destination_group_jid, mediaToForward, { caption: richCaption });
+                
+                await pool.query(
+                  `INSERT INTO forwarded_invoices (original_message_id, forwarded_message_id, destination_group_jid) VALUES (?, ?, ?)`,
+                  [messageId, forwardedMessage.id._serialized, escalationRule.destination_group_jid]
                 );
-
-                if (escalationRule) {
-                    // --- THE FIX IS HERE ---
-                    const numberRegex = /\b(\d[\d-]{2,})\b/g;
-                    const matches = chat.name.match(numberRegex);
-                    const clientIdentifier = (matches && matches.length > 0) ? matches[matches.length - 1] : chat.name;
-                    
-                    // Correctly construct the rich caption
-                    const richCaption = `${clientIdentifier} (Expected: ${assignmentRule.name})`;
-
-                    const mediaToForward = new MessageMedia(media.mimetype, media.data, media.filename);
-                    
-                    // Use the 'richCaption' variable when sending the message
-                    const forwardedMessage = await client.sendMessage(escalationRule.destination_group_jid, mediaToForward, { caption: richCaption });
-                    // --- END OF FIX ---
-
-                    await pool.query(
-                      `INSERT INTO forwarded_invoices (original_message_id, forwarded_message_id, destination_group_jid) VALUES (?, ?, ?)`,
-                      [messageId, forwardedMessage.id._serialized, escalationRule.destination_group_jid]
-                    );
-                    
-                    await originalMessage.react("🟡");
-                    wasActioned = true;
-                    runStandardForwarding = false; 
-                } else {
-                    console.warn("[WORKER][ESCALATION] Failed to escalate: 'system_escalation' forwarding rule not found or is disabled.");
-                }
+                
+                await originalMessage.react("🟡");
+                wasActioned = true;
+                runStandardForwarding = false; // Prevent default forwarding
+            } else {
+                console.warn("[WORKER][ESCALATION] Could not find an active forwarding rule for 'upgrade zone' to use for escalation. Falling back to default forwarding.");
+                // Let it fall through to the default forwarding logic if no specific rule is found
             }
+          }
         }
       }
 
@@ -1075,12 +1078,31 @@ const handleMessageRevoke = async (message, revoked_msg) => {
 
 // === THIS FUNCTION IS THE ONLY ONE WITH CHANGES ===
 const handleReaction = async (reaction) => {
+  const reactedMessageId = reaction.msgId._serialized;
+  const reactionEmoji = reaction.reaction;
+
+  
+  if (reactionEmoji === '🔵') {
+      try {
+          // Check if the message has media before proceeding
+          const messageToRequeue = await client.getMessageById(reactedMessageId);
+          if (messageToRequeue && messageToRequeue.hasMedia) {
+              console.log(`[REACTION-REQUEUE] Received blue circle on message ${reactedMessageId}. Attempting to re-queue.`);
+              
+              // This function already contains the check to prevent duplicates
+              await queueMessageIfNotExists(reactedMessageId);
+          }
+          // No else needed. If it's not a media message, we just ignore the reaction.
+          return; // Stop further processing of this reaction
+      } catch (error) {
+          console.error(`[REACTION-REQUEUE-ERROR] Failed to process blue circle for ${reactedMessageId}:`, error);
+          return;
+      }
+  }
+
   if (!isAutoConfirmationEnabled) {
     return;
   }
-
-  const reactedMessageId = reaction.msgId._serialized;
-  const reactionEmoji = reaction.reaction;
 
   try {
     const [[link]] = await pool.query(
