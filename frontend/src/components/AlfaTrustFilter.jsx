@@ -33,6 +33,18 @@ const InputGroup = styled.div`
     }
 `;
 
+const Label = styled.label`
+    font-weight: 500;
+    font-size: 0.85rem;
+`;
+
+const Input = styled.input`
+    padding: 0.6rem;
+    border: 1px solid ${({ theme }) => theme.border};
+    border-radius: 4px;
+    font-size: 0.9rem;
+`;
+
 const FetchAllButton = styled.button`
     padding: 0.75rem 1rem;
     border: none;
