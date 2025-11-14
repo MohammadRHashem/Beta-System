@@ -783,62 +783,62 @@ const refreshAbbreviationCache = async () => {
   }
 };
 
-// let isReconciling = false;
-// const reconcileMissedMessages = async () => {
-//   if (isReconciling) {
-//     console.log("[RECONCILER] Missed message reconciliation already in progress. Skipping.");
-//     return;
-//   }
-//   if (connectionStatus !== "connected") {
-//     return;
-//   }
-//   isReconciling = true;
-//   console.log("[RECONCILER] Starting check for missed messages from the last 10 hours.");
+let isReconciling = false;
+const reconcileMissedMessages = async () => {
+  if (isReconciling) {
+    console.log("[RECONCILER] Missed message reconciliation already in progress. Skipping.");
+    return;
+  }
+  if (connectionStatus !== "connected") {
+    return;
+  }
+  isReconciling = true;
+  console.log("[RECONCILER] Starting check for missed messages from the last 10 hours.");
 
-//   try {
-//     const cutoffTimestamp = Math.floor((Date.now() - 10 * 60 * 60 * 1000) / 1000);
-//     const allRecentMessageIds = new Set();
-//     const chats = await client.getChats();
-//     const groups = chats.filter((chat) => chat.isGroup);
+  try {
+    const cutoffTimestamp = Math.floor((Date.now() - 10 * 60 * 60 * 1000) / 1000);
+    const allRecentMessageIds = new Set();
+    const chats = await client.getChats();
+    const groups = chats.filter((chat) => chat.isGroup);
 
-//     for (const group of groups) {
-//       const recentMessages = await group.fetchMessages({ limit: 500 }); 
-//       for (const msg of recentMessages) {
-//         if (msg.timestamp >= cutoffTimestamp && msg.hasMedia && !msg.fromMe) {
-//           allRecentMessageIds.add(msg.id._serialized);
-//         }
-//       }
-//     }
+    for (const group of groups) {
+      const recentMessages = await group.fetchMessages({ limit: 500 }); 
+      for (const msg of recentMessages) {
+        if (msg.timestamp >= cutoffTimestamp && msg.hasMedia && !msg.fromMe) {
+          allRecentMessageIds.add(msg.id._serialized);
+        }
+      }
+    }
 
-//     if (allRecentMessageIds.size === 0) {
-//       console.log("[RECONCILER] No recent media messages found. Check complete.");
-//       isReconciling = false;
-//       return;
-//     }
+    if (allRecentMessageIds.size === 0) {
+      console.log("[RECONCILER] No recent media messages found. Check complete.");
+      isReconciling = false;
+      return;
+    }
     
-//     const [processedRows] = await pool.query(
-//         `SELECT message_id FROM processed_messages WHERE message_id IN (?)`,
-//         [[...allRecentMessageIds]]
-//     );
-//     const processedIds = new Set(processedRows.map(r => r.message_id));
-//     const missedMessageIds = [...allRecentMessageIds].filter(id => !processedIds.has(id));
+    const [processedRows] = await pool.query(
+        `SELECT message_id FROM processed_messages WHERE message_id IN (?)`,
+        [[...allRecentMessageIds]]
+    );
+    const processedIds = new Set(processedRows.map(r => r.message_id));
+    const missedMessageIds = [...allRecentMessageIds].filter(id => !processedIds.has(id));
 
-//     if (missedMessageIds.length > 0) {
-//         console.log(`[RECONCILER] Found ${missedMessageIds.length} missed messages. Queuing them now.`);
-//         for (const messageId of missedMessageIds) {
-//             await queueMessageIfNotExists(messageId);
-//         }
-//         console.log(`[RECONCILER] Successfully queued ${missedMessageIds.length} missed jobs.`);
-//     } else {
-//         console.log("[RECONCILER] No missed messages found.");
-//     }
-//   } catch (error) {
-//     console.error("[RECONCILER-ERROR] A critical error occurred during reconciliation:", error);
-//   } finally {
-//     isReconciling = false;
-//     console.log("[RECONCILER] Finished missed message reconciliation check.");
-//   }
-// };
+    if (missedMessageIds.length > 0) {
+        console.log(`[RECONCILER] Found ${missedMessageIds.length} missed messages. Queuing them now.`);
+        for (const messageId of missedMessageIds) {
+            await queueMessageIfNotExists(messageId);
+        }
+        console.log(`[RECONCILER] Successfully queued ${missedMessageIds.length} missed jobs.`);
+    } else {
+        console.log("[RECONCILER] No missed messages found.");
+    }
+  } catch (error) {
+    console.error("[RECONCILER-ERROR] A critical error occurred during reconciliation:", error);
+  } finally {
+    isReconciling = false;
+    console.log("[RECONCILER] Finished missed message reconciliation check.");
+  }
+};
 
 let isReconcilingStalledJobs = false;
 const reconcileStalledJobs = async () => {
@@ -1258,6 +1258,22 @@ const initializeWhatsApp = (socketIoInstance) => {
 
       cron.schedule("*/15 * * * *", reconcileDeletedMessages);
       console.log("[DELETE-RECONCILER] Proactive deletion-checking reconciler scheduled to run every 15 minutes.");
+
+
+      console.log("[RECONCILER] Scheduling a check for missed messages in 90 seconds...");
+      setTimeout(() => {
+          console.log("[RECONCILER] Starting post-connection check for missed messages.");
+          reconcileMissedMessages();
+      }, 90000); // 90-second delay
+
+      // This part for clearing the queue should only run on initial startup, not every reconnect.
+      // We can check if the cron jobs are already scheduled as a proxy for this.
+      if (!cron.getTasks().length) {
+          console.log('[STARTUP] First time startup detected. Clearing any old/stale jobs from the queue...');
+          await invoiceQueue.obliterate({ force: true });
+          console.log('[STARTUP] Job queue cleared.');
+      }
+      
     });
     client.on("message", handleMessage);
     client.on("message_revoke_everyone", handleMessageRevoke);
