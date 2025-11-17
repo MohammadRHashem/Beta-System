@@ -151,7 +151,7 @@ def save_transactions_to_db(subaccount_id: int, transactions: list[Transaction])
             if not counterparty: # Skip if there's no counterparty
                 continue
 
-            amount = float(tx.amount)
+            amount = tx.amount
             tx_date = isoparse(tx.created_at)
             normalized_counterparty = normalize_name(counterparty)
             
