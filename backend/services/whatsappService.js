@@ -393,6 +393,7 @@ const invoiceWorker = new Worker(
         const sourceGroupJid = chat.id._serialized;
         const searchAmount = parseFloat(amount.replace(/,/g, ""));
 
+
         const [[assignmentRule]] = await pool.query(
           "SELECT subaccount_number, name FROM subaccounts WHERE assigned_group_jid = ?",
           [sourceGroupJid]
@@ -408,6 +409,13 @@ const invoiceWorker = new Worker(
           const [unassigned] = await pool.query("SELECT subaccount_number FROM subaccounts WHERE assigned_group_jid IS NULL");
           targetPool = unassigned.map(acc => acc.subaccount_number);
         }
+
+        console.log('============================================================');
+        console.log('[WORKER-GROUND-TRUTH] Preparing to search for Upgrade Zone transaction.');
+        console.log(`[WORKER-GROUND-TRUTH] Searching for Amount (number): ${searchAmount}`);
+        console.log(`[WORKER-GROUND-TRUTH] Searching for Sender Name (string): "${searchSenderName}"`);
+        console.log(`[WORKER-GROUND-TRUTH] Target Subaccount Pool: [${targetPool.join(', ')}]`);
+        console.log('============================================================');
 
         if (targetPool.length > 0) {
           let matchId = await findBestXPayzMatch(searchAmount, sender.name, targetPool);
