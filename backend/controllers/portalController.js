@@ -7,7 +7,6 @@ require('dotenv').config();
 
 const PORTAL_JWT_SECRET = process.env.PORTAL_JWT_SECRET;
 
-// Client Login Endpoint
 exports.login = async (req, res) => {
     const { username, password } = req.body;
     if (!username || !password) {
@@ -41,7 +40,7 @@ exports.login = async (req, res) => {
             client: { 
                 username: client.username, 
                 name: subaccount.name,
-                groupName: subaccount.assigned_group_name // This is the new piece of data
+                groupName: subaccount.assigned_group_name
             } 
         });
     } catch (error) {
@@ -50,12 +49,61 @@ exports.login = async (req, res) => {
     }
 };
 
-// Get Transactions Endpoint (Protected)
-exports.getTransactions = async (req, res) => {
-    // req.client is added by the portalAuthMiddleware
+exports.getDashboardSummary = async (req, res) => {
     const subaccountNumber = req.client.subaccountNumber;
+    const { date } = req.query;
 
-    // Use a single 'date' filter now
+    if (!date) {
+        return res.json({ 
+            dailyTotalIn: 0, dailyTotalOut: 0, allTimeBalance: 0,
+            dailyCountIn: 0, dailyCountOut: 0, dailyCountTotal: 0 
+        });
+    }
+
+    try {
+        // --- THIS IS THE FIX ---
+        // The query now calculates SUMs for volume AND COUNTs for transactions in one go.
+        const dailySummaryQuery = `
+            SELECT 
+                SUM(CASE WHEN operation_direct = 'in' THEN amount ELSE 0 END) as dailyTotalIn,
+                SUM(CASE WHEN operation_direct = 'out' THEN amount ELSE 0 END) as dailyTotalOut,
+                COUNT(CASE WHEN operation_direct = 'in' THEN 1 END) as dailyCountIn,
+                COUNT(CASE WHEN operation_direct = 'out' THEN 1 END) as dailyCountOut,
+                COUNT(*) as dailyCountTotal
+            FROM xpayz_transactions
+            WHERE subaccount_id = ? AND DATE(transaction_date) = ?;
+        `;
+        const [[dailySummary]] = await pool.query(dailySummaryQuery, [subaccountNumber, date]);
+        // --- END OF FIX ---
+
+        // The all-time balance query remains separate and unchanged.
+        const allTimeBalanceQuery = `
+            SELECT 
+                (SUM(CASE WHEN operation_direct = 'in' THEN amount ELSE 0 END) - 
+                 SUM(CASE WHEN operation_direct = 'out' THEN amount ELSE 0 END)) as allTimeBalance
+            FROM xpayz_transactions
+            WHERE subaccount_id = ?;
+        `;
+        const [[balance]] = await pool.query(allTimeBalanceQuery, [subaccountNumber]);
+
+        // Add the new count fields to the JSON response.
+        res.json({ 
+            dailyTotalIn: parseFloat(dailySummary.dailyTotalIn || 0),
+            dailyTotalOut: parseFloat(dailySummary.dailyTotalOut || 0),
+            allTimeBalance: parseFloat(balance.allTimeBalance || 0),
+            dailyCountIn: parseInt(dailySummary.dailyCountIn || 0),
+            dailyCountOut: parseInt(dailySummary.dailyCountOut || 0),
+            dailyCountTotal: parseInt(dailySummary.dailyCountTotal || 0)
+        });
+
+    } catch (error) {
+        console.error(`[PORTAL-SUMMARY-ERROR] for subaccount ${subaccountNumber}:`, error);
+        res.status(500).json({ message: 'Failed to calculate dashboard summary.' });
+    }
+};
+
+exports.getTransactions = async (req, res) => {
+    const subaccountNumber = req.client.subaccountNumber;
     const { page = 1, limit = 50, search, date } = req.query;
 
     try {
@@ -66,11 +114,11 @@ exports.getTransactions = async (req, res) => {
         const params = [subaccountNumber];
 
         if (search) {
-            query += ` AND (sender_name LIKE ? OR amount LIKE ? OR xpayz_transaction_id LIKE ?)`;
+            query += ` AND (counterparty_name LIKE ? OR amount LIKE ? OR xpayz_transaction_id LIKE ?)`;
             const searchTerm = `%${search}%`;
             params.push(searchTerm, searchTerm, searchTerm);
         }
-        // MODIFICATION: Filter by a single date if provided
+        
         if (date) {
             query += ' AND DATE(transaction_date) = ?';
             params.push(date);
@@ -80,7 +128,7 @@ exports.getTransactions = async (req, res) => {
         const [[{ total }]] = await pool.query(countQuery, params);
 
         const dataQuery = `
-            SELECT id, transaction_date, sender_name, amount, xpayz_transaction_id, raw_details
+            SELECT id, transaction_date, counterparty_name, amount, operation_direct, xpayz_transaction_id
             ${query}
             ORDER BY transaction_date DESC
             LIMIT ? OFFSET ?
@@ -96,43 +144,12 @@ exports.getTransactions = async (req, res) => {
         });
 
     } catch (error) {
-        console.error(`[PORTAL-TRANSACTIONS-ERROR] Failed to fetch transactions for subaccount ${subaccountNumber}:`, error);
+        console.error(`[PORTAL-TRANSACTIONS-ERROR] for subaccount ${subaccountNumber}:`, error);
         res.status(500).json({ message: 'Failed to fetch transactions.' });
     }
 };
 
-// === ADD THIS NEW FUNCTION for the volume counter ===
-exports.getFilteredVolume = async (req, res) => {
-    const subaccountNumber = req.client.subaccountNumber;
-    const { search, date } = req.query; 
-
-    try {
-        let query = `
-            SELECT SUM(amount) as totalVolume 
-            FROM xpayz_transactions
-            WHERE subaccount_id = ?
-        `;
-        const params = [subaccountNumber];
-
-        if (search) {
-            query += ` AND (sender_name LIKE ? OR amount LIKE ? OR xpayz_transaction_id LIKE ?)`;
-            const searchTerm = `%${search}%`;
-            params.push(searchTerm, searchTerm, searchTerm);
-        }
-        if (date) {
-            query += ' AND DATE(transaction_date) = ?';
-            params.push(date);
-        }
-
-        const [[{ totalVolume }]] = await pool.query(query, params);
-        res.json({ totalVolume: totalVolume || 0 });
-
-    } catch (error) {
-        console.error(`[PORTAL-VOLUME-ERROR] Failed to calculate filtered volume for subaccount ${subaccountNumber}:`, error);
-        res.status(500).json({ message: 'Failed to calculate volume.' });
-    }
-};
-
+// ... (The export and PDF functions remain unchanged and are omitted for brevity) ...
 
 const generatePdfTable = (doc, transactions, clientName) => {
     // --- Header ---
@@ -185,7 +202,8 @@ const generatePdfTable = (doc, transactions, clientName) => {
 
 exports.exportTransactions = async (req, res) => {
     // === MODIFICATION: Get the full groupName from the JWT token ===
-    const { subaccountNumber, username } = req.client;
+    const subaccountNumber = req.subaccountNumberForPortal;
+    const { username } = req.client;
     const { search, date, format = 'excel' } = req.query;
 
     try {

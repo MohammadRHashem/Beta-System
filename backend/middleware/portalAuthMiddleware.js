@@ -16,10 +16,24 @@ module.exports = (req, res, next) => {
 
     try {
         const decoded = jwt.verify(token, PORTAL_JWT_SECRET);
-        // Add client-specific info to the request object for use in controllers
+        
+        // --- AGGRESSIVE DEBUGGING ---
+        console.log('[MIDDLEWARE-DEBUG] Decoded payload:', decoded);
+        
+        if (!decoded.subaccountNumber) {
+            console.error('[MIDDLEWARE-FATAL] subaccountNumber is MISSING from the decoded JWT payload!');
+        } else {
+            console.log(`[MIDDLEWARE-SUCCESS] Found subaccountNumber: '${decoded.subaccountNumber}'. Attaching to req.`);
+        }
+        
+        // Attach the entire object AND the specific property to be safe.
         req.client = decoded; 
+        req.subaccountNumberForPortal = decoded.subaccountNumber;
+        // --- END AGGRESSIVE DEBUGGING ---
+
         next();
     } catch (error) {
+        console.error('[MIDDLEWARE-ERROR] JWT verification failed:', error.message);
         res.status(401).json({ message: 'Token is not valid.' });
     }
 };

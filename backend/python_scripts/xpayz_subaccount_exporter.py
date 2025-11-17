@@ -38,6 +38,8 @@ class Transaction:
     amount: str
     operation_direct: str
     sender_name: str | None
+    destination_name: str | None
+    subtitle: str | None  # <-- ADD THIS LINE
     raw: dict
 
 class XPayzClient:
@@ -98,6 +100,8 @@ class XPayzClient:
             amount=d.get("amount"),
             operation_direct=d.get("operation_direct"),
             sender_name=d.get("sender_name"),
+            destination_name=d.get("destination_name"),
+            subtitle=d.get("subtitle"), # <-- ADD THIS LINE
             raw=d,
         )
 
@@ -125,28 +129,41 @@ def save_transactions_to_db(subaccount_id: int, transactions: list[Transaction])
     
     insert_query = """
         INSERT INTO xpayz_transactions (
-            xpayz_transaction_id, subaccount_id, amount, sender_name, 
-            sender_name_normalized, transaction_date, raw_details
-        ) VALUES (%s, %s, %s, %s, %s, %s, %s)
-        ON DUPLICATE KEY UPDATE xpayz_transaction_id=xpayz_transaction_id;
+            xpayz_transaction_id, subaccount_id, amount, operation_direct, sender_name, 
+            counterparty_name, counterparty_name_normalized, transaction_date, raw_details
+        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+        ON DUPLICATE KEY UPDATE 
+            operation_direct=VALUES(operation_direct),
+            counterparty_name=VALUES(counterparty_name),
+            counterparty_name_normalized=VALUES(counterparty_name_normalized);
     """
     
     count = 0
     for tx in transactions:
-        if tx.operation_direct != 'in' or not tx.sender_name:
-            continue
+        # REMOVED the old filter. We now process 'in' and 'out'.
+        # if tx.operation_direct != 'in' or not tx.sender_name:
+        #     continue
 
         try:
+            # Determine the counterparty based on direction
+            counterparty = tx.subtitle
+
+            if not counterparty: # Skip if there's no counterparty
+                continue
+
             amount = float(tx.amount)
             tx_date = isoparse(tx.created_at)
-            normalized = normalize_name(tx.sender_name)
+            normalized_counterparty = normalize_name(counterparty)
             
+            # Note the new columns in the INSERT query
             values = (
                 tx.id,
                 subaccount_id,
                 amount,
-                tx.sender_name,
-                normalized,
+                tx.operation_direct, # New field
+                tx.sender_name, # Keep original sender
+                counterparty, # New field
+                normalized_counterparty, # New field
                 tx_date,
                 json.dumps(tx.raw)
             )

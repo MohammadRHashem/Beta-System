@@ -12,12 +12,14 @@ const syncSingleSubaccount = async (subaccountId) => {
         console.error('[XPAYZ-SYNC-JIT] No subaccount ID provided for on-demand sync.');
         return;
     }
-    console.log(`[XPAYZ-SYNC-JIT] ==> Starting ON-DEMAND sync for subaccount ID: ${subaccountId}...`);
+    console.log(`[XPAYZ-SYNC] ==> Starting sync for subaccount ID: ${subaccountId}...`);
     try {
         const pythonExecutable = process.platform === 'win32' ? 'python' : 'python3';
         const scriptPath = path.join(__dirname, 'python_scripts', 'xpayz_subaccount_exporter.py');
         
-        const { stdout, stderr } = await execa(
+        // --- THIS IS THE FIX ---
+        // We use execa() to create a subprocess
+        const subprocess = execa(
             pythonExecutable, 
             [scriptPath, subaccountId],
             {
@@ -25,12 +27,20 @@ const syncSingleSubaccount = async (subaccountId) => {
                 env: { ...process.env, PYTHONUTF8: '1' }
             }
         );
-        if (stderr) console.error(`[XPAYZ-SYNC-JIT-PYTHON-ERROR][${subaccountId}]`, stderr);
-        if (stdout) console.log(`[XPAYZ-SYNC-JIT-PYTHON-OUT][${subaccountId}]`, stdout);
-        console.log(`[XPAYZ-SYNC-JIT] On-demand sync finished for ${subaccountId}.`);
+
+        // Pipe the Python script's stdout and stderr directly to the Node.js process's streams
+        // This will make Python's `print()` statements appear in your PM2 logs in real-time.
+        subprocess.stdout.pipe(process.stdout);
+        subprocess.stderr.pipe(process.stderr);
+
+        // Wait for the subprocess to finish
+        await subprocess;
+        // --- END OF FIX ---
+
+        console.log(`[XPAYZ-SYNC] <== Sync finished for ${subaccountId}.`);
     } catch (error) {
-        console.error(`[XPAYZ-SYNC-JIT-CRITICAL] Failed to execute Python script for subaccount ${subaccountId}:`, error.message);
-        if (error.stderr) console.error(`[XPAYZ-SYNC-JIT-PYTHON-STDERR][${subaccountId}]:`, error.stderr);
+        // The error will have already been piped to stderr, but we log a final message.
+        console.error(`[XPAYZ-SYNC-CRITICAL] Execution failed for subaccount ${subaccountId}.`);
     }
 };
 
@@ -62,11 +72,17 @@ const syncAllSubaccounts = async () => {
     }
 };
 
-const main = () => {
+const main = async () => {
     console.log('--- XPayz Multi-Account Sync Service Started ---');
-    syncAllSubaccounts();
+    
+    // 1. Run the first sync on startup and WAIT for it to complete.
+    console.log('[XPAYZ-SYNC] Performing initial startup sync. This may take a while...');
+    await syncAllSubaccounts();
+    console.log('[XPAYZ-SYNC] Initial startup sync complete.');
+
+    // 2. ONLY AFTER the first sync is done, schedule the recurring job for the future.
     cron.schedule('* * * * *', syncAllSubaccounts);
-    console.log('[XPAYZ-SYNC] Scheduled to run every minute.');
+    console.log('[XPAYZ-SYNC] Recurring sync scheduled to run every minute.');
 };
 
 // We only run main if this file is executed directly.

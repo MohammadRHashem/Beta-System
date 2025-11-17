@@ -1,25 +1,13 @@
 const express = require("express");
 const router = express.Router();
 const portalController = require("../controllers/portalController");
-const portalAuthMiddleware = require("../middleware/portalAuthMiddleware");
 
-router.post("/auth/login", portalController.login);
-router.get(
-  "/transactions",
-  portalAuthMiddleware,
-  portalController.getTransactions
-);
+// NOTE: The login route is now in server.js and is public.
+// The portalAuthMiddleware is also applied in server.js.
+// This file ONLY contains the routes that should be protected.
 
-router.get(
-  "/filtered-volume",
-  portalAuthMiddleware,
-  portalController.getFilteredVolume
-);
-
-router.get(
-  "/export-excel",
-  portalAuthMiddleware,
-  portalController.exportTransactions
-); // This route now handles both formats
+router.get("/transactions", portalController.getTransactions);
+router.get("/dashboard-summary", portalController.getDashboardSummary);
+router.get("/export-excel", portalController.exportTransactions);
 
 module.exports = router;
