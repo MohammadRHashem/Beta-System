@@ -393,7 +393,6 @@ const invoiceWorker = new Worker(
         const sourceGroupJid = chat.id._serialized;
         const searchAmount = parseFloat(amount.replace(/,/g, ""));
 
-
         const [[assignmentRule]] = await pool.query(
           "SELECT subaccount_number, name FROM subaccounts WHERE assigned_group_jid = ?",
           [sourceGroupJid]
@@ -410,22 +409,22 @@ const invoiceWorker = new Worker(
           targetPool = unassigned.map(acc => acc.subaccount_number);
         }
 
-        console.log('============================================================');
-        console.log('[WORKER-GROUND-TRUTH] Preparing to search for Upgrade Zone transaction.');
-        console.log(`[WORKER-GROUND-TRUTH] Searching for Amount (number): ${searchAmount}`);
-        console.log(`[WORKER-GROUND-TRUTH] Searching for Sender Name (string): "${searchSenderName}"`);
-        console.log(`[WORKER-GROUND-TRUTH] Target Subaccount Pool: [${targetPool.join(', ')}]`);
-        console.log('============================================================');
-
+        // --- THIS IS THE FIX ---
+        // We are removing the debug logs for now and using the correct variable `sender.name`
         if (targetPool.length > 0) {
+          // The call now correctly uses `sender.name` which is guaranteed to exist.
           let matchId = await findBestXPayzMatch(searchAmount, sender.name, targetPool);
+        // --- END OF FIX ---
 
           if (!matchId) {
+            console.log(`[WORKER][JIT-SYNC] No initial match for Upgrade Zone. Syncing relevant accounts...`);
             for (const subId of targetPool) { await syncSingleSubaccount(subId); }
+            
             const POLLING_ATTEMPTS = 4;
             const POLLING_DELAY = 5000;
             for (let i = 1; i <= POLLING_ATTEMPTS; i++) {
               await delay(POLLING_DELAY);
+              console.log(`[WORKER][POLLING] Re-checking for match, attempt ${i}/${POLLING_ATTEMPTS}...`);
               matchId = await findBestXPayzMatch(searchAmount, sender.name, targetPool);
               if (matchId) break;
             }
@@ -439,9 +438,8 @@ const invoiceWorker = new Worker(
             runStandardForwarding = false;
           } else if (isAssigned) {
             // Smart Escalation Logic
-            console.log("[WORKER][ESCALATION] No match for assigned group. Escalating to manual confirmation.");
+            console.log("[WORKER][ESCALATION] No match for assigned group after polling. Escalating to manual confirmation.");
             
-            // THE FIX: Use the correct keyword for this context, which is "upgrade zone"
             const [[escalationRule]] = await pool.query(
                 "SELECT destination_group_jid FROM forwarding_rules WHERE trigger_keyword = 'upgrade zone' AND is_enabled = 1"
             );
@@ -464,10 +462,9 @@ const invoiceWorker = new Worker(
                 
                 await originalMessage.react("🟡");
                 wasActioned = true;
-                runStandardForwarding = false; // Prevent default forwarding
+                runStandardForwarding = false;
             } else {
                 console.warn("[WORKER][ESCALATION] Could not find an active forwarding rule for 'upgrade zone' to use for escalation. Falling back to default forwarding.");
-                // Let it fall through to the default forwarding logic if no specific rule is found
             }
           }
         }
