@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import styled, { keyframes } from 'styled-components';
 import { motion } from 'framer-motion';
-import { getPortalTransactions, getPortalFilteredVolume } from '../services/api';
+import { getPortalTransactions, getPortalDashboardSummary } from '../services/api'; // <--- FIX: Changed Import
 import { FaSyncAlt } from 'react-icons/fa';
 import Pagination from '../components/Pagination';
 import { format } from 'date-fns';
@@ -131,14 +131,16 @@ const ClientViewOnlyDashboard = () => {
         };
         
         try {
-            const [transRes, volRes] = await Promise.all([
+            const [transRes, summaryRes] = await Promise.all([
                 getPortalTransactions({ ...params, page: pagination.page, limit: pagination.limit }),
-                getPortalFilteredVolume(params)
+                getPortalDashboardSummary(params) // <--- FIX: Use the correct API function
             ]);
 
             setTransactions(transRes.data.transactions || []);
             setPagination(prev => ({ ...prev, totalPages: transRes.data.totalPages, totalRecords: transRes.data.totalRecords, currentPage: transRes.data.currentPage }));
-            setTodayVolume(volRes.data.totalVolume || 0);
+            
+            // <--- FIX: Extract 'dailyTotalIn' from the summary response
+            setTodayVolume(summaryRes.data.dailyTotalIn || 0);
 
         } catch (error) {
             console.error("Failed to fetch data:", error);
