@@ -677,8 +677,19 @@ const invoiceWorker = new Worker(
                     { caption: caption }
                   );
                   if (rule.reply_with_group_name) {
-                    const groupNameReply = rule.destination_group_name || "Forwarded to manual group";
-                    await originalMessage.reply(groupNameReply);
+                    const destName = rule.destination_group_name || "";
+                    let replyText = destName; // Default to full name if no number found
+
+                    // Use the same regex used for captions to extract the ID/Number
+                    const numberRegex = /\b(\d[\d-]{2,})\b/g;
+                    const matches = destName.match(numberRegex);
+
+                    if (matches && matches.length > 0) {
+                      // Use the last match found, consistent with caption logic
+                      replyText = matches[matches.length - 1];
+                    }
+
+                    await originalMessage.reply(replyText);
                   }
                   if (isAutoConfirmationEnabled) {
                     await pool.query(
