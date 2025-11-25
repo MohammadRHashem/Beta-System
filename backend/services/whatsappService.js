@@ -676,6 +676,10 @@ const invoiceWorker = new Worker(
                     mediaToForward,
                     { caption: caption }
                   );
+                  if (rule.reply_with_group_name) {
+                    const groupNameReply = rule.destination_group_name || "Forwarded to manual group";
+                    await originalMessage.reply(groupNameReply);
+                  }
                   if (isAutoConfirmationEnabled) {
                     await pool.query(
                       `INSERT INTO forwarded_invoices (original_message_id, forwarded_message_id, destination_group_jid) VALUES (?, ?, ?)`,
