@@ -953,24 +953,55 @@ const auditAndReconcileInternalLog = async () => {
 };
 
 
-const queueMessageIfNotExists = async (messageId) => {
+const queueMessageIfNotExists = async (messageId, options = {}) => {
     const connection = await pool.getConnection();
     try {
         await connection.beginTransaction();
-        const [rows] = await connection.query("SELECT message_id FROM processed_messages WHERE message_id = ?", [messageId]);
-        if (rows.length > 0) {
-            await connection.commit();
-            return;
+        
+        // Check if message was processed before (Lock)
+        const [processedRows] = await connection.query("SELECT message_id FROM processed_messages WHERE message_id = ?", [messageId]);
+        const isProcessed = processedRows.length > 0;
+
+        if (isProcessed) {
+            // If it's a Force Retry, we check if it actually succeeded (is in invoices)
+            if (options.forceIfMissingInvoice) {
+                const [invoiceRows] = await connection.query("SELECT id FROM invoices WHERE message_id = ? AND is_deleted = 0", [messageId]);
+                
+                // Case A: It is in invoices table -> Already successful.
+                if (invoiceRows.length > 0) {
+                    console.log(`[QUEUE-SKIP] Force retry ignored for ${messageId}. Invoice already exists.`);
+                    await connection.commit();
+                    
+                    // Try to clear the reaction to indicate "Nothing to do"
+                    try {
+                        const msg = await client.getMessageById(messageId);
+                        if (msg) await msg.react(''); // Clears bot reaction
+                    } catch (e) { /* ignore */ }
+                    
+                    return;
+                }
+                // Case B: Not in invoices -> Crashed/Failed. Proceed to queue.
+                console.log(`[QUEUE-FORCE] Message ${messageId} found in processed logs but NOT in invoices. Forcing reprocessing.`);
+            } else {
+                // Standard case: If processed, skip.
+                await connection.commit();
+                return;
+            }
         }
+
+        // Add to Queue
         await invoiceQueue.add("process-invoice", { messageId }, { jobId: messageId, removeOnComplete: true, removeOnFail: 50 });
-        await connection.query("INSERT INTO processed_messages (message_id) VALUES (?)", [messageId]);
+        
+        // Create Lock (Use IGNORE because if forcing, it already exists)
+        await connection.query("INSERT IGNORE INTO processed_messages (message_id) VALUES (?)", [messageId]);
+        
         await connection.commit();
-        console.log(`[QUEUE-ADD] Transactionally added message to queue. ID: ${messageId}`);
+        console.log(`[QUEUE-ADD] Transactionally added message to queue. ID: ${messageId} (Force: ${!!options.forceIfMissingInvoice})`);
+        
+        // Visual Feedback
         const originalMessage = await client.getMessageById(messageId);
         if (originalMessage && originalMessage.hasMedia) {
             const mime = originalMessage._data?.mimetype?.toLowerCase();
-            // === THE DEFINITIVE PDF FIX ===
-            // Check for both common PDF mime types.
             if (originalMessage.type === 'image' || (originalMessage.type === 'document' && (mime === 'application/pdf' || mime === 'application/x-pdf'))) {
                 await originalMessage.react('⏳');
             }
@@ -1102,30 +1133,26 @@ const handleMessageRevoke = async (message, revoked_msg) => {
   }
 };
 
-// === THIS FUNCTION IS THE ONLY ONE WITH CHANGES ===
 const handleReaction = async (reaction) => {
   const reactedMessageId = reaction.msgId._serialized;
   const reactionEmoji = reaction.reaction;
 
-  
+  // --- 1. Blue Circle Manual Override ---
   if (reactionEmoji === '🔵') {
+      console.log(`[MANUAL-OVERRIDE] Blue circle detected on ${reactedMessageId}.`);
       try {
-          // Check if the message has media before proceeding
-          const messageToRequeue = await client.getMessageById(reactedMessageId);
-          if (messageToRequeue && messageToRequeue.hasMedia) {
-              console.log(`[REACTION-REQUEUE] Received blue circle on message ${reactedMessageId}. Attempting to re-queue.`);
-              
-              // This function already contains the check to prevent duplicates
-              await queueMessageIfNotExists(reactedMessageId);
+          const msg = await client.getMessageById(reactedMessageId);
+          if (msg && msg.hasMedia) {
+              // Pass flag to check invoices table before re-queueing
+              await queueMessageIfNotExists(reactedMessageId, { forceIfMissingInvoice: true });
           }
-          // No else needed. If it's not a media message, we just ignore the reaction.
-          return; // Stop further processing of this reaction
-      } catch (error) {
-          console.error(`[REACTION-REQUEUE-ERROR] Failed to process blue circle for ${reactedMessageId}:`, error);
-          return;
+      } catch (e) {
+          console.error(`[MANUAL-OVERRIDE-ERROR]`, e);
       }
+      return; // Stop processing here
   }
 
+  // --- 2. Standard Auto-Confirmation Logic ---
   if (!isAutoConfirmationEnabled) {
     return;
   }
@@ -1148,7 +1175,6 @@ const handleReaction = async (reaction) => {
     let isUsdt = false;
     if (invoiceDetails && invoiceDetails.raw_json_data) {
         try {
-            // Check both `type` and `currency` for robustness
             const jsonData = (typeof invoiceDetails.raw_json_data === 'string')
                 ? JSON.parse(invoiceDetails.raw_json_data)
                 : invoiceDetails.raw_json_data;
@@ -1161,8 +1187,8 @@ const handleReaction = async (reaction) => {
         }
     }
     
-    const confirmMessage = isUsdt ? "Informed ✅" : "Caiu";
-    const rejectMessage = isUsdt ? "Not Informed ❌" : "no caiu";
+    const confirmMessage = isUsdt ? "Informed" : "Caiu";
+    const rejectMessage = isUsdt ? "not informed" : "no caiu";
 
     if (reactionEmoji === '👍' || reactionEmoji === '✅') {
       const originalMessage = await client.getMessageById(link.original_message_id);
@@ -1191,7 +1217,7 @@ const handleReaction = async (reaction) => {
         );
 
         if (invoiceToDelete) {
-          await connection.query('Update invoices SET is_deleted = 1 WHERE id = ?', [invoiceToDelete.id]);
+          await connection.query('Update invoices SET is_deleted=1 WHERE id = ?', [invoiceToDelete.id]);
           if (invoiceToDelete.media_path && fsSync.existsSync(invoiceToDelete.media_path)) {
             await fs.unlink(invoiceToDelete.media_path);
           }
