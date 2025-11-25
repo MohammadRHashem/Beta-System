@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import styled, { keyframes } from 'styled-components';
 import { motion } from 'framer-motion';
-import { getPortalTransactions, getPortalDashboardSummary } from '../services/api'; // <--- FIX: Changed Import
+import { getPortalTransactions } from '../services/api'; // Removed getPortalDashboardSummary
 import { FaSyncAlt } from 'react-icons/fa';
 import Pagination from '../components/Pagination';
 import { format } from 'date-fns';
@@ -30,28 +30,6 @@ const RefreshButton = styled.button`
     
     &:hover {
         transform: translateY(-2px);
-    }
-`;
-
-const VolumeCard = styled.div`
-    background: #fff;
-    padding: 1rem 2rem;
-    border-radius: 8px;
-    box-shadow: 0 2px 10px rgba(0,0,0,0.05);
-    text-align: center;
-
-    h3 {
-        margin: 0;
-        font-size: 0.9rem;
-        color: ${({ theme }) => theme.lightText};
-        font-weight: 500;
-    }
-    p {
-        margin: 0;
-        font-size: 2rem;
-        font-weight: 700;
-        color: ${({ theme }) => theme.primary};
-        font-family: 'Courier New', Courier, monospace;
     }
 `;
 
@@ -119,7 +97,6 @@ const SkeletonRow = () => (
 const ClientViewOnlyDashboard = () => {
     const [transactions, setTransactions] = useState([]);
     const [loading, setLoading] = useState(true);
-    const [todayVolume, setTodayVolume] = useState(0);
     const [pagination, setPagination] = useState({ page: 1, limit: 20, totalPages: 1, totalRecords: 0 });
     
     const todayDate = format(new Date(), 'yyyy-MM-dd');
@@ -127,20 +104,22 @@ const ClientViewOnlyDashboard = () => {
     const fetchData = useCallback(async () => {
         setLoading(true);
         const params = { 
-            date: todayDate 
+            date: todayDate,
+            page: pagination.page, 
+            limit: pagination.limit
         };
         
         try {
-            const [transRes, summaryRes] = await Promise.all([
-                getPortalTransactions({ ...params, page: pagination.page, limit: pagination.limit }),
-                getPortalDashboardSummary(params) // <--- FIX: Use the correct API function
-            ]);
+            // Only fetch the transactions list, no volume summary needed
+            const { data } = await getPortalTransactions(params);
 
-            setTransactions(transRes.data.transactions || []);
-            setPagination(prev => ({ ...prev, totalPages: transRes.data.totalPages, totalRecords: transRes.data.totalRecords, currentPage: transRes.data.currentPage }));
-            
-            // <--- FIX: Extract 'dailyTotalIn' from the summary response
-            setTodayVolume(summaryRes.data.dailyTotalIn || 0);
+            setTransactions(data.transactions || []);
+            setPagination(prev => ({ 
+                ...prev, 
+                totalPages: data.totalPages, 
+                totalRecords: data.totalRecords, 
+                currentPage: data.currentPage 
+            }));
 
         } catch (error) {
             console.error("Failed to fetch data:", error);
@@ -166,13 +145,7 @@ const ClientViewOnlyDashboard = () => {
         <PageContainer initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
             <ControlsContainer>
                 <h2 style={{color: '#0A2540'}}>Transactions for Today ({format(new Date(), 'dd/MM/yyyy')})</h2>
-                <div style={{display: 'flex', gap: '1.5rem', alignItems: 'center'}}>
-                    <VolumeCard>
-                        <h3>Volume Today (BRL)</h3>
-                        <p>{new Intl.NumberFormat('en-US', { minimumFractionDigits: 2 }).format(todayVolume)}</p>
-                    </VolumeCard>
-                    <RefreshButton onClick={fetchData}><FaSyncAlt /> Refresh</RefreshButton>
-                </div>
+                <RefreshButton onClick={fetchData}><FaSyncAlt /> Refresh</RefreshButton>
             </ControlsContainer>
 
             <Card>
