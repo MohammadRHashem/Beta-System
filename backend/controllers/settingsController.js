@@ -80,6 +80,30 @@ exports.updateForwardingRule = async (req, res) => {
     }
 };
 
+exports.toggleForwardingRuleReply = async (req, res) => {
+    const userId = req.user.id;
+    const { id } = req.params;
+    const { reply_with_group_name } = req.body;
+
+    if (typeof reply_with_group_name !== 'boolean') {
+        return res.status(400).json({ message: 'A boolean value is required.' });
+    }
+
+    try {
+        const [result] = await pool.query(
+            'UPDATE forwarding_rules SET reply_with_group_name = ? WHERE id = ? AND user_id = ?',
+            [reply_with_group_name, id, userId]
+        );
+        if (result.affectedRows === 0) {
+            return res.status(404).json({ message: 'Rule not found or permission denied.' });
+        }
+        res.json({ message: `Reply setting successfully updated.` });
+    } catch (error) {
+        console.error('[ERROR] Failed to toggle reply setting:', error);
+        res.status(500).json({ message: 'Failed to update setting.' });
+    }
+};
+
 exports.toggleForwardingRule = async (req, res) => {
     const userId = req.user.id;
     const { id } = req.params;

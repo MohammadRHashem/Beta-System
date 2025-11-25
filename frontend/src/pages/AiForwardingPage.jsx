@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import styled from 'styled-components';
-import api, { toggleForwardingRule } from '../services/api';
+import api, { toggleForwardingRule, toggleReplyRule } from '../services/api';
 import Modal from '../components/Modal';
-import { FaEdit, FaTrash, FaReply } from 'react-icons/fa';
+import { FaEdit, FaTrash } from 'react-icons/fa';
 import ComboBox from '../components/ComboBox';
 
 const PageContainer = styled.div`
@@ -64,6 +64,7 @@ const RulesTable = styled.table`
         padding: 1rem;
         text-align: left;
         border-bottom: 1px solid ${({ theme }) => theme.border};
+        vertical-align: middle;
     }
     th {
         background-color: ${({ theme }) => theme.background};
@@ -122,20 +123,10 @@ const Slider = styled.span`
     }
 `;
 
-const CheckboxContainer = styled.div`
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    margin-bottom: 1rem;
-    cursor: pointer;
-    user-select: none;
-`;
-
 const AiForwardingPage = ({ allGroups }) => {
     const [rules, setRules] = useState([]);
     const [trigger, setTrigger] = useState('');
     const [destination, setDestination] = useState('');
-    const [replyWithGroupName, setReplyWithGroupName] = useState(false);
 
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingRule, setEditingRule] = useState(null);
@@ -163,12 +154,11 @@ const AiForwardingPage = ({ allGroups }) => {
                 trigger_keyword: trigger,
                 destination_group_jid: destination,
                 destination_group_name: selectedGroup?.name,
-                reply_with_group_name: replyWithGroupName
+                reply_with_group_name: false
             });
             alert('Rule created successfully!');
             setTrigger('');
             setDestination('');
-            setReplyWithGroupName(false);
             fetchRules();
         } catch (error) {
             alert(error.response?.data?.message || 'Failed to create rule.');
@@ -189,7 +179,6 @@ const AiForwardingPage = ({ allGroups }) => {
     
     const openEditModal = (rule) => {
         setEditingRule(rule);
-        setReplyWithGroupName(!!rule.reply_with_group_name);
         setIsModalOpen(true);
     };
 
@@ -199,7 +188,7 @@ const AiForwardingPage = ({ allGroups }) => {
             const payload = {
                 trigger_keyword: editingRule.trigger_keyword,
                 destination_group_jid: editingRule.destination_group_jid,
-                reply_with_group_name: replyWithGroupName
+                reply_with_group_name: editingRule.reply_with_group_name 
             };
 
             await api.put(`/settings/forwarding/${editingRule.id}`, payload);
@@ -213,13 +202,23 @@ const AiForwardingPage = ({ allGroups }) => {
         }
     };
 
-    const handleToggle = async (rule) => {
+    const handleToggleEnabled = async (rule) => {
         const newEnabledState = !rule.is_enabled;
         try {
             await toggleForwardingRule(rule.id, newEnabledState);
             setRules(rules.map(r => r.id === rule.id ? { ...r, is_enabled: newEnabledState } : r));
         } catch (error) {
             alert('Failed to update rule status.');
+        }
+    };
+
+    const handleToggleReply = async (rule) => {
+        const newReplyState = !rule.reply_with_group_name;
+        try {
+            await toggleReplyRule(rule.id, newReplyState);
+            setRules(rules.map(r => r.id === rule.id ? { ...r, reply_with_group_name: newReplyState } : r));
+        } catch (error) {
+            alert('Failed to update reply setting.');
         }
     };
 
@@ -247,12 +246,6 @@ const AiForwardingPage = ({ allGroups }) => {
                                 placeholder="Search & select a group..."
                             />
                         </InputGroup>
-                        <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', marginBottom: '0.3rem' }}>
-                            <CheckboxContainer onClick={() => setReplyWithGroupName(!replyWithGroupName)}>
-                                <input type="checkbox" checked={replyWithGroupName} readOnly />
-                                <Label style={{cursor: 'pointer'}}>Reply w/ Dest. Name</Label>
-                            </CheckboxContainer>
-                        </div>
                         <Button type="submit">Add Rule</Button>
                     </Form>
                 </Card>
@@ -265,7 +258,8 @@ const AiForwardingPage = ({ allGroups }) => {
                                 <th>Enabled</th>
                                 <th>Trigger Keyword</th>
                                 <th>Destination Group</th>
-                                <th>Reply</th>
+                                {/* Renamed header */}
+                                <th>Reply with Group Nb?</th>
                                 <th>Actions</th>
                             </tr>
                         </thead>
@@ -277,15 +271,22 @@ const AiForwardingPage = ({ allGroups }) => {
                                             <SwitchInput 
                                                 type="checkbox" 
                                                 checked={!!rule.is_enabled}
-                                                onChange={() => handleToggle(rule)}
+                                                onChange={() => handleToggleEnabled(rule)}
                                             />
                                             <Slider />
                                         </SwitchContainer>
                                     </td>
                                     <td>{rule.trigger_keyword}</td>
                                     <td>{rule.destination_group_name || rule.destination_group_jid}</td>
-                                    <td style={{ textAlign: 'center' }}>
-                                        {rule.reply_with_group_name ? <FaReply title="Will reply with destination name" color="#00C49A" /> : <span style={{color: '#ccc'}}>-</span>}
+                                    <td>
+                                        <SwitchContainer>
+                                            <SwitchInput 
+                                                type="checkbox" 
+                                                checked={!!rule.reply_with_group_name}
+                                                onChange={() => handleToggleReply(rule)}
+                                            />
+                                            <Slider />
+                                        </SwitchContainer>
                                     </td>
                                     <td className="actions">
                                         <FaEdit onClick={() => openEditModal(rule)} />
@@ -310,7 +311,7 @@ const AiForwardingPage = ({ allGroups }) => {
                                 onChange={(e) => setEditingRule({...editingRule, trigger_keyword: e.target.value})}
                             />
                         </InputGroup>
-                         <InputGroup style={{marginBottom: '1rem'}}>
+                         <InputGroup style={{marginBottom: '1.5rem'}}>
                             <Label>Destination Group</Label>
                              <ComboBox
                                 options={allGroups}
@@ -319,10 +320,6 @@ const AiForwardingPage = ({ allGroups }) => {
                                 placeholder="Search & select a group..."
                             />
                         </InputGroup>
-                        <CheckboxContainer onClick={() => setReplyWithGroupName(!replyWithGroupName)} style={{marginBottom: '1.5rem'}}>
-                            <input type="checkbox" checked={replyWithGroupName} readOnly />
-                            <Label style={{cursor: 'pointer'}}>Reply with Destination Group Name in Source Group</Label>
-                        </CheckboxContainer>
                         <Button type="submit" style={{width: '100%'}}>Save Changes</Button>
                     </form>
                 )}

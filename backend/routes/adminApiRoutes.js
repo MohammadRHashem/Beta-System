@@ -41,6 +41,7 @@ router.get('/settings/forwarding', settingsController.getForwardingRules);
 router.post('/settings/forwarding', settingsController.createForwardingRule);
 router.put('/settings/forwarding/:id', settingsController.updateForwardingRule);
 router.patch('/settings/forwarding/:id/toggle', settingsController.toggleForwardingRule);
+router.patch('/settings/forwarding/:id/toggle-reply', settingsController.toggleForwardingRuleReply);
 router.delete('/settings/forwarding/:id', settingsController.deleteForwardingRule);
 router.get('/settings/groups', settingsController.getGroupSettings);
 router.post('/settings/groups', settingsController.updateGroupSetting);

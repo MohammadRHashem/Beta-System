@@ -95,6 +95,7 @@ export const createTemplate = (data) => apiClient.post('/templates', data);
 export const updateTemplate = (id, data) => apiClient.put(`/templates/${id}`, data);
 export const deleteTemplate = (id) => apiClient.delete(`/templates/${id}`);
 export const toggleForwardingRule = (id, is_enabled) => apiClient.patch(`/settings/forwarding/${id}/toggle`, { is_enabled });
+export const toggleReplyRule = (id, reply_with_group_name) => apiClient.patch(`/settings/forwarding/${id}/toggle-reply`, { reply_with_group_name });
 const downloadFile = async (url, params) => {
     const config = {
         params,
