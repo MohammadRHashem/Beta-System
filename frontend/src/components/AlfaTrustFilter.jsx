@@ -33,33 +33,6 @@ const InputGroup = styled.div`
     }
 `;
 
-const Label = styled.label`
-    font-weight: 500;
-    font-size: 0.85rem;
-`;
-
-const Input = styled.input`
-    padding: 0.6rem;
-    border: 1px solid ${({ theme }) => theme.border};
-    border-radius: 4px;
-    font-size: 0.9rem;
-`;
-
-const FetchAllButton = styled.button`
-    padding: 0.75rem 1rem;
-    border: none;
-    background: ${({ theme }) => theme.secondary};
-    color: white;
-    border-radius: 4px;
-    cursor: pointer;
-    font-weight: 600;
-    height: 45px;
-    
-    &:hover {
-        opacity: 0.9;
-    }
-`;
-
 const ClearButton = styled.button`
     padding: 0.75rem 1rem;
     border: 1px solid ${({ theme }) => theme.lightText};
@@ -83,25 +56,19 @@ const AlfaTrustFilter = ({ filters, onFilterChange }) => {
     };
 
     const handleClear = () => {
-        // Reset to the new default date
+        // Reset to today's date
         onFilterChange({ 
             search: '', 
-            dateFrom: '2025-09-30', 
-            dateTo: format(new Date(), 'yyyy-MM-dd'),
+            date: format(new Date(), 'yyyy-MM-dd'),
             operation: '' 
         });
     };
 
     return (
         <FilterContainer>
-            <InputGroup>
-                <Label>Search (ID, Name, Amount)</Label> {/* <-- Reverted Label */}
-                <Input name="search" type="text" value={filters.search} onChange={handleChange} />
-            </InputGroup>
-            <InputGroup><label>From Date</label><input name="dateFrom" type="date" value={filters.dateFrom} onChange={handleChange} /></InputGroup>
-            <InputGroup><label>To Date</label><input name="dateTo" type="date" value={filters.dateTo} onChange={handleChange} /></InputGroup>
-            
-            {/* Transaction Type dropdown is now removed */}
+            <InputGroup><label>Search (ID, Name, Amount)</label><input name="search" type="text" value={filters.search} onChange={handleChange} /></InputGroup>
+            {/* Changed to single Date input */}
+            <InputGroup><label>Date</label><input name="date" type="date" value={filters.date} onChange={handleChange} /></InputGroup>
             
             <InputGroup>
                 <label>Operation</label>
@@ -112,8 +79,6 @@ const AlfaTrustFilter = ({ filters, onFilterChange }) => {
                 </select>
             </InputGroup>
             <ClearButton onClick={handleClear}>Clear Filters</ClearButton>
-            
-            {/* Fetch All button is now removed */}
         </FilterContainer>
     );
 };

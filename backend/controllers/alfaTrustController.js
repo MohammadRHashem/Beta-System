@@ -23,9 +23,10 @@ const getBusinessDayFromLocalString = (localDateString) => {
 
 
 exports.getTransactions = async (req, res) => {
+    // Renamed filters to match new frontend logic
     const {
         page = 1, limit = 50, sortOrder = 'desc',
-        search, dateFrom, dateTo, operation
+        search, date, operation // 'date' is now the single date filter
     } = req.query;
 
     try {
@@ -36,20 +37,17 @@ exports.getTransactions = async (req, res) => {
         const params = [];
 
         if (search) {
-            // --- REVERTED: Added value back to the general search ---
             query += ` AND (end_to_end_id LIKE ? OR payer_name LIKE ? OR value LIKE ?)`;
             const searchTerm = `%${search}%`;
             params.push(searchTerm, searchTerm, searchTerm);
         }
+        
+        // Changed filtering to match specific date
+        if (date) {
+            query += ' AND DATE(inclusion_date) = ?';
+            params.push(date);
+        }
 
-        if (dateFrom) {
-            query += ' AND DATE(inclusion_date) >= ?';
-            params.push(dateFrom);
-        }
-        if (dateTo) {
-            query += ' AND DATE(inclusion_date) <= ?';
-            params.push(dateTo);
-        }
         if (operation) {
             query += ' AND operation = ?';
             params.push(operation);
@@ -91,7 +89,8 @@ exports.getTransactions = async (req, res) => {
 };
 
 exports.exportTransactionsExcel = async (req, res) => {
-    const { search, dateFrom, dateTo, operation } = req.query;
+    // Renamed filters to match new frontend logic
+    const { search, date, operation } = req.query;
 
     let query = `
         SELECT end_to_end_id, inclusion_date, operation, value, payer_name, payer_document, description, raw_details
@@ -105,14 +104,13 @@ exports.exportTransactionsExcel = async (req, res) => {
         const searchTerm = `%${search}%`;
         params.push(searchTerm, searchTerm, searchTerm);
     }
-    if (dateFrom) {
-        query += ' AND DATE(inclusion_date) >= ?';
-        params.push(dateFrom);
+    
+    // Changed filtering to match specific date
+    if (date) {
+        query += ' AND DATE(inclusion_date) = ?';
+        params.push(date);
     }
-    if (dateTo) {
-        query += ' AND DATE(inclusion_date) <= ?';
-        params.push(dateTo);
-    }
+
     if (operation) {
         query += ' AND operation = ?';
         params.push(operation);
@@ -161,7 +159,6 @@ exports.exportTransactionsExcel = async (req, res) => {
                 details = null;
             }
 
-            // === THE FIX: Fully corrected logic for all cases ===
             if (tx.operation === 'C') { // Credit (Money In)
                 senderName = tx.payer_name || tx.description || 'N/A';
                 recipientName = 'ALFA TRUST (Receiver)';
@@ -169,10 +166,8 @@ exports.exportTransactionsExcel = async (req, res) => {
             } else { // Debit (Money Out)
                 senderName = 'ALFA TRUST (Sender)';
                 recipientName = details?.detalhes?.nomeRecebedor || tx.description || 'N/A';
-                // Explicitly get the payer document for debit transactions
                 payerDocument = details?.detalhes?.cpfCnpjPagador || '';
             }
-            // === END OF FIX ===
             
             worksheet.addRow({
                 inclusion_date: tx.inclusion_date,
@@ -233,7 +228,7 @@ exports.triggerManualSync = (req, res) => {
         if (transactions.length > 0) {
             const connection = await pool.getConnection();
             try {
-                // Simplified for brevity, actual logic is in alfaSyncService.js
+                // Logic handled by sync service, but here for completeness if needed locally
             } finally {
                 connection.release();
             }
