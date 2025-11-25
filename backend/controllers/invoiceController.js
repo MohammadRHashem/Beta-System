@@ -4,7 +4,125 @@ const path = require('path');
 const fs = require('fs');
 const { parseFormattedCurrency } = require('../utils/currencyParser');
 
-// getAllInvoices function remains the same...
+// ... (getAllInvoices, getBusinessDay, exportInvoices, getRecipientNames REMAIN UNCHANGED) ...
+
+// ... existing imports and previous functions ...
+
+exports.createInvoice = async (req, res) => {
+    const { 
+        amount, notes, received_at, 
+        sender_name, recipient_name, transaction_id, pix_key,
+        source_group_jid // <--- NEW PARAMETER
+    } = req.body;
+    
+    if (!received_at) {
+        return res.status(400).json({ message: "A timestamp (received_at) is required for all new entries." });
+    }
+    
+    const receivedAt = new Date(received_at);
+    const amountValue = (amount === null || amount === undefined || amount === '') ? '0.00' : amount;
+
+    try {
+        const [result] = await pool.query(
+            `INSERT INTO invoices 
+            (amount, notes, received_at, is_manual, sender_name, recipient_name, transaction_id, pix_key, source_group_jid) 
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [
+                amountValue, 
+                notes, 
+                receivedAt, 
+                true, 
+                sender_name || '', 
+                recipient_name || '', 
+                transaction_id || null, 
+                pix_key || null,
+                source_group_jid || null // <--- INSERT VALUE
+            ]
+        );
+        
+        console.log(`[INFO] Successfully created manual invoice ID: ${result.insertId}`);
+        
+        // === BUG FIX: Safely emit event so it doesn't crash request if socket fails ===
+        try {
+            if (req.io) req.io.emit('invoices:updated');
+        } catch (socketError) {
+            console.error('[SOCKET-WARN] Failed to emit update event:', socketError.message);
+        }
+
+        res.status(201).json({ message: 'Invoice created successfully', id: result.insertId });
+    } catch (error) {
+        console.error('[ERROR] Failed to create manual invoice:', error);
+        res.status(500).json({ message: 'Failed to create invoice.' });
+    }
+};
+
+exports.updateInvoice = async (req, res) => {
+    const { id } = req.params;
+    const {
+        transaction_id, sender_name, recipient_name, pix_key, amount,
+        notes, received_at, is_deleted, source_group_jid // <--- NEW PARAMETER
+    } = req.body;
+
+    const newTimestamp = received_at ? new Date(received_at) : null;
+    const amountValue = (amount === null || amount === undefined || amount === '') ? '0.00' : amount;
+
+    try {
+        await pool.query(
+            `UPDATE invoices SET 
+                transaction_id = ?, sender_name = ?, recipient_name = ?, pix_key = ?, 
+                amount = ?, notes = ?, received_at = ?, is_deleted = ?, source_group_jid = ?
+            WHERE id = ?`,
+            [
+                transaction_id, 
+                sender_name, 
+                recipient_name, 
+                pix_key, 
+                amountValue, 
+                notes, 
+                newTimestamp, 
+                !!is_deleted, 
+                source_group_jid || null, // <--- UPDATE VALUE
+                id
+            ]
+        );
+        
+        console.log(`[INFO] Successfully updated invoice ID: ${id}`);
+
+        // === BUG FIX: Safely emit event ===
+        try {
+            if (req.io) req.io.emit('invoices:updated');
+        } catch (socketError) {
+            console.error('[SOCKET-WARN] Failed to emit update event:', socketError.message);
+        }
+
+        res.json({ message: 'Invoice updated successfully.' });
+    } catch (error) {
+        console.error(`[ERROR] Failed to update invoice ID ${id}:`, error);
+        res.status(500).json({ message: 'Failed to update invoice.' });
+    }
+};
+
+exports.deleteInvoice = async (req, res) => {
+    const { id } = req.params;
+    try {
+        await pool.query('DELETE FROM invoices WHERE id = ?', [id]);
+        console.log(`[INFO] Permanently deleted invoice ID: ${id}`);
+        
+        // === BUG FIX: Safely emit event ===
+        try {
+            if (req.io) req.io.emit('invoices:updated');
+        } catch (socketError) {
+            console.error('[SOCKET-WARN] Failed to emit update event:', socketError.message);
+        }
+
+        res.status(204).send();
+    } catch (error) {
+        console.error(`[ERROR] Failed to delete invoice ID ${id}:`, error);
+        res.status(500).json({ message: 'Failed to delete invoice.' });
+    }
+};
+
+// ... (getInvoiceMedia remains unchanged) ...
 exports.getAllInvoices = async (req, res) => {
     const {
         page = 1, limit = 50, sortOrder = 'desc',
@@ -21,7 +139,6 @@ exports.getAllInvoices = async (req, res) => {
     const params = [];
 
     if (search) {
-        // --- REVERTED: Added i.amount back to the general search ---
         query += ` AND (i.transaction_id LIKE ? OR i.sender_name LIKE ? OR i.recipient_name LIKE ? OR i.pix_key LIKE ? OR i.notes LIKE ? OR i.amount LIKE ?)`;
         const searchTerm = `%${search}%`;
         params.push(searchTerm, searchTerm, searchTerm, searchTerm, searchTerm, searchTerm);
@@ -241,7 +358,6 @@ exports.exportInvoices = async (req, res) => {
     }
 };
 
-// ... The rest of the file (getRecipientNames, createInvoice, etc.) remains unchanged ...
 exports.getRecipientNames = async (req, res) => {
     try {
         const [recipients] = await pool.query(
@@ -251,75 +367,6 @@ exports.getRecipientNames = async (req, res) => {
     } catch (error) {
         console.error('[ERROR] Failed to fetch recipient names:', error);
         res.status(500).json({ message: 'Failed to fetch recipient names.' });
-    }
-};
-
-exports.createInvoice = async (req, res) => {
-    const { 
-        amount, notes, received_at, 
-        sender_name, recipient_name, transaction_id, pix_key
-    } = req.body;
-    
-    if (!received_at) {
-        return res.status(400).json({ message: "A timestamp (received_at) is required for all new entries." });
-    }
-    
-    const receivedAt = new Date(received_at);
-    const amountValue = (amount === null || amount === undefined || amount === '') ? '0.00' : amount;
-
-    try {
-        const [result] = await pool.query(
-            `INSERT INTO invoices (amount, notes, received_at, is_manual, sender_name, recipient_name, transaction_id, pix_key) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-            [amountValue, notes, receivedAt, true, sender_name || '', recipient_name || '', transaction_id || null, pix_key || null]
-        );
-        
-        console.log(`[INFO] Successfully created manual invoice ID: ${result.insertId}`);
-        req.io.emit('invoices:updated');
-        res.status(201).json({ message: 'Invoice created successfully', id: result.insertId });
-    } catch (error) {
-        console.error('[ERROR] Failed to create manual invoice:', error);
-        res.status(500).json({ message: 'Failed to create invoice.' });
-    }
-};
-
-exports.updateInvoice = async (req, res) => {
-    const { id } = req.params;
-    const {
-        transaction_id, sender_name, recipient_name, pix_key, amount,
-        notes, received_at, is_deleted
-    } = req.body;
-
-    const newTimestamp = received_at ? new Date(received_at) : null;
-    const amountValue = (amount === null || amount === undefined || amount === '') ? '0.00' : amount;
-
-    try {
-        await pool.query(
-            `UPDATE invoices SET 
-                transaction_id = ?, sender_name = ?, recipient_name = ?, pix_key = ?, 
-                amount = ?, notes = ?, received_at = ?, is_deleted = ?
-            WHERE id = ?`,
-            [transaction_id, sender_name, recipient_name, pix_key, amountValue, notes, newTimestamp, !!is_deleted, id]
-        );
-        
-        console.log(`[INFO] Successfully updated invoice ID: ${id}`);
-        req.io.emit('invoices:updated');
-        res.json({ message: 'Invoice updated successfully.' });
-    } catch (error) {
-        console.error(`[ERROR] Failed to update invoice ID ${id}:`, error);
-        res.status(500).json({ message: 'Failed to update invoice.' });
-    }
-};
-
-exports.deleteInvoice = async (req, res) => {
-    const { id } = req.params;
-    try {
-        await pool.query('DELETE FROM invoices WHERE id = ?', [id]);
-        console.log(`[INFO] Permanently deleted invoice ID: ${id}`);
-        req.io.emit('invoices:updated');
-        res.status(204).send();
-    } catch (error) {
-        console.error(`[ERROR] Failed to delete invoice ID ${id}:`, error);
-        res.status(500).json({ message: 'Failed to delete invoice.' });
     }
 };
 

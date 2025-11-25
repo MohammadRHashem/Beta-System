@@ -3,6 +3,7 @@ import styled from 'styled-components';
 import Modal from './Modal';
 import { createInvoice, updateInvoice } from '../services/api';
 import { format, toZonedTime } from 'date-fns-tz';
+import ComboBox from './ComboBox'; // Import ComboBox
 
 const Form = styled.form`
     display: flex;
@@ -79,7 +80,7 @@ const Checkbox = styled.input.attrs({ type: 'checkbox' })`
 
 const SAO_PAULO_TIMEZONE = 'America/Sao_Paulo';
 
-const InvoiceModal = ({ isOpen, onClose, invoice, onSave }) => {
+const InvoiceModal = ({ isOpen, onClose, invoice, onSave, allGroups }) => {
     const isEditMode = !!invoice;
     
     const [formData, setFormData] = useState({});
@@ -102,7 +103,8 @@ const InvoiceModal = ({ isOpen, onClose, invoice, onSave }) => {
 
             setFormData(isEditMode ? { ...invoice } : {
                 sender_name: '', recipient_name: '', transaction_id: '',
-                pix_key: '', amount: '', notes: '', is_deleted: false
+                pix_key: '', amount: '', notes: '', is_deleted: false,
+                source_group_jid: '' // Initialize source group
             });
         }
     }, [invoice, isEditMode, isOpen]);
@@ -133,9 +135,12 @@ const InvoiceModal = ({ isOpen, onClose, invoice, onSave }) => {
             } else {
                 await createInvoice(payload);
             }
-            onSave();
+            // Ensure onSave handles the state refresh cleanly
+            onSave(); 
         } catch (error) {
-            alert(`Error: ${error.response?.data?.message || 'Failed to save invoice.'}`);
+            // Improved error alerting
+            const msg = error.response?.data?.message || 'Failed to save invoice.';
+            alert(`Error: ${msg}`);
         }
     };
 
@@ -164,6 +169,18 @@ const InvoiceModal = ({ isOpen, onClose, invoice, onSave }) => {
                         <Label>Recipient Name</Label>
                         <Input type="text" name="recipient_name" value={formData.recipient_name || ''} onChange={handleChange} />
                     </InputGroup>
+                    
+                    {/* === NEW: Source Group Selector === */}
+                    <InputGroup full>
+                        <Label>Source Group</Label>
+                        <ComboBox 
+                            options={allGroups || []}
+                            value={formData.source_group_jid || ''}
+                            onChange={(e) => handleChange({ target: { name: 'source_group_jid', value: e.target.value } })}
+                            placeholder="Select a source group (optional)..."
+                        />
+                    </InputGroup>
+
                     <InputGroup full>
                         <Label>Transaction ID</Label>
                         <Input type="text" name="transaction_id" value={formData.transaction_id || ''} onChange={handleChange} />
