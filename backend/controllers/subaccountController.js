@@ -147,93 +147,109 @@ exports.getCredentials = async (req, res) => {
             return res.status(404).json({ message: 'Subaccount not found.' });
         }
         if (!subaccount.assigned_group_name) {
-            return res.status(404).json({ message: 'No WhatsApp group is assigned to this subaccount. Credentials cannot be generated or viewed.' });
+            return res.status(404).json({ message: 'No WhatsApp group is assigned. Cannot generate credentials.' });
         }
         
-        // === THE FIX: Generate username from the FIRST word of the group name ===
         const username = subaccount.assigned_group_name.split(' ')[0].replace(/[\s\W-]+/g, '').toLowerCase();
 
-        const [[existingClient]] = await pool.query('SELECT password_hash FROM clients WHERE subaccount_id = ?', [subaccountId]);
+        const [[existingClient]] = await pool.query('SELECT password_hash, view_only_password_hash FROM clients WHERE subaccount_id = ?', [subaccountId]);
+
+        let masterPassword = null;
+        let viewOnlyPassword = null;
+        let message = "";
 
         if (existingClient) {
-            res.json({
-                username: username,
-                password: '•••••••••• (Hidden for security)',
-                message: 'Credentials already exist.'
-            });
+            // Mask existing passwords
+            masterPassword = existingClient.password_hash ? '••••••••••' : null;
+            viewOnlyPassword = existingClient.view_only_password_hash ? '••••••••••' : null;
+            message = "Credentials exist.";
+            
+            // If view-only is missing, generate it transparently
+            if (!existingClient.view_only_password_hash) {
+                const newVoPass = crypto.randomBytes(4).toString('hex');
+                const hashedVoPass = await bcrypt.hash(newVoPass, 10);
+                await pool.query('UPDATE clients SET view_only_password_hash = ? WHERE subaccount_id = ?', [hashedVoPass, subaccountId]);
+                viewOnlyPassword = newVoPass; // Return plain text just this once
+                message += " Generated missing View-Only password.";
+            }
         } else {
-            const password = crypto.randomBytes(4).toString('hex');
-            const hashedPassword = await bcrypt.hash(password, 10);
+            // Generate BOTH fresh
+            const mPass = crypto.randomBytes(4).toString('hex');
+            const voPass = crypto.randomBytes(4).toString('hex');
+            const hashM = await bcrypt.hash(mPass, 10);
+            const hashV = await bcrypt.hash(voPass, 10);
 
-            // Here we check if the username already exists before inserting
             try {
                 await pool.query(
-                    'INSERT INTO clients (subaccount_id, username, password_hash) VALUES (?, ?, ?)',
-                    [subaccountId, username, hashedPassword]
+                    'INSERT INTO clients (subaccount_id, username, password_hash, view_only_password_hash) VALUES (?, ?, ?, ?)',
+                    [subaccountId, username, hashM, hashV]
                 );
+                masterPassword = mPass;
+                viewOnlyPassword = voPass;
+                message = "New credentials generated for both modes.";
             } catch (insertError) {
-                if (insertError.code === 'ER_DUP_ENTRY' && insertError.message.includes('unique_username')) {
-                    // If the auto-generated username already exists, append a number
+                // Handle unique username collision
+                if (insertError.code === 'ER_DUP_ENTRY') {
                     const newUsername = `${username}${subaccountId}`;
                     await pool.query(
-                        'INSERT INTO clients (subaccount_id, username, password_hash) VALUES (?, ?, ?)',
-                        [subaccountId, newUsername, hashedPassword]
+                        'INSERT INTO clients (subaccount_id, username, password_hash, view_only_password_hash) VALUES (?, ?, ?, ?)',
+                        [subaccountId, newUsername, hashM, hashV]
                     );
-                     res.status(201).json({
+                    return res.status(201).json({
                         username: newUsername,
-                        password: password,
-                        message: 'New credentials generated. Username was adjusted for uniqueness.'
+                        masterPassword: mPass,
+                        viewOnlyPassword: voPass,
+                        message: 'Credentials generated. Username adjusted.'
                     });
-                    return;
                 }
-                throw insertError; // Re-throw other errors
+                throw insertError;
             }
-            
-            res.status(201).json({
-                username: username,
-                password: password,
-                message: 'New credentials generated. Save the password now.'
-            });
         }
+
+        res.json({
+            username,
+            masterPassword,
+            viewOnlyPassword,
+            message
+        });
+
     } catch (error) {
         console.error('[ERROR] Failed to get/create client credentials:', error);
         res.status(500).json({ message: 'Failed to process credentials.' });
     }
 };
 
-// POST /api/subaccounts/:id/reset-password
 exports.resetPassword = async (req, res) => {
     const userId = req.user.id;
     const { id: subaccountId } = req.params;
+    const { type } = req.body; // 'master' or 'view_only'
+
+    if (!type || !['master', 'view_only'].includes(type)) {
+        return res.status(400).json({ message: 'Invalid password type.' });
+    }
 
     try {
-        const [[subaccount]] = await pool.query(
-            'SELECT id FROM subaccounts WHERE id = ? AND user_id = ?', 
-            [subaccountId, userId]
-        );
-
-        if (!subaccount) {
-            return res.status(404).json({ message: 'Subaccount not found.' });
-        }
+        const [[subaccount]] = await pool.query('SELECT id FROM subaccounts WHERE id = ? AND user_id = ?', [subaccountId, userId]);
+        if (!subaccount) return res.status(404).json({ message: 'Subaccount not found.' });
         
-        // Generate a new simple password
         const newPassword = crypto.randomBytes(4).toString('hex');
         const hashedPassword = await bcrypt.hash(newPassword, 10);
 
-        // Update the password in the clients table
+        const column = type === 'master' ? 'password_hash' : 'view_only_password_hash';
+        
         const [result] = await pool.query(
-            'UPDATE clients SET password_hash = ? WHERE subaccount_id = ?',
+            `UPDATE clients SET ${column} = ? WHERE subaccount_id = ?`,
             [hashedPassword, subaccountId]
         );
         
         if (result.affectedRows === 0) {
-            return res.status(404).json({ message: 'No existing credentials found to reset. Please generate them first.' });
+            return res.status(404).json({ message: 'No existing client found to reset.' });
         }
 
-        // Return the NEW password so the admin can copy it
         res.json({
             password: newPassword,
-            message: 'Password has been reset successfully. Save the new password now.'
+            type: type,
+            message: `Successfully reset ${type === 'master' ? 'Master' : 'View-Only'} password.`
         });
 
     } catch (error) {

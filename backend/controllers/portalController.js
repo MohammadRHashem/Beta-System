@@ -7,6 +7,7 @@ require('dotenv').config();
 
 const PORTAL_JWT_SECRET = process.env.PORTAL_JWT_SECRET;
 
+// Client Login Endpoint
 exports.login = async (req, res) => {
     const { username, password } = req.body;
     if (!username || !password) {
@@ -16,7 +17,20 @@ exports.login = async (req, res) => {
         const [clients] = await pool.query('SELECT * FROM clients WHERE username = ?', [username]);
         const client = clients[0];
 
-        if (!client || !(await bcrypt.compare(password, client.password_hash))) {
+        if (!client) {
+            return res.status(401).json({ message: 'Invalid credentials.' });
+        }
+
+        let accessLevel = null;
+
+        // 1. Check Master Password
+        if (await bcrypt.compare(password, client.password_hash)) {
+            accessLevel = 'full';
+        } 
+        // 2. Check View-Only Password
+        else if (client.view_only_password_hash && await bcrypt.compare(password, client.view_only_password_hash)) {
+            accessLevel = 'view_only';
+        } else {
             return res.status(401).json({ message: 'Invalid credentials.' });
         }
 
@@ -30,13 +44,15 @@ exports.login = async (req, res) => {
             username: client.username,
             subaccountId: subaccount.id,
             subaccountNumber: subaccount.subaccount_number,
-            groupName: subaccount.assigned_group_name
+            groupName: subaccount.assigned_group_name,
+            accessLevel: accessLevel // Embed level in token
         };
         
         const token = jwt.sign(tokenPayload, PORTAL_JWT_SECRET, { expiresIn: '8h' });
         
         res.json({ 
             token, 
+            accessLevel, // Return level to frontend for redirection
             client: { 
                 username: client.username, 
                 name: subaccount.name,

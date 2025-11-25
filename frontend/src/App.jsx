@@ -11,6 +11,7 @@ import MainLayout from './pages/MainLayout';
 import ClientLoginPage from './pages/ClientLoginPage';
 import PortalLayout from './pages/PortalLayout';
 import ClientDashboard from './pages/ClientDashboard';
+import ClientViewOnlyDashboard from './pages/ClientViewOnlyDashboard'; // Import
 
 const LoadingContainer = styled.div`
     width: 100vw;
@@ -52,8 +53,9 @@ const App = () => {
                     </PortalProtectedRoute>
                 }
             >
-                {/* Nested routes for the client portal */}
+                {/* Nested routes */}
                 <Route path="dashboard" element={<ClientDashboard />} />
+                <Route path="view-only" element={<ClientViewOnlyDashboard />} /> {/* New Route */}
             </Route>
         </Routes>
     );

@@ -96,9 +96,17 @@ const ClientLoginPage = () => {
         setError('');
         try {
             const { data } = await portalLogin({ username, password });
+            
+            // Store token
             localStorage.setItem('portalAuthToken', data.token);
             localStorage.setItem('portalClient', JSON.stringify(data.client));
-            navigate('/portal/dashboard');
+            
+            // === ROUTING LOGIC ===
+            if (data.accessLevel === 'view_only') {
+                navigate('/portal/view-only');
+            } else {
+                navigate('/portal/dashboard');
+            }
         } catch (err) {
             setError(err.response?.data?.message || 'Login failed. Please check your credentials.');
         }

@@ -79,6 +79,7 @@ const Table = styled.table`
 `;
 
 const SubaccountsPage = ({ allGroups }) => {
+  // ... (Logic remains the same)
   const [subaccounts, setSubaccounts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -116,16 +117,12 @@ const SubaccountsPage = ({ allGroups }) => {
   };
 
   const handleDelete = async (id) => {
-    if (
-      window.confirm(
-        "Are you sure you want to delete this subaccount? This will also delete its client login."
-      )
-    ) {
+    if (window.confirm("Are you sure?")) {
       try {
         await deleteSubaccount(id);
         fetchSubaccounts();
       } catch (error) {
-        alert(error.response?.data?.message || "Failed to delete subaccount.");
+        alert("Failed to delete.");
       }
     }
   };
@@ -141,29 +138,26 @@ const SubaccountsPage = ({ allGroups }) => {
         subaccountName: subaccount.name,
       });
     } catch (error) {
-      alert(error.response?.data?.message || "Failed to get credentials.");
+      alert("Failed to get credentials.");
       handleCloseModals();
     } finally {
       setCredsLoading(false);
     }
   };
 
-  // === NEW: Handler for the reset password button ===
-  const handleResetPassword = async (subaccountId) => {
-    if (
-      !window.confirm(
-        "Are you sure you want to reset the password for this client? The old password will be lost forever."
-      )
-    ) {
+  const handleResetPassword = async (subaccountId, type) => {
+    if (!window.confirm(`Reset ${type === 'master' ? 'Full Access' : 'View-Only'} password?`)) {
       return;
     }
     setCredsLoading(true);
     try {
-      const { data } = await resetSubaccountPassword(subaccountId);
-      // Update the state to show the new password
-      setCurrentCreds((prev) => ({ ...prev, ...data }));
+      const { data } = await resetSubaccountPassword(subaccountId, type);
+      setCurrentCreds((prev) => {
+          if (type === 'master') return { ...prev, masterPassword: data.password };
+          return { ...prev, viewOnlyPassword: data.password };
+      });
     } catch (error) {
-      alert(error.response?.data?.message || "Failed to reset password.");
+      alert("Failed to reset password.");
     } finally {
       setCredsLoading(false);
     }
@@ -179,11 +173,7 @@ const SubaccountsPage = ({ allGroups }) => {
           </Button>
         </Header>
         <Card>
-          <p>
-            Manage XPayz subaccounts for the "Upgrade Zone" confirmation method.
-            Assigning a group enforces that all invoices from that group must be
-            paid to the specified subaccount.
-          </p>
+          <p>Manage XPayz subaccounts and generate Client Portal credentials.</p>
           <Table>
             <thead>
               <tr>
@@ -195,45 +185,25 @@ const SubaccountsPage = ({ allGroups }) => {
             </thead>
             <tbody>
               {loading ? (
-                <tr>
-                  <td colSpan="4">Loading...</td>
-                </tr>
-              ) : subaccounts.length === 0 ? (
-                <tr>
-                  <td colSpan="4">No subaccounts configured.</td>
-                </tr>
-              ) : (
-                subaccounts.map((acc) => (
+                <tr><td colSpan="4">Loading...</td></tr>
+              ) : subaccounts.map((acc) => (
                   <tr key={acc.id}>
                     <td>{acc.name}</td>
                     <td>{acc.subaccount_number}</td>
-                    <td>
-                      {acc.assigned_group_name || (
-                        <span style={{ color: "#999" }}>None</span>
-                      )}
-                    </td>
+                    <td>{acc.assigned_group_name || <span style={{ color: "#999" }}>None</span>}</td>
                     <td className="actions">
-                      <FaKey
-                        onClick={() => handleCredentials(acc)}
-                        title="Get/Create Client Credentials"
-                      />
-                      <FaEdit
-                        onClick={() => handleOpenModal(acc)}
-                        title="Edit"
-                      />
-                      <FaTrash
-                        onClick={() => handleDelete(acc.id)}
-                        title="Delete"
-                      />
+                      <FaKey onClick={() => handleCredentials(acc)} title="Manage Credentials" />
+                      <FaEdit onClick={() => handleOpenModal(acc)} title="Edit" />
+                      <FaTrash onClick={() => handleDelete(acc.id)} title="Delete" />
                     </td>
                   </tr>
-                ))
-              )}
+              ))}
             </tbody>
           </Table>
         </Card>
       </PageContainer>
 
+      {/* Subaccount Modal remains the same ... */}
       <SubaccountModal
         isOpen={isModalOpen}
         onClose={handleCloseModals}
@@ -253,6 +223,56 @@ const SubaccountsPage = ({ allGroups }) => {
   );
 };
 
+const CredentialsModal = ({ isOpen, onClose, credentials, onReset, loading }) => {
+  if (!credentials) return null;
+
+  const CredentialBox = styled.div`
+    background: #f6f9fc;
+    padding: 1rem;
+    border-radius: 6px;
+    border: 1px solid #e6ebf1;
+    margin-bottom: 1rem;
+    
+    h4 { margin: 0 0 0.5rem 0; color: #0A2540; font-size: 0.95rem; }
+    div { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.25rem; }
+    span { font-size: 0.85rem; color: #6b7c93; }
+    strong { font-family: "Courier New", Courier, monospace; color: #0a2540; }
+  `;
+
+  return (
+    <Modal isOpen={isOpen} onClose={onClose} maxWidth="550px">
+      {loading ? (
+        <p>Loading...</p>
+      ) : (
+        <>
+          <h2>Credentials for {credentials.subaccountName}</h2>
+          
+          <div style={{marginBottom: '1rem', padding: '0.5rem', background: '#e3f2fd', borderRadius: '4px'}}>
+             <strong>Username:</strong> {credentials.username}
+          </div>
+
+          <CredentialBox>
+            <h4>Full Access (Master)</h4>
+            <div><span>Password:</span> <strong>{credentials.masterPassword}</strong></div>
+            <ResetButton onClick={() => onReset(credentials.subaccountId, 'master')}>Reset Master Password</ResetButton>
+          </CredentialBox>
+
+          <CredentialBox>
+            <h4>View Only (Restricted)</h4>
+            <div><span>Password:</span> <strong>{credentials.viewOnlyPassword}</strong></div>
+            <ResetButton onClick={() => onReset(credentials.subaccountId, 'view_only')}>Reset View-Only Password</ResetButton>
+          </CredentialBox>
+
+          <p style={{ color: "#6b7c93", fontSize: '0.85rem' }}>
+            Note: If a password is hidden (••••), you must reset it to see a new one.
+          </p>
+        </>
+      )}
+    </Modal>
+  );
+};
+
+// ... SubaccountModal ...
 const ModalForm = styled.form`
   display: flex;
   flex-direction: column;
@@ -378,84 +398,6 @@ const SubaccountModal = ({
           Save Changes
         </Button>
       </ModalForm>
-    </Modal>
-  );
-};
-
-const CredentialsModal = ({
-  isOpen,
-  onClose,
-  credentials,
-  onReset,
-  loading,
-}) => {
-  if (!credentials) return null;
-
-  const CredentialDisplay = styled.div`
-    display: flex;
-    flex-direction: column;
-    gap: 1rem;
-    margin: 1.5rem 0;
-
-    div {
-      background: #f6f9fc;
-      padding: 0.75rem;
-      border-radius: 4px;
-      border: 1px solid #e6ebf1;
-    }
-    span {
-      font-weight: 500;
-      color: #6b7c93;
-      display: block;
-      margin-bottom: 0.25rem;
-    }
-    strong {
-      font-family: "Courier New", Courier, monospace;
-      color: #0a2540;
-    }
-  `;
-
-  const Warning = styled.p`
-    color: ${({ theme }) => theme.error};
-    font-weight: bold;
-    background: #ffebe6;
-    padding: 1rem;
-    border-radius: 6px;
-  `;
-
-  return (
-    <Modal isOpen={isOpen} onClose={onClose}>
-      {loading ? (
-        <p>Loading...</p>
-      ) : credentials ? (
-        <>
-          <h2>Client Credentials for {credentials.subaccountName}</h2>
-
-          {credentials.message.includes("New") && (
-            <Warning>
-              Please copy the password now. You will not be able to see it again
-              after closing this window.
-            </Warning>
-          )}
-
-          <CredentialDisplay>
-            <div>
-              <span>Username</span>
-              <strong>{credentials.username}</strong>
-            </div>
-            <div>
-              <span>Password</span>
-              <strong>{credentials.password}</strong>
-            </div>
-          </CredentialDisplay>
-
-          <p style={{ color: "#6b7c93" }}>{credentials.message}</p>
-
-          <ResetButton onClick={() => onReset(credentials.subaccountId)}>
-            Reset Password
-          </ResetButton>
-        </>
-      ) : null}
     </Modal>
   );
 };

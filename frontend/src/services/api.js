@@ -154,7 +154,7 @@ export const createSubaccount = (data) => apiClient.post('/subaccounts', data);
 export const updateSubaccount = (id, data) => apiClient.put(`/subaccounts/${id}`, data);
 export const deleteSubaccount = (id) => apiClient.delete(`/subaccounts/${id}`);
 export const getSubaccountCredentials = (id) => apiClient.get(`/subaccounts/${id}/credentials`);
-export const resetSubaccountPassword = (id) => apiClient.post(`/subaccounts/${id}/credentials/reset`);
+export const resetSubaccountPassword = (id, type) => apiClient.post(`/subaccounts/${id}/credentials/reset`, { type });
 export const getUsdtWallets = () => apiClient.get('/usdt-wallets');
 export const createUsdtWallet = (data) => apiClient.post('/usdt-wallets', data);
 export const updateUsdtWallet = (id, data) => apiClient.put(`/usdt-wallets/${id}`, data);
