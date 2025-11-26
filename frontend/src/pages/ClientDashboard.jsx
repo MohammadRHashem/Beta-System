@@ -162,7 +162,6 @@ const ClientDashboard = () => {
                                 dateFormat="dd/MM/yyyy"
                                 placeholderText="dd/mm/yyyy"
                                 className="custom-datepicker" 
-                                // Note: Ensure global styles handle .custom-datepicker or rely on previous global styles
                             />
                         </div>
                         <RefreshButton onClick={() => { fetchTableData(); fetchSummaryData(); }}><FaSyncAlt /> Refresh</RefreshButton>
@@ -214,8 +213,8 @@ const ClientDashboard = () => {
                                     <TypeCell isCredit={tx.operation_direct === 'in'}>
                                         {tx.operation_direct}
                                     </TypeCell>
-                                    {/* === FIX: Use sender_name instead of counterparty_name === */}
-                                    <td>{tx.sender_name}</td>
+                                    {/* === FIX: Use sender_name OR counterparty_name === */}
+                                    <td>{tx.sender_name || tx.counterparty_name || 'Unknown'}</td>
                                     <AmountCell isCredit={tx.operation_direct === 'in'}>
                                         {tx.operation_direct === 'in' ? '+' : '-'}
                                         {formatCurrency(tx.amount)}
@@ -233,8 +232,8 @@ const ClientDashboard = () => {
                                 <span>{tx.operation_direct === 'in' ? <FaArrowUp/> : <FaArrowDown/>}</span>
                             </MobileCardHeader>
                             <MobileCardBody>
-                                {/* === FIX: Use sender_name here as well === */}
-                                <p><strong>{tx.sender_name}</strong></p>
+                                {/* === FIX: Use sender_name OR counterparty_name === */}
+                                <p><strong>{tx.sender_name || tx.counterparty_name || 'Unknown'}</strong></p>
                                 <p>{formatDateTime(tx.transaction_date)}</p>
                             </MobileCardBody>
                         </MobileCard>

@@ -130,11 +130,10 @@ exports.getTransactions = async (req, res) => {
         const params = [subaccountNumber];
 
         if (search) {
-            query += ` AND (counterparty_name LIKE ? OR amount LIKE ? OR xpayz_transaction_id LIKE ?)`;
+            query += ` AND (sender_name LIKE ? OR counterparty_name LIKE ? OR amount LIKE ? OR xpayz_transaction_id LIKE ?)`;
             const searchTerm = `%${search}%`;
-            params.push(searchTerm, searchTerm, searchTerm);
+            params.push(searchTerm, searchTerm, searchTerm, searchTerm);
         }
-        
         if (date) {
             query += ' AND DATE(transaction_date) = ?';
             params.push(date);
@@ -143,8 +142,9 @@ exports.getTransactions = async (req, res) => {
         const countQuery = `SELECT count(*) as total ${query}`;
         const [[{ total }]] = await pool.query(countQuery, params);
 
+        // === FIX: Select BOTH sender_name and counterparty_name ===
         const dataQuery = `
-            SELECT id, transaction_date, counterparty_name, amount, operation_direct, xpayz_transaction_id
+            SELECT id, transaction_date, sender_name, counterparty_name, amount, xpayz_transaction_id, raw_details
             ${query}
             ORDER BY transaction_date DESC
             LIMIT ? OFFSET ?
@@ -160,7 +160,7 @@ exports.getTransactions = async (req, res) => {
         });
 
     } catch (error) {
-        console.error(`[PORTAL-TRANSACTIONS-ERROR] for subaccount ${subaccountNumber}:`, error);
+        console.error(`[PORTAL-TRANSACTIONS-ERROR] Failed to fetch transactions for subaccount ${subaccountNumber}:`, error);
         res.status(500).json({ message: 'Failed to fetch transactions.' });
     }
 };

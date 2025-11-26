@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import styled, { keyframes } from 'styled-components';
 import { motion } from 'framer-motion';
-import { getPortalTransactions } from '../services/api'; // Removed getPortalDashboardSummary
+import { getPortalTransactions } from '../services/api'; // Removed dashboard summary import
 import { FaSyncAlt } from 'react-icons/fa';
 import Pagination from '../components/Pagination';
 import { format } from 'date-fns';
@@ -110,7 +110,6 @@ const ClientViewOnlyDashboard = () => {
         };
         
         try {
-            // Only fetch the transactions list, no volume summary needed
             const { data } = await getPortalTransactions(params);
 
             setTransactions(data.transactions || []);
@@ -167,7 +166,8 @@ const ClientViewOnlyDashboard = () => {
                                 {transactions.map(tx => (
                                     <motion.tr key={tx.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
                                         <td>{formatDateTime(tx.transaction_date)}</td>
-                                        <td>{tx.sender_name}</td>
+                                        {/* === FIX: Use sender_name OR counterparty_name === */}
+                                        <td>{tx.sender_name || tx.counterparty_name || 'Unknown'}</td>
                                         <td style={{ color: '#00C49A', fontWeight: '600' }}>
                                             {parseFloat(tx.amount).toFixed(2)}
                                         </td>
