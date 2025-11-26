@@ -3,7 +3,7 @@ import styled from 'styled-components';
 import { getSubCustomers } from '../services/api';
 import ComboBox from '../components/ComboBox';
 import Pagination from '../components/Pagination';
-import { FaSearch, FaUserFriends } from 'react-icons/fa';
+import { FaSearch, FaUserFriends, FaDatabase, FaRobot, FaUniversity, FaWallet } from 'react-icons/fa';
 import { format } from 'date-fns';
 
 // Helper Hook
@@ -31,12 +31,12 @@ const Card = styled.div`
 
 const FilterContainer = styled.div`
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: 1fr 1fr 1fr; /* Added column for source */
     gap: 1.5rem;
     margin-bottom: 1.5rem;
     align-items: flex-end;
 
-    @media (max-width: 768px) {
+    @media (max-width: 960px) {
         grid-template-columns: 1fr;
     }
 `;
@@ -63,6 +63,15 @@ const Input = styled.input`
     width: 100%;
 `;
 
+const Select = styled.select`
+    padding: 0.75rem;
+    border: 1px solid ${({ theme }) => theme.border};
+    border-radius: 4px;
+    font-size: 1rem;
+    width: 100%;
+    background-color: white;
+`;
+
 const Table = styled.table`
     width: 100%;
     border-collapse: collapse;
@@ -83,11 +92,21 @@ const Table = styled.table`
     }
 `;
 
+const SourceIcon = ({ type }) => {
+    switch(type) {
+        case 'bot': return <FaRobot color="#00C49A"/>;
+        case 'xpayz': return <FaWallet color="#7b1fa2"/>;
+        case 'alfa': return <FaUniversity color="#e65100"/>;
+        default: return <FaDatabase />;
+    }
+};
+
 const SubCustomersPage = ({ allGroups }) => {
     const [data, setData] = useState([]);
     const [loading, setLoading] = useState(false);
     const [searchName, setSearchName] = useState('');
     const [selectedGroupId, setSelectedGroupId] = useState('');
+    const [source, setSource] = useState('bot'); // Default source
     const [pagination, setPagination] = useState({ page: 1, limit: 20, totalPages: 1, totalRecords: 0 });
 
     const debouncedSearch = useDebounce(searchName, 500);
@@ -99,7 +118,8 @@ const SubCustomersPage = ({ allGroups }) => {
                 page: pagination.page,
                 limit: pagination.limit,
                 searchName: debouncedSearch,
-                groupId: selectedGroupId
+                groupId: selectedGroupId,
+                source: source // Pass source to API
             };
             const { data: response } = await getSubCustomers(params);
             setData(response.data);
@@ -114,7 +134,7 @@ const SubCustomersPage = ({ allGroups }) => {
         } finally {
             setLoading(false);
         }
-    }, [pagination.page, pagination.limit, debouncedSearch, selectedGroupId]);
+    }, [pagination.page, pagination.limit, debouncedSearch, selectedGroupId, source]);
 
     useEffect(() => {
         fetchData();
@@ -123,7 +143,7 @@ const SubCustomersPage = ({ allGroups }) => {
     // Reset to page 1 when filters change
     useEffect(() => {
         setPagination(p => ({ ...p, page: 1 }));
-    }, [debouncedSearch, selectedGroupId]);
+    }, [debouncedSearch, selectedGroupId, source]);
 
     return (
         <PageContainer>
@@ -133,11 +153,20 @@ const SubCustomersPage = ({ allGroups }) => {
                         <FaUserFriends color="#00C49A"/> Potential Sub-Customers
                     </h2>
                     <p style={{color: '#666', marginTop: '0.5rem'}}>
-                        Analyze sender names extracted from invoices to map relationships between end-payers and your WhatsApp clients.
+                        Analyze sender names extracted from diverse sources (WhatsApp Invoices, XPayz API, Alfa Trust API).
                     </p>
                 </div>
 
                 <FilterContainer>
+                    <InputGroup>
+                        <Label><FaDatabase /> Data Source</Label>
+                        <Select value={source} onChange={(e) => setSource(e.target.value)}>
+                            <option value="bot">Invoices (WhatsApp Bot)</option>
+                            <option value="xpayz">XPayz API (Linked Accounts)</option>
+                            <option value="alfa">Alfa Trust API (Direct)</option>
+                        </Select>
+                    </InputGroup>
+
                     <InputGroup>
                         <Label><FaSearch /> Search Sub-Customer Name</Label>
                         <Input 
@@ -147,13 +176,15 @@ const SubCustomersPage = ({ allGroups }) => {
                             onChange={(e) => setSearchName(e.target.value)}
                         />
                     </InputGroup>
-                    <InputGroup>
+                    
+                    {/* Disable Group Filter for Alfa as it is global */}
+                    <InputGroup style={{ opacity: source === 'alfa' ? 0.5 : 1, pointerEvents: source === 'alfa' ? 'none' : 'auto' }}>
                         <Label>Filter by Main Customer (Group)</Label>
                         <ComboBox 
                             options={[{id: '', name: 'All Groups'}, ...allGroups]}
                             value={selectedGroupId}
                             onChange={(e) => setSelectedGroupId(e.target.value)}
-                            placeholder="Select a client group..."
+                            placeholder={source === 'alfa' ? "Not available for Alfa" : "Select a client group..."}
                         />
                     </InputGroup>
                 </FilterContainer>
@@ -163,20 +194,24 @@ const SubCustomersPage = ({ allGroups }) => {
                         <Table>
                             <thead>
                                 <tr>
+                                    <th>Source</th>
                                     <th>Sub-Customer (Sender)</th>
-                                    <th>Main Customer (WhatsApp Group)</th>
+                                    <th>Main Customer (Group / Account)</th>
                                     <th>Tx Count</th>
                                     <th>Last Seen</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 {data.length === 0 ? (
-                                    <tr><td colSpan="4" style={{textAlign: 'center', padding: '2rem'}}>No records found matching your criteria.</td></tr>
+                                    <tr><td colSpan="5" style={{textAlign: 'center', padding: '2rem'}}>No records found matching your criteria.</td></tr>
                                 ) : (
                                     data.map((row, index) => (
                                         <tr key={index}>
+                                            <td style={{width: '50px', textAlign: 'center'}} title={source}>
+                                                <SourceIcon type={source} />
+                                            </td>
                                             <td style={{fontWeight: '500'}}>{row.sender_name}</td>
-                                            <td style={{color: '#0A2540'}}>{row.group_name || 'Unknown Group'}</td>
+                                            <td style={{color: '#0A2540'}}>{row.group_name || 'Unknown'}</td>
                                             <td>{row.transaction_count}</td>
                                             <td style={{color: '#666'}}>
                                                 {row.last_seen ? format(new Date(row.last_seen), 'dd/MM/yyyy HH:mm') : 'N/A'}
