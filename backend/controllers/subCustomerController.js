@@ -39,7 +39,7 @@ exports.getSubCustomers = async (req, res) => {
             });
         }
 
-        // Main Query
+        // === FIX: Added wg.group_name to GROUP BY clause ===
         const query = `
             SELECT 
                 i.sender_name,
@@ -50,7 +50,7 @@ exports.getSubCustomers = async (req, res) => {
             FROM invoices i
             LEFT JOIN whatsapp_groups wg ON i.source_group_jid = wg.group_jid
             ${whereClause}
-            GROUP BY i.sender_name, i.source_group_jid
+            GROUP BY i.sender_name, i.source_group_jid, wg.group_name
             ORDER BY transaction_count DESC
             LIMIT ? OFFSET ?
         `;
