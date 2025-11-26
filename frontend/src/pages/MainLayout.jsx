@@ -20,6 +20,7 @@ import AlfaTrustPage from "./AlfaTrustPage";
 import SubaccountsPage from "./SubaccountsPage";
 import ScheduledBroadcastsPage from "./ScheduledBroadcastsPage";
 import UsdtWalletsPage from "./UsdtWalletsPage";
+import SubCustomersPage from "./SubCustomersPage";
 
 const AppLayout = styled.div`
   display: flex;
@@ -143,6 +144,7 @@ const MainLayout = () => {
                 path="/subaccounts"
                 element={<SubaccountsPage allGroups={allGroups} />}
               />
+              <Route path="/sub-customers" element={<SubCustomersPage allGroups={allGroups} />} />
               <Route
                 path="/usdt-wallets"
                 element={<UsdtWalletsPage />}

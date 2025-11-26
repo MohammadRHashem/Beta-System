@@ -1,7 +1,7 @@
 import React from "react";
 import { NavLink } from "react-router-dom";
 import styled from "styled-components";
-import { FaWhatsapp, FaBullhorn, FaRobot, FaCog, FaKey, FaKeyboard, FaFileInvoiceDollar, FaChartLine, FaCheckCircle, FaRoute, FaUniversity, FaUsers, FaBitcoin, FaCalendarAlt } from "react-icons/fa";
+import { FaWhatsapp, FaBullhorn, FaRobot, FaCog, FaKey, FaKeyboard, FaFileInvoiceDollar, FaChartLine, FaCheckCircle, FaRoute, FaUniversity, FaUsers, FaBitcoin, FaCalendarAlt, FaUserFriends } from "react-icons/fa";
 
 const SidebarContainer = styled.nav`
   width: 250px;
@@ -64,6 +64,7 @@ const Sidebar = () => {
         <Title><FaWhatsapp /> Beta Suite</Title>
         <NavItem to="/broadcaster"><FaBullhorn /><span>Broadcaster</span></NavItem>
         <NavItem to="/subaccounts"><FaUsers /><span>Subaccounts</span></NavItem>
+        <NavItem to="/sub-customers"><FaUserFriends /><span>Sub Customers</span></NavItem>
         <NavItem to="/usdt-wallets"><FaBitcoin /><span>USDT Wallets</span></NavItem>
         <NavItem to="/scheduled-broadcasts"><FaCalendarAlt /><span>Schedules</span></NavItem>
         <NavItem to="/ai-forwarding"><FaRobot /><span>AI Forwarding</span></NavItem>

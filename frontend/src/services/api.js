@@ -150,6 +150,7 @@ export const deletePositionCounter = (id) => apiClient.delete(`/positions/counte
 export const calculateLocalPosition = (params) => apiClient.get('/position/local', { params });
 export const calculateRemotePosition = (id, params) => apiClient.get(`/position/remote/${id}`, { params });
 export const getSubaccounts = () => apiClient.get('/subaccounts');
+export const getSubCustomers = (params) => apiClient.get('/sub-customers', { params });
 export const createSubaccount = (data) => apiClient.post('/subaccounts', data);
 export const updateSubaccount = (id, data) => apiClient.put(`/subaccounts/${id}`, data);
 export const deleteSubaccount = (id) => apiClient.delete(`/subaccounts/${id}`);
