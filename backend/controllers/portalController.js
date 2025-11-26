@@ -144,7 +144,7 @@ exports.getTransactions = async (req, res) => {
 
         // === FIX: Select BOTH sender_name and counterparty_name ===
         const dataQuery = `
-            SELECT id, transaction_date, sender_name, counterparty_name, amount, xpayz_transaction_id, raw_details
+            SELECT id, transaction_date, sender_name, counterparty_name, amount, operation_direct, xpayz_transaction_id, raw_details
             ${query}
             ORDER BY transaction_date DESC
             LIMIT ? OFFSET ?
@@ -224,7 +224,7 @@ exports.exportTransactions = async (req, res) => {
 
     try {
         let query = `
-            SELECT transaction_date, sender_name, amount
+            SELECT transaction_date, sender_name, counterparty_name, amount, operation_direct
             FROM xpayz_transactions
             WHERE subaccount_id = ?
         `;
