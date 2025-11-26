@@ -1,12 +1,15 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import styled from 'styled-components';
+import styled, { keyframes } from 'styled-components';
 import { motion } from 'framer-motion';
 import { getPortalTransactions, getPortalDashboardSummary } from '../services/api';
 import { FaSyncAlt, FaSearch, FaArrowUp, FaArrowDown } from 'react-icons/fa';
 import Pagination from '../components/Pagination';
 import { usePortal } from '../context/PortalContext';
+import DatePicker from 'react-datepicker';
+import "react-datepicker/dist/react-datepicker.css";
+import { format, parseISO } from 'date-fns';
 
-// (useDebounce and most styled-components remain the same)
+// ... (All styled components and useDebounce hook remain exactly the same) ...
 const useDebounce = (value, delay) => {
     const [debouncedValue, setDebouncedValue] = useState(value);
     useEffect(() => {
@@ -21,7 +24,7 @@ const TopControls = styled.div` display: flex; flex-wrap: wrap; gap: 1rem; justi
 const FilterContainer = styled.div` display: flex; flex-wrap: wrap; gap: 1rem; align-items: center; `;
 const Input = styled.input` padding: 0.75rem; border: 1px solid ${({ theme }) => theme.border}; border-radius: 8px; font-size: 1rem; min-width: 240px; transition: all 0.2s; &:focus { outline: none; border-color: ${({ theme }) => theme.secondary}; box-shadow: 0 0 0 3px rgba(0, 196, 154, 0.2); } `;
 const InputGroup = styled.div` position: relative; display: flex; align-items: center; svg { position: absolute; left: 12px; color: ${({ theme }) => theme.lightText}; } ${Input} { padding-left: 35px; } `;
-const DateInput = styled(Input).attrs({type: 'date'})` padding-left: 0.75rem; `;
+// Removed unused DateInput styled component
 const RefreshButton = styled.button` padding: 0.75rem 1rem; border: none; background: ${({ theme }) => theme.secondary}; color: white; font-weight: 600; border-radius: 8px; cursor: pointer; display: flex; align-items: center; gap: 0.5rem; transition: all 0.2s; &:hover { transform: translateY(-2px); } `;
 const Card = styled.div` background: #fff; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.06); overflow: hidden; `;
 const TableWrapper = styled.div` overflow-x: auto; @media (max-width: 768px) { display: none; } `;
@@ -33,32 +36,26 @@ const SkeletonCell = styled.div` height: 20px; width: 80%; border-radius: 4px; b
 const VolumeContainer = styled.div` display: grid; gap: 1rem; grid-template-columns: repeat(3, 1fr); @media (max-width: 768px) { grid-template-columns: repeat(2, 1fr); } `;
 const VolumeCard = styled.div` background: #fff; padding: 1rem 1.5rem; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); border-left: 4px solid ${({ theme, color }) => theme[color] || theme.primary}; h3 { margin: 0; font-size: 0.9rem; color: ${({ theme }) => theme.lightText}; font-weight: 500; } p { margin: 0; font-size: 1.75rem; font-weight: 700; color: ${({ theme, color }) => theme[color] || theme.primary}; font-family: 'Courier New', Courier, monospace; } @media (max-width: 768px) { ${({ fullWidthOnMobile }) => fullWidthOnMobile && ` grid-column: 1 / -1; `} padding: 0.75rem 1rem; h3 { font-size: 0.8rem; } p { font-size: 1.5rem; } } `;
 
-// --- THIS IS THE FIX: Mobile list styling ---
 const MobileListContainer = styled.div`
     display: none;
     flex-direction: column;
-    /* No gap needed, border will separate items */
     @media (max-width: 768px) {
         display: flex;
-        padding: 0 1rem; /* Add some horizontal padding */
+        padding: 0 1rem;
     }
 `;
 
 const MobileCard = styled(motion.div)`
-    /* Remove background, shadow, and border-left */
     background: transparent;
     box-shadow: none;
     border-radius: 0;
-    
-    /* Use a simple border-bottom to separate items */
     border-bottom: 1px solid ${({ theme }) => theme.border};
-    padding: 1rem 0.5rem; /* Adjust padding */
+    padding: 1rem 0.5rem;
 
     &:last-child {
         border-bottom: none;
     }
 `;
-// --- END OF FIX ---
 
 const MobileCardHeader = styled.div` display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; font-size: 1.2rem; font-weight: 700; font-family: 'Courier New', Courier, monospace; color: ${({ isCredit, theme }) => isCredit ? theme.success : theme.error}; `;
 const MobileCardBody = styled.div` font-size: 0.9rem; color: ${({ theme }) => theme.lightText}; p { margin: 0.25rem 0; } strong { color: ${({ theme }) => theme.text}; } `;
@@ -129,6 +126,13 @@ const ClientDashboard = () => {
     const handleFilterChange = (e) => {
         setFilters(prevFilters => ({ ...prevFilters, [e.target.name]: e.target.value }));
     };
+
+    const handleDateChange = (date) => {
+        setFilters(prevFilters => ({ 
+            ...prevFilters, 
+            date: date ? format(date, 'yyyy-MM-dd') : '' 
+        }));
+    };
     
     const formatDateTime = (dbDateString) => {
         if (!dbDateString) return 'N/A';
@@ -151,7 +155,16 @@ const ClientDashboard = () => {
                             <FaSearch />
                             <Input as="input" name="search" type="text" value={filters.search} onChange={handleFilterChange} placeholder="Search by name..." />
                         </InputGroup>
-                        <DateInput name="date" value={filters.date || ''} onChange={handleFilterChange} />
+                        <div style={{minWidth: '240px'}}>
+                            <DatePicker 
+                                selected={filters.date ? parseISO(filters.date) : null}
+                                onChange={handleDateChange}
+                                dateFormat="dd/MM/yyyy"
+                                placeholderText="dd/mm/yyyy"
+                                className="custom-datepicker" 
+                                // Note: Ensure global styles handle .custom-datepicker or rely on previous global styles
+                            />
+                        </div>
                         <RefreshButton onClick={() => { fetchTableData(); fetchSummaryData(); }}><FaSyncAlt /> Refresh</RefreshButton>
                     </FilterContainer>
                 </TopControls>
@@ -177,7 +190,6 @@ const ClientDashboard = () => {
                         <h3>Number of Transactions (OUT)</h3>
                         <p>{loadingSummary ? '...' : formatNumber(summary.dailyCountOut)}</p>
                     </VolumeCard>
-                    {/* The "Total Transactions" card is now removed */}
                 </VolumeContainer>
 
             </ControlsContainer>
@@ -202,7 +214,8 @@ const ClientDashboard = () => {
                                     <TypeCell isCredit={tx.operation_direct === 'in'}>
                                         {tx.operation_direct}
                                     </TypeCell>
-                                    <td>{tx.counterparty_name}</td>
+                                    {/* === FIX: Use sender_name instead of counterparty_name === */}
+                                    <td>{tx.sender_name}</td>
                                     <AmountCell isCredit={tx.operation_direct === 'in'}>
                                         {tx.operation_direct === 'in' ? '+' : '-'}
                                         {formatCurrency(tx.amount)}
@@ -220,7 +233,8 @@ const ClientDashboard = () => {
                                 <span>{tx.operation_direct === 'in' ? <FaArrowUp/> : <FaArrowDown/>}</span>
                             </MobileCardHeader>
                             <MobileCardBody>
-                                <p><strong>{tx.counterparty_name}</strong></p>
+                                {/* === FIX: Use sender_name here as well === */}
+                                <p><strong>{tx.sender_name}</strong></p>
                                 <p>{formatDateTime(tx.transaction_date)}</p>
                             </MobileCardBody>
                         </MobileCard>
