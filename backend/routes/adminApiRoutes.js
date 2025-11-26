@@ -103,6 +103,10 @@ router.get('/subaccounts/:id/credentials', subaccountController.getCredentials);
 router.post('/subaccounts/:id/credentials/reset', subaccountController.resetPassword);
 router.get('/sub-customers', subCustomerController.getSubCustomers);
 
+
+router.get('/subaccounts/:subaccountId/recibos', subaccountController.getRecibosTransactions);
+router.post('/subaccounts/reassign', subaccountController.reassignTransaction);
+
 // USDT & Schedules
 router.use('/usdt-wallets', usdtWalletRoutes);
 router.use('/scheduled-broadcasts', scheduledBroadcastRoutes);

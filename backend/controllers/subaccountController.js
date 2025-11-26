@@ -257,3 +257,84 @@ exports.resetPassword = async (req, res) => {
         res.status(500).json({ message: 'Failed to reset password.' });
     }
 };
+
+exports.getRecibosTransactions = async (req, res) => {
+    const { subaccountId } = req.params;
+
+    try {
+        // 1. Get transactions currently in this "Recibos" subaccount
+        const [transactions] = await pool.query(
+            `SELECT id, sender_name, amount, transaction_date 
+             FROM xpayz_transactions 
+             WHERE subaccount_id = ? 
+             ORDER BY transaction_date DESC 
+             LIMIT 200`,
+            [subaccountId]
+        );
+
+        // 2. Smart Matching: For each transaction, check history
+        const enhancedTransactions = await Promise.all(transactions.map(async (tx) => {
+            if (!tx.sender_name) return { ...tx, suggestion: null };
+
+            // Find where this sender sends money most often (excluding the Recibos account itself)
+            const query = `
+                SELECT s.id, s.name, COUNT(*) as match_count
+                FROM xpayz_transactions xt
+                JOIN subaccounts s ON xt.subaccount_id = s.subaccount_number
+                WHERE xt.sender_name = ? 
+                AND xt.subaccount_id != ?
+                GROUP BY s.id, s.name
+                ORDER BY match_count DESC
+                LIMIT 1
+            `;
+            const [[bestMatch]] = await pool.query(query, [tx.sender_name, subaccountId]);
+
+            let suggestion = null;
+            if (bestMatch) {
+                // Calculate a rudimentary confidence based on count
+                const confidence = Math.min(bestMatch.match_count * 10, 100); 
+                suggestion = {
+                    subaccountId: bestMatch.id,
+                    subaccountName: bestMatch.name,
+                    confidence: confidence,
+                    reason: `${bestMatch.match_count} prev. txs`
+                };
+            }
+
+            return { ...tx, suggestion };
+        }));
+
+        res.json(enhancedTransactions);
+
+    } catch (error) {
+        console.error('[RECIBOS-ERROR]', error);
+        res.status(500).json({ message: 'Failed to fetch Recibos transactions.' });
+    }
+};
+
+// === NEW: Reassign Transaction Logic ===
+exports.reassignTransaction = async (req, res) => {
+    const { transactionId, targetSubaccountNumber } = req.body;
+
+    if (!transactionId || !targetSubaccountNumber) {
+        return res.status(400).json({ message: 'Missing Transaction ID or Target Subaccount.' });
+    }
+
+    try {
+        // Simply update the subaccount_id link in the database
+        const [result] = await pool.query(
+            `UPDATE xpayz_transactions SET subaccount_id = ? WHERE id = ?`,
+            [targetSubaccountNumber, transactionId]
+        );
+
+        if (result.affectedRows === 0) {
+            return res.status(404).json({ message: 'Transaction not found.' });
+        }
+
+        res.json({ message: 'Transaction successfully reassigned.' });
+
+    } catch (error) {
+        console.error('[REASSIGN-ERROR]', error);
+        res.status(500).json({ message: 'Failed to reassign transaction.' });
+    }
+};

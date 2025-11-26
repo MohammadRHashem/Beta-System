@@ -7,11 +7,15 @@ import {
   deleteSubaccount,
   getSubaccountCredentials,
   resetSubaccountPassword,
+  getRecibosTransactions, // Import
+  reassignTransaction     // Import
 } from "../services/api";
 import Modal from "../components/Modal";
-import { FaPlus, FaEdit, FaTrash, FaKey } from "react-icons/fa";
+import { FaPlus, FaEdit, FaTrash, FaKey, FaExchangeAlt, FaMagic } from "react-icons/fa"; // Added icons
 import ComboBox from "../components/ComboBox";
+import Select from 'react-select'; // Use React-Select for the target dropdown inside the table
 
+// ... (Existing Styled Components remain) ...
 const PageContainer = styled.div`
   display: flex;
   flex-direction: column;
@@ -46,17 +50,17 @@ const Button = styled.button`
 
 const ResetButton = styled(Button)`
   background-color: ${({ theme }) => theme.error};
-  margin-top: 1rem;
+  margin-top: 0.5rem;
   width: 100%;
-  justify-content: center; // Center the icon and text
+  justify-content: center; 
+  font-size: 0.9rem;
 `;
 
 const Table = styled.table`
   width: 100%;
   border-collapse: collapse;
   margin-top: 1.5rem;
-  th,
-  td {
+  th, td {
     padding: 1rem;
     text-align: left;
     border-bottom: 1px solid ${({ theme }) => theme.border};
@@ -78,15 +82,44 @@ const Table = styled.table`
   }
 `;
 
+// === NEW COMPONENT: Suggestion Badge ===
+const SuggestionBadge = styled.div`
+    background-color: #e6fffa;
+    color: #00C49A;
+    border: 1px solid #00C49A;
+    padding: 0.3rem 0.6rem;
+    border-radius: 20px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    cursor: pointer;
+    margin-bottom: 0.3rem;
+    transition: all 0.2s;
+
+    &:hover {
+        background-color: #00C49A;
+        color: white;
+    }
+`;
+
 const SubaccountsPage = ({ allGroups }) => {
-  // ... (Logic remains the same)
   const [subaccounts, setSubaccounts] = useState([]);
   const [loading, setLoading] = useState(true);
+  
+  // Existing Modals
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingSubaccount, setEditingSubaccount] = useState(null);
   const [isCredsModalOpen, setIsCredsModalOpen] = useState(false);
   const [currentCreds, setCurrentCreds] = useState(null);
   const [credsLoading, setCredsLoading] = useState(false);
+
+  // === NEW: Recibos Modal State ===
+  const [isRecibosModalOpen, setIsRecibosModalOpen] = useState(false);
+  const [recibosAccountId, setRecibosAccountId] = useState(null); // Selected "Source" account
+  const [recibosTransactions, setRecibosTransactions] = useState([]);
+  const [recibosLoading, setRecibosLoading] = useState(false);
 
   const fetchSubaccounts = useCallback(async () => {
     setLoading(true);
@@ -114,6 +147,7 @@ const SubaccountsPage = ({ allGroups }) => {
     setEditingSubaccount(null);
     setIsCredsModalOpen(false);
     setCurrentCreds(null);
+    setIsRecibosModalOpen(false); // Close Recibos modal too
   };
 
   const handleDelete = async (id) => {
@@ -163,17 +197,49 @@ const SubaccountsPage = ({ allGroups }) => {
     }
   };
 
+  // === NEW: Fetch transactions for the selected "Recibos" account ===
+  const fetchRecibosData = async (subNumber) => {
+      if (!subNumber) return;
+      setRecibosLoading(true);
+      try {
+          const { data } = await getRecibosTransactions(subNumber);
+          setRecibosTransactions(data);
+      } catch (error) {
+          alert("Failed to fetch Recibos transactions.");
+      } finally {
+          setRecibosLoading(false);
+      }
+  };
+
+  // === NEW: Handle Reassignment ===
+  const handleReassign = async (txId, targetSubaccountNumber) => {
+      if (!confirm(`Move this transaction to the selected client?`)) return;
+      try {
+          await reassignTransaction(txId, targetSubaccountNumber);
+          // Remove from UI list immediately
+          setRecibosTransactions(prev => prev.filter(tx => tx.id !== txId));
+      } catch (error) {
+          alert("Failed to reassign transaction.");
+      }
+  };
+
   return (
     <>
       <PageContainer>
         <Header>
           <h2>Subaccount Management</h2>
-          <Button onClick={() => handleOpenModal(null)}>
-            <FaPlus /> Add Subaccount
-          </Button>
+          <div style={{display: 'flex', gap: '1rem'}}>
+            {/* === NEW BUTTON === */}
+            <Button onClick={() => setIsRecibosModalOpen(true)} style={{backgroundColor: '#0A2540'}}>
+                <FaExchangeAlt /> Manage Recibos
+            </Button>
+            <Button onClick={() => handleOpenModal(null)}>
+                <FaPlus /> Add Subaccount
+            </Button>
+          </div>
         </Header>
         <Card>
-          <p>Manage XPayz subaccounts and generate Client Portal credentials.</p>
+          <p>Manage XPayz subaccounts, generate credentials, and manage internal "Recibos" transfers.</p>
           <Table>
             <thead>
               <tr>
@@ -203,7 +269,7 @@ const SubaccountsPage = ({ allGroups }) => {
         </Card>
       </PageContainer>
 
-      {/* Subaccount Modal remains the same ... */}
+      {/* Existing Modals */}
       <SubaccountModal
         isOpen={isModalOpen}
         onClose={handleCloseModals}
@@ -219,10 +285,125 @@ const SubaccountsPage = ({ allGroups }) => {
         onReset={handleResetPassword}
         loading={credsLoading}
       />
+
+      {/* === NEW: Recibos Manager Modal === */}
+      <RecibosModal 
+        isOpen={isRecibosModalOpen}
+        onClose={handleCloseModals}
+        subaccounts={subaccounts} // Pass list for dropdown
+        loading={recibosLoading}
+        transactions={recibosTransactions}
+        onSelectAccount={(id) => { setRecibosAccountId(id); fetchRecibosData(id); }}
+        selectedAccountId={recibosAccountId}
+        onReassign={handleReassign}
+      />
     </>
   );
 };
 
+// === NEW MODAL COMPONENT ===
+const RecibosModal = ({ isOpen, onClose, subaccounts, loading, transactions, onSelectAccount, selectedAccountId, onReassign }) => {
+    const subOptions = subaccounts.map(s => ({ value: s.subaccount_number, label: s.name }));
+
+    return (
+        <Modal isOpen={isOpen} onClose={onClose} maxWidth="900px">
+            <h2>Recibos / Internal Transfer Manager</h2>
+            <p>Select your "Recibos" or "Catch-all" account to distribute transactions to the correct clients.</p>
+            
+            <div style={{marginBottom: '1.5rem'}}>
+                <label style={{fontWeight: 'bold', display: 'block', marginBottom: '0.5rem'}}>Select Source Account (Recibos)</label>
+                <Select 
+                    options={subOptions}
+                    onChange={(opt) => onSelectAccount(opt.value)}
+                    placeholder="Choose account to inspect..."
+                />
+            </div>
+
+            {selectedAccountId && (
+                <div style={{maxHeight: '500px', overflowY: 'auto', border: '1px solid #eee', borderRadius: '4px'}}>
+                    {loading ? <p style={{padding: '1rem'}}>Loading transactions...</p> : (
+                        <table style={{width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem'}}>
+                            <thead style={{background: '#f6f9fc', position: 'sticky', top: 0, zIndex: 10}}>
+                                <tr>
+                                    <th style={{padding: '0.75rem', textAlign: 'left'}}>Date</th>
+                                    <th style={{padding: '0.75rem', textAlign: 'left'}}>Sender</th>
+                                    <th style={{padding: '0.75rem', textAlign: 'left'}}>Amount</th>
+                                    <th style={{padding: '0.75rem', textAlign: 'left'}}>Smart Suggestion</th>
+                                    <th style={{padding: '0.75rem', textAlign: 'left'}}>Assign To</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {transactions.length === 0 ? (
+                                    <tr><td colSpan="5" style={{padding: '2rem', textAlign: 'center'}}>No transactions found.</td></tr>
+                                ) : transactions.map(tx => (
+                                    <RecibosRow 
+                                        key={tx.id} 
+                                        tx={tx} 
+                                        subOptions={subOptions} 
+                                        onReassign={onReassign}
+                                    />
+                                ))}
+                            </tbody>
+                        </table>
+                    )}
+                </div>
+            )}
+        </Modal>
+    );
+};
+
+// Helper component for row state
+const RecibosRow = ({ tx, subOptions, onReassign }) => {
+    const [target, setTarget] = useState(null);
+
+    // Auto-select logic if needed, or just visual
+    const handleSuggestionClick = () => {
+        const opt = subOptions.find(o => o.value == tx.suggestion.subaccount_number) || 
+                    subOptions.find(o => o.label === tx.suggestion.subaccountName); // Fallback matching
+        if (opt) setTarget(opt);
+    };
+
+    // Match suggestion to options safely
+    const suggestionOption = tx.suggestion 
+        ? subOptions.find(o => o.label === tx.suggestion.subaccountName) 
+        : null;
+
+    return (
+        <tr style={{borderBottom: '1px solid #eee'}}>
+            <td style={{padding: '0.75rem'}}>{new Date(tx.transaction_date).toLocaleDateString()}</td>
+            <td style={{padding: '0.75rem', fontWeight: '500'}}>{tx.sender_name}</td>
+            <td style={{padding: '0.75rem', fontFamily: 'monospace'}}>{parseFloat(tx.amount).toFixed(2)}</td>
+            <td style={{padding: '0.75rem'}}>
+                {tx.suggestion ? (
+                    <SuggestionBadge onClick={() => setTarget(suggestionOption)}>
+                        <FaMagic /> {tx.suggestion.confidence}%: {tx.suggestion.subaccountName}
+                    </SuggestionBadge>
+                ) : <span style={{color: '#ccc', fontSize: '0.8rem'}}>No history</span>}
+            </td>
+            <td style={{padding: '0.75rem', display: 'flex', gap: '0.5rem', alignItems: 'center'}}>
+                <div style={{width: '200px'}}>
+                    <Select 
+                        options={subOptions} 
+                        value={target} 
+                        onChange={setTarget} 
+                        placeholder="Select Client..."
+                        menuPortalTarget={document.body} // Fix z-index in table
+                        styles={{ menuPortal: base => ({ ...base, zIndex: 9999 }) }}
+                    />
+                </div>
+                <Button 
+                    disabled={!target} 
+                    onClick={() => onReassign(tx.id, target.value)}
+                    style={{padding: '0.5rem', fontSize: '0.8rem'}}
+                >
+                    Move
+                </Button>
+            </td>
+        </tr>
+    );
+};
+
+// ... (Keep CredentialsModal, ModalForm, SubaccountModal unchanged below) ...
 const CredentialsModal = ({ isOpen, onClose, credentials, onReset, loading }) => {
   if (!credentials) return null;
 
@@ -272,7 +453,6 @@ const CredentialsModal = ({ isOpen, onClose, credentials, onReset, loading }) =>
   );
 };
 
-// ... SubaccountModal ...
 const ModalForm = styled.form`
   display: flex;
   flex-direction: column;
