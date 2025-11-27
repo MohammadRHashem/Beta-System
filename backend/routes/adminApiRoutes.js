@@ -16,7 +16,7 @@ const subaccountController = require('../controllers/subaccountController');
 const usdtWalletRoutes = require('./usdtWalletRoutes');
 const scheduledBroadcastRoutes = require('./scheduledBroadcastRoutes');
 const subCustomerController = require('../controllers/subCustomerController');
-const trkbitController = require('./controllers/trkbitController');
+const trkbitController = require('../controllers/trkbitController');
 
 // --- Define all ADMIN routes that require authentication ---
 router.get('/status', whatsappController.getStatus);
