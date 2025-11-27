@@ -105,7 +105,7 @@ const AutoConfirmationPage = () => {
     useEffect(() => {
         const fetchAllStatuses = async () => {
             try {
-                const [autoConfRes, alfaApiRes, trocaCoinRes] = await Promise.all([
+                const [autoConfRes, alfaApiRes, trkbitRes, trocaCoinRes] = await Promise.all([
                     api.get('/settings/auto-confirmation'),
                     api.get('/settings/alfa-api-confirmation'), // Fetch new setting status
                     api.get('/settings/trkbit-confirmation'), // <--- NEW FETCH
