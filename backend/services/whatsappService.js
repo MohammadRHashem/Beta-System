@@ -61,9 +61,10 @@ const normalizeNameForMatching = (name) => {
     if (!name || typeof name !== 'string') return '';
     return name
         .toLowerCase()
-        .replace(/[\d.,-]/g, "") // Remove digits and common punctuation
-        .replace(/\b(ltda|me|sa|eireli|epp|s.a)\b/g, "") // Remove corporate suffixes
-        .replace(/\b(de|da|do|dos)\b/g, "") // Remove common articles
+        .normalize("NFD").replace(/[\u0300-\u036f]/g, "") // Remove Accents (ã -> a, é -> e)
+        .replace(/[\d.,-]/g, "") // Remove digits/punctuation
+        .replace(/\b(ltda|me|sa|eireli|epp|s.a|participacoes|pagamentos)\b/g, "") // Remove corporate suffixes
+        .replace(/\b(de|da|do|dos|das|e)\b/g, "") // Remove articles
         .replace(/\s+/g, " ") // Standardize whitespace
         .trim();
 };
@@ -140,57 +141,90 @@ const findBestTelegramMatch = async (searchAmount, searchSender) => {
 
 
 const findBestXPayzMatch = async (searchAmount, searchSender, subaccountPool = []) => {
+  // 1. Fail fast on bad input
   if (!searchSender || searchAmount === undefined || searchAmount === null) {
-    console.log('[XPAYZ-MATCH-DEBUG] Match function skipped due to invalid input (sender or amount).');
     return null;
   }
   
   try {
+    // 2. THE ANCHOR: Strict Amount Filtering
+    // We select sender_name_normalized (pre-computed) and raw sender_name (fallback)
     let query = `
-        SELECT id, counterparty_name_normalized 
+        SELECT id, sender_name_normalized, sender_name 
         FROM xpayz_transactions 
         WHERE 
             is_used = FALSE 
-            AND amount BETWEEN ? AND ?
+            AND amount = ? 
     `;
-    const params = [searchAmount - 0.001, searchAmount + 0.001];
+    const params = [searchAmount];
 
     if (subaccountPool.length > 0) {
       query += ` AND subaccount_id IN (?)`;
       params.push(subaccountPool);
     } else {
-      console.log('[XPAYZ-MATCH-DEBUG] Target subaccount pool is empty. No match possible.');
-      return null;
+      return null; // No accounts to check
     }
     
-    console.log(`[XPAYZ-MATCH-DEBUG] Executing query for amount range [${params[0]}, ${params[1]}] in subaccounts [${subaccountPool.join(', ')}]`);
-    
+    // Execute SQL
     const [foundTxs] = await pool.query(query, params);
     
+    // 3. Early Exit if no amount match
     if (foundTxs.length === 0) {
-        console.log(`[XPAYZ-MATCH-DEBUG] No transactions found in the database for this amount range and subaccount pool.`);
         return null;
     }
 
-    console.log(`[XPAYZ-MATCH-DEBUG] Found ${foundTxs.length} potential transactions for this amount. Now matching name...`);
+    // 4. THE VERIFICATION: Smart Name Matching
     const ocrNameNormalized = normalizeNameForMatching(searchSender);
+    const ocrWords = new Set(ocrNameNormalized.split(' ').filter(w => w.length > 2)); // Filter tiny words
 
     for (const tx of foundTxs) {
-        const dbNameNormalized = tx.counterparty_name_normalized;
+        // Fallback: If DB didn't normalize on insert, normalize now
+        const dbNameNormalized = tx.sender_name_normalized || normalizeNameForMatching(tx.sender_name);
+        
         if (!dbNameNormalized) continue;
 
+        // VECTOR A: Exact Match (Fastest)
         if (dbNameNormalized === ocrNameNormalized) {
-            console.log(`[XPAYZ-MATCH] SUCCESS: Found via Exact Name Match for amount ${searchAmount}.`);
+            console.log(`[XPAYZ-MATCH] Found via Vector A (Exact): ${tx.id}`);
             return tx.id;
         }
-        // ... rest of name matching logic ...
+
+        // VECTOR B: Substring Containment (Common in banking)
+        // Bank: "LUIZ GUSTAVO ZINATO", OCR: "LUIZ ZINATO" -> Not substring, but...
+        // Bank: "JOSE SILVA", OCR: "JOSE SILVA SANTOS" -> Substring works.
+        if (dbNameNormalized.includes(ocrNameNormalized) || ocrNameNormalized.includes(dbNameNormalized)) {
+            console.log(`[XPAYZ-MATCH] Found via Vector B (Substring): ${tx.id}`);
+            return tx.id;
+        }
+
+        // VECTOR C: Word Intersection (The "Bag of Words" - Most Powerful)
+        // Splits names into sets of words and checks overlap.
+        const dbWords = new Set(dbNameNormalized.split(' ').filter(w => w.length > 2));
+        
+        // Find common words
+        let matchCount = 0;
+        for (const word of ocrWords) {
+            if (dbWords.has(word)) matchCount++;
+        }
+
+        // SCORING LOGIC:
+        // If we matched at least 2 unique words OR (1 word if total words is small)
+        const totalSignificantWords = Math.min(ocrWords.size, dbWords.size);
+        
+        // Match if:
+        // 1. More than 60% of the significant words match
+        // 2. AND we matched at least 1 word
+        if (totalSignificantWords > 0 && (matchCount / totalSignificantWords) >= 0.6 && matchCount >= 1) {
+             console.log(`[XPAYZ-MATCH] Found via Vector C (Intersection): ${tx.id} (${matchCount}/${totalSignificantWords} words)`);
+             return tx.id;
+        }
     }
 
-    console.log(`[XPAYZ-MATCH-DEBUG] FAILURE: Found transactions for amount, but no name match for '${ocrNameNormalized}'.`);
+    // No name match found among amount candidates
     return null;
 
   } catch (dbError) {
-    console.error("[DB-CONFIRM-ERROR] A critical error occurred while querying xpayz_transactions table:", dbError);
+    console.error("[DB-CONFIRM-ERROR] Critical error in XPayz match:", dbError);
     return null;
   }
 };
