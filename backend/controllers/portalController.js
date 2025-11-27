@@ -289,7 +289,7 @@ exports.exportTransactions = async (req, res) => {
 
                 worksheet.addRow({
                     date: dateObj,
-                    sender: tx.sender_name,
+                    sender: tx.sender_name || tx.counterparty_name || 'N/A',
                     amount: parseFloat(tx.amount)
                 });
             });

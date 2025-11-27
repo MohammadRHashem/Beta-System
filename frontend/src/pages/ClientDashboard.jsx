@@ -5,11 +5,8 @@ import { getPortalTransactions, getPortalDashboardSummary } from '../services/ap
 import { FaSyncAlt, FaSearch, FaArrowUp, FaArrowDown } from 'react-icons/fa';
 import Pagination from '../components/Pagination';
 import { usePortal } from '../context/PortalContext';
-import DatePicker from 'react-datepicker';
-import "react-datepicker/dist/react-datepicker.css";
-import { format, parseISO } from 'date-fns';
+// Removed DatePicker imports
 
-// ... (All styled components and useDebounce hook remain exactly the same) ...
 const useDebounce = (value, delay) => {
     const [debouncedValue, setDebouncedValue] = useState(value);
     useEffect(() => {
@@ -18,13 +15,21 @@ const useDebounce = (value, delay) => {
     }, [value, delay]);
     return debouncedValue;
 };
+
 const PageContainer = styled(motion.div)``;
 const ControlsContainer = styled.div` display: flex; flex-direction: column; gap: 1.5rem; margin-bottom: 1.5rem; `;
 const TopControls = styled.div` display: flex; flex-wrap: wrap; gap: 1rem; justify-content: space-between; align-items: flex-start; `;
 const FilterContainer = styled.div` display: flex; flex-wrap: wrap; gap: 1rem; align-items: center; `;
 const Input = styled.input` padding: 0.75rem; border: 1px solid ${({ theme }) => theme.border}; border-radius: 8px; font-size: 1rem; min-width: 240px; transition: all 0.2s; &:focus { outline: none; border-color: ${({ theme }) => theme.secondary}; box-shadow: 0 0 0 3px rgba(0, 196, 154, 0.2); } `;
 const InputGroup = styled.div` position: relative; display: flex; align-items: center; svg { position: absolute; left: 12px; color: ${({ theme }) => theme.lightText}; } ${Input} { padding-left: 35px; } `;
-// Removed unused DateInput styled component
+
+// === RESTORED: Styled Native Date Input ===
+const DateInput = styled(Input).attrs({type: 'date'})` 
+    padding-left: 0.75rem; 
+    min-width: auto;
+    font-family: inherit;
+`;
+
 const RefreshButton = styled.button` padding: 0.75rem 1rem; border: none; background: ${({ theme }) => theme.secondary}; color: white; font-weight: 600; border-radius: 8px; cursor: pointer; display: flex; align-items: center; gap: 0.5rem; transition: all 0.2s; &:hover { transform: translateY(-2px); } `;
 const Card = styled.div` background: #fff; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.06); overflow: hidden; `;
 const TableWrapper = styled.div` overflow-x: auto; @media (max-width: 768px) { display: none; } `;
@@ -123,15 +128,10 @@ const ClientDashboard = () => {
         }
     }, [fetchSummaryData]);
 
+    // Standard change handler for native inputs
     const handleFilterChange = (e) => {
+        setPagination(p => ({ ...p, page: 1 }));
         setFilters(prevFilters => ({ ...prevFilters, [e.target.name]: e.target.value }));
-    };
-
-    const handleDateChange = (date) => {
-        setFilters(prevFilters => ({ 
-            ...prevFilters, 
-            date: date ? format(date, 'yyyy-MM-dd') : '' 
-        }));
     };
     
     const formatDateTime = (dbDateString) => {
@@ -155,15 +155,8 @@ const ClientDashboard = () => {
                             <FaSearch />
                             <Input as="input" name="search" type="text" value={filters.search} onChange={handleFilterChange} placeholder="Search by name..." />
                         </InputGroup>
-                        <div style={{minWidth: '240px'}}>
-                            <DatePicker 
-                                selected={filters.date ? parseISO(filters.date) : null}
-                                onChange={handleDateChange}
-                                dateFormat="dd/MM/yyyy"
-                                placeholderText="dd/mm/yyyy"
-                                className="custom-datepicker" 
-                            />
-                        </div>
+                        {/* === REVERTED: Native Date Input === */}
+                        <DateInput name="date" value={filters.date || ''} onChange={handleFilterChange} />
                         <RefreshButton onClick={() => { fetchTableData(); fetchSummaryData(); }}><FaSyncAlt /> Refresh</RefreshButton>
                     </FilterContainer>
                 </TopControls>
@@ -213,7 +206,7 @@ const ClientDashboard = () => {
                                     <TypeCell isCredit={tx.operation_direct === 'in'}>
                                         {tx.operation_direct}
                                     </TypeCell>
-                                    {/* === FIX: Use sender_name OR counterparty_name === */}
+                                    {/* Shows sender or fallback to counterparty */}
                                     <td>{tx.sender_name || tx.counterparty_name || 'Unknown'}</td>
                                     <AmountCell isCredit={tx.operation_direct === 'in'}>
                                         {tx.operation_direct === 'in' ? '+' : '-'}
@@ -232,7 +225,6 @@ const ClientDashboard = () => {
                                 <span>{tx.operation_direct === 'in' ? <FaArrowUp/> : <FaArrowDown/>}</span>
                             </MobileCardHeader>
                             <MobileCardBody>
-                                {/* === FIX: Use sender_name OR counterparty_name === */}
                                 <p><strong>{tx.sender_name || tx.counterparty_name || 'Unknown'}</strong></p>
                                 <p>{formatDateTime(tx.transaction_date)}</p>
                             </MobileCardBody>
