@@ -106,6 +106,19 @@ const TrkbitPage = () => {
         exportTrkbit(filters);
     };
 
+    const formatAdjustedDate = (dateString) => {
+        if (!dateString) return 'N/A';
+        const date = new Date(dateString);
+        // Subtract 3 hours
+        date.setHours(date.getHours() - 3);
+        
+        // Format to readable string (Day/Month/Year Hour:Minute:Second)
+        return new Intl.DateTimeFormat('pt-BR', {
+            year: 'numeric', month: '2-digit', day: '2-digit',
+            hour: '2-digit', minute: '2-digit', second: '2-digit'
+        }).format(date);
+    };
+
     return (
         <PageContainer>
             <Header>
@@ -142,7 +155,7 @@ const TrkbitPage = () => {
                     <tbody>
                         {loading ? <tr><td colSpan="4">Loading...</td></tr> : transactions.map(tx => (
                             <tr key={tx.id}>
-                                <td>{new Date(tx.tx_date).toLocaleString()}</td>
+                                <td>{formatAdjustedDate(tx.tx_date)}</td>
                                 <td>{tx.tx_payer_name}</td>
                                 <td style={{color: '#217346', fontWeight: 'bold'}}>
                                     {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(tx.amount)}
