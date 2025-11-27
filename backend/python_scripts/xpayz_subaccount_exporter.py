@@ -40,7 +40,7 @@ class Transaction:
     amount: str
     operation_direct: str
     sender_name: str | None
-    destination_name: str | None # <--- NEW FIELD
+    destination_name: str | None
     raw: dict
 
 class XPayzClient:
@@ -100,7 +100,7 @@ class XPayzClient:
             amount=d.get("amount"),
             operation_direct=d.get("operation_direct"),
             sender_name=d.get("sender_name"),
-            destination_name=d.get("destination_name"), # <--- Capture Destination
+            destination_name=d.get("destination_name"),
             raw=d,
         )
 
@@ -126,7 +126,6 @@ def save_transactions_to_db(subaccount_id: int, transactions: list[Transaction])
         
     cursor = db.cursor()
     
-    # === UPDATED QUERY: Include operation_direct and counterparty_name ===
     insert_query = """
         INSERT INTO xpayz_transactions (
             xpayz_transaction_id, subaccount_id, amount, operation_direct,
@@ -143,13 +142,10 @@ def save_transactions_to_db(subaccount_id: int, transactions: list[Transaction])
     skipped_principal = 0
 
     for tx in transactions:
-        # === FIX 1: Allow OUT transactions ===
-        # Ensure sender_name exists to prevent errors, but allow logic to proceed
         if not tx.sender_name: 
             tx.sender_name = "Unknown"
 
-        # === FIX 2: Refined Anti-Duplicate Filter ===
-        # Only skip if it is INCOMING AND from the PRINCIPAL (Internal Transfer)
+        # Anti-Duplicate Filter (Only for incoming)
         if tx.operation_direct == 'in' and PRINCIPAL_NAME and PRINCIPAL_NAME in tx.sender_name.lower():
             skipped_principal += 1
             continue
@@ -158,21 +154,22 @@ def save_transactions_to_db(subaccount_id: int, transactions: list[Transaction])
             amount = float(tx.amount)
             tx_date = isoparse(tx.created_at)
             
-            # For IN: Normalized Sender is useful for matching.
-            # For OUT: Sender is us, so normalization is less critical but good to have.
             normalized = normalize_name(tx.sender_name)
             
-            # === FIX 3: Map Destination to Counterparty ===
-            counterparty = tx.destination_name if tx.destination_name else ""
+            # === MODIFICATION: Hardcode name for OUT transactions ===
+            if tx.operation_direct == 'out':
+                counterparty = "USD BETA OUT / E"
+            else:
+                counterparty = tx.destination_name if tx.destination_name else ""
 
             values = (
                 tx.id,
                 subaccount_id,
                 amount,
-                tx.operation_direct, # Save direction 'in' or 'out'
+                tx.operation_direct,
                 tx.sender_name,
                 normalized,
-                counterparty,       # Save receiver name
+                counterparty,
                 tx_date,
                 json.dumps(tx.raw)
             )
