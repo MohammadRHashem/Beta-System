@@ -257,6 +257,27 @@ const findBestUsdtMatch = async (searchAmount, recipientAddress) => {
 };
 
 
+let isTrkbitConfirmationEnabled = false;
+const refreshTrkbitConfirmationStatus = async () => {
+  try {
+    const [[setting]] = await pool.query(
+      "SELECT setting_value FROM system_settings WHERE setting_key = 'trkbit_confirmation_enabled'"
+    );
+    isTrkbitConfirmationEnabled = setting
+      ? setting.setting_value === "true"
+      : false;
+    console.log(
+      `[SETTINGS] Trkbit Confirmation is now ${
+        isTrkbitConfirmationEnabled ? "ENABLED" : "DISABLED"
+      }.`
+    );
+  } catch (error) {
+    console.error("[SETTINGS-ERROR] Failed to refresh Trkbit status:", error);
+    isTrkbitConfirmationEnabled = false;
+  }
+};
+
+
 const invoiceWorker = new Worker(
   "invoice-processing-queue",
   async (job) => {
@@ -353,6 +374,50 @@ const invoiceWorker = new Worker(
       let wasActioned = false;
       let isAssignedUpgradeZoneFailure = false; // <-- NEW FLAG
       let assignmentRuleForEscalation = null; // <-- NEW variable to hold data
+      
+
+      // --- PRIORITY X: TRKBIT / CROSS CONFIRMATION ---
+      if (runStandardForwarding && isTrkbitConfirmationEnabled && 
+         (recipientNameLower.includes("trkbit") || recipientNameLower.includes("cross") || recipientNameLower.includes("brasilcash"))) {
+          
+          console.log('[WORKER] "Trkbit/Cross" recipient detected. Checking local DB...');
+          
+          const searchAmount = parseFloat(amount.replace(/,/g, ""));
+          
+          // Find transactions with matching amount in the last 24 hours
+          const [matches] = await pool.query(
+              `SELECT id, tx_payer_name FROM trkbit_transactions 
+               WHERE amount = ? AND is_used = 0 
+               AND tx_date >= NOW() - INTERVAL 24 HOUR`,
+              [searchAmount]
+          );
+
+          let confirmedId = null;
+          
+          // Normalize OCR sender name
+          const ocrSenderNormalized = sender.name.toLowerCase().replace(/[^a-z0-9]/g, '');
+
+          for (const tx of matches) {
+              if (!tx.tx_payer_name) continue;
+              const dbNameNorm = tx.tx_payer_name.toLowerCase().replace(/[^a-z0-9]/g, '');
+              
+              // Fuzzy check
+              if (dbNameNorm.includes(ocrSenderNormalized) || ocrSenderNormalized.includes(dbNameNorm)) {
+                  confirmedId = tx.id;
+                  break;
+              }
+          }
+
+          if (confirmedId) {
+              await pool.query('UPDATE trkbit_transactions SET is_used = 1 WHERE id = ?', [confirmedId]);
+              await originalMessage.reply("Caiu");
+              await originalMessage.react("🟢");
+              wasActioned = true;
+              runStandardForwarding = false;
+          } else {
+              console.log('[TRKBIT-CONFIRM] No match found in DB.');
+          }
+      }
 
       //USDT Transaction Confirmation
       if (recipientNameLower.includes("usdt_recipient")) {
@@ -1299,6 +1364,7 @@ const initializeWhatsApp = (socketIoInstance) => {
       refreshTrocaCoinStatus();
       refreshTrocaCoinMethod();
       refreshAbbreviationCache();
+      refreshTrkbitConfirmationStatus();
       refreshAutoConfirmationStatus();
 
       console.log('[STARTUP] Clearing any old/stale jobs from the queue...');
@@ -1421,4 +1487,5 @@ module.exports = {
   refreshAlfaApiConfirmationStatus,
   refreshTrocaCoinStatus,
   refreshTrocaCoinMethod,
+  refreshTrkbitConfirmationStatus
 };

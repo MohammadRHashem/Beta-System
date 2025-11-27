@@ -16,6 +16,7 @@ const subaccountController = require('../controllers/subaccountController');
 const usdtWalletRoutes = require('./usdtWalletRoutes');
 const scheduledBroadcastRoutes = require('./scheduledBroadcastRoutes');
 const subCustomerController = require('../controllers/subCustomerController');
+const trkbitController = require('./controllers/trkbitController');
 
 // --- Define all ADMIN routes that require authentication ---
 router.get('/status', whatsappController.getStatus);
@@ -110,5 +111,11 @@ router.post('/subaccounts/reassign', subaccountController.reassignTransaction);
 // USDT & Schedules
 router.use('/usdt-wallets', usdtWalletRoutes);
 router.use('/scheduled-broadcasts', scheduledBroadcastRoutes);
+
+router.get('/trkbit/transactions', trkbitController.getTransactions);
+router.get('/trkbit/export', trkbitController.exportExcel);
+
+router.get('/settings/trkbit-confirmation', settingsController.getTrkbitConfirmationStatus);
+router.post('/settings/trkbit-confirmation', settingsController.setTrkbitConfirmationStatus);
 
 module.exports = router;

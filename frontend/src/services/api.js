@@ -203,4 +203,10 @@ export const exportAlfaPdf = async (params) => {
     }
 };
 
+export const getTrkbitTransactions = (params) => apiClient.get('/trkbit/transactions', { params });
+export const exportTrkbit = async (params) => {
+    const blob = await downloadFile('/trkbit/export', params);
+    triggerBrowserDownload(blob, 'trkbit_export.xlsx');
+};
+
 export default apiClient;

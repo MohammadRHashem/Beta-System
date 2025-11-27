@@ -78,6 +78,7 @@ const Sidebar = () => {
         </NavItem>
         <NavItem to="/position"><FaChartLine /><span>Position</span></NavItem>
         <NavItem to="/invoices"><FaFileInvoiceDollar /><span>Invoices</span></NavItem>
+        <NavItem to="/trkbit"><FaUniversity /><span>Trkbit</span></NavItem>
         <NavItem to="/alfa-trust"><FaUniversity /><span>Alfa Trust</span></NavItem>
         <NavItem to="/group-settings"><FaCog /><span>Group Settings</span></NavItem>
       </SidebarContainer>

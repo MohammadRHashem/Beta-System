@@ -21,6 +21,7 @@ import SubaccountsPage from "./SubaccountsPage";
 import ScheduledBroadcastsPage from "./ScheduledBroadcastsPage";
 import UsdtWalletsPage from "./UsdtWalletsPage";
 import SubCustomersPage from "./SubCustomersPage";
+import TrkbitPage from "./TrkbitPage";
 
 const AppLayout = styled.div`
   display: flex;
@@ -158,6 +159,7 @@ const MainLayout = () => {
                   <InvoicesPage allGroups={allGroups} />
                 }
               />
+              <Route path="/trkbit" element={<TrkbitPage />} />
               <Route path="/alfa-trust" element={<AlfaTrustPage />} />
               <Route
                 path="/broadcaster"

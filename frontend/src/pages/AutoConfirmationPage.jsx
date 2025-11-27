@@ -99,6 +99,7 @@ const AutoConfirmationPage = () => {
     const [isAutoConfEnabled, setIsAutoConfEnabled] = useState(false);
     const [isAlfaApiEnabled, setIsAlfaApiEnabled] = useState(false); // New state
     const [trocaCoinMethod, setTrocaCoinMethod] = useState('telegram'); 
+    const [isTrkbitEnabled, setIsTrkbitEnabled] = useState(false); // <--- NEW STATE
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
@@ -107,10 +108,12 @@ const AutoConfirmationPage = () => {
                 const [autoConfRes, alfaApiRes, trocaCoinRes] = await Promise.all([
                     api.get('/settings/auto-confirmation'),
                     api.get('/settings/alfa-api-confirmation'), // Fetch new setting status
+                    api.get('/settings/trkbit-confirmation'), // <--- NEW FETCH
                     api.get('/settings/troca-coin-method')
                 ]);
                 setIsAutoConfEnabled(autoConfRes.data.isEnabled);
                 setIsAlfaApiEnabled(alfaApiRes.data.isEnabled);
+                setIsTrkbitEnabled(trkbitRes.data.isEnabled); // <--- NEW SET
                 setTrocaCoinMethod(trocaCoinRes.data.method);
             } catch (error) {
                 console.error("Failed to fetch statuses:", error);
@@ -141,6 +144,17 @@ const AutoConfirmationPage = () => {
         } catch (error) {
             alert("Failed to update Alfa API setting. Reverting change.");
             setIsAlfaApiEnabled(!newStatus);
+        }
+    };
+
+    const handleTrkbitToggle = async () => {
+        const newStatus = !isTrkbitEnabled;
+        setIsTrkbitEnabled(newStatus);
+        try {
+            await api.post('/settings/trkbit-confirmation', { isEnabled: newStatus });
+        } catch (error) {
+            alert("Failed to update Trkbit setting. Reverting change.");
+            setIsTrkbitEnabled(!newStatus);
         }
     };
 
@@ -182,6 +196,23 @@ const AutoConfirmationPage = () => {
                 </SettingRow>
                 <Description style={{ fontSize: '0.9rem', marginTop: '0.5rem' }}>
                     Forwards will get a '🟡' reaction. A '👍' in the destination group triggers a "Caiu" reply in the origin group.
+                </Description>
+
+                <hr style={{ margin: '2rem 0', border: 'none', borderTop: '1px solid #e6ebf1' }}/>
+
+                <SettingRow>
+                    <SettingLabel>Enable Trkbit / Cross API Confirmation</SettingLabel>
+                    <SwitchContainer>
+                        <SwitchInput 
+                            type="checkbox" 
+                            checked={isTrkbitEnabled}
+                            onChange={handleTrkbitToggle}
+                        />
+                        <Slider />
+                    </SwitchContainer>
+                </SettingRow>
+                 <Description style={{ fontSize: '0.9rem', marginTop: '0.5rem' }}>
+                    When enabled, invoices for "Trkbit", "BrasilCash" or "Cross Intermediação" will be checked against the synchronized API data.
                 </Description>
 
                 <hr style={{ margin: '2rem 0', border: 'none', borderTop: '1px solid #e6ebf1' }}/>

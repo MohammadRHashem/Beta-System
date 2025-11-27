@@ -323,3 +323,39 @@ exports.setTrocaCoinMethod = async (req, res) => {
         res.status(500).json({ message: 'Failed to update method.' });
     }
 };
+
+exports.getTrkbitConfirmationStatus = async (req, res) => {
+    try {
+        const [[setting]] = await pool.query(
+            "SELECT setting_value FROM system_settings WHERE setting_key = 'trkbit_confirmation_enabled'"
+        );
+        const isEnabled = setting ? setting.setting_value === 'true' : false;
+        res.json({ isEnabled });
+    } catch (error) {
+        console.error('[ERROR] Failed to fetch Trkbit status:', error);
+        res.status(500).json({ message: 'Failed to fetch status.' });
+    }
+};
+
+exports.setTrkbitConfirmationStatus = async (req, res) => {
+    const { isEnabled } = req.body;
+    if (typeof isEnabled !== 'boolean') {
+        return res.status(400).json({ message: 'A boolean value is required.' });
+    }
+    try {
+        const query = `
+            INSERT INTO system_settings (setting_key, setting_value) VALUES (?, ?)
+            ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value);
+        `;
+        await pool.query(query, ['trkbit_confirmation_enabled', isEnabled.toString()]);
+        
+        // Notify service
+        const whatsappService = require('../services/whatsappService');
+        whatsappService.refreshTrkbitConfirmationStatus();
+        
+        res.json({ message: `Trkbit confirmation successfully ${isEnabled ? 'enabled' : 'disabled'}.` });
+    } catch (error) {
+        console.error('[ERROR] Failed to update Trkbit status:', error);
+        res.status(500).json({ message: 'Failed to update status.' });
+    }
+};
