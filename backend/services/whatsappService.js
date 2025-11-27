@@ -788,7 +788,7 @@ const invoiceWorker = new Worker(
                       replyText = matches[matches.length - 1];
                     }
 
-                    await originalMessage.reply(replyText);
+                    await originalMessage.reply("⏩ " + replyText);
                   }
                   if (isAutoConfirmationEnabled) {
                     await pool.query(
