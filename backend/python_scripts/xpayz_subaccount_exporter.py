@@ -23,7 +23,6 @@ API_BASE = os.getenv("XPAYZ_API_BASE", "https://api.xpayz.us")
 LOGIN_PATH = "/user/customer/auth/signin"
 TRANSACTIONS_BASE_PATH = "/payment/customer/v1/web/sub/"
 
-# === NEW: Get Principal Name to filter internal transfers ===
 PRINCIPAL_NAME = os.getenv("XPAYZ_PRINCIPAL_NAME", "").strip().lower()
 
 DB_HOST = os.getenv('DB_HOST')
@@ -41,6 +40,7 @@ class Transaction:
     amount: str
     operation_direct: str
     sender_name: str | None
+    destination_name: str | None # <--- NEW FIELD
     raw: dict
 
 class XPayzClient:
@@ -100,6 +100,7 @@ class XPayzClient:
             amount=d.get("amount"),
             operation_direct=d.get("operation_direct"),
             sender_name=d.get("sender_name"),
+            destination_name=d.get("destination_name"), # <--- Capture Destination
             raw=d,
         )
 
@@ -125,37 +126,53 @@ def save_transactions_to_db(subaccount_id: int, transactions: list[Transaction])
         
     cursor = db.cursor()
     
+    # === UPDATED QUERY: Include operation_direct and counterparty_name ===
     insert_query = """
         INSERT INTO xpayz_transactions (
-            xpayz_transaction_id, subaccount_id, amount, sender_name, 
-            sender_name_normalized, transaction_date, raw_details
-        ) VALUES (%s, %s, %s, %s, %s, %s, %s)
-        ON DUPLICATE KEY UPDATE xpayz_transaction_id=xpayz_transaction_id;
+            xpayz_transaction_id, subaccount_id, amount, operation_direct,
+            sender_name, sender_name_normalized, counterparty_name, 
+            transaction_date, raw_details
+        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+        ON DUPLICATE KEY UPDATE 
+            xpayz_transaction_id=xpayz_transaction_id,
+            operation_direct=VALUES(operation_direct),
+            counterparty_name=VALUES(counterparty_name);
     """
     
     count = 0
     skipped_principal = 0
 
     for tx in transactions:
-        if tx.operation_direct != 'in' or not tx.sender_name:
-            continue
+        # === FIX 1: Allow OUT transactions ===
+        # Ensure sender_name exists to prevent errors, but allow logic to proceed
+        if not tx.sender_name: 
+            tx.sender_name = "Unknown"
 
-        # === NEW: Filter out Principal Account Internal Transfers ===
-        if PRINCIPAL_NAME and PRINCIPAL_NAME in tx.sender_name.lower():
+        # === FIX 2: Refined Anti-Duplicate Filter ===
+        # Only skip if it is INCOMING AND from the PRINCIPAL (Internal Transfer)
+        if tx.operation_direct == 'in' and PRINCIPAL_NAME and PRINCIPAL_NAME in tx.sender_name.lower():
             skipped_principal += 1
             continue
 
         try:
             amount = float(tx.amount)
             tx_date = isoparse(tx.created_at)
+            
+            # For IN: Normalized Sender is useful for matching.
+            # For OUT: Sender is us, so normalization is less critical but good to have.
             normalized = normalize_name(tx.sender_name)
             
+            # === FIX 3: Map Destination to Counterparty ===
+            counterparty = tx.destination_name if tx.destination_name else ""
+
             values = (
                 tx.id,
                 subaccount_id,
                 amount,
+                tx.operation_direct, # Save direction 'in' or 'out'
                 tx.sender_name,
                 normalized,
+                counterparty,       # Save receiver name
                 tx_date,
                 json.dumps(tx.raw)
             )
@@ -165,7 +182,7 @@ def save_transactions_to_db(subaccount_id: int, transactions: list[Transaction])
             print(f"⚠️ Could not process transaction ID {tx.id}: {e}", file=sys.stderr)
             
     db.commit()
-    print(f"✅ DB Sync: Inserted {count} new txs. Skipped {skipped_principal} internal transfers (Principal Name).")
+    print(f"✅ DB Sync: Inserted/Updated {count} txs. Skipped {skipped_principal} internal transfers.")
     cursor.close()
     db.close()
 

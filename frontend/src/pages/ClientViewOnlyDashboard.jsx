@@ -178,59 +178,109 @@ const ClientViewOnlyDashboard = () => {
     const itemVariants = { hidden: { y: 20, opacity: 0 }, visible: { y: 0, opacity: 1 } };
 
     return (
-        <PageContainer initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-            <ControlsContainer>
-                <h2 style={{color: '#0A2540'}}>Transactions for Today ({format(new Date(), 'dd/MM/yyyy')})</h2>
-                <RefreshButton onClick={fetchData}><FaSyncAlt /> Refresh</RefreshButton>
-            </ControlsContainer>
+      <PageContainer initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+        <ControlsContainer>
+          <h2 style={{ color: "#0A2540" }}>
+            Transactions for Today ({format(new Date(), "dd/MM/yyyy")})
+          </h2>
+          <RefreshButton onClick={fetchData}>
+            <FaSyncAlt /> Refresh
+          </RefreshButton>
+        </ControlsContainer>
 
-            <Card>
-                <TableWrapper>
-                    <Table>
-                        <thead>
-                            <tr>
-                                <th>Date</th>
-                                <th>Type</th>
-                                <th>Counterparty</th>
-                                <th>Amount (BRL)</th>
-                            </tr>
-                        </thead>
-                        <motion.tbody variants={containerVariants} initial="hidden" animate="visible">
-                            {loading ? ([...Array(10)].map((_, i) => <SkeletonRow key={i} />)) : 
-                             transactions.length === 0 ? (<tr><td colSpan="4"><EmptyStateContainer><h3>No transactions found for today</h3></EmptyStateContainer></td></tr>) : 
-                             (transactions.map(tx => (
-                                <motion.tr key={tx.id} variants={itemVariants}>
-                                    <td>{formatDateTime(tx.transaction_date)}</td>
-                                    <TypeCell isCredit={tx.operation_direct === 'in'}>
-                                        {tx.operation_direct}
-                                    </TypeCell>
-                                    <td>{tx.sender_name || tx.counterparty_name || 'Unknown'}</td>
-                                    <AmountCell isCredit={tx.operation_direct === 'in'}>
-                                        {tx.operation_direct === 'in' ? '+' : '-'}
-                                        {formatCurrency(tx.amount)}
-                                    </AmountCell>
-                                </motion.tr>
-                            )))}
-                        </motion.tbody>
-                    </Table>
-                </TableWrapper>
-                <MobileListContainer>
-                    {loading ? <p>Loading...</p> : transactions.map(tx => (
-                        <MobileCard key={tx.id} isCredit={tx.operation_direct === 'in'} variants={itemVariants}>
-                            <MobileCardHeader isCredit={tx.operation_direct === 'in'}>
-                                {tx.operation_direct === 'in' ? '+' : '-'} {formatCurrency(tx.amount)}
-                                <span>{tx.operation_direct === 'in' ? <FaArrowUp/> : <FaArrowDown/>}</span>
-                            </MobileCardHeader>
-                            <MobileCardBody>
-                                <p><strong>{tx.sender_name || tx.counterparty_name || 'Unknown'}</strong></p>
-                                <p>{formatDateTime(tx.transaction_date)}</p>
-                            </MobileCardBody>
-                        </MobileCard>
-                    ))}
-                </MobileListContainer>
-                <Pagination pagination={pagination} setPagination={setPagination} />
-            </Card>
-        </PageContainer>
+        <Card>
+          <TableWrapper>
+            <Table>
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Type</th>
+                  <th>Counterparty</th>
+                  <th>Amount (BRL)</th>
+                </tr>
+              </thead>
+              <motion.tbody
+                variants={containerVariants}
+                initial="hidden"
+                animate="visible"
+              >
+                {loading ? (
+                  [...Array(10)].map((_, i) => <SkeletonRow key={i} />)
+                ) : transactions.length === 0 ? (
+                  <tr>
+                    <td colSpan="4">
+                      <EmptyStateContainer>
+                        <h3>No transactions found for today</h3>
+                      </EmptyStateContainer>
+                    </td>
+                  </tr>
+                ) : (
+                  transactions.map((tx) => (
+                    <motion.tr
+                      key={tx.id}
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                    >
+                      <td>{formatDateTime(tx.transaction_date)}</td>
+                      <TypeCell isCredit={tx.operation_direct === "in"}>
+                        {tx.operation_direct}
+                      </TypeCell>
+
+                      {/* === FIX: Intelligent Name Display === */}
+                      <td>
+                        {tx.operation_direct === "in"
+                          ? tx.sender_name || "Unknown"
+                          : tx.counterparty_name || "Unknown Receiver"}
+                      </td>
+
+                      <AmountCell isCredit={tx.operation_direct === "in"}>
+                        {tx.operation_direct === "in" ? "+" : "-"}
+                        {formatCurrency(tx.amount)}
+                      </AmountCell>
+                    </motion.tr>
+                  ))
+                )}
+              </motion.tbody>
+            </Table>
+          </TableWrapper>
+          <MobileListContainer>
+            {loading ? (
+              <p>Loading...</p>
+            ) : (
+              transactions.map((tx) => (
+                <MobileCard
+                  key={tx.id}
+                  isCredit={tx.operation_direct === "in"}
+                  variants={itemVariants}
+                >
+                  <MobileCardHeader isCredit={tx.operation_direct === "in"}>
+                    {tx.operation_direct === "in" ? "+" : "-"}{" "}
+                    {formatCurrency(tx.amount)}
+                    <span>
+                      {tx.operation_direct === "in" ? (
+                        <FaArrowUp />
+                      ) : (
+                        <FaArrowDown />
+                      )}
+                    </span>
+                  </MobileCardHeader>
+                  <MobileCardBody>
+                    <p>
+                      <strong>
+                        {tx.operation_direct === "in"
+                          ? tx.sender_name || "Unknown"
+                          : tx.counterparty_name || "Unknown Receiver"}
+                      </strong>
+                    </p>
+                    <p>{formatDateTime(tx.transaction_date)}</p>
+                  </MobileCardBody>
+                </MobileCard>
+              ))
+            )}
+          </MobileListContainer>
+          <Pagination pagination={pagination} setPagination={setPagination} />
+        </Card>
+      </PageContainer>
     );
 };
 

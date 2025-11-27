@@ -147,93 +147,169 @@ const ClientDashboard = () => {
     const itemVariants = { hidden: { y: 20, opacity: 0 }, visible: { y: 0, opacity: 1 } };
 
     return (
-        <PageContainer initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-            <ControlsContainer>
-                <TopControls>
-                    <FilterContainer>
-                        <InputGroup>
-                            <FaSearch />
-                            <Input as="input" name="search" type="text" value={filters.search} onChange={handleFilterChange} placeholder="Search by name..." />
-                        </InputGroup>
-                        {/* === REVERTED: Native Date Input === */}
-                        <DateInput name="date" value={filters.date || ''} onChange={handleFilterChange} />
-                        <RefreshButton onClick={() => { fetchTableData(); fetchSummaryData(); }}><FaSyncAlt /> Refresh</RefreshButton>
-                    </FilterContainer>
-                </TopControls>
-                
-                <VolumeContainer>
-                    <VolumeCard color="success">
-                        <h3>IN TRANSACTIONS (BRL)</h3>
-                        <p>{loadingSummary ? '...' : formatCurrency(summary.dailyTotalIn)}</p>
-                    </VolumeCard>
-                    <VolumeCard color="error">
-                        <h3>OUT TRANSACTIONS (BRL)</h3>
-                        <p>{loadingSummary ? '...' : formatCurrency(summary.dailyTotalOut)}</p>
-                    </VolumeCard>
-                    <VolumeCard color="primary" fullWidthOnMobile>
-                        <h3>All-Time Balance (BRL)</h3>
-                        <p>{loadingSummary ? '...' : formatCurrency(summary.allTimeBalance)}</p>
-                    </VolumeCard>
-                    <VolumeCard color="success">
-                        <h3>Number of Transactions (IN)</h3>
-                        <p>{loadingSummary ? '...' : formatNumber(summary.dailyCountIn)}</p>
-                    </VolumeCard>
-                    <VolumeCard color="error">
-                        <h3>Number of Transactions (OUT)</h3>
-                        <p>{loadingSummary ? '...' : formatNumber(summary.dailyCountOut)}</p>
-                    </VolumeCard>
-                </VolumeContainer>
+      <PageContainer initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+        <ControlsContainer>
+          <TopControls>
+            <FilterContainer>
+              <InputGroup>
+                <FaSearch />
+                <Input
+                  as="input"
+                  name="search"
+                  type="text"
+                  value={filters.search}
+                  onChange={handleFilterChange}
+                  placeholder="Search by name..."
+                />
+              </InputGroup>
+              {/* === REVERTED: Native Date Input === */}
+              <DateInput
+                name="date"
+                value={filters.date || ""}
+                onChange={handleFilterChange}
+              />
+              <RefreshButton
+                onClick={() => {
+                  fetchTableData();
+                  fetchSummaryData();
+                }}
+              >
+                <FaSyncAlt /> Refresh
+              </RefreshButton>
+            </FilterContainer>
+          </TopControls>
 
-            </ControlsContainer>
+          <VolumeContainer>
+            <VolumeCard color="success">
+              <h3>IN TRANSACTIONS (BRL)</h3>
+              <p>
+                {loadingSummary ? "..." : formatCurrency(summary.dailyTotalIn)}
+              </p>
+            </VolumeCard>
+            <VolumeCard color="error">
+              <h3>OUT TRANSACTIONS (BRL)</h3>
+              <p>
+                {loadingSummary ? "..." : formatCurrency(summary.dailyTotalOut)}
+              </p>
+            </VolumeCard>
+            <VolumeCard color="primary" fullWidthOnMobile>
+              <h3>All-Time Balance (BRL)</h3>
+              <p>
+                {loadingSummary
+                  ? "..."
+                  : formatCurrency(summary.allTimeBalance)}
+              </p>
+            </VolumeCard>
+            <VolumeCard color="success">
+              <h3>Number of Transactions (IN)</h3>
+              <p>
+                {loadingSummary ? "..." : formatNumber(summary.dailyCountIn)}
+              </p>
+            </VolumeCard>
+            <VolumeCard color="error">
+              <h3>Number of Transactions (OUT)</h3>
+              <p>
+                {loadingSummary ? "..." : formatNumber(summary.dailyCountOut)}
+              </p>
+            </VolumeCard>
+          </VolumeContainer>
+        </ControlsContainer>
 
-            <Card>
-                <TableWrapper>
-                    <Table>
-                        <thead>
-                            <tr>
-                                <th>Date</th>
-                                <th>Type</th>
-                                <th>Counterparty</th>
-                                <th>Amount (BRL)</th>
-                            </tr>
-                        </thead>
-                        <motion.tbody variants={containerVariants} initial="hidden" animate="visible">
-                            {loadingTable ? ([...Array(10)].map((_, i) => <tr key={i}><td colSpan="4"><SkeletonCell /></td></tr>)) : 
-                             transactions.length === 0 ? (<tr><td colSpan="4"><EmptyStateContainer><h3>No transactions found</h3></EmptyStateContainer></td></tr>) : 
-                             (transactions.map(tx => (
-                                <motion.tr key={tx.id} variants={itemVariants}>
-                                    <td>{formatDateTime(tx.transaction_date)}</td>
-                                    <TypeCell isCredit={tx.operation_direct === 'in'}>
-                                        {tx.operation_direct}
-                                    </TypeCell>
-                                    {/* Shows sender or fallback to counterparty */}
-                                    <td>{tx.sender_name || tx.counterparty_name || 'Unknown'}</td>
-                                    <AmountCell isCredit={tx.operation_direct === 'in'}>
-                                        {tx.operation_direct === 'in' ? '+' : '-'}
-                                        {formatCurrency(tx.amount)}
-                                    </AmountCell>
-                                </motion.tr>
-                            )))}
-                        </motion.tbody>
-                    </Table>
-                </TableWrapper>
-                <MobileListContainer>
-                    {loadingTable ? <p>Loading...</p> : transactions.map(tx => (
-                        <MobileCard key={tx.id} isCredit={tx.operation_direct === 'in'} variants={itemVariants}>
-                            <MobileCardHeader isCredit={tx.operation_direct === 'in'}>
-                                {tx.operation_direct === 'in' ? '+' : '-'} {formatCurrency(tx.amount)}
-                                <span>{tx.operation_direct === 'in' ? <FaArrowUp/> : <FaArrowDown/>}</span>
-                            </MobileCardHeader>
-                            <MobileCardBody>
-                                <p><strong>{tx.sender_name || tx.counterparty_name || 'Unknown'}</strong></p>
-                                <p>{formatDateTime(tx.transaction_date)}</p>
-                            </MobileCardBody>
-                        </MobileCard>
-                    ))}
-                </MobileListContainer>
-                <Pagination pagination={pagination} setPagination={setPagination} />
-            </Card>
-        </PageContainer>
+        <Card>
+          <TableWrapper>
+            <Table>
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Type</th>
+                  <th>Counterparty</th>
+                  <th>Amount (BRL)</th>
+                </tr>
+              </thead>
+              <motion.tbody
+                variants={containerVariants}
+                initial="hidden"
+                animate="visible"
+              >
+                {loadingTable ? (
+                  [...Array(10)].map((_, i) => (
+                    <tr key={i}>
+                      <td colSpan="4">
+                        <SkeletonCell />
+                      </td>
+                    </tr>
+                  ))
+                ) : transactions.length === 0 ? (
+                  <tr>
+                    <td colSpan="4">
+                      <EmptyStateContainer>
+                        <h3>No transactions found</h3>
+                      </EmptyStateContainer>
+                    </td>
+                  </tr>
+                ) : (
+                  transactions.map((tx) => (
+                    <motion.tr key={tx.id} variants={itemVariants}>
+                      <td>{formatDateTime(tx.transaction_date)}</td>
+                      <TypeCell isCredit={tx.operation_direct === "in"}>
+                        {tx.operation_direct}
+                      </TypeCell>
+
+                      {/* === FIX: Intelligent Name Display === */}
+                      <td>
+                        {tx.operation_direct === "in"
+                          ? tx.sender_name || "Unknown"
+                          : tx.counterparty_name || "Unknown Receiver"}
+                      </td>
+
+                      <AmountCell isCredit={tx.operation_direct === "in"}>
+                        {tx.operation_direct === "in" ? "+" : "-"}
+                        {formatCurrency(tx.amount)}
+                      </AmountCell>
+                    </motion.tr>
+                  ))
+                )}
+              </motion.tbody>
+            </Table>
+          </TableWrapper>
+          <MobileListContainer>
+            {loadingTable ? (
+              <p>Loading...</p>
+            ) : (
+              transactions.map((tx) => (
+                <MobileCard
+                  key={tx.id}
+                  isCredit={tx.operation_direct === "in"}
+                  variants={itemVariants}
+                >
+                  <MobileCardHeader isCredit={tx.operation_direct === "in"}>
+                    {tx.operation_direct === "in" ? "+" : "-"}{" "}
+                    {formatCurrency(tx.amount)}
+                    <span>
+                      {tx.operation_direct === "in" ? (
+                        <FaArrowUp />
+                      ) : (
+                        <FaArrowDown />
+                      )}
+                    </span>
+                  </MobileCardHeader>
+                  <MobileCardBody>
+                    <p>
+                      <strong>
+                        {tx.operation_direct === "in"
+                          ? tx.sender_name || "Unknown"
+                          : tx.counterparty_name || "Unknown Receiver"}
+                      </strong>
+                    </p>
+                    <p>{formatDateTime(tx.transaction_date)}</p>
+                  </MobileCardBody>
+                </MobileCard>
+              ))
+            )}
+          </MobileListContainer>
+          <Pagination pagination={pagination} setPagination={setPagination} />
+        </Card>
+      </PageContainer>
     );
 };
 
