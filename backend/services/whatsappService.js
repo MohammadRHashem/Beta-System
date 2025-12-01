@@ -412,30 +412,26 @@ const invoiceWorker = new Worker(
 
       // --- PRIORITY X: TRKBIT / CROSS CONFIRMATION ---
       if (runStandardForwarding && isTrkbitConfirmationEnabled && 
-         (recipientNameLower.includes("cross"))) {
+          (recipientNameLower.includes("cross"))) {
           
-          console.log('[WORKER] "Trkbit/Cross" recipient detected. Checking local DB...');
+          console.log('[WORKER] "Cross" recipient detected. Checking local DB...');
           
           const searchAmount = parseFloat(amount.replace(/,/g, ""));
-          
-          // Find transactions with matching amount in the last 24 hours
+          const ocrSenderNormalized = normalizeNameForMatching(sender.name);
+
           const [matches] = await pool.query(
               `SELECT id, tx_payer_name FROM trkbit_transactions 
-               WHERE amount = ? AND is_used = 0 
-               AND tx_date >= NOW() - INTERVAL 24 HOUR`,
+                WHERE amount = ? AND is_used = 0 
+                AND tx_date >= NOW() - INTERVAL 24 HOUR`,
               [searchAmount]
           );
 
           let confirmedId = null;
-          
-          // Normalize OCR sender name
-          const ocrSenderNormalized = sender.name.toLowerCase().replace(/[^a-z0-9]/g, '');
 
           for (const tx of matches) {
               if (!tx.tx_payer_name) continue;
-              const dbNameNorm = tx.tx_payer_name.toLowerCase().replace(/[^a-z0-9]/g, '');
-              
-              // Fuzzy check
+              const dbNameNorm = normalizeNameForMatching(tx.tx_payer_name);
+              // Fuzzy check: Substring match
               if (dbNameNorm.includes(ocrSenderNormalized) || ocrSenderNormalized.includes(dbNameNorm)) {
                   confirmedId = tx.id;
                   break;
@@ -443,10 +439,54 @@ const invoiceWorker = new Worker(
           }
 
           if (confirmedId) {
+              // A. Standard Confirmation (Mark Used, Reply, React)
               await pool.query('UPDATE trkbit_transactions SET is_used = 1 WHERE id = ?', [confirmedId]);
               await originalMessage.reply("Caiu");
               await originalMessage.react("🟢");
               wasActioned = true;
+
+              // B. Informative Forwarding (Forward with ✅, No Wait)
+              try {
+                  let destJid = null;
+                  
+                  // Priority 1: Check Direct Rule
+                  const [[directRule]] = await pool.query(
+                      "SELECT destination_group_jid FROM direct_forwarding_rules WHERE source_group_jid = ?", 
+                      [chat.id._serialized]
+                  );
+                  
+                  if (directRule) {
+                      destJid = directRule.destination_group_jid;
+                  } else {
+                      // Priority 2: Check AI Keyword Rule (e.g. matches "Cross")
+                      const recipientCheck = (recipient.name || "").toLowerCase().trim();
+                      const [rules] = await pool.query("SELECT trigger_keyword, destination_group_jid FROM forwarding_rules WHERE is_enabled = 1");
+                      
+                      for (const rule of rules) {
+                          const triggerKeywordLower = rule.trigger_keyword.toLowerCase();
+                          if (recipientCheck.includes(triggerKeywordLower)) {
+                              destJid = rule.destination_group_jid;
+                              break;
+                          }
+                      }
+                  }
+
+                  if (destJid) {
+                      // Caption Logic: Extract Group Number + Tick
+                      const numberRegex = /\b(\d[\d-]{2,})\b/g;
+                      const matches = chat.name.match(numberRegex);
+                      const captionLabel = (matches && matches.length > 0) ? matches[matches.length - 1] : chat.name;
+                      const finalCaption = `${captionLabel} ✅`;
+
+                      const mediaToForward = new MessageMedia(media.mimetype, media.data, media.filename);
+                      await client.sendMessage(destJid, mediaToForward, { caption: finalCaption });
+                      console.log(`[TRKBIT-INFO] Informative forward sent to ${destJid}`);
+                  }
+              } catch (infoError) {
+                  console.error('[TRKBIT-INFO-ERROR]', infoError);
+              }
+
+              // C. Stop Standard Forwarding (Since we handled it)
               runStandardForwarding = false;
           } else {
               console.log('[TRKBIT-CONFIRM] No match found in DB.');
