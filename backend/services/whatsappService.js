@@ -382,7 +382,7 @@ const invoiceWorker = new Worker(
         recipientNameLower.includes("trkbit") ||
         recipientNameLower.includes("upgrade zone") ||
         recipientNameLower.includes("usdt_recipient") ||
-        recipientNameLower.includes("cross intermediacao")
+        recipientNameLower.includes("cross")
       ) {
         if (transaction_id && transaction_id.trim() !== "" && amount) {
           const trimmedTransactionId = transaction_id.trim();
