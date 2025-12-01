@@ -13,6 +13,7 @@ const alfaAuthService = require('./alfaAuthService');
 const { syncSingleSubaccount } = require('../xpayzSyncService');
 // const usdtService = require('./usdtService');
 const { parseFormattedCurrency } = require('../utils/currencyParser');
+const usdtLinkService = require('./usdtLinkService'); // <--- ADD IMPORT
 
 let client;
 let qrCodeData;
@@ -319,12 +320,84 @@ const invoiceWorker = new Worker(
     if (!client || connectionStatus !== "connected") {
       throw new Error("WhatsApp client is not connected. Job will be retried.");
     }
-    const { messageId } = job.data;
+    const { messageId, isUsdtLink, txId } = job.data;
     const originalMessage = await client.getMessageById(messageId);
     if (!originalMessage) {
       console.warn(`[WORKER] Could not find message by ID ${messageId}.`);
       return;
     }
+
+    // ============================================================
+    // NEW LOGIC: USDT LINK PROCESSING
+    // ============================================================
+    if (isUsdtLink && txId) {
+        try {
+            // 1. Check Duplicate in DB
+            const [[existing]] = await pool.query(
+                "SELECT id, is_used FROM usdt_transactions WHERE txid = ?", 
+                [txId]
+            );
+
+            if (existing && existing.is_used) {
+                await originalMessage.reply("❌Repeated❌");
+                await originalMessage.react("❌");
+                return;
+            }
+
+            // 2. Process Link (Scrape & Screenshot)
+            const result = await usdtLinkService.processLink(txId);
+            
+            if (!result.success) {
+                await originalMessage.reply("⚠️ Failed to load transaction details.");
+                return;
+            }
+
+            // 3. Send Screenshot
+            const media = new MessageMedia("image/png", result.screenshot.toString('base64'), "tx_details.png");
+            await originalMessage.reply(media);
+
+            // 4. Logic Validation
+            let isConfirmed = false;
+            
+            // Fetch our wallets
+            const [walletRows] = await pool.query('SELECT wallet_address FROM usdt_wallets WHERE is_enabled = 1');
+            const myWallets = new Set(walletRows.map(w => w.wallet_address));
+
+            // Check if any address found in the scrape belongs to us
+            const foundAddresses = result.data.toAddresses || [];
+            const match = foundAddresses.find(addr => myWallets.has(addr));
+
+            if (match) {
+                // It's our wallet!
+                isConfirmed = true;
+            } else if (existing) {
+                // If we couldn't scrape it cleanly, but it exists in our DB synced by Python
+                const [[dbCheck]] = await pool.query("SELECT to_address FROM usdt_transactions WHERE txid = ?", [txId]);
+                if (dbCheck && myWallets.has(dbCheck.to_address)) {
+                    isConfirmed = true;
+                }
+            }
+
+            // 5. Final Reply & Update
+            if (isConfirmed) {
+                await pool.query(
+                    "INSERT INTO usdt_transactions (txid, created_at, is_used) VALUES (?, NOW(), 1) ON DUPLICATE KEY UPDATE is_used = 1",
+                    [txId]
+                );
+                await originalMessage.reply("Informed ✅");
+                await originalMessage.react("🟢");
+            } else {
+                await originalMessage.reply("External/Outgoing 📤");
+                await originalMessage.react("📤");
+            }
+
+        } catch (err) {
+            console.error('[WORKER-LINK-ERROR]', err);
+            await originalMessage.react("⚠️");
+        }
+        return; // End job
+    }
+    // ============================================================
 
     const chat = await originalMessage.getChat();
     const tempFilePaths = []; // Keep track of temp files for cleanup
@@ -753,7 +826,7 @@ const invoiceWorker = new Worker(
           wasActioned = true;
           runStandardForwarding = false; // Stop processing (Do not forward to manual group)
       }
-      
+
       // --- 4. PRIORITY 3: STANDARD FORWARDING & MANUAL CONFIRMATION (Fallback) ---
       // let wasActioned = false;
       if (runStandardForwarding) {
@@ -1157,21 +1230,16 @@ const queueMessageIfNotExists = async (messageId, options = {}) => {
         }
 
         // Add to Queue
-        await invoiceQueue.add("process-invoice", { messageId }, { jobId: messageId, removeOnComplete: true, removeOnFail: 50 });
+        await invoiceQueue.add("process-invoice", { messageId, ...options }, { jobId: messageId, removeOnComplete: true, removeOnFail: 50 });
         
-        // Create Lock (Use IGNORE because if forcing, it already exists)
         await connection.query("INSERT IGNORE INTO processed_messages (message_id) VALUES (?)", [messageId]);
-        
         await connection.commit();
         console.log(`[QUEUE-ADD] Transactionally added message to queue. ID: ${messageId} (Force: ${!!options.forceIfMissingInvoice})`);
         
         // Visual Feedback
         const originalMessage = await client.getMessageById(messageId);
-        if (originalMessage && originalMessage.hasMedia) {
-            const mime = originalMessage._data?.mimetype?.toLowerCase();
-            if (originalMessage.type === 'image' || (originalMessage.type === 'document' && (mime === 'application/pdf' || mime === 'application/x-pdf'))) {
-                await originalMessage.react('⏳');
-            }
+        if (originalMessage) {
+            await originalMessage.react('⏳');
         }
     } catch (error) {
         await connection.rollback();
@@ -1251,6 +1319,17 @@ const handleMessage = async (message) => {
 
     
     if (message.body) {
+      //usdt link detection
+      const tronScanRegex = /https?:\/\/(?:www\.)?tronscan\.org\/#\/transaction\/([a-fA-F0-9]+)/;
+      const linkMatch = message.body.match(tronScanRegex);
+      
+      if (linkMatch) {
+          const txId = linkMatch[1];
+          console.log(`[MSG] Detected TronScan Link for TX: ${txId}`);
+          await queueMessageIfNotExists(message.id._serialized, { isUsdtLink: true, txId });
+          return;
+      }
+      //abbreviation detection
       const triggerText = message.body.trim();
       const match = abbreviationCache.find((abbr) => abbr.trigger === triggerText);
       if (match) {
