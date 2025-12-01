@@ -349,6 +349,7 @@ const invoiceWorker = new Worker(
             
             if (!result.success) {
                 await originalMessage.reply("⚠️ Failed to load transaction details.");
+                await originalMessage.react("");
                 return;
             }
 
@@ -387,13 +388,13 @@ const invoiceWorker = new Worker(
                 await originalMessage.reply("Informed ✅");
                 await originalMessage.react("🟢");
             } else {
-                await originalMessage.reply("External/Outgoing 📤");
+                // await originalMessage.reply("External/Outgoing 📤");
                 await originalMessage.react("📤");
             }
 
         } catch (err) {
             console.error('[WORKER-LINK-ERROR]', err);
-            await originalMessage.react("⚠️");
+            await originalMessage.react("");
         }
         return; // End job
     }
@@ -1239,7 +1240,17 @@ const queueMessageIfNotExists = async (messageId, options = {}) => {
         // Visual Feedback
         const originalMessage = await client.getMessageById(messageId);
         if (originalMessage) {
-            await originalMessage.react('⏳');
+            // 1. Check for Media (Images/PDFs)
+            if (originalMessage.hasMedia) {
+                const mime = originalMessage._data?.mimetype?.toLowerCase();
+                if (originalMessage.type === 'image' || (originalMessage.type === 'document' && (mime === 'application/pdf' || mime === 'application/x-pdf'))) {
+                    await originalMessage.react('⏳');
+                }
+            } 
+            // 2. Check for USDT Link Flag (Text Messages)
+            else if (options.isUsdtLink) {
+                await originalMessage.react('⏳');
+            }
         }
     } catch (error) {
         await connection.rollback();
