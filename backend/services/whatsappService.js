@@ -412,7 +412,7 @@ const invoiceWorker = new Worker(
 
       // --- PRIORITY X: TRKBIT / CROSS CONFIRMATION ---
       if (runStandardForwarding && isTrkbitConfirmationEnabled && 
-         (recipientNameLower.includes("trkbit") || recipientNameLower.includes("cross") || recipientNameLower.includes("brasilcash"))) {
+         (recipientNameLower.includes("cross"))) {
           
           console.log('[WORKER] "Trkbit/Cross" recipient detected. Checking local DB...');
           
