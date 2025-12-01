@@ -698,51 +698,62 @@ const invoiceWorker = new Worker(
       }
 
       // --- 3. PRIORITY 2.5: ALFA TRUST API CONFIRMATION ---
-      if (
-        runStandardForwarding &&
-        isAlfaApiConfirmationEnabled &&
-        recipientNameLower.includes("alfa trust")
-      ) {
-        console.log(
-          '[WORKER] "Alfa Trust" recipient detected. Checking local DB first...'
-        );
+      // if (
+      //   runStandardForwarding &&
+      //   isAlfaApiConfirmationEnabled &&
+      //   recipientNameLower.includes("alfa trust")
+      // ) {
+      //   console.log(
+      //     '[WORKER] "Alfa Trust" recipient detected. Checking local DB first...'
+      //   );
 
-        // Step 1: Check Local DB
-        const dbMatch = await findAlfaTrustMatchInDb(invoiceJson);
+      //   // Step 1: Check Local DB
+      //   const dbMatch = await findAlfaTrustMatchInDb(invoiceJson);
 
-        if (dbMatch) {
-          // Found in DB - this is the fastest path
-          console.log(
-            `[ALFA-CONFIRM-DB] Confirmed via local database. Replying "Caiu".`
-          );
-          await originalMessage.reply("Caiu");
-          await originalMessage.react("🟢");
+      //   if (dbMatch) {
+      //     // Found in DB - this is the fastest path
+      //     console.log(
+      //       `[ALFA-CONFIRM-DB] Confirmed via local database. Replying "Caiu".`
+      //     );
+      //     await originalMessage.reply("Caiu");
+      //     await originalMessage.react("🟢");
+      //     wasActioned = true;
+      //     runStandardForwarding = false;
+      //   } else {
+      //     // Step 2: If not in DB, check the Live API as a fallback
+      //     console.log(
+      //       "[ALFA-CONFIRM-DB] Not found in local DB. Checking live API as a fallback..."
+      //     );
+      //     const apiResult = await alfaAuthService.findTransaction(invoiceJson);
+
+      //     if (apiResult.status === "found") {
+      //       console.log(
+      //         `[ALFA-CONFIRM-API] Confirmed via live API. Replying "Caiu".`
+      //       );
+      //       await originalMessage.reply("Caiu");
+      //       await originalMessage.react("🟢");
+      //       wasActioned = true;
+      //       runStandardForwarding = false;
+      //     } else {
+      //       // Step 3: If not found in API either, fall back to manual forwarding
+      //       console.log(
+      //         "[ALFA-CONFIRM-API] Not found via live API. Falling back to manual confirmation."
+      //       );
+      //     }
+      //   }
+      // }
+
+      // ALFA TRUST DEPRECATED PHASE
+      if (runStandardForwarding && isAlfaApiConfirmationEnabled && recipientNameLower.includes("alfa trust")) {
+          console.log('[WORKER] "Alfa Trust" recipient detected. Bank is inactive. Rejecting.');
+
+          await originalMessage.reply("no caiu");
+          await originalMessage.react("❌");
+          
           wasActioned = true;
-          runStandardForwarding = false;
-        } else {
-          // Step 2: If not in DB, check the Live API as a fallback
-          console.log(
-            "[ALFA-CONFIRM-DB] Not found in local DB. Checking live API as a fallback..."
-          );
-          const apiResult = await alfaAuthService.findTransaction(invoiceJson);
-
-          if (apiResult.status === "found") {
-            console.log(
-              `[ALFA-CONFIRM-API] Confirmed via live API. Replying "Caiu".`
-            );
-            await originalMessage.reply("Caiu");
-            await originalMessage.react("🟢");
-            wasActioned = true;
-            runStandardForwarding = false;
-          } else {
-            // Step 3: If not found in API either, fall back to manual forwarding
-            console.log(
-              "[ALFA-CONFIRM-API] Not found via live API. Falling back to manual confirmation."
-            );
-          }
-        }
+          runStandardForwarding = false; // Stop processing (Do not forward to manual group)
       }
-
+      
       // --- 4. PRIORITY 3: STANDARD FORWARDING & MANUAL CONFIRMATION (Fallback) ---
       // let wasActioned = false;
       if (runStandardForwarding) {
