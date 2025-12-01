@@ -386,18 +386,35 @@ const invoiceWorker = new Worker(
       ) {
         if (transaction_id && transaction_id.trim() !== "" && amount) {
           const trimmedTransactionId = transaction_id.trim();
+          
+          // === MODIFIED: Select message_id to reference the original ===
           const [[existingById]] = await pool.query(
-            "SELECT source_group_jid FROM invoices WHERE transaction_id = ? AND amount = ? AND is_deleted = 0 LIMIT 1",
+            "SELECT source_group_jid, message_id FROM invoices WHERE transaction_id = ? AND amount = ? AND is_deleted = 0 LIMIT 1",
             [trimmedTransactionId, amount]
           );
 
           if (existingById) {
             const currentSourceJid = chat.id._serialized;
+            
             if (currentSourceJid === existingById.source_group_jid) {
+              // 1. Reply to the NEW message
               await originalMessage.reply("❌Repeated❌");
+
+              // 2. NEW: Point to the ORIGINAL message
+              try {
+                  const oldMessage = await client.getMessageById(existingById.message_id);
+                  if (oldMessage) {
+                      await oldMessage.reply("Original here 👈");
+                  }
+              } catch (e) {
+                  // Ignore errors if message is too old/not found in phone cache
+                  console.warn(`[DUPLICATE] Could not reply to original message ${existingById.message_id}:`, e.message);
+              }
+
             } else {
               await originalMessage.reply("❌Repeated from another client❌");
             }
+            
             await originalMessage.react("❌");
             return; // EXIT WORKER
           }
