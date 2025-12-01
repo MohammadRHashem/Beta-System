@@ -381,10 +381,21 @@ const invoiceWorker = new Worker(
 
             // 5. Final Reply & Update
             if (isConfirmed) {
+                // === FIX: Insert complete data to satisfy table constraints ===
                 await pool.query(
-                    "INSERT INTO usdt_transactions (txid, created_at, is_used) VALUES (?, NOW(), 1) ON DUPLICATE KEY UPDATE is_used = 1",
-                    [txId]
+                    `INSERT INTO usdt_transactions 
+                    (txid, time_iso, from_address, to_address, amount_usdt, is_used, created_at) 
+                    VALUES (?, ?, ?, ?, ?, 1, NOW()) 
+                    ON DUPLICATE KEY UPDATE is_used = 1`,
+                    [
+                        txId,
+                        result.data.time,         // Now available from service
+                        result.data.fromAddress,  // Now available from service
+                        result.data.toAddresses[0] || 'unknown', 
+                        result.data.amount
+                    ]
                 );
+                
                 await originalMessage.reply("Informed ✅");
                 await originalMessage.react("🟢");
             } else {
