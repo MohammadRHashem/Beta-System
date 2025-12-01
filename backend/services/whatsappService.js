@@ -1383,6 +1383,23 @@ const handleReaction = async (reaction) => {
   const reactedMessageId = reaction.msgId._serialized;
   const reactionEmoji = reaction.reaction;
 
+  // --- 0. Delete Message for Everyone (Wastebasket) ---
+  if (reactionEmoji === '🗑' || reactionEmoji === '🗑️') {
+      try {
+          const msg = await client.getMessageById(reactedMessageId);
+          // Only allow deleting the bot's own messages to ensure "delete for everyone" works consistently
+          if (msg && msg.fromMe) {
+              await msg.delete(true); // true = Delete for everyone
+              console.log(`[REACTION-DELETE] Deleted message ${reactedMessageId} for everyone.`);
+          } else {
+              console.log(`[REACTION-DELETE] Ignored delete request on message ${reactedMessageId} (Not from me).`);
+          }
+      } catch (e) {
+          console.error(`[REACTION-DELETE-ERROR] Could not delete message:`, e.message);
+      }
+      return; // Stop further processing
+  }
+
   // --- 1. Blue Circle Manual Override ---
   if (reactionEmoji === '🔵') {
       console.log(`[MANUAL-OVERRIDE] Blue circle detected on ${reactedMessageId}.`);
