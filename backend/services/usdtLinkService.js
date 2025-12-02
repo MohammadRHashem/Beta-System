@@ -61,7 +61,7 @@ const processLink = async (txId) => {
         const url = `https://usdt.tokenview.io/en/tx/${txId}`;
         
         // 'domcontentloaded' is much faster than 'networkidle2'
-        await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 45000 });
+        await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
         
         // Small manual delay to allow the JS framework to render the table data
         await new Promise(r => setTimeout(r, 3000));

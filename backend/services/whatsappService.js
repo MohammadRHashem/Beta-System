@@ -996,7 +996,7 @@ const invoiceWorker = new Worker(
       if (io) io.emit("invoices:updated");
     }
   },
-  { connection: redisConnection, lockDuration: 120000, concurrency: 2 }
+  { connection: redisConnection, lockDuration: 120000, concurrency: 1 }
 );
 
 invoiceWorker.on("failed", (job, err) => console.error(`[QUEUE-FAIL] Job ${job?.id} failed: ${err.message}`));
