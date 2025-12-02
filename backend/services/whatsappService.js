@@ -104,7 +104,7 @@ const findBestTelegramMatch = async (searchAmount, searchSender) => {
   if (!searchSender || !searchAmount) return null;
   try {
     const [foundTxs] = await pool.query(
-      `SELECT id, sender_name_normalized FROM telegram_transactions WHERE amount = ? AND is_used = FALSE`,
+      `SELECT id, sender_name_normalized FROM telegram_transactions WHERE amount = ? AND is_used = 0`,
       [searchAmount]
     );
     if (foundTxs.length === 0) return null;
@@ -154,7 +154,7 @@ const findBestXPayzMatch = async (searchAmount, searchSender, subaccountPool = [
         SELECT id, sender_name_normalized, sender_name 
         FROM xpayz_transactions 
         WHERE 
-            is_used = FALSE 
+            is_used = 0 
             AND amount = ? 
     `;
     const params = [searchAmount];
@@ -280,7 +280,7 @@ const findBestUsdtMatch = async (searchAmount, recipientAddress) => {
             SELECT id FROM usdt_transactions
             WHERE to_address = ? 
             AND amount_usdt = ? 
-            AND is_used = FALSE 
+            AND is_used = 0 
             LIMIT 1;
         `;
         const [[match]] = await pool.query(query, [recipientAddress, searchAmount]);
@@ -328,94 +328,88 @@ const invoiceWorker = new Worker(
     }
 
     // ============================================================
-    // NEW LOGIC: USDT LINK PROCESSING
+    // USDT LINK PROCESSING
     // ============================================================
     if (isUsdtLink && txId) {
-        try {
-            // 1. Check Duplicate in DB
-            const [[existing]] = await pool.query(
-                "SELECT id, is_used FROM usdt_transactions WHERE txid = ?", 
-                [txId]
-            );
+      try {
+        const [[existing]] = await pool.query(
+          "SELECT id, is_used FROM usdt_transactions WHERE txid = ?",
+          [txId]
+        );
+        if (existing && existing.is_used) {
+          await originalMessage.reply("❌Repeated❌");
+          await originalMessage.react("❌");
+          return;
+        }
 
-            if (existing && existing.is_used) {
-                await originalMessage.reply("❌Repeated❌");
-                await originalMessage.react("❌");
-                return;
-            }
+        const result = await usdtLinkService.processLink(txId);
+        if (!result.success) {
+          await originalMessage.reply("⚠️ Failed to load transaction details.");
+          await originalMessage.react("");
+          return;
+        }
 
-            // 2. Process Link (Scrape & Screenshot)
-            const result = await usdtLinkService.processLink(txId);
-            
-            if (!result.success) {
-                await originalMessage.reply("⚠️ Failed to load transaction details.");
-                await originalMessage.react("");
-                return;
-            }
+        const media = new MessageMedia(
+          "image/png",
+          result.screenshot.toString("base64"),
+          "tx_details.png"
+        );
+        await originalMessage.reply(media);
 
-            // 3. Send Screenshot
-            const media = new MessageMedia("image/png", result.screenshot.toString('base64'), "tx_details.png");
-            await originalMessage.reply(media);
+        let isConfirmed = false;
+        const [walletRows] = await pool.query(
+          "SELECT wallet_address FROM usdt_wallets WHERE is_enabled = 1"
+        );
+        const myWallets = new Set(walletRows.map((w) => w.wallet_address));
+        const foundAddresses = result.data.toAddresses || [];
+        const match = foundAddresses.find((addr) => myWallets.has(addr));
 
-            // 4. Logic Validation
-            let isConfirmed = false;
-            
-            // Fetch our wallets
-            const [walletRows] = await pool.query('SELECT wallet_address FROM usdt_wallets WHERE is_enabled = 1');
-            const myWallets = new Set(walletRows.map(w => w.wallet_address));
+        if (match) {
+          isConfirmed = true;
+        } else if (existing) {
+          const [[dbCheck]] = await pool.query(
+            "SELECT to_address FROM usdt_transactions WHERE txid = ?",
+            [txId]
+          );
+          if (dbCheck && myWallets.has(dbCheck.to_address)) {
+            isConfirmed = true;
+          }
+        }
 
-            // Check if any address found in the scrape belongs to us
-            const foundAddresses = result.data.toAddresses || [];
-            const match = foundAddresses.find(addr => myWallets.has(addr));
-
-            if (match) {
-                // It's our wallet!
-                isConfirmed = true;
-            } else if (existing) {
-                // If we couldn't scrape it cleanly, but it exists in our DB synced by Python
-                const [[dbCheck]] = await pool.query("SELECT to_address FROM usdt_transactions WHERE txid = ?", [txId]);
-                if (dbCheck && myWallets.has(dbCheck.to_address)) {
-                    isConfirmed = true;
-                }
-            }
-
-            // 5. Final Reply & Update
-            if (isConfirmed) {
-                // === FIX: Insert complete data to satisfy table constraints ===
-                await pool.query(
-                    `INSERT INTO usdt_transactions 
+        if (isConfirmed) {
+          // Atomic Insert/Update
+          await pool.query(
+            `INSERT INTO usdt_transactions 
                     (txid, time_iso, from_address, to_address, amount_usdt, is_used, created_at) 
                     VALUES (?, ?, ?, ?, ?, 1, NOW()) 
                     ON DUPLICATE KEY UPDATE is_used = 1`,
-                    [
-                        txId,
-                        result.data.time,         // Now available from service
-                        result.data.fromAddress,  // Now available from service
-                        result.data.toAddresses[0] || 'unknown', 
-                        result.data.amount
-                    ]
-                );
-                
-                await originalMessage.reply("Informed ✅");
-                await originalMessage.react("🟢");
-            } else {
-                // await originalMessage.reply("External/Outgoing 📤");
-                await originalMessage.react("📤");
-            }
-
-        } catch (err) {
-            console.error('[WORKER-LINK-ERROR]', err);
-            await originalMessage.react("");
+            [
+              txId,
+              result.data.time,
+              result.data.fromAddress,
+              result.data.toAddresses[0] || "unknown",
+              result.data.amount,
+            ]
+          );
+          await originalMessage.reply("Informed ✅");
+          await originalMessage.react("🟢");
+        } else {
+          await originalMessage.react("📤");
         }
-        return; // End job
+      } catch (err) {
+        console.error("[WORKER-LINK-ERROR]", err);
+        await originalMessage.react("");
+      }
+      return;
     }
-    // ============================================================
 
+    // ============================================================
+    // MEDIA PROCESSING (Strict Duplicate Checking Applied)
+    // ============================================================
     const chat = await originalMessage.getChat();
-    const tempFilePaths = []; // Keep track of temp files for cleanup
+    const tempFilePaths = [];
 
     try {
-      // --- Initial Download and OCR ---
       const media = await originalMessage.downloadMedia();
       if (!media) return;
 
@@ -425,18 +419,17 @@ const invoiceWorker = new Worker(
         os.tmpdir(),
         `${originalMessage.id.id}.${extension}`
       );
-      tempFilePaths.push(tempFilePath); // Add to cleanup list
+      tempFilePaths.push(tempFilePath);
       await fs.writeFile(tempFilePath, Buffer.from(media.data, "base64"));
 
       const pythonScriptsDir = path.join(__dirname, "..", "python_scripts");
-      const mainScriptPath = path.join(pythonScriptsDir, "main.py");
-      const usdtScriptPath = path.join(pythonScriptsDir, "usdt_validator.py");
       const pythonExecutable =
         process.platform === "win32" ? "python.exe" : "python3";
       const pythonScriptPath = path.join(pythonScriptsDir, "main.py");
       const pythonEnv = dotenv.config({
         path: path.join(pythonScriptsDir, ".env"),
       }).parsed;
+
       if (!pythonEnv || !pythonEnv.GOOGLE_API_KEY)
         throw new Error("Could not load GOOGLE_API_KEY.");
 
@@ -446,23 +439,19 @@ const invoiceWorker = new Worker(
       ]);
       const invoiceJson = JSON.parse(stdout);
 
-      // --- 1. PRE-CHECK: OCR Validity ---
       const { amount, sender, recipient, transaction_id } = invoiceJson;
       if (!amount || (!recipient?.name && !recipient?.pix_key)) {
         console.log(`[WORKER] OCR failed for message ${messageId}. Stopping.`);
-        await originalMessage.react(""); // Clear processing reaction
+        await originalMessage.react("");
         return;
       }
 
       const recipientNameLower = (recipient.name || "").toLowerCase();
 
-      let isDuplicate = false;
-      let existingSourceJid = "";
-
-      // --- PRIORITY 1: STRICT DUPLICATE CHECK (transaction_id + amount) ---
+      // --- PRIORITY 0: OCR DUPLICATE CHECK (Standard) ---
       if (
         recipientNameLower.includes("troca") ||
-        recipientNameLower.includes("mks intermediacoes") ||
+        recipientNameLower.includes("mks") ||
         recipientNameLower.includes("alfa trust") ||
         recipientNameLower.includes("trkbit") ||
         recipientNameLower.includes("upgrade zone") ||
@@ -471,8 +460,6 @@ const invoiceWorker = new Worker(
       ) {
         if (transaction_id && transaction_id.trim() !== "" && amount) {
           const trimmedTransactionId = transaction_id.trim();
-          
-          // === MODIFIED: Select message_id to reference the original ===
           const [[existingById]] = await pool.query(
             "SELECT source_group_jid, message_id FROM invoices WHERE transaction_id = ? AND amount = ? AND is_deleted = 0 LIMIT 1",
             [trimmedTransactionId, amount]
@@ -480,26 +467,22 @@ const invoiceWorker = new Worker(
 
           if (existingById) {
             const currentSourceJid = chat.id._serialized;
-            
             if (currentSourceJid === existingById.source_group_jid) {
-              // 1. Reply to the NEW message
               await originalMessage.reply("❌Repeated❌");
-
-              // 2. NEW: Point to the ORIGINAL message
               try {
-                  const oldMessage = await client.getMessageById(existingById.message_id);
-                  if (oldMessage) {
-                      await oldMessage.reply("Original here 👈");
-                  }
+                const oldMessage = await client.getMessageById(
+                  existingById.message_id
+                );
+                if (oldMessage) await oldMessage.reply("Original here 👈");
               } catch (e) {
-                  // Ignore errors if message is too old/not found in phone cache
-                  console.warn(`[DUPLICATE] Could not reply to original message ${existingById.message_id}:`, e.message);
+                console.warn(
+                  `[DUPLICATE] Could not reply to original:`,
+                  e.message
+                );
               }
-
             } else {
               await originalMessage.reply("❌Repeated from another client❌");
             }
-            
             await originalMessage.react("❌");
             return; // EXIT WORKER
           }
@@ -508,11 +491,8 @@ const invoiceWorker = new Worker(
 
       let runStandardForwarding = true;
       let wasActioned = false;
-      let isAssignedUpgradeZoneFailure = false; // <-- NEW FLAG
-      let assignmentRuleForEscalation = null; // <-- NEW variable to hold data
-      
 
-      // --- PRIORITY X: TRKBIT / CROSS CONFIRMATION ---
+      // --- 1. TRKBIT / CROSS (Atomic Update) ---
       if (runStandardForwarding && isTrkbitConfirmationEnabled && 
           (recipientNameLower.includes("cross"))) {
           
@@ -521,119 +501,172 @@ const invoiceWorker = new Worker(
           const searchAmount = parseFloat(amount.replace(/,/g, ""));
           const ocrSenderNormalized = normalizeNameForMatching(sender.name);
 
+          // 1. Anchor: Exact Amount + Expanded Time Window (72h for weekends)
           const [matches] = await pool.query(
               `SELECT id, tx_payer_name FROM trkbit_transactions 
                 WHERE amount = ? AND is_used = 0 
-                AND tx_date >= NOW() - INTERVAL 24 HOUR`,
+                AND tx_date >= NOW() - INTERVAL 72 HOUR`,
               [searchAmount]
           );
 
           let confirmedId = null;
 
+          // 2. Verification: 3-Vector Smart Match
           for (const tx of matches) {
               if (!tx.tx_payer_name) continue;
               const dbNameNorm = normalizeNameForMatching(tx.tx_payer_name);
-              // Fuzzy check: Substring match
+              
+              // Vector A: Exact Match
+              if (dbNameNorm === ocrSenderNormalized) {
+                  confirmedId = tx.id;
+                  break;
+              }
+              
+              // Vector B: Substring Match
               if (dbNameNorm.includes(ocrSenderNormalized) || ocrSenderNormalized.includes(dbNameNorm)) {
+                  confirmedId = tx.id;
+                  break;
+              }
+
+              // Vector C: Word Intersection (The "Bag of Words")
+              const dbWords = new Set(dbNameNorm.split(' ').filter(w => w.length > 1));
+              const ocrWords = new Set(ocrSenderNormalized.split(' ').filter(w => w.length > 1));
+              
+              let matchCount = 0;
+              for (const word of ocrWords) {
+                  if (dbWords.has(word)) matchCount++;
+              }
+
+              const totalSignificant = Math.min(ocrWords.size, dbWords.size);
+              // Threshold: 60% match + at least 1 word
+              if (totalSignificant > 0 && (matchCount / totalSignificant) >= 0.6 && matchCount >= 1) {
                   confirmedId = tx.id;
                   break;
               }
           }
 
           if (confirmedId) {
-              // A. Standard Confirmation (Mark Used, Reply, React)
-              await pool.query('UPDATE trkbit_transactions SET is_used = 1 WHERE id = ?', [confirmedId]);
-              await originalMessage.reply("Caiu");
-              await originalMessage.react("🟢");
-              wasActioned = true;
+              // 3. Atomic Update (Prevent Double Spending)
+              const [updateResult] = await pool.query(
+                  'UPDATE trkbit_transactions SET is_used = 1 WHERE id = ? AND is_used = 0', 
+                  [confirmedId]
+              );
 
-              // B. Informative Forwarding (Forward with ✅, No Wait)
-              try {
-                  let destJid = null;
-                  
-                  // Priority 1: Check Direct Rule
-                  const [[directRule]] = await pool.query(
-                      "SELECT destination_group_jid FROM direct_forwarding_rules WHERE source_group_jid = ?", 
-                      [chat.id._serialized]
-                  );
-                  
-                  if (directRule) {
-                      destJid = directRule.destination_group_jid;
-                  } else {
-                      // Priority 2: Check AI Keyword Rule (e.g. matches "Cross")
-                      const recipientCheck = (recipient.name || "").toLowerCase().trim();
-                      const [rules] = await pool.query("SELECT trigger_keyword, destination_group_jid FROM forwarding_rules WHERE is_enabled = 1");
+              if (updateResult.affectedRows > 0) {
+                  await originalMessage.reply("Caiu");
+                  await originalMessage.react("🟢");
+                  wasActioned = true;
+
+                  // 4. Informative Forwarding
+                  try {
+                      let destJid = null;
                       
-                      for (const rule of rules) {
-                          const triggerKeywordLower = rule.trigger_keyword.toLowerCase();
-                          if (recipientCheck.includes(triggerKeywordLower)) {
-                              destJid = rule.destination_group_jid;
-                              break;
+                      // Priority 1: Check Direct Rule
+                      const [[directRule]] = await pool.query(
+                          "SELECT destination_group_jid FROM direct_forwarding_rules WHERE source_group_jid = ?", 
+                          [chat.id._serialized]
+                      );
+                      
+                      if (directRule) {
+                          destJid = directRule.destination_group_jid;
+                      } else {
+                          // Priority 2: Check AI Keyword Rule
+                          const recipientCheck = (recipient.name || "").toLowerCase().trim();
+                          const [rules] = await pool.query("SELECT trigger_keyword, destination_group_jid FROM forwarding_rules WHERE is_enabled = 1");
+                          
+                          for (const rule of rules) {
+                              const triggerKeywordLower = rule.trigger_keyword.toLowerCase();
+                              if (recipientCheck.includes(triggerKeywordLower)) {
+                                  destJid = rule.destination_group_jid;
+                                  break;
+                              }
                           }
                       }
+
+                      if (destJid) {
+                          const numberRegex = /\b(\d[\d-]{2,})\b/g;
+                          const matches = chat.name.match(numberRegex);
+                          const captionLabel = (matches && matches.length > 0) ? matches[matches.length - 1] : chat.name;
+                          const finalCaption = `${captionLabel} ✅`;
+
+                          const mediaToForward = new MessageMedia(media.mimetype, media.data, media.filename);
+                          await client.sendMessage(destJid, mediaToForward, { caption: finalCaption });
+                          console.log(`[TRKBIT-INFO] Informative forward sent to ${destJid}`);
+                      }
+                  } catch (infoError) {
+                      console.error('[TRKBIT-INFO-ERROR]', infoError);
                   }
 
-                  if (destJid) {
-                      // Caption Logic: Extract Group Number + Tick
-                      const numberRegex = /\b(\d[\d-]{2,})\b/g;
-                      const matches = chat.name.match(numberRegex);
-                      const captionLabel = (matches && matches.length > 0) ? matches[matches.length - 1] : chat.name;
-                      const finalCaption = `${captionLabel} ✅`;
-
-                      const mediaToForward = new MessageMedia(media.mimetype, media.data, media.filename);
-                      await client.sendMessage(destJid, mediaToForward, { caption: finalCaption });
-                      console.log(`[TRKBIT-INFO] Informative forward sent to ${destJid}`);
-                  }
-              } catch (infoError) {
-                  console.error('[TRKBIT-INFO-ERROR]', infoError);
+                  runStandardForwarding = false;
+              } else {
+                  console.log(`[TRKBIT-CONFIRM] Race condition prevented double usage for ID ${confirmedId}`);
+                  await originalMessage.reply("❌Repeated❌");
+                  await originalMessage.react("❌");
+                  runStandardForwarding = false; 
               }
-
-              // C. Stop Standard Forwarding (Since we handled it)
-              runStandardForwarding = false;
           } else {
-              console.log('[TRKBIT-CONFIRM] No match found in DB.');
+              console.log('[TRKBIT-CONFIRM] No name match found in DB.');
           }
       }
 
-      //USDT Transaction Confirmation
+      // --- 2. USDT (Atomic Update) ---
       if (recipientNameLower.includes("usdt_recipient")) {
-        console.log('[WORKER] "USDT" type detected. Starting USDT logic...');
+        console.log('[WORKER] "USDT" type detected.');
         const ocrRecipientWallet = recipient ? recipient.wallet_address : null;
-
-        const [wallets] = await pool.query('SELECT wallet_address FROM usdt_wallets WHERE is_enabled = 1');
-        const ourWallets = wallets.map(w => w.wallet_address);
-        
-        const matchedWallet = findBestWalletMatch(ocrRecipientWallet, ourWallets);
+        const [wallets] = await pool.query(
+          "SELECT wallet_address FROM usdt_wallets WHERE is_enabled = 1"
+        );
+        const ourWallets = wallets.map((w) => w.wallet_address);
+        const matchedWallet = findBestWalletMatch(
+          ocrRecipientWallet,
+          ourWallets
+        );
 
         if (matchedWallet) {
-          // It's an incoming transaction. Try to confirm it locally.
-          console.log(`[USDT-WORKER] Detected INCOMING transaction via partial match to wallet ${matchedWallet}. Checking local DB...`);
+          console.log(`[USDT-WORKER] Detected INCOMING transaction.`);
           const expectedAmount = parseFloat(amount);
-          const matchId = await findBestUsdtMatch(expectedAmount, matchedWallet);
+          const matchId = await findBestUsdtMatch(
+            expectedAmount,
+            matchedWallet
+          );
 
           if (matchId) {
-            await pool.query('UPDATE usdt_transactions SET is_used = TRUE WHERE id = ?', [matchId]);
-            await originalMessage.reply(`Informed ✅`);
-            await originalMessage.react("🟢");
-            wasActioned = true;
-            runStandardForwarding = false;
+            // === ATOMIC UPDATE ===
+            const [updateResult] = await pool.query(
+              "UPDATE usdt_transactions SET is_used = 1 WHERE id = ? AND is_used = 0",
+              [matchId]
+            );
+
+            if (updateResult.affectedRows > 0) {
+              await originalMessage.reply(`Informed ✅`);
+              await originalMessage.react("🟢");
+              wasActioned = true;
+              runStandardForwarding = false;
+            } else {
+              await originalMessage.reply("❌Repeated❌");
+              await originalMessage.react("❌");
+              wasActioned = true;
+              runStandardForwarding = false;
+            }
           } else {
-            console.log('[USDT-WORKER] No local match found. Falling back to manual forwarding.');
+            console.log(
+              "[USDT-WORKER] No local match found. Falling back to manual forwarding."
+            );
           }
         } else {
-          // It's an outgoing transaction or an ambiguous match.
-          console.log('[USDT-WORKER] Detected OUTGOING or ambiguous transaction. Acknowledging.');
           await originalMessage.react("📤");
           wasActioned = true;
           runStandardForwarding = false;
         }
       }
 
-      // --- PRIORITY 2: UPGRADE ZONE CONFIRMATION (Using Smart Match) ---
-      if (runStandardForwarding && recipientNameLower.includes("upgrade zone")) {
+      // --- 3. UPGRADE ZONE (XPAYZ) (Atomic Update) ---
+      if (
+        runStandardForwarding &&
+        recipientNameLower.includes("upgrade zone")
+      ) {
         const sourceGroupJid = chat.id._serialized;
         const searchAmount = parseFloat(amount.replace(/,/g, ""));
-
         const [[assignmentRule]] = await pool.query(
           "SELECT subaccount_number, name FROM subaccounts WHERE assigned_group_jid = ?",
           [sourceGroupJid]
@@ -646,201 +679,159 @@ const invoiceWorker = new Worker(
           targetPool.push(assignmentRule.subaccount_number);
           isAssigned = true;
         } else {
-          const [unassigned] = await pool.query("SELECT subaccount_number FROM subaccounts WHERE assigned_group_jid IS NULL");
-          targetPool = unassigned.map(acc => acc.subaccount_number);
+          const [unassigned] = await pool.query(
+            "SELECT subaccount_number FROM subaccounts WHERE assigned_group_jid IS NULL"
+          );
+          targetPool = unassigned.map((acc) => acc.subaccount_number);
         }
 
-        // --- THIS IS THE FIX ---
-        // We are removing the debug logs for now and using the correct variable `sender.name`
-        if (targetPool.length > 0) {
-          // The call now correctly uses `sender.name` which is guaranteed to exist.
-          let matchId = await findBestXPayzMatch(searchAmount, sender.name, targetPool);
-        // --- END OF FIX ---
+        let matchId = await findBestXPayzMatch(
+          searchAmount,
+          sender.name,
+          targetPool
+        );
 
-          if (!matchId) {
-            console.log(`[WORKER][JIT-SYNC] No initial match for Upgrade Zone. Syncing relevant accounts...`);
-            for (const subId of targetPool) { await syncSingleSubaccount(subId); }
-            
-            const POLLING_ATTEMPTS = 4;
-            const POLLING_DELAY = 5000;
-            for (let i = 1; i <= POLLING_ATTEMPTS; i++) {
-              await delay(POLLING_DELAY);
-              console.log(`[WORKER][POLLING] Re-checking for match, attempt ${i}/${POLLING_ATTEMPTS}...`);
-              matchId = await findBestXPayzMatch(searchAmount, sender.name, targetPool);
-              if (matchId) break;
-            }
+        if (!matchId) {
+          console.log(`[WORKER][JIT-SYNC] No initial match. Syncing...`);
+          for (const subId of targetPool) {
+            await syncSingleSubaccount(subId);
           }
 
-          if (matchId) {
-            await pool.query("UPDATE xpayz_transactions SET is_used = TRUE WHERE id = ?", [matchId]);
+          const POLLING_ATTEMPTS = 4;
+          for (let i = 1; i <= POLLING_ATTEMPTS; i++) {
+            await delay(5000);
+            matchId = await findBestXPayzMatch(
+              searchAmount,
+              sender.name,
+              targetPool
+            );
+            if (matchId) break;
+          }
+        }
+
+        if (matchId) {
+          // === ATOMIC UPDATE ===
+          const [updateResult] = await pool.query(
+            "UPDATE xpayz_transactions SET is_used = 1 WHERE id = ? AND is_used = 0",
+            [matchId]
+          );
+
+          if (updateResult.affectedRows > 0) {
             await originalMessage.reply("Caiu");
             await originalMessage.react("🟢");
             wasActioned = true;
             runStandardForwarding = false;
-          } else if (isAssigned) {
-            // Smart Escalation Logic
-            console.log("[WORKER][ESCALATION] No match for assigned group after polling. Escalating to manual confirmation.");
-            
-            const [[escalationRule]] = await pool.query(
-                "SELECT destination_group_jid FROM forwarding_rules WHERE trigger_keyword = 'upgrade zone' AND is_enabled = 1"
+          } else {
+            await originalMessage.reply("❌Repeated❌");
+            await originalMessage.react("❌");
+            wasActioned = true;
+            runStandardForwarding = false;
+          }
+        } else if (isAssigned) {
+          // Escalation Logic
+          const [[escalationRule]] = await pool.query(
+            "SELECT destination_group_jid FROM forwarding_rules WHERE trigger_keyword = 'upgrade zone' AND is_enabled = 1"
+          );
+          if (escalationRule) {
+            const numberRegex = /\b(\d[\d-]{2,})\b/g;
+            const matches = chat.name.match(numberRegex);
+            const clientIdentifier =
+              matches && matches.length > 0
+                ? matches[matches.length - 1]
+                : chat.name;
+            const richCaption = `${clientIdentifier}\u200C (Chave: ${assignmentRule.name})`;
+            const mediaToForward = new MessageMedia(
+              media.mimetype,
+              media.data,
+              media.filename
             );
-
-            if (escalationRule) {
-                const numberRegex = /\b(\d[\d-]{2,})\b/g;
-                const matches = chat.name.match(numberRegex);
-                const clientIdentifier = (matches && matches.length > 0) ? matches[matches.length - 1] : chat.name;
-                
-                const richCaption = `${clientIdentifier}\u200C (Chave: ${assignmentRule.name})`;
-
-                const mediaToForward = new MessageMedia(media.mimetype, media.data, media.filename);
-                
-                const forwardedMessage = await client.sendMessage(escalationRule.destination_group_jid, mediaToForward, { caption: richCaption });
-                
-                await pool.query(
-                  `INSERT INTO forwarded_invoices (original_message_id, forwarded_message_id, destination_group_jid) VALUES (?, ?, ?)`,
-                  [messageId, forwardedMessage.id._serialized, escalationRule.destination_group_jid]
-                );
-                
-                await originalMessage.react("🟡");
-                wasActioned = true;
-                runStandardForwarding = false;
-            } else {
-                console.warn("[WORKER][ESCALATION] Could not find an active forwarding rule for 'upgrade zone' to use for escalation. Falling back to default forwarding.");
-            }
+            const forwardedMessage = await client.sendMessage(
+              escalationRule.destination_group_jid,
+              mediaToForward,
+              { caption: richCaption }
+            );
+            await pool.query(
+              `INSERT INTO forwarded_invoices (original_message_id, forwarded_message_id, destination_group_jid) VALUES (?, ?, ?)`,
+              [
+                messageId,
+                forwardedMessage.id._serialized,
+                escalationRule.destination_group_jid,
+              ]
+            );
+            await originalMessage.react("🟡");
+            wasActioned = true;
+            runStandardForwarding = false;
           }
         }
       }
 
-      // --- PRIORITY 2.5: ORIGINAL TROCA COIN / MKS CONFIRMATION (Fallback) ---
-      // (This block is now also upgraded with JIT logic for XPayz)
+      // --- 4. TROCA COIN / MKS (Atomic Update) ---
       if (
         runStandardForwarding &&
         (recipientNameLower.includes("troca") ||
-          recipientNameLower.includes("mks intermediacoes"))
+          recipientNameLower.includes("mks"))
       ) {
         let matchId = null;
         let updateTable = "";
 
         if (trocaCoinConfirmationMethod === "telegram") {
-          console.log(
-            '[WORKER] "Troca Coin/MKS" detected. Using TELEGRAM confirmation method...'
-          );
           matchId = await findBestTelegramMatch(
             parseFloat(amount.replace(/,/g, "")),
             sender.name
           );
           updateTable = "telegram_transactions";
         } else if (trocaCoinConfirmationMethod === "xpayz") {
-          console.log(
-            '[WORKER] "Troca Coin/MKS" detected. Using XPAYZ confirmation method...'
-          );
           updateTable = "xpayz_transactions";
-          const [unassignedSubaccounts] = await pool.query(
+          const [unassigned] = await pool.query(
             "SELECT subaccount_number FROM subaccounts WHERE assigned_group_jid IS NULL"
           );
-          const unassignedPoolIds = unassignedSubaccounts.map(
-            (acc) => acc.subaccount_number
-          );
+          const poolIds = unassigned.map((acc) => acc.subaccount_number);
+          const searchAmt = parseFloat(amount.replace(/,/g, ""));
 
-          // First check
-          matchId = await findBestXPayzMatch(
-            parseFloat(amount.replace(/,/g, "")),
-            sender.name,
-            unassignedPoolIds
-          );
-
-          // JIT Sync and Re-check
-          if (!matchId && unassignedPoolIds.length > 0) {
-            console.log(
-              "[WORKER][JIT-SYNC] First check of general pool failed for Troca Coin. Syncing all unassigned accounts..."
-            );
-            for (const subId of unassignedPoolIds) {
+          matchId = await findBestXPayzMatch(searchAmt, sender.name, poolIds);
+          if (!matchId && poolIds.length > 0) {
+            for (const subId of poolIds) {
               await syncSingleSubaccount(subId);
             }
             await delay(2000);
-            matchId = await findBestXPayzMatch(
-              parseFloat(amount.replace(/,/g, "")),
-              sender.name,
-              unassignedPoolIds
-            );
+            matchId = await findBestXPayzMatch(searchAmt, sender.name, poolIds);
           }
         }
 
         if (matchId) {
-          await pool.query(
-            `UPDATE ${updateTable} SET is_used = TRUE WHERE id = ?`,
+          // === ATOMIC UPDATE ===
+          const [updateResult] = await pool.query(
+            `UPDATE ${updateTable} SET is_used = 1 WHERE id = ? AND is_used = 0`,
             [matchId]
           );
-          await originalMessage.reply("Caiu");
-          await originalMessage.react("🟢");
-          wasActioned = true;
-          runStandardForwarding = false;
-        } else {
-          console.log(
-            `[DB-CONFIRM] No Smart Match found in ${trocaCoinConfirmationMethod} data after JIT sync. Falling back to manual forwarding.`
-          );
+
+          if (updateResult.affectedRows > 0) {
+            await originalMessage.reply("Caiu");
+            await originalMessage.react("🟢");
+            wasActioned = true;
+            runStandardForwarding = false;
+          } else {
+            await originalMessage.reply("❌Repeated❌");
+            await originalMessage.react("❌");
+            wasActioned = true;
+            runStandardForwarding = false;
+          }
         }
       }
 
-      // --- 3. PRIORITY 2.5: ALFA TRUST API CONFIRMATION ---
-      // if (
-      //   runStandardForwarding &&
-      //   isAlfaApiConfirmationEnabled &&
-      //   recipientNameLower.includes("alfa trust")
-      // ) {
-      //   console.log(
-      //     '[WORKER] "Alfa Trust" recipient detected. Checking local DB first...'
-      //   );
-
-      //   // Step 1: Check Local DB
-      //   const dbMatch = await findAlfaTrustMatchInDb(invoiceJson);
-
-      //   if (dbMatch) {
-      //     // Found in DB - this is the fastest path
-      //     console.log(
-      //       `[ALFA-CONFIRM-DB] Confirmed via local database. Replying "Caiu".`
-      //     );
-      //     await originalMessage.reply("Caiu");
-      //     await originalMessage.react("🟢");
-      //     wasActioned = true;
-      //     runStandardForwarding = false;
-      //   } else {
-      //     // Step 2: If not in DB, check the Live API as a fallback
-      //     console.log(
-      //       "[ALFA-CONFIRM-DB] Not found in local DB. Checking live API as a fallback..."
-      //     );
-      //     const apiResult = await alfaAuthService.findTransaction(invoiceJson);
-
-      //     if (apiResult.status === "found") {
-      //       console.log(
-      //         `[ALFA-CONFIRM-API] Confirmed via live API. Replying "Caiu".`
-      //       );
-      //       await originalMessage.reply("Caiu");
-      //       await originalMessage.react("🟢");
-      //       wasActioned = true;
-      //       runStandardForwarding = false;
-      //     } else {
-      //       // Step 3: If not found in API either, fall back to manual forwarding
-      //       console.log(
-      //         "[ALFA-CONFIRM-API] Not found via live API. Falling back to manual confirmation."
-      //       );
-      //     }
-      //   }
-      // }
-
-      // ALFA TRUST DEPRECATED PHASE
-      if (runStandardForwarding && isAlfaApiConfirmationEnabled && recipientNameLower.includes("alfa trust")) {
-          console.log('[WORKER] "Alfa Trust" recipient detected. Bank is inactive. Rejecting.');
-
-          await originalMessage.reply("no caiu");
-          await originalMessage.react("❌");
-          
-          wasActioned = true;
-          runStandardForwarding = false; // Stop processing (Do not forward to manual group)
+      // --- 5. ALFA TRUST (HARD REJECT) ---
+      if (
+        runStandardForwarding &&
+        isAlfaApiConfirmationEnabled &&
+        recipientNameLower.includes("alfa trust")
+      ) {
+        await originalMessage.reply("no caiu");
+        await originalMessage.react("❌");
+        wasActioned = true;
+        runStandardForwarding = false;
       }
 
-      // --- 4. PRIORITY 3: STANDARD FORWARDING & MANUAL CONFIRMATION (Fallback) ---
-      // let wasActioned = false;
+      // --- 6. MANUAL FORWARDING ---
       if (runStandardForwarding) {
         const [settings] = await pool.query(
           "SELECT * FROM group_settings WHERE group_jid = ?",
@@ -850,16 +841,12 @@ const invoiceWorker = new Worker(
 
         if (groupSettings.forwarding_enabled) {
           let forwarded = false;
-
-          // Tier 1: Direct Forwarding Rule
           const [[directRule]] = await pool.query(
-            "SELECT destination_group_jid FROM direct_forwarding_rules WHERE source_group_jid = ?",
+            "SELECT destination_group_jid, destination_group_name FROM direct_forwarding_rules WHERE source_group_jid = ?",
             [chat.id._serialized]
           );
+
           if (directRule) {
-            console.log(
-              `[FORWARDING] Matched direct rule for group "${chat.name}".`
-            );
             const mediaToForward = new MessageMedia(
               media.mimetype,
               media.data,
@@ -868,9 +855,9 @@ const invoiceWorker = new Worker(
             let caption = "\u200C";
             const numberRegex = /\b(\d[\d-]{2,})\b/g;
             const matches = chat.name.match(numberRegex);
-            if (matches && matches.length > 0) {
+            if (matches && matches.length > 0)
               caption = matches[matches.length - 1];
-            }
+
             const forwardedMessage = await client.sendMessage(
               directRule.destination_group_jid,
               mediaToForward,
@@ -887,11 +874,10 @@ const invoiceWorker = new Worker(
                 ]
               );
               wasActioned = true;
-              await originalMessage.react("🟡"); // Waiting for manual confirmation emoji
+              await originalMessage.react("🟡");
             }
           }
 
-          // Tier 2: AI Keyword Forwarding
           if (!forwarded) {
             const recipientNameToCheck = (recipient.name || "")
               .toLowerCase()
@@ -904,14 +890,12 @@ const invoiceWorker = new Worker(
                 "SELECT * FROM forwarding_rules WHERE is_enabled = 1"
               );
               for (const rule of rules) {
-                const triggerKeywordLower = rule.trigger_keyword.toLowerCase();
                 if (
-                  recipientNameToCheck.includes(triggerKeywordLower) ||
-                  pixKeyToCheck.includes(triggerKeywordLower)
+                  recipientNameToCheck.includes(
+                    rule.trigger_keyword.toLowerCase()
+                  ) ||
+                  pixKeyToCheck.includes(rule.trigger_keyword.toLowerCase())
                 ) {
-                  console.log(
-                    `[FORWARDING] Matched AI keyword rule "${rule.trigger_keyword}".`
-                  );
                   const mediaToForward = new MessageMedia(
                     media.mimetype,
                     media.data,
@@ -920,29 +904,26 @@ const invoiceWorker = new Worker(
                   let caption = "\u200C";
                   const numberRegex = /\b(\d[\d-]{2,})\b/g;
                   const matches = chat.name.match(numberRegex);
-                  if (matches && matches.length > 0) {
+                  if (matches && matches.length > 0)
                     caption = matches[matches.length - 1];
-                  }
+
                   const forwardedMessage = await client.sendMessage(
                     rule.destination_group_jid,
                     mediaToForward,
                     { caption: caption }
                   );
+
                   if (rule.reply_with_group_name) {
                     const destName = rule.destination_group_name || "";
-                    let replyText = destName; // Default to full name if no number found
-
-                    // Use the same regex used for captions to extract the ID/Number
+                    let replyText = destName;
                     const numberRegex = /\b(\d[\d-]{2,})\b/g;
                     const matches = destName.match(numberRegex);
-
                     if (matches && matches.length > 0) {
-                      // Use the last match found, consistent with caption logic
                       replyText = matches[matches.length - 1];
                     }
-
                     await originalMessage.reply("⏩ " + replyText);
                   }
+
                   if (isAutoConfirmationEnabled) {
                     await pool.query(
                       `INSERT INTO forwarded_invoices (original_message_id, forwarded_message_id, destination_group_jid) VALUES (?, ?, ?)`,
@@ -953,9 +934,9 @@ const invoiceWorker = new Worker(
                       ]
                     );
                     wasActioned = true;
-                    await originalMessage.react("🟡"); // Waiting for manual confirmation emoji
+                    await originalMessage.react("🟡");
                   }
-                  break; // Stop after first match
+                  break;
                 }
               }
             }
@@ -963,35 +944,48 @@ const invoiceWorker = new Worker(
         }
       }
 
-      // --- 5. FINAL STEP: ARCHIVING ---
-      const [archiveSettings] = await pool.query("SELECT archiving_enabled FROM group_settings WHERE group_jid = ?", [chat.id._serialized]);
-      const groupArchiveSettings = archiveSettings[0] || { archiving_enabled: true };
+      // --- 7. ARCHIVING ---
+      const [archiveSettings] = await pool.query(
+        "SELECT archiving_enabled FROM group_settings WHERE group_jid = ?",
+        [chat.id._serialized]
+      );
+      const groupArchiveSettings = archiveSettings[0] || {
+        archiving_enabled: true,
+      };
 
       if (groupArchiveSettings.archiving_enabled) {
         const archiveFileName = `${messageId}.${extension}`;
         const finalMediaPath = path.join(MEDIA_ARCHIVE_DIR, archiveFileName);
-
         await fs.rename(tempFilePath, finalMediaPath);
-        tempFilePaths.pop(); 
-
+        tempFilePaths.pop();
         const correctUtcDate = new Date(originalMessage.timestamp * 1000);
         await pool.query(
           `INSERT INTO invoices (message_id, transaction_id, sender_name, recipient_name, pix_key, amount, source_group_jid, received_at, raw_json_data, media_path, is_deleted) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
-            messageId, transaction_id, sender?.name, recipient.name, recipient.pix_key,
-            amount, chat.id._serialized, correctUtcDate, JSON.stringify(invoiceJson), finalMediaPath, false,
+            messageId,
+            transaction_id,
+            sender?.name,
+            recipient.name,
+            recipient.pix_key,
+            amount,
+            chat.id._serialized,
+            correctUtcDate,
+            JSON.stringify(invoiceJson),
+            finalMediaPath,
+            false,
           ]
         );
       }
     } catch (error) {
-      console.error(`[WORKER-ERROR] Critical error processing job ${job?.id}:`, error);
-      await originalMessage.react('');
+      console.error(
+        `[WORKER-ERROR] Critical error processing job ${job?.id}:`,
+        error
+      );
+      await originalMessage.react("");
       throw error;
     } finally {
       for (const tempPath of tempFilePaths) {
-          if (fsSync.existsSync(tempPath)) {
-              await fs.unlink(tempPath);
-          }
+        if (fsSync.existsSync(tempPath)) await fs.unlink(tempPath);
       }
       if (io) io.emit("invoices:updated");
     }
