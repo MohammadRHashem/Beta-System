@@ -14,6 +14,8 @@ const portalAuthMiddleware = require('./middleware/portalAuthMiddleware'); // Fo
 const portalRoutes = require('./routes/portalRoutes');
 const adminApiRoutes = require('./routes/adminApiRoutes'); // We will create this new file
 
+const manualReviewController = require('./controllers/manualReviewController');
+
 const app = express();
 const server = http.createServer(app);
 

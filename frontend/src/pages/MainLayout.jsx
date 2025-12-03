@@ -22,6 +22,7 @@ import ScheduledBroadcastsPage from "./ScheduledBroadcastsPage";
 import UsdtWalletsPage from "./UsdtWalletsPage";
 import SubCustomersPage from "./SubCustomersPage";
 import TrkbitPage from "./TrkbitPage";
+import ManualReviewPage from "./ManualReviewPage";
 
 const AppLayout = styled.div`
   display: flex;
@@ -174,6 +175,7 @@ const MainLayout = () => {
               <Route path="/direct-forwarding" element={<DirectForwardingPage allGroups={allGroups} />} />
               <Route path="/chave-pix" element={<ChavePixPage />} />
               <Route path="/group-settings" element={<GroupSettingsPage />} />
+              <Route path="/manual-review" element={<ManualReviewPage allGroups={allGroups} />} />
               <Route path="*" element={<Navigate to="/invoices" replace />} />
             </Routes>
           )}

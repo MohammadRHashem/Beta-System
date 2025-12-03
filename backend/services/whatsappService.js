@@ -292,6 +292,71 @@ const findBestUsdtMatch = async (searchAmount, recipientAddress) => {
 };
 
 
+
+const sendManualConfirmation = async (originalMessageId) => {
+    try {
+        const originalMessage = await client.getMessageById(originalMessageId);
+        if (originalMessage) {
+            await originalMessage.reply("Caiu");
+            await originalMessage.react("🟢");
+        }
+
+        // Also find the forwarded message in the manual group and react 👍 to indicate it's done
+        const [[link]] = await pool.query(
+            'SELECT forwarded_message_id, destination_group_jid FROM forwarded_invoices WHERE original_message_id = ?', 
+            [originalMessageId]
+        );
+        
+        if (link) {
+             // Try to react to the forwarded message
+             try {
+                 // We need to reconstruct the message object or use the WWebJS react method if available on client (it isn't usually directly on client)
+                 // Standard way: Fetch msg -> react.
+                 const forwardedMsg = await client.getMessageById(link.forwarded_message_id);
+                 if (forwardedMsg) await forwardedMsg.react("👍");
+             } catch (e) { console.warn("[MANUAL-API] Could not react to forwarded message:", e.message); }
+        }
+
+        console.log(`[MANUAL-API] Confirmed invoice ${originalMessageId}`);
+    } catch (error) {
+        console.error(`[MANUAL-API-ERROR] Failed to send confirmation for ${originalMessageId}:`, error);
+        throw error;
+    }
+};
+
+// === NEW: Helper to trigger rejection actions programmatically ===
+const sendManualRejection = async (originalMessageId) => {
+    try {
+        const originalMessage = await client.getMessageById(originalMessageId);
+        
+        // Delete media file if exists
+        const [[invoice]] = await pool.query('SELECT media_path FROM invoices WHERE message_id = ?', [originalMessageId]);
+        if (invoice && invoice.media_path && fsSync.existsSync(invoice.media_path)) {
+            await fs.unlink(invoice.media_path);
+        }
+
+        if (originalMessage) {
+            await originalMessage.reply("no caiu");
+            await originalMessage.react("🔴");
+        }
+        
+        // Mark forwarded message (optional visual cue)
+        const [[link]] = await pool.query('SELECT forwarded_message_id FROM forwarded_invoices WHERE original_message_id = ?', [originalMessageId]);
+        if (link) {
+            try {
+                const forwardedMsg = await client.getMessageById(link.forwarded_message_id);
+                if (forwardedMsg) await forwardedMsg.react("❌");
+            } catch (e) {}
+        }
+
+        console.log(`[MANUAL-API] Rejected invoice ${originalMessageId}`);
+    } catch (error) {
+        console.error(`[MANUAL-API-ERROR] Failed to send rejection for ${originalMessageId}:`, error);
+        throw error;
+    }
+};
+
+
 let isTrkbitConfirmationEnabled = false;
 const refreshTrkbitConfirmationStatus = async () => {
   try {
@@ -1481,6 +1546,7 @@ const handleReaction = async (reaction) => {
           [reactedMessageId]
         );
         console.log(`[REACTION] Successfully processed '${confirmMessage}' confirmation for ${link.original_message_id}`);
+        if (io) io.emit('manual:refresh');
       }
     }
     
@@ -1515,7 +1581,10 @@ const handleReaction = async (reaction) => {
           await originalMessage.react("🔴");
         }
         
-        if (io) io.emit("invoices:updated");
+        if (io) {
+          io.emit("invoices:updated");
+          io.emit("manual:refresh");
+        }
         console.log(`[REACTION-DELETE] Successfully processed '${rejectMessage}' deletion for ${link.original_message_id}`);
         
       } catch (dbError) {
@@ -1701,5 +1770,7 @@ module.exports = {
   refreshAlfaApiConfirmationStatus,
   refreshTrocaCoinStatus,
   refreshTrocaCoinMethod,
-  refreshTrkbitConfirmationStatus
+  refreshTrkbitConfirmationStatus,
+  sendManualConfirmation,
+  sendManualRejection
 };

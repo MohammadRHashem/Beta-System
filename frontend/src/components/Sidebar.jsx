@@ -1,7 +1,7 @@
 import React from "react";
 import { NavLink } from "react-router-dom";
 import styled from "styled-components";
-import { FaWhatsapp, FaBullhorn, FaRobot, FaCog, FaKey, FaKeyboard, FaFileInvoiceDollar, FaChartLine, FaCheckCircle, FaRoute, FaUniversity, FaUsers, FaBitcoin, FaCalendarAlt, FaUserFriends } from "react-icons/fa";
+import { FaWhatsapp, FaBullhorn, FaRobot, FaCog, FaKey, FaKeyboard, FaFileInvoiceDollar, FaChartLine, FaCheckCircle, FaRoute, FaUniversity, FaUsers, FaBitcoin, FaCalendarAlt, FaUserFriends, FaCheckDouble } from "react-icons/fa";
 
 const SidebarContainer = styled.nav`
   width: 250px;
@@ -80,6 +80,7 @@ const Sidebar = () => {
         <NavItem to="/invoices"><FaFileInvoiceDollar /><span>Invoices</span></NavItem>
         <NavItem to="/trkbit"><FaUniversity /><span>Trkbit</span></NavItem>
         <NavItem to="/alfa-trust"><FaUniversity /><span>Alfa Trust</span></NavItem>
+        <NavItem to="/manual-review"><FaCheckDouble /><span>Manual Confirmation</span></NavItem>
         <NavItem to="/group-settings"><FaCog /><span>Group Settings</span></NavItem>
       </SidebarContainer>
     );

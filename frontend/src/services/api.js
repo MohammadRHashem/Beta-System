@@ -170,6 +170,16 @@ export const deleteSchedule = (id) => apiClient.delete(`/scheduled-broadcasts/${
 export const toggleSchedule = (id, is_active) => apiClient.patch(`/scheduled-broadcasts/${id}/toggle`, { is_active });
 export const triggerAlfaSync = () => apiClient.post('/alfa-trust/trigger-sync');
 export const getAlfaTransactions = (params) => apiClient.get('/alfa-trust/transactions', { params });
+
+
+
+export const getPendingManualInvoices = () => apiClient.get('/manual/pending');
+export const getManualCandidates = (amount) => apiClient.get('/manual/candidates', { params: { amount } });
+export const confirmManualInvoice = (data) => apiClient.post('/manual/confirm', data);
+export const rejectManualInvoice = (messageId) => apiClient.post('/manual/reject', { messageId });
+
+
+
 export const exportAlfaExcel = async (params) => {
     const blob = await downloadFile('/alfa-trust/export-excel', params);
     triggerBrowserDownload(blob, 'alfa_trust_export.xlsx');
