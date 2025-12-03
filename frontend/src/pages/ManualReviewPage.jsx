@@ -85,8 +85,10 @@ const ManualReviewPage = () => {
         if (!confirm('Reject this invoice? Bot will reply "no caiu".')) return;
         try {
             await rejectManualInvoice(invoice.message_id);
-            setInvoices(prev => prev.filter(i => i.id !== invoice.id));
-        } catch (e) { alert('Failed to reject.'); }
+            // The WebSocket event will handle the UI update.
+        } catch (e) { 
+            alert('Failed to reject.'); 
+        }
     };
 
     const openConfirmModal = async (invoice) => {
@@ -104,14 +106,18 @@ const ManualReviewPage = () => {
     const handleFinalConfirm = async (linkedTx = null) => {
         if (!selectedInvoice) return;
         try {
+            // Close the modal immediately for better UX
+            setIsModalOpen(false); 
+            
             await confirmManualInvoice({
                 messageId: selectedInvoice.message_id,
                 linkedTransactionId: linkedTx ? linkedTx.id : null,
                 source: linkedTx ? linkedTx.source : null
             });
-            setIsModalOpen(false);
-            setInvoices(prev => prev.filter(i => i.id !== selectedInvoice.id));
-        } catch (e) { alert(e.response?.data?.message || 'Failed.'); }
+            // The WebSocket event will handle removing the item from the list.
+        } catch (e) { 
+            alert(e.response?.data?.message || 'Failed to confirm invoice.'); 
+        }
     };
 
     return (
