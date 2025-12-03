@@ -133,7 +133,7 @@ exports.calculateLocalPosition = async (req, res) => {
 exports.calculateRemotePosition = async (req, res) => {
     const userId = req.user.id;
     const { id } = req.params;
-    const { date } = req.query; // Date is optional
+    const { date } = req.query; // YYYY-MM-DD
 
     try {
         const [[counter]] = await pool.query(
@@ -146,9 +146,40 @@ exports.calculateRemotePosition = async (req, res) => {
         }
 
         let result;
+
+        // --- ALFA LOGIC (Existing) ---
         if (counter.sub_type === 'alfa') {
-            result = await alfaBalanceService.getBalance(date); // Pass date if it exists
-        } else {
+            result = await alfaBalanceService.getBalance(date); 
+        } 
+        
+        // --- CROSS / TRKBIT LOGIC (New) ---
+        else if (counter.sub_type === 'cross') {
+            // Default to today if no date provided
+            const targetDate = date || new Date().toISOString().split('T')[0];
+
+            const query = `
+                SELECT 
+                    SUM(CASE WHEN tx_type = 'C' THEN amount ELSE 0 END) as total_in,
+                    SUM(CASE WHEN tx_type = 'D' THEN amount ELSE 0 END) as total_out
+                FROM trkbit_transactions
+                WHERE DATE(tx_date) = ?
+            `;
+            
+            const [[rows]] = await pool.query(query, [targetDate]);
+            
+            const totalIn = parseFloat(rows.total_in || 0);
+            const totalOut = parseFloat(rows.total_out || 0);
+            const net = totalIn - totalOut;
+
+            // Structure matches what Frontend expects (result.disponivel)
+            result = {
+                disponivel: net,
+                dataReferencia: targetDate,
+                details: { totalIn, totalOut } // Optional extra data
+            };
+        } 
+        
+        else {
             return res.status(400).json({ message: 'This remote counter type is not supported.' });
         }
         

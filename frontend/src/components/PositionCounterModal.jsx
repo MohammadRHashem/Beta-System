@@ -107,9 +107,22 @@ const PositionCounterModal = ({ isOpen, onClose, onSave, editingCounter }) => {
                 {type === 'remote' && (
                     <Fieldset>
                         <Legend>Remote Source</Legend>
-                        <div style={{ display: 'flex', gap: '1rem' }}>
-                            <label><input type="radio" value="alfa" checked={subType === 'alfa'} onChange={(e) => setSubType(e.target.value)} /> Alfa (Live Balance)</label>
-                            <label style={{ color: '#aaa' }}><input type="radio" value="troca" disabled /> Troca (Not Available)</label>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                            <label>
+                                <input type="radio" value="alfa" checked={subType === 'alfa'} onChange={(e) => setSubType(e.target.value)} /> 
+                                Alfa (Live Balance)
+                            </label>
+                            
+                            {/* === NEW OPTION === */}
+                            <label>
+                                <input type="radio" value="cross" checked={subType === 'cross'} onChange={(e) => setSubType(e.target.value)} /> 
+                                Cross / Trkbit (Daily Net: In - Out)
+                            </label>
+
+                            <label style={{ color: '#aaa' }}>
+                                <input type="radio" value="troca" disabled /> 
+                                Troca (Not Available)
+                            </label>
                         </div>
                     </Fieldset>
                 )}
