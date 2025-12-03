@@ -114,9 +114,15 @@ const ScheduledBroadcastsPage = () => {
         if (s.schedule_type === 'DAILY') {
             return `Daily at ${time}`;
         }
+        // Corrected and more robust code
         if (s.schedule_type === 'WEEKLY') {
-            const selectedDays = JSON.parse(s.scheduled_days_of_week).map(d => daysOfWeek[d]).join(', ');
-            return `Weekly on ${selectedDays} at ${time}`;
+            // Check if scheduled_days_of_week is an array and not empty
+            if (Array.isArray(s.scheduled_days_of_week) && s.scheduled_days_of_week.length > 0) {
+                const selectedDays = s.scheduled_days_of_week.map(d => daysOfWeek[d]).join(', ');
+                return `Weekly on ${selectedDays} at ${time}`;
+            }
+            // Fallback for invalid or empty data to prevent crashes
+            return `Weekly at ${time} (No days selected)`;
         }
         return 'Unknown';
     };

@@ -75,6 +75,7 @@ exports.getCandidates = async (req, res) => {
 };
 
 exports.confirmInvoice = async (req, res) => {
+    const io = req.app.get('io'); // <-- ADD THIS LINE
     const { messageId, linkedTransactionId, source } = req.body;
 
     if (!messageId) return res.status(400).json({ message: 'Message ID required.' });
@@ -113,8 +114,8 @@ exports.confirmInvoice = async (req, res) => {
         whatsappService.sendManualConfirmation(messageId);
         
         // 4. Notify Frontend
-        req.io.emit('manual:refresh');
-        req.io.emit('invoices:updated');
+        io.emit('manual:refresh'); // <-- FIX
+        io.emit('invoices:updated'); // <-- FIX
 
         res.json({ message: 'Invoice confirmed successfully.' });
 
@@ -128,6 +129,7 @@ exports.confirmInvoice = async (req, res) => {
 };
 
 exports.rejectInvoice = async (req, res) => {
+    const io = req.app.get('io'); // <-- ADD THIS LINE
     const { messageId } = req.body;
     if (!messageId) return res.status(400).json({ message: 'Message ID required.' });
 
@@ -140,8 +142,8 @@ exports.rejectInvoice = async (req, res) => {
         whatsappService.sendManualRejection(messageId);
 
         // Notify Frontend
-        req.io.emit('manual:refresh');
-        req.io.emit('invoices:updated');
+        io.emit('manual:refresh'); // <-- FIX
+        io.emit('invoices:updated'); // <-- FIX
 
         res.json({ message: 'Invoice rejected.' });
     } catch (error) {
