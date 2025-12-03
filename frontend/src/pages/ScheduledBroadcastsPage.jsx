@@ -207,11 +207,16 @@ const ScheduleModal = ({ isOpen, onClose, onSave, schedule, batches, templates }
                 schedule_type: schedule.schedule_type,
                 scheduled_at_time: schedule.scheduled_at_time.substring(0, 5),
                 scheduled_at_date: schedule.scheduled_at_date ? format(parseISO(schedule.scheduled_at_date), 'yyyy-MM-dd') : format(new Date(), 'yyyy-MM-dd'),
-                scheduled_days_of_week: schedule.scheduled_days_of_week ? JSON.parse(schedule.scheduled_days_of_week) : [],
+                
+                // === THIS IS THE CORRECTED LINE ===
+                scheduled_days_of_week: Array.isArray(schedule.scheduled_days_of_week) ? schedule.scheduled_days_of_week : [],
+                // ===================================
+                
                 timezone: schedule.timezone
             });
-            setSelectedTemplateId(''); // Reset template selection when editing
+            setSelectedTemplateId(''); 
         } else {
+            // Reset logic for a new schedule (this part is correct)
             setFormData({
                 batch_id: '', message: '', schedule_type: 'ONCE',
                 scheduled_at_time: '09:00', scheduled_at_date: format(new Date(), 'yyyy-MM-dd'),
