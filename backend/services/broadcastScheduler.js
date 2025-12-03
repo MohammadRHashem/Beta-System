@@ -42,8 +42,9 @@ const checkSchedules = async () => {
                 } else if (job.schedule_type === 'DAILY' && !hasRunToday) {
                     shouldRun = true;
                 } else if (job.schedule_type === 'WEEKLY' && !hasRunToday) {
-                    const scheduledDays = JSON.parse(job.scheduled_days_of_week);
-                    if (scheduledDays.includes(nowInJobTimezone.getDay())) {
+                    // Directly use the array and add a safety check
+                    const scheduledDays = job.scheduled_days_of_week;
+                    if (Array.isArray(scheduledDays) && scheduledDays.includes(nowInJobTimezone.getDay())) {
                         shouldRun = true;
                     }
                 }
