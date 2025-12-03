@@ -96,34 +96,54 @@ exports.deleteCounter = async (req, res) => {
 // --- UPDATED CALCULATION LOGIC ---
 
 exports.calculateLocalPosition = async (req, res) => {
-    // This is the same logic as the old calculatePosition function
     const { date, keyword } = req.query;
     if (!date || !keyword) {
         return res.status(400).json({ message: 'A date and keyword are required.' });
     }
     try {
-        // ... ALL the calculation logic from the previous version remains here ...
         const targetDate = new Date(date + 'T00:00:00Z');
         const endTime = new Date(targetDate);
         const startTime = new Date(targetDate);
         startTime.setUTCDate(startTime.getUTCDate() - 1);
-        startTime.setUTCHours(19, 15, 0, 0);      
-        endTime.setUTCHours(19, 15, 0, 0);        
+        startTime.setUTCHours(19, 15, 0, 0); // Corresponds to 16:15 São Paulo time of the previous day
+        endTime.setUTCHours(19, 15, 0, 0);   // Corresponds to 16:15 São Paulo time of the selected day
 
+        // === FIX #2: CORRECTED SQL LOGIC ===
+        // This new query correctly de-duplicates invoices with a transaction_id
+        // while also including all invoices that do NOT have a transaction_id.
         const positionQuery = `
-            SELECT SUM(CAST(REPLACE(i.amount, ',', '') AS DECIMAL(20, 2))) AS netPosition, COUNT(i.id) AS transactionCount
-            FROM invoices i INNER JOIN ( SELECT MAX(id) as max_id FROM invoices
-                WHERE is_deleted = 0 AND recipient_name LIKE ? AND received_at >= ? AND received_at <= ?
-                GROUP BY transaction_id
+            SELECT 
+                SUM(CAST(REPLACE(i.amount, ',', '') AS DECIMAL(20, 2))) AS netPosition,
+                COUNT(i.id) AS transactionCount
+            FROM invoices i
+            INNER JOIN (
+                SELECT MAX(id) as max_id 
+                FROM invoices
+                WHERE 
+                    is_deleted = 0 
+                    AND recipient_name LIKE ? 
+                    AND received_at >= ? 
+                    AND received_at < ?
+                -- This CASE statement treats every row with a NULL/empty transaction_id as a unique group
+                GROUP BY (CASE WHEN transaction_id IS NULL OR transaction_id = '' THEN id ELSE transaction_id END)
             ) latest_invoices ON i.id = latest_invoices.max_id;
         `;
+        // ===================================
         
         const [[positionResult]] = await pool.query(positionQuery, [`%${keyword}%`, startTime, endTime]);
+        
+        // === FIX #1: THE NaN FIX ===
+        // Explicitly parse the result to a float. This guarantees the API sends a number,
+        // which prevents any ambiguity or parsing errors on the frontend.
+        const netPositionAsNumber = parseFloat(positionResult.netPosition || 0);
+        // ===========================
+
         res.json({
-            netPosition: positionResult.netPosition || 0,
+            netPosition: netPositionAsNumber, // Send the guaranteed number
             transactionCount: positionResult.transactionCount || 0,
             calculationPeriod: { start: startTime.toISOString(), end: endTime.toISOString() },
         });
+
     } catch (error) {
         console.error('[ERROR] Failed to calculate local position:', error);
         res.status(500).json({ message: 'Failed to calculate local position.' });
