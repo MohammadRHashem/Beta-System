@@ -17,7 +17,7 @@ const usdtWalletRoutes = require('./usdtWalletRoutes');
 const scheduledBroadcastRoutes = require('./scheduledBroadcastRoutes');
 const subCustomerController = require('../controllers/subCustomerController');
 const trkbitController = require('../controllers/trkbitController');
-const manualReviewController = require('./controllers/manualReviewController');
+const manualReviewController = require('../controllers/manualReviewController');
 
 
 router.get('/manual/pending', manualReviewController.getPendingInvoices);
