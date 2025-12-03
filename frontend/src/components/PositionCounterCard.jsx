@@ -114,8 +114,12 @@ const PositionCounterCard = ({ counter, onEdit, onDelete }) => {
             let data;
             if (counter.type === 'local') {
                 ({ data } = await calculateLocalPosition({ date: selectedDate, keyword: counter.keyword }));
-            } else if (counter.type === 'remote' && counter.sub_type === 'alfa') {
-                // For a manual refresh, we fetch today's balance regardless of the date picker
+            
+            // === THIS IS THE CORRECTED LINE ===
+            } else if (counter.type === 'remote') { 
+            // ===================================
+                
+                // For a manual refresh of any remote counter, we fetch today's data.
                 const dateParam = isRefresh ? null : selectedDate;
                 ({ data } = await calculateRemotePosition(counter.id, { date: dateParam }));
                 setLastUpdated(new Date());
@@ -166,10 +170,15 @@ const PositionCounterCard = ({ counter, onEdit, onDelete }) => {
                         result && (
                             counter.type === 'local' ? ( // LOCAL DISPLAY
                                 <>
-                                    <ResultValue>{new Intl.NumberFormat('en-US', { minimumFractionDigits: 2 }).format(result.netPosition)}</ResultValue>
-                                    <ResultLabel>from {result.transactionCount} transactions</ResultLabel>
+                                    <ResultValue>{new Intl.NumberFormat('en-US', { minimumFractionDigits: 2 }).format(result.disponivel)}</ResultValue>
+                                    <ResultLabel>
+                                        {counter.sub_type === 'cross' ? 'Daily Net Position' : 'Available Balance'}
+                                    </ResultLabel>
                                     <CalculationPeriod>
-                                        Period: {formatDisplayDateTime(result.calculationPeriod.start)} {'=>'} {formatDisplayDateTime(result.calculationPeriod.end)}
+                                        {counter.sub_type === 'cross' 
+                                            ? `Net for date: ${result.dataReferencia || 'Today'}`
+                                            : `Balance for date: ${result.dataReferencia || 'Today'}`
+                                        }
                                     </CalculationPeriod>
                                 </>
                             ) : ( // REMOTE DISPLAY
