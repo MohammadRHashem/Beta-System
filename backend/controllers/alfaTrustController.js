@@ -23,10 +23,9 @@ const getBusinessDayFromLocalString = (localDateString) => {
 
 
 exports.getTransactions = async (req, res) => {
-    // Renamed filters to match new frontend logic
     const {
         page = 1, limit = 50, sortOrder = 'desc',
-        search, date, operation // 'date' is now the single date filter
+        search, dateFrom, dateTo, operation // <-- Changed 'date' to 'dateFrom' and 'dateTo'
     } = req.query;
 
     try {
@@ -42,11 +41,16 @@ exports.getTransactions = async (req, res) => {
             params.push(searchTerm, searchTerm, searchTerm);
         }
         
-        // Changed filtering to match specific date
-        if (date) {
-            query += ' AND DATE(inclusion_date) = ?';
-            params.push(date);
+        // <-- Logic updated to handle a range -->
+        if (dateFrom) {
+            query += ' AND DATE(inclusion_date) >= ?';
+            params.push(dateFrom);
         }
+        if (dateTo) {
+            query += ' AND DATE(inclusion_date) <= ?';
+            params.push(dateTo);
+        }
+        // <-- End of range logic -->
 
         if (operation) {
             query += ' AND operation = ?';
@@ -59,10 +63,7 @@ exports.getTransactions = async (req, res) => {
 
         if (total === 0) {
             return res.json({
-                transactions: [],
-                totalPages: 0,
-                currentPage: 1,
-                totalRecords: 0,
+                transactions: [], totalPages: 0, currentPage: 1, totalRecords: 0,
             });
         }
 
@@ -89,8 +90,7 @@ exports.getTransactions = async (req, res) => {
 };
 
 exports.exportTransactionsExcel = async (req, res) => {
-    // Renamed filters to match new frontend logic
-    const { search, date, operation } = req.query;
+    const { search, dateFrom, dateTo, operation } = req.query; // <-- Changed 'date' to 'dateFrom' and 'dateTo'
 
     let query = `
         SELECT end_to_end_id, inclusion_date, operation, value, payer_name, payer_document, description, raw_details
@@ -105,11 +105,16 @@ exports.exportTransactionsExcel = async (req, res) => {
         params.push(searchTerm, searchTerm, searchTerm);
     }
     
-    // Changed filtering to match specific date
-    if (date) {
-        query += ' AND DATE(inclusion_date) = ?';
-        params.push(date);
+    // <-- Logic updated to handle a range -->
+    if (dateFrom) {
+        query += ' AND DATE(inclusion_date) >= ?';
+        params.push(dateFrom);
     }
+    if (dateTo) {
+        query += ' AND DATE(inclusion_date) <= ?';
+        params.push(dateTo);
+    }
+    // <-- End of range logic -->
 
     if (operation) {
         query += ' AND operation = ?';

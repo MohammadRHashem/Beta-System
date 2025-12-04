@@ -55,20 +55,35 @@ const AlfaTrustFilter = ({ filters, onFilterChange }) => {
         onFilterChange({ ...filters, [e.target.name]: e.target.value });
     };
 
+    // === MODIFICATION 1: Update clear function for date range ===
     const handleClear = () => {
-        // Reset to today's date
+        const today = format(new Date(), 'yyyy-MM-dd');
         onFilterChange({ 
             search: '', 
-            date: format(new Date(), 'yyyy-MM-dd'),
+            dateFrom: today, // <-- Set both dates to today
+            dateTo: today,
             operation: '' 
         });
     };
 
     return (
         <FilterContainer>
-            <InputGroup><label>Search (ID, Name, Amount)</label><input name="search" type="text" value={filters.search} onChange={handleChange} /></InputGroup>
-            {/* Changed to single Date input */}
-            <InputGroup><label>Date</label><input name="date" type="date" value={filters.date} onChange={handleChange} /></InputGroup>
+            <InputGroup>
+                <label>Search (ID, Name, Amount)</label>
+                <input name="search" type="text" value={filters.search} onChange={handleChange} />
+            </InputGroup>
+            
+            {/* === MODIFICATION 2: Add two date inputs === */}
+            <InputGroup>
+                <label>Date From</label>
+                <input name="dateFrom" type="date" value={filters.dateFrom} onChange={handleChange} />
+            </InputGroup>
+            
+            <InputGroup>
+                <label>Date To</label>
+                <input name="dateTo" type="date" value={filters.dateTo} onChange={handleChange} />
+            </InputGroup>
+            {/* ========================================= */}
             
             <InputGroup>
                 <label>Operation</label>
