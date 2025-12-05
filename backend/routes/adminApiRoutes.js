@@ -24,8 +24,8 @@ router.get('/manual/pending', manualReviewController.getPendingInvoices);
 router.get('/manual/candidates', manualReviewController.getCandidates);
 router.post('/manual/confirm', manualReviewController.confirmInvoice);
 router.post('/manual/reject', manualReviewController.rejectInvoice);
-router.post('/manual/confirm-all', manualReviewController.confirmAllInvoices);
 router.get('/manual/candidate-invoices', manualReviewController.getCandidateInvoices);
+router.post('/manual/clear-all', manualReviewController.clearAllPending);
 
 // --- Define all ADMIN routes that require authentication ---
 router.get('/status', whatsappController.getStatus);

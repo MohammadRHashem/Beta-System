@@ -1,9 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import styled from 'styled-components';
-import { getPendingManualInvoices, getManualCandidates, confirmManualInvoice, rejectManualInvoice, viewInvoiceMedia, confirmAllManualInvoices } from '../services/api';
+import { 
+    getPendingManualInvoices, 
+    getManualCandidates, 
+    confirmManualInvoice, 
+    rejectManualInvoice, 
+    viewInvoiceMedia, 
+    clearAllPendingInvoices // <-- IMPORT THE NEW FUNCTION
+} from '../services/api';
 import { useSocket } from '../context/SocketContext';
 import Modal from '../components/Modal';
-import { FaCheck, FaTimes, FaExternalLinkAlt, FaMagic, FaCheckDouble } from 'react-icons/fa';
+import { FaCheck, FaTimes, FaMagic, FaBroom } from 'react-icons/fa';
 import { format } from 'date-fns';
 
 const PageContainer = styled.div`
@@ -18,7 +25,8 @@ const Header = styled.div`
     align-items: center;
 `;
 
-const ConfirmAllButton = styled.button`
+// === MODIFIED: Renamed component for clarity ===
+const ClearAllButton = styled.button`
     background-color: ${({ theme }) => theme.primary};
     color: white;
     border: none;
@@ -112,14 +120,15 @@ const ManualReviewPage = () => {
         } catch (e) { alert('Failed to reject.'); }
     };
 
-    const handleConfirmAll = async () => {
-        if (!window.confirm(`Are you sure you want to confirm all ${invoices.length} pending invoices? This action cannot be undone.`)) return;
+    // === MODIFIED: Logic for Clear All ===
+    const handleClearAll = async () => {
+        if (!window.confirm(`Are you sure you want to CLEAR all ${invoices.length} pending invoices from this list? This will NOT send a confirmation to the clients.`)) return;
         try {
             const messageIds = invoices.map(inv => inv.message_id);
-            await confirmAllManualInvoices(messageIds);
+            await clearAllPendingInvoices(messageIds);
             // UI will update via WebSocket
         } catch (e) {
-            alert('An error occurred while trying to confirm all invoices.');
+            alert('An error occurred while trying to clear the list.');
         }
     };
 
@@ -155,7 +164,12 @@ const ManualReviewPage = () => {
 
     const handleFinalConfirm = async (linkedTx = null) => {
         if (!selectedInvoice) return;
-        if (!window.confirm('Are you sure you want to CONFIRM this invoice? This will reply "Caiu" to the client.')) return;
+        // Use a more specific confirmation message
+        const confirmText = linkedTx
+            ? `Link this ${linkedTx.source} transaction and confirm the invoice?`
+            : `Force confirm this invoice without linking a bank transaction?`;
+            
+        if (!window.confirm(confirmText + '\nThis will reply "Caiu" to the client.')) return;
         
         try {
             setIsModalOpen(false);
@@ -175,9 +189,10 @@ const ManualReviewPage = () => {
             <Header>
                 <h2>Manual Confirmation Center</h2>
                 <div style={{display: 'flex', alignItems: 'center', gap: '1rem'}}>
-                    <ConfirmAllButton onClick={handleConfirmAll} disabled={invoices.length === 0}>
-                        <FaCheckDouble /> Confirm All ({invoices.length})
-                    </ConfirmAllButton>
+                    {/* === MODIFIED: Button text and handler === */}
+                    <ClearAllButton onClick={handleClearAll} disabled={invoices.length === 0}>
+                        <FaBroom /> Clear All ({invoices.length})
+                    </ClearAllButton>
                     <div style={{background: '#E3FCEF', color: '#006644', padding: '0.5rem 1rem', borderRadius: '20px', fontWeight: 'bold'}}>
                         {invoices.length} Pending
                     </div>
@@ -192,7 +207,7 @@ const ManualReviewPage = () => {
                                 <th>Date</th>
                                 <th>Source Group</th>
                                 <th>Sender</th>
-                                <th>Recipient</th> {/* <-- NEW COLUMN */}
+                                <th>Recipient</th>
                                 <th>Amount</th>
                                 <th>Media</th>
                                 <th>Actions</th>
