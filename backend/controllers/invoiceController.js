@@ -278,27 +278,38 @@ exports.exportInvoices = async (req, res) => {
         query += ` AND NOT ${reviewCondition}`;
     }
 
-    // === FIX START: This logic has been completely rewritten ===
+    // === FIX START: Logic updated to be aware of the is_deleted flag ===
     if (status === 'only_deleted') {
         query += ' AND i.is_deleted = 1';
     } else if (status === 'only_duplicates') {
-        // Show ONLY the copies (not the first one)
+        // Show ONLY the copies (not the first one), among non-deleted invoices.
         query += ` AND i.is_deleted = 0 AND i.transaction_id IS NOT NULL AND i.transaction_id != '' AND i.id NOT IN (
-            SELECT min_id FROM (SELECT MIN(id) as min_id FROM invoices WHERE transaction_id IS NOT NULL AND transaction_id != '' GROUP BY transaction_id) as t
+            SELECT min_id FROM (
+                SELECT MIN(id) as min_id 
+                FROM invoices 
+                WHERE transaction_id IS NOT NULL AND transaction_id != '' AND is_deleted = 0 
+                GROUP BY transaction_id, amount
+            ) as t
         )`;
     } else {
-        // DEFAULT BEHAVIOR: Show all non-deleted invoices, but only the FIRST instance for any given transaction_id.
+        // DEFAULT BEHAVIOR: Show all non-deleted invoices, but only the FIRST instance (MIN id) for any given transaction_id.
         query += ` AND i.is_deleted = 0 AND (
             -- Condition 1: Include all invoices that DO NOT have a transaction ID
             (i.transaction_id IS NULL OR i.transaction_id = '') 
             OR 
-            -- Condition 2: For invoices that DO have a transaction ID, only include the one with the smallest ID
-            i.id IN (SELECT min_id FROM (SELECT MIN(id) as min_id FROM invoices WHERE transaction_id IS NOT NULL AND transaction_id != '' GROUP BY transaction_id) as t)
+            -- Condition 2: For invoices with a transaction ID, only include the one with the smallest ID from the NON-DELETED set.
+            i.id IN (
+                SELECT min_id FROM (
+                    SELECT MIN(id) as min_id 
+                    FROM invoices 
+                    WHERE transaction_id IS NOT NULL AND transaction_id != '' AND is_deleted = 0 
+                    GROUP BY transaction_id, amount
+                ) as t
+            )
         )`;
     }
     // === FIX END ===
     
-    // Crucial for the separator logic: data MUST be sorted chronologically.
     query += ' ORDER BY i.received_at ASC';
 
     try {
