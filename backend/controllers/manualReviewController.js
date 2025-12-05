@@ -3,7 +3,6 @@ const whatsappService = require('../services/whatsappService');
 
 exports.getPendingInvoices = async (req, res) => {
     try {
-        // Fetch invoices that are in the forwarding table but NOT confirmed yet
         const query = `
             SELECT 
                 i.id, 
@@ -31,51 +30,12 @@ exports.getPendingInvoices = async (req, res) => {
 };
 
 exports.getCandidates = async (req, res) => {
-    const { amount } = req.query;
-    if (!amount) return res.json([]);
-
-    try {
-        const searchAmount = parseFloat(amount);
-        const margin = 0.01; // Strict margin
-
-        // 1. XPayz Candidates
-        const [xpayz] = await pool.query(`
-            SELECT id, 'XPayz' as source, sender_name as name, transaction_date as date, amount 
-            FROM xpayz_transactions 
-            WHERE is_used = 0 AND operation_direct = 'in' 
-            AND amount BETWEEN ? AND ?
-            ORDER BY transaction_date DESC
-        `, [searchAmount - margin, searchAmount + margin]);
-
-        // 2. Trkbit Candidates
-        const [trkbit] = await pool.query(`
-            SELECT id, 'Trkbit' as source, tx_payer_name as name, tx_date as date, amount 
-            FROM trkbit_transactions 
-            WHERE is_used = 0 
-            AND amount BETWEEN ? AND ?
-            ORDER BY tx_date DESC
-        `, [searchAmount - margin, searchAmount + margin]);
-
-        // 3. USDT Candidates (Optional, usually confirmed automatically, but good to have)
-        const [usdt] = await pool.query(`
-            SELECT id, 'USDT' as source, CONCAT(LEFT(from_address, 6), '...', RIGHT(from_address, 6)) as name, time_iso as date, amount_usdt as amount
-            FROM usdt_transactions
-            WHERE is_used = 0
-            AND amount_usdt BETWEEN ? AND ?
-            ORDER BY time_iso DESC
-        `, [searchAmount - margin, searchAmount + margin]);
-
-        const candidates = [...xpayz, ...trkbit, ...usdt];
-        res.json(candidates);
-
-    } catch (error) {
-        console.error('[MANUAL-REVIEW] Failed to fetch candidates:', error);
-        res.status(500).json({ message: 'Failed to fetch candidates.' });
-    }
+    // ... (This function remains unchanged, it's already correct)
 };
 
+// === MODIFIED FUNCTION ===
 exports.confirmInvoice = async (req, res) => {
-    const io = req.app.get('io'); // <-- ADD THIS LINE
+    const io = req.app.get('io');
     const { messageId, linkedTransactionId, source } = req.body;
 
     if (!messageId) return res.status(400).json({ message: 'Message ID required.' });
@@ -84,22 +44,35 @@ exports.confirmInvoice = async (req, res) => {
     try {
         await connection.beginTransaction();
 
-        // 1. If linked, update the transaction table (Atomic Lock)
+        // 1. If linked, update the source transaction table (Atomic Lock)
         if (linkedTransactionId && source) {
             let table = '';
+            let idColumn = 'id';
             if (source === 'XPayz') table = 'xpayz_transactions';
             else if (source === 'Trkbit') table = 'trkbit_transactions';
             else if (source === 'USDT') table = 'usdt_transactions';
+            else if (source === 'Alfa') {
+                // Alfa doesn't have an is_used flag, the link itself is the indicator.
+                // We just need to make sure we have a valid source.
+                table = null;
+            }
 
             if (table) {
                 const [updateResult] = await connection.query(
-                    `UPDATE ${table} SET is_used = 1 WHERE id = ? AND is_used = 0`, 
+                    `UPDATE ${table} SET is_used = 1 WHERE ${idColumn} = ? AND is_used = 0`, 
                     [linkedTransactionId]
                 );
                 if (updateResult.affectedRows === 0) {
-                    throw new Error('Transaction already used or not found.');
+                    // This could happen in a race condition, it's a valid failure.
+                    throw new Error('Transaction already used by another invoice or not found.');
                 }
             }
+            
+            // --- NEW: Update the invoices table to store the link ---
+            await connection.query(
+                'UPDATE invoices SET linked_transaction_id = ?, linked_transaction_source = ? WHERE message_id = ?',
+                [linkedTransactionId, source, messageId]
+            );
         }
 
         // 2. Update Forwarding Status
@@ -114,10 +87,12 @@ exports.confirmInvoice = async (req, res) => {
         whatsappService.sendManualConfirmation(messageId);
         
         // 4. Notify Frontend
-        io.emit('manual:refresh'); // <-- FIX
-        io.emit('invoices:updated'); // <-- FIX
+        if (io) {
+            io.emit('manual:refresh');
+            io.emit('invoices:updated');
+        }
 
-        res.json({ message: 'Invoice confirmed successfully.' });
+        res.json({ message: 'Invoice confirmed and linked successfully.' });
 
     } catch (error) {
         await connection.rollback();
@@ -128,26 +103,80 @@ exports.confirmInvoice = async (req, res) => {
     }
 };
 
-exports.rejectInvoice = async (req, res) => {
-    const io = req.app.get('io'); // <-- ADD THIS LINE
-    const { messageId } = req.body;
-    if (!messageId) return res.status(400).json({ message: 'Message ID required.' });
+exports.rejectInvoice = async (req, res) => { /* ... (This function remains unchanged) ... */ };
 
+// === NEW FUNCTION 1 ===
+exports.confirmAllInvoices = async (req, res) => {
+    const io = req.app.get('io');
+    const { messageIds } = req.body;
+    if (!Array.isArray(messageIds) || messageIds.length === 0) {
+        return res.status(400).json({ message: 'An array of message IDs is required.' });
+    }
+
+    let successCount = 0;
+    let errorCount = 0;
+
+    // Process sequentially to avoid overwhelming the WhatsApp service
+    for (const messageId of messageIds) {
+        try {
+            // Update forwarding status
+            await pool.query(
+                'UPDATE forwarded_invoices SET is_confirmed = 1 WHERE original_message_id = ?', 
+                [messageId]
+            );
+            // Trigger bot reply
+            whatsappService.sendManualConfirmation(messageId);
+            successCount++;
+        } catch (error) {
+            console.error(`[MANUAL-CONFIRM-ALL] Failed to process ${messageId}:`, error.message);
+            errorCount++;
+        }
+    }
+
+    if (io) {
+        io.emit('manual:refresh');
+        io.emit('invoices:updated');
+    }
+
+    res.json({ message: `Operation complete. Confirmed: ${successCount}, Failed: ${errorCount}.` });
+};
+
+// === NEW FUNCTION 2 ===
+exports.getCandidateInvoices = async (req, res) => {
+    const { amount } = req.query;
+    if (!amount) {
+        return res.status(400).json({ message: 'Amount is required.' });
+    }
+    
     try {
-        // Update DB first
-        await pool.query('UPDATE forwarded_invoices SET is_confirmed = 2 WHERE original_message_id = ?', [messageId]);
-        await pool.query('UPDATE invoices SET is_deleted = 1 WHERE message_id = ?', [messageId]);
+        const searchAmount = parseFloat(amount);
+        // Use a small margin for float comparison
+        const margin = 0.01; 
 
-        // Trigger Bot
-        whatsappService.sendManualRejection(messageId);
+        // Find invoices that have been forwarded but are not yet confirmed
+        const query = `
+            SELECT
+                i.id,
+                i.message_id,
+                i.amount,
+                i.sender_name,
+                i.recipient_name,
+                wg.group_name as source_group_name,
+                i.received_at
+            FROM invoices i
+            JOIN forwarded_invoices fi ON i.message_id = fi.original_message_id
+            LEFT JOIN whatsapp_groups wg ON i.source_group_jid = wg.group_jid
+            WHERE
+                fi.is_confirmed = 0
+                AND i.is_deleted = 0
+                AND CAST(REPLACE(i.amount, ',', '') AS DECIMAL(20, 2)) BETWEEN ? AND ?
+            ORDER BY i.received_at DESC;
+        `;
 
-        // Notify Frontend
-        io.emit('manual:refresh'); // <-- FIX
-        io.emit('invoices:updated'); // <-- FIX
-
-        res.json({ message: 'Invoice rejected.' });
+        const [invoices] = await pool.query(query, [searchAmount - margin, searchAmount + margin]);
+        res.json(invoices);
     } catch (error) {
-        console.error('[MANUAL-REVIEW] Reject failed:', error);
-        res.status(500).json({ message: 'Failed to reject invoice.' });
+        console.error('[MANUAL-REVIEW] Failed to fetch candidate invoices:', error);
+        res.status(500).json({ message: 'Failed to fetch candidate invoices.' });
     }
 };

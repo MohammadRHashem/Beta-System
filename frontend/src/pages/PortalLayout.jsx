@@ -51,6 +51,8 @@ const ClientName = styled.div`
   overflow: hidden;
   text-overflow: ellipsis;
   max-width: calc(100% - 250px);
+  text-transform: uppercase; /* <-- THIS LINE WAS ADDED */
+
   @media (max-width: 768px) {
     font-size: 1rem;
     max-width: calc(100% - 160px);

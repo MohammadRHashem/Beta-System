@@ -7,6 +7,7 @@ import Modal from '../components/Modal';
 import { FaFilePdf, FaSyncAlt, FaFileExcel } from 'react-icons/fa';
 import { format, subDays } from 'date-fns';
 import { useSocket } from '../context/SocketContext';
+import LinkInvoiceModal from '../components/LinkInvoiceModal';
 
 // Helper Hook
 const useDebounce = (value, delay) => {
@@ -95,16 +96,14 @@ const AlfaTrustPage = () => {
     const [hasNewData, setHasNewData] = useState(false);
     const [pagination, setPagination] = useState({ page: 1, limit: 50, totalPages: 1, totalRecords: 0 });
     
-    // === MODIFICATION: Update filter state to use a date range ===
     const today = format(new Date(), 'yyyy-MM-dd');
-    const [filters, setFilters] = useState({
-        search: '', 
-        dateFrom: today, // <-- Use dateFrom
-        dateTo: today,   // <-- Use dateTo
-        operation: ''
-    });
-    // =============================================================
+    const [filters, setFilters] = useState({ search: '', dateFrom: today, dateTo: today, operation: '' });
     
+    // === NEW STATE FOR MODAL ===
+    const [isLinkModalOpen, setIsLinkModalOpen] = useState(false);
+    const [selectedTransaction, setSelectedTransaction] = useState(null);
+    // ===========================
+
     const debouncedSearch = useDebounce(filters.search, 500);
 
     const fetchTransactions = useCallback(async (showLoading = true) => {
@@ -179,6 +178,15 @@ const AlfaTrustPage = () => {
 
     const handleManualSync = async () => { /* ... (no changes needed here) ... */ };
 
+    const openLinkModal = (tx) => {
+        setSelectedTransaction({
+            id: tx.transaction_id, // Use transaction_id for Alfa
+            amount: tx.value,
+            source: 'Alfa'
+        });
+        setIsLinkModalOpen(true);
+    };
+
     return (
         <>
             <PageContainer>
@@ -206,6 +214,7 @@ const AlfaTrustPage = () => {
                     loading={loading}
                     pagination={pagination}
                     setPagination={setPagination}
+                    onLinkClick={openLinkModal} // <-- PASS HANDLER
                 />
             </PageContainer>
             
@@ -213,6 +222,11 @@ const AlfaTrustPage = () => {
                 isOpen={isExportModalOpen}
                 onClose={() => setIsExportModalOpen(false)}
                 onExport={handleExportPdf}
+            />
+            <LinkInvoiceModal
+                isOpen={isLinkModalOpen}
+                onClose={() => { setIsLinkModalOpen(false); fetchTransactions(false); }} // Refresh list on close
+                transaction={selectedTransaction}
             />
         </>
     );

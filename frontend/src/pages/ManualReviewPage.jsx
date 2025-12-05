@@ -1,15 +1,39 @@
 import React, { useState, useEffect } from 'react';
 import styled from 'styled-components';
-import { getPendingManualInvoices, getManualCandidates, confirmManualInvoice, rejectManualInvoice, viewInvoiceMedia } from '../services/api';
+import { getPendingManualInvoices, getManualCandidates, confirmManualInvoice, rejectManualInvoice, viewInvoiceMedia, confirmAllManualInvoices } from '../services/api';
 import { useSocket } from '../context/SocketContext';
 import Modal from '../components/Modal';
-import { FaCheck, FaTimes, FaExternalLinkAlt, FaMagic } from 'react-icons/fa';
+import { FaCheck, FaTimes, FaExternalLinkAlt, FaMagic, FaCheckDouble } from 'react-icons/fa';
 import { format } from 'date-fns';
 
 const PageContainer = styled.div`
     display: flex;
     flex-direction: column;
     gap: 1.5rem;
+`;
+
+const Header = styled.div`
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+`;
+
+const ConfirmAllButton = styled.button`
+    background-color: ${({ theme }) => theme.primary};
+    color: white;
+    border: none;
+    padding: 0.6rem 1.2rem;
+    border-radius: 6px;
+    font-weight: 600;
+    cursor: pointer;
+    font-size: 0.9rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    &:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
 `;
 
 const Card = styled.div`
@@ -58,7 +82,6 @@ const ManualReviewPage = () => {
     const [invoices, setInvoices] = useState([]);
     const [loading, setLoading] = useState(false);
     
-    // Modal State
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [selectedInvoice, setSelectedInvoice] = useState(null);
     const [candidates, setCandidates] = useState([]);
@@ -82,12 +105,21 @@ const ManualReviewPage = () => {
     }, [socket]);
 
     const handleReject = async (invoice) => {
-        if (!confirm('Reject this invoice? Bot will reply "no caiu".')) return;
+        if (!window.confirm('Are you sure you want to REJECT this invoice? This will reply "no caiu" to the client.')) return;
         try {
             await rejectManualInvoice(invoice.message_id);
-            // The WebSocket event will handle the UI update.
-        } catch (e) { 
-            alert('Failed to reject.'); 
+            // UI will update via WebSocket
+        } catch (e) { alert('Failed to reject.'); }
+    };
+
+    const handleConfirmAll = async () => {
+        if (!window.confirm(`Are you sure you want to confirm all ${invoices.length} pending invoices? This action cannot be undone.`)) return;
+        try {
+            const messageIds = invoices.map(inv => inv.message_id);
+            await confirmAllManualInvoices(messageIds);
+            // UI will update via WebSocket
+        } catch (e) {
+            alert('An error occurred while trying to confirm all invoices.');
         }
     };
 
@@ -96,38 +128,61 @@ const ManualReviewPage = () => {
         setIsModalOpen(true);
         setLoadingCandidates(true);
         try {
-            const amount = parseFloat(invoice.amount.replace(/,/g, '')); // Normalize '1.000,00' -> 1000.00 if needed, or just '1000.00'
-            const { data } = await getManualCandidates(amount);
-            setCandidates(data);
-        } catch (e) { console.error(e); setCandidates([]); }
-        finally { setLoadingCandidates(false); }
+            const amount = parseFloat(invoice.amount.replace(/,/g, ''));
+            const { data: allCandidates } = await getManualCandidates(amount);
+            
+            // --- NEW: Filter logic ---
+            const recipientName = (invoice.recipient_name || '').toLowerCase();
+            const filtered = allCandidates.filter(cand => {
+                if (recipientName.includes('upgrade zone')) {
+                    return cand.source === 'XPayz';
+                }
+                if (recipientName.includes('cross') || recipientName.includes('trkbit')) {
+                    return cand.source === 'Trkbit';
+                }
+                // Add more rules here if needed
+                return true; // Show all if no specific rule matches
+            });
+
+            setCandidates(filtered);
+        } catch (e) { 
+            console.error(e); 
+            setCandidates([]); 
+        } finally { 
+            setLoadingCandidates(false); 
+        }
     };
 
     const handleFinalConfirm = async (linkedTx = null) => {
         if (!selectedInvoice) return;
+        if (!window.confirm('Are you sure you want to CONFIRM this invoice? This will reply "Caiu" to the client.')) return;
+        
         try {
-            // Close the modal immediately for better UX
-            setIsModalOpen(false); 
-            
+            setIsModalOpen(false);
             await confirmManualInvoice({
                 messageId: selectedInvoice.message_id,
                 linkedTransactionId: linkedTx ? linkedTx.id : null,
                 source: linkedTx ? linkedTx.source : null
             });
-            // The WebSocket event will handle removing the item from the list.
+            // UI will update via WebSocket
         } catch (e) { 
-            alert(e.response?.data?.message || 'Failed to confirm invoice.'); 
+            alert(e.response?.data?.message || 'Failed to confirm.'); 
         }
     };
 
     return (
         <PageContainer>
-            <div style={{display: 'flex', justifyContent: 'space-between'}}>
+            <Header>
                 <h2>Manual Confirmation Center</h2>
-                <div style={{background: '#E3FCEF', color: '#006644', padding: '0.5rem 1rem', borderRadius: '20px', fontWeight: 'bold'}}>
-                    {invoices.length} Pending
+                <div style={{display: 'flex', alignItems: 'center', gap: '1rem'}}>
+                    <ConfirmAllButton onClick={handleConfirmAll} disabled={invoices.length === 0}>
+                        <FaCheckDouble /> Confirm All ({invoices.length})
+                    </ConfirmAllButton>
+                    <div style={{background: '#E3FCEF', color: '#006644', padding: '0.5rem 1rem', borderRadius: '20px', fontWeight: 'bold'}}>
+                        {invoices.length} Pending
+                    </div>
                 </div>
-            </div>
+            </Header>
             
             <Card>
                 {loading ? <p>Loading...</p> : (
@@ -137,18 +192,20 @@ const ManualReviewPage = () => {
                                 <th>Date</th>
                                 <th>Source Group</th>
                                 <th>Sender</th>
+                                <th>Recipient</th> {/* <-- NEW COLUMN */}
                                 <th>Amount</th>
                                 <th>Media</th>
                                 <th>Actions</th>
                             </tr>
                         </thead>
                         <tbody>
-                            {invoices.length === 0 ? (<tr><td colSpan="6" style={{textAlign: 'center', padding: '2rem'}}>All caught up! No pending reviews.</td></tr>) :
+                            {invoices.length === 0 ? (<tr><td colSpan="7" style={{textAlign: 'center', padding: '2rem'}}>All caught up! No pending reviews.</td></tr>) :
                             invoices.map(inv => (
                                 <tr key={inv.id}>
                                     <td>{format(new Date(inv.received_at), 'dd/MM HH:mm')}</td>
                                     <td>{inv.source_group_name}</td>
                                     <td>{inv.sender_name}</td>
+                                    <td>{inv.recipient_name}</td> {/* <-- NEW COLUMN */}
                                     <td style={{fontWeight: 'bold'}}>{inv.amount}</td>
                                     <td>
                                         <MediaLink onClick={() => viewInvoiceMedia(inv.id)}>View Image</MediaLink>

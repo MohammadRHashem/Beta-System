@@ -1,6 +1,6 @@
 import React from 'react';
 import styled, { css } from 'styled-components';
-import { FaDownload } from 'react-icons/fa';
+import { FaDownload, FaLink } from 'react-icons/fa';
 import Pagination from './Pagination';
 
 const TableWrapper = styled.div`
@@ -67,7 +67,15 @@ const Td = styled.td`
     }
 `;
 
-const AlfaTrustTable = ({ transactions, loading, pagination, setPagination }) => {
+const ActionLink = styled(FaLink)`
+    cursor: pointer;
+    color: ${({ theme }) => theme.primary};
+    &:hover {
+        color: ${({ theme }) => theme.secondary};
+    }
+`;
+
+const AlfaTrustTable = ({ transactions, loading, pagination, setPagination, onLinkClick }) => {
     const formatDateTime = (isoString) => {
         if (!isoString) return 'N/A';
         try {
@@ -84,8 +92,8 @@ const AlfaTrustTable = ({ transactions, loading, pagination, setPagination }) =>
         alert(`Receipt download for individual transactions is not supported by the bank's API at this time.`);
     };
 
-    if (loading) return <p style={{ textAlign: 'center', padding: '2rem' }}>Loading transactions...</p>;
-    if (!transactions || transactions.length === 0) return <p style={{ textAlign: 'center', padding: '2rem' }}>No transactions found for the selected criteria.</p>;
+    if (loading) return <p>Loading transactions...</p>;
+    if (!transactions || transactions.length === 0) return <p>No transactions found.</p>;
 
     return (
         <>
@@ -134,13 +142,17 @@ const AlfaTrustTable = ({ transactions, loading, pagination, setPagination }) =>
                             return (
                                 <Tr key={tx.id}>
                                     <Td>{formatDateTime(tx.inclusion_date)}</Td>
-                                    <Td>{transactionId}</Td>
+                                    <Td>{tx.transaction_id || tx.end_to_end_id}</Td>
                                     <Td>{counterpartyName}</Td>
                                     <Td className="currency" isCredit={tx.operation === 'C'}>
                                         {tx.operation === 'D' ? '-' : ''}
                                         {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(tx.value)}
                                     </Td>
                                     <Td className="actions">
+                                        {/* === NEW LOGIC: Show link button if not linked and it's a credit transaction === */}
+                                        {tx.operation === 'C' && !tx.linked_invoice_id && (
+                                            <ActionLink onClick={() => onLinkClick(tx)} title="Link to Invoice" />
+                                        )}
                                         <FaDownload onClick={() => handleDownloadReceipt(tx)} title="Download Receipt (Not Available)" />
                                     </Td>
                                 </Tr>

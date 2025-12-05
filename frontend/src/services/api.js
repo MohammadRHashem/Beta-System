@@ -178,6 +178,8 @@ export const getManualCandidates = (amount) => apiClient.get('/manual/candidates
 export const confirmManualInvoice = (data) => apiClient.post('/manual/confirm', data);
 export const rejectManualInvoice = (messageId) => apiClient.post('/manual/reject', { messageId });
 
+export const confirmAllManualInvoices = (messageIds) => apiClient.post('/manual/confirm-all', { messageIds });
+export const getCandidateInvoices = (amount) => apiClient.get('/manual/candidate-invoices', { params: { amount } });
 
 
 export const exportAlfaExcel = async (params) => {

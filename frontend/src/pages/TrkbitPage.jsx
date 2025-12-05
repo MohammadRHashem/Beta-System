@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import styled from 'styled-components';
 import { getTrkbitTransactions, exportTrkbit } from '../services/api';
-import { FaFileExcel, FaSearch } from 'react-icons/fa';
+import { FaFileExcel, FaSearch, FaLink } from 'react-icons/fa';
 import Pagination from '../components/Pagination';
 import { format } from 'date-fns';
+import LinkInvoiceModal from '../components/LinkInvoiceModal';
 
 const PageContainer = styled.div`
     display: flex;
@@ -74,11 +75,23 @@ const Table = styled.table`
     th { background: #f9f9f9; }
 `;
 
+const ActionLink = styled(FaLink)`
+    cursor: pointer;
+    color: ${({ theme }) => theme.primary};
+    &:hover {
+        color: ${({ theme }) => theme.secondary};
+    }
+`;
+
 const TrkbitPage = () => {
     const [transactions, setTransactions] = useState([]);
     const [loading, setLoading] = useState(false);
     const [filters, setFilters] = useState({ search: '', dateFrom: '', dateTo: '' });
     const [pagination, setPagination] = useState({ page: 1, limit: 50, totalPages: 1, totalRecords: 0 });
+
+    // === NEW STATE FOR MODAL ===
+    const [isLinkModalOpen, setIsLinkModalOpen] = useState(false);
+    const [selectedTransaction, setSelectedTransaction] = useState(null);
 
     const fetchData = useCallback(async () => {
         setLoading(true);
@@ -119,12 +132,22 @@ const TrkbitPage = () => {
         }).format(date);
     };
 
+    const openLinkModal = (tx) => {
+        setSelectedTransaction({
+            id: tx.uid, // Use uid for Trkbit
+            amount: tx.amount,
+            source: 'Trkbit'
+        });
+        setIsLinkModalOpen(true);
+    };
+
     return (
-        <PageContainer>
-            <Header>
-                <Title>Trkbit Transactions</Title>
-                <Button onClick={handleExport}><FaFileExcel /> Export Excel</Button>
-            </Header>
+        <>
+            <PageContainer>
+                <Header>
+                    <Title>Trkbit Transactions</Title>
+                    <Button onClick={handleExport}><FaFileExcel /> Export Excel</Button>
+                </Header>
 
             <FilterContainer>
                 <InputGroup>
@@ -143,31 +166,44 @@ const TrkbitPage = () => {
             </FilterContainer>
 
             <TableWrapper>
-                <Table>
-                    <thead>
-                        <tr>
-                            <th>Date/Time</th>
-                            <th>Payer Name</th>
-                            <th>Amount</th>
-                            <th>Tx ID</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {loading ? <tr><td colSpan="4">Loading...</td></tr> : transactions.map(tx => (
-                            <tr key={tx.id}>
-                                <td>{formatAdjustedDate(tx.tx_date)}</td>
-                                <td>{tx.tx_payer_name}</td>
-                                <td style={{color: '#217346', fontWeight: 'bold'}}>
-                                    {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(tx.amount)}
-                                </td>
-                                <td>{tx.tx_id}</td>
+                    <Table>
+                        <thead>
+                            <tr>
+                                <th>Date/Time</th>
+                                <th>Payer Name</th>
+                                <th>Amount</th>
+                                <th>Tx ID</th>
+                                <th>Actions</th> {/* <-- NEW COLUMN */}
                             </tr>
-                        ))}
-                    </tbody>
-                </Table>
-            </TableWrapper>
-            <Pagination pagination={pagination} setPagination={setPagination} />
-        </PageContainer>
+                        </thead>
+                        <tbody>
+                            {loading ? <tr><td colSpan="5">Loading...</td></tr> : transactions.map(tx => (
+                                <tr key={tx.id}>
+                                    <td>{formatAdjustedDate(tx.tx_date)}</td>
+                                    <td>{tx.tx_payer_name}</td>
+                                    <td style={{color: '#217346', fontWeight: 'bold'}}>
+                                        {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(tx.amount)}
+                                    </td>
+                                    <td>{tx.tx_id}</td>
+                                    <td>
+                                        {/* Show link icon only if not used */}
+                                        {!tx.is_used && <ActionLink onClick={() => openLinkModal(tx)} title="Link to Invoice" />}
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </Table>
+                </TableWrapper>
+                <Pagination pagination={pagination} setPagination={setPagination} />
+            </PageContainer>
+            
+            {/* === RENDER THE MODAL === */}
+            <LinkInvoiceModal 
+                isOpen={isLinkModalOpen}
+                onClose={() => setIsLinkModalOpen(false)}
+                transaction={selectedTransaction}
+            />
+        </>
     );
 };
 

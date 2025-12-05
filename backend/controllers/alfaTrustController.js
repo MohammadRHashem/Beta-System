@@ -30,7 +30,8 @@ exports.getTransactions = async (req, res) => {
 
     try {
         let query = `
-            FROM alfa_transactions
+            FROM alfa_transactions at
+            LEFT JOIN invoices i ON at.transaction_id = i.linked_transaction_id AND i.linked_transaction_source = 'Alfa'
             WHERE 1=1
         `;
         const params = [];
@@ -68,9 +69,10 @@ exports.getTransactions = async (req, res) => {
         }
 
         const dataQuery = `
-            SELECT id, end_to_end_id, inclusion_date, type, operation, value, title, description, payer_name, raw_details
+            SELECT at.*, i.id as linked_invoice_id
             ${query}
-            ORDER BY inclusion_date ${sortOrder === 'asc' ? 'ASC' : 'DESC'}
+            GROUP BY at.id
+            ORDER BY at.inclusion_date ${sortOrder === 'asc' ? 'ASC' : 'DESC'}
             LIMIT ? OFFSET ?
         `;
         const finalParams = [...params, parseInt(limit), (page - 1) * limit];
