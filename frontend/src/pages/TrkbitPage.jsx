@@ -82,6 +82,15 @@ const ActionLink = styled(FaLink)`
     }
 `;
 
+const ActionIcon = styled.span`
+    cursor: pointer;
+    font-size: 1.1rem;
+    color: ${({ theme, linked }) => linked ? theme.success : theme.lightText};
+    &:hover {
+        color: ${({ theme, linked }) => linked ? theme.success : theme.primary};
+    }
+`;
+
 const TrkbitPage = () => {
     const [transactions, setTransactions] = useState([]);
     const [loading, setLoading] = useState(false);

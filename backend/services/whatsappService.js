@@ -593,6 +593,7 @@ const invoiceWorker = new Worker(
               }
           }
 
+          let matchId = confirmedId;
           if (confirmedId) {
               // 3. Atomic Update (Prevent Double Spending)
               const [updateResult] = await pool.query('UPDATE trkbit_transactions SET is_used = 1 WHERE uid = ? AND is_used = 0', [matchId]);

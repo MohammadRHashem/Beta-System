@@ -75,6 +75,15 @@ const ActionLink = styled(FaLink)`
     }
 `;
 
+const ActionIcon = styled.span`
+    cursor: pointer;
+    font-size: 1.1rem;
+    color: ${({ theme, linked }) => linked ? theme.success : theme.lightText};
+    &:hover {
+        color: ${({ theme, linked }) => linked ? theme.success : theme.primary};
+    }
+`;
+
 const AlfaTrustTable = ({ transactions, loading, pagination, setPagination, onLinkClick }) => {
     const formatDateTime = (isoString) => {
         if (!isoString) return 'N/A';
