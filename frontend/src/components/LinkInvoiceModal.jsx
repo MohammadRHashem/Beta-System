@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import styled from 'styled-components';
 import Modal from './Modal';
+import { FaLink } from 'react-icons/fa';
 import { getCandidateInvoices, confirmManualInvoice } from '../services/api';
 import { format } from 'date-fns';
 

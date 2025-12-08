@@ -67,14 +67,6 @@ const Td = styled.td`
     }
 `;
 
-const ActionLink = styled(FaLink)`
-    cursor: pointer;
-    color: ${({ theme }) => theme.primary};
-    &:hover {
-        color: ${({ theme }) => theme.secondary};
-    }
-`;
-
 const ActionIcon = styled.span`
     cursor: pointer;
     font-size: 1.1rem;
