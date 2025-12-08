@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import styled from 'styled-components';
 import Modal from './Modal';
-import { getCandidateInvoices, confirmManualInvoice } from '../services/api';
+import { getManualCandidates, confirmManualInvoice } from '../services/api';
 import { format } from 'date-fns';
+import { FaLink } from 'react-icons/fa';
 
 const ListContainer = styled.div`
     max-height: 400px;
@@ -44,29 +45,30 @@ const LinkButton = styled.button`
     cursor: pointer;
 `;
 
-const LinkInvoiceModal = ({ isOpen, onClose, transaction }) => {
+const LinkTransactionModal = ({ isOpen, onClose, invoice }) => {
     const [candidates, setCandidates] = useState([]);
     const [loading, setLoading] = useState(false);
 
     useEffect(() => {
-        if (isOpen && transaction) {
+        if (isOpen && invoice) {
             const fetchCandidates = async () => {
                 setLoading(true);
                 try {
-                    const { data } = await getCandidateInvoices(transaction.amount);
+                    const amount = parseFloat(invoice.amount.replace(/,/g, ''));
+                    const { data } = await getManualCandidates(amount, invoice.recipient_name);
                     setCandidates(data);
                 } catch (error) {
-                    console.error("Failed to fetch candidate invoices:", error);
+                    console.error("Failed to fetch candidate transactions:", error);
                 } finally {
                     setLoading(false);
                 }
             };
             fetchCandidates();
         }
-    }, [isOpen, transaction]);
+    }, [isOpen, invoice]);
 
-    const handleLink = async (invoice) => {
-        if (!window.confirm(`Link this ${transaction.source} transaction to the invoice from "${invoice.source_group_name}"? This will confirm the invoice.`)) {
+    const handleLink = async (transaction) => {
+        if (!window.confirm(`Link this invoice to the ${transaction.source} transaction from "${transaction.name}"?`)) {
             return;
         }
         try {
@@ -75,35 +77,35 @@ const LinkInvoiceModal = ({ isOpen, onClose, transaction }) => {
                 linkedTransactionId: transaction.id,
                 source: transaction.source
             });
-            onClose(); // Close modal on success
+            onClose();
         } catch (error) {
-            alert(error.response?.data?.message || "Failed to link and confirm invoice.");
+            alert(error.response?.data?.message || "Failed to link invoice.");
         }
     };
 
     return (
-        <Modal isOpen={isOpen} onClose={onClose} maxWidth="700px">
-            <h2>Link to Pending Invoice</h2>
+        <Modal isOpen={isOpen} onClose={onClose} maxWidth="800px">
+            <h2>Link to Bank Transaction</h2>
             <p>
-                Select a pending WhatsApp invoice to link with this bank transaction.
+                Select an unused bank transaction to link with this invoice.
                 <br />
-                <strong>Amount: {transaction?.amount}</strong> | <strong>Source: {transaction?.source}</strong>
+                <strong>Amount: {invoice?.amount}</strong> | <strong>Recipient: {invoice?.recipient_name}</strong>
             </p>
             <ListContainer>
                 {loading ? <p>Loading...</p> : (
                     candidates.length === 0 ? (
-                        <p style={{padding: '1rem', textAlign: 'center'}}>No pending invoices found for this amount.</p>
+                        <p style={{padding: '1rem', textAlign: 'center'}}>No unused bank transactions found for this amount.</p>
                     ) : (
-                        candidates.map(inv => (
-                            <InvoiceItem key={inv.id}>
-                                <InvoiceInfo>
-                                    <p><strong>{inv.source_group_name}</strong> ({inv.sender_name})</p>
-                                    <small>{format(new Date(inv.received_at), 'dd/MM/yyyy HH:mm')}</small>
-                                </InvoiceInfo>
-                                <LinkButton onClick={() => handleLink(inv)}>
-                                    <FaLink /> Link & Confirm
+                        candidates.map(tx => (
+                            <TransactionItem key={`${tx.source}-${tx.id}`}>
+                                <TransactionInfo>
+                                    <p><strong>{tx.name}</strong> ({tx.source})</p>
+                                    <small>{format(new Date(tx.date), 'dd/MM/yyyy HH:mm')}</small>
+                                </TransactionInfo>
+                                <LinkButton onClick={() => handleLink(tx)}>
+                                    <FaLink /> Link
                                 </LinkButton>
-                            </InvoiceItem>
+                            </TransactionItem>
                         ))
                     )
                 )}
@@ -112,4 +114,4 @@ const LinkInvoiceModal = ({ isOpen, onClose, transaction }) => {
     );
 };
 
-export default LinkInvoiceModal;
+export default LinkTransactionModal;

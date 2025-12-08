@@ -1,7 +1,7 @@
 import React, { useMemo } from 'react';
 import styled, { css } from 'styled-components';
 import { viewInvoiceMedia, deleteInvoice } from '../services/api';
-import { FaEdit, FaTrashAlt, FaEye } from 'react-icons/fa';
+import { FaEdit, FaTrashAlt, FaEye, FaLink, FaUnlink } from 'react-icons/fa';
 import { formatInTimeZone } from 'date-fns-tz';
 import Pagination from './Pagination';
 
@@ -92,7 +92,7 @@ const Td = styled.td`
     }
 `;
 
-const InvoiceTable = ({ invoices, loading, onEdit, pagination, setPagination }) => {
+const InvoiceTable = ({ invoices, loading, onEdit, onLink, pagination, setPagination }) => {
 
     // This logic correctly creates a map of transaction IDs to their counts.
     const duplicateCounts = useMemo(() => {
@@ -138,12 +138,13 @@ const InvoiceTable = ({ invoices, loading, onEdit, pagination, setPagination }) 
                 <Table>
                     <Thead>
                         <tr>
-                            <Th>Received At (GMT-03:00)</Th>
+                            <Th>Received At</Th>
                             <Th>Transaction ID</Th>
                             <Th>Sender</Th>
                             <Th>Recipient</Th>
                             <Th>Source Group</Th>
                             <Th className="currency">Amount</Th>
+                            <Th>Link Status</Th>
                             <Th>Actions</Th>
                         </tr>
                     </Thead>
@@ -163,14 +164,30 @@ const InvoiceTable = ({ invoices, loading, onEdit, pagination, setPagination }) 
                                 <Tr key={inv.id} isDuplicate={isDuplicate} isDeleted={!!inv.is_deleted}>
                                     <Td>{formatDisplayDateTime(inv.received_at)}</Td>
                                     <Td>{inv.transaction_id || ''}</Td>
-                                    <Td>{inv.sender_name || (needsReview ? 'REVIEW' : '')}</Td>
-                                    <Td>{inv.recipient_name || (needsReview ? 'REVIEW' : '')}</Td>
+                                    <Td>{inv.sender_name || (needsReview && 'REVIEW')}</Td>
+                                    <Td>{inv.recipient_name || (needsReview && 'REVIEW')}</Td>
                                     <Td>{inv.source_group_name || ''}</Td>
-                                    <Td className={`currency ${needsReview && inv.amount === '0.00' ? 'review' : ''}`}>{inv.amount || ''}</Td>
+                                    <Td className={`currency ${needsReview && 'review'}`}>{inv.amount || ''}</Td>
+                                    <Td style={{ textAlign: 'center' }}>
+                                        {inv.linked_transaction_source ? (
+                                            <FaLink 
+                                                style={{ color: '#00C49A', fontSize: '1.1rem' }} 
+                                                title={`Linked to: ${inv.linked_transaction_source} - ${inv.linked_transaction_id}`} 
+                                            />
+                                        ) : (
+                                            !inv.is_deleted && inv.message_id && (
+                                                <FaUnlink 
+                                                    style={{ cursor: 'pointer', color: '#6B7C93', fontSize: '1.1rem' }} 
+                                                    title="Link to a bank transaction"
+                                                    onClick={() => onLink(inv)}
+                                                />
+                                            )
+                                        )}
+                                    </Td>
                                     <Td className="actions">
-                                        {inv.media_path && <FaEye onClick={() => handleViewMedia(inv.id)} title="View Media" />}
-                                        <FaEdit onClick={() => onEdit(inv)} title="Edit" />
-                                        <FaTrashAlt onClick={() => handleDelete(inv.id)} title="Delete Permanently" />
+                                        {inv.media_path && <FaEye onClick={() => handleViewMedia(inv.id)} />}
+                                        <FaEdit onClick={() => onEdit(inv)} />
+                                        <FaTrashAlt onClick={() => handleDelete(inv.id)} />
                                     </Td>
                                 </Tr>
                             );

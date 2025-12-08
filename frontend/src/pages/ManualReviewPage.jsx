@@ -89,7 +89,6 @@ const ManualReviewPage = () => {
     const socket = useSocket();
     const [invoices, setInvoices] = useState([]);
     const [loading, setLoading] = useState(false);
-    
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [selectedInvoice, setSelectedInvoice] = useState(null);
     const [candidates, setCandidates] = useState([]);
@@ -116,17 +115,14 @@ const ManualReviewPage = () => {
         if (!window.confirm('Are you sure you want to REJECT this invoice? This will reply "no caiu" to the client.')) return;
         try {
             await rejectManualInvoice(invoice.message_id);
-            // UI will update via WebSocket
         } catch (e) { alert('Failed to reject.'); }
     };
 
-    // === MODIFIED: Logic for Clear All ===
     const handleClearAll = async () => {
         if (!window.confirm(`Are you sure you want to CLEAR all ${invoices.length} pending invoices from this list? This will NOT send a confirmation to the clients.`)) return;
         try {
             const messageIds = invoices.map(inv => inv.message_id);
             await clearAllPendingInvoices(messageIds);
-            // UI will update via WebSocket
         } catch (e) {
             alert('An error occurred while trying to clear the list.');
         }
@@ -164,11 +160,9 @@ const ManualReviewPage = () => {
 
     const handleFinalConfirm = async (linkedTx = null) => {
         if (!selectedInvoice) return;
-        // Use a more specific confirmation message
         const confirmText = linkedTx
             ? `Link this ${linkedTx.source} transaction and confirm the invoice?`
             : `Force confirm this invoice without linking a bank transaction?`;
-            
         if (!window.confirm(confirmText + '\nThis will reply "Caiu" to the client.')) return;
         
         try {
@@ -178,7 +172,6 @@ const ManualReviewPage = () => {
                 linkedTransactionId: linkedTx ? linkedTx.id : null,
                 source: linkedTx ? linkedTx.source : null
             });
-            // UI will update via WebSocket
         } catch (e) { 
             alert(e.response?.data?.message || 'Failed to confirm.'); 
         }
@@ -189,7 +182,6 @@ const ManualReviewPage = () => {
             <Header>
                 <h2>Manual Confirmation Center</h2>
                 <div style={{display: 'flex', alignItems: 'center', gap: '1rem'}}>
-                    {/* === MODIFIED: Button text and handler === */}
                     <ClearAllButton onClick={handleClearAll} disabled={invoices.length === 0}>
                         <FaBroom /> Clear All ({invoices.length})
                     </ClearAllButton>
@@ -207,14 +199,14 @@ const ManualReviewPage = () => {
                                 <th>Date</th>
                                 <th>Source Group</th>
                                 <th>Sender</th>
-                                <th>Recipient</th>
+                                <th>Recipient</th> {/* <-- NEW COLUMN */}
                                 <th>Amount</th>
                                 <th>Media</th>
                                 <th>Actions</th>
                             </tr>
                         </thead>
                         <tbody>
-                            {invoices.length === 0 ? (<tr><td colSpan="7" style={{textAlign: 'center', padding: '2rem'}}>All caught up! No pending reviews.</td></tr>) :
+                            {invoices.length === 0 ? (<tr><td colSpan="7">All caught up!</td></tr>) :
                             invoices.map(inv => (
                                 <tr key={inv.id}>
                                     <td>{format(new Date(inv.received_at), 'dd/MM HH:mm')}</td>

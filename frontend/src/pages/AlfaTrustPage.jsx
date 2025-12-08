@@ -176,14 +176,10 @@ const AlfaTrustPage = () => {
         }
     };
 
-    const handleManualSync = async () => { /* ... (no changes needed here) ... */ };
+    const handleManualSync = async () => { window.alert("Manual sync is not available for Alfa Trust at this time."); return;};
 
     const openLinkModal = (tx) => {
-        setSelectedTransaction({
-            id: tx.transaction_id, // Use transaction_id for Alfa
-            amount: tx.value,
-            source: 'Alfa'
-        });
+        setSelectedTransaction({ id: tx.transaction_id, amount: tx.value, source: 'Alfa' });
         setIsLinkModalOpen(true);
     };
 
@@ -214,7 +210,7 @@ const AlfaTrustPage = () => {
                     loading={loading}
                     pagination={pagination}
                     setPagination={setPagination}
-                    onLinkClick={openLinkModal} // <-- PASS HANDLER
+                    onLinkClick={openLinkModal}
                 />
             </PageContainer>
             
@@ -225,7 +221,7 @@ const AlfaTrustPage = () => {
             />
             <LinkInvoiceModal
                 isOpen={isLinkModalOpen}
-                onClose={() => { setIsLinkModalOpen(false); fetchTransactions(false); }} // Refresh list on close
+                onClose={() => { setIsLinkModalOpen(false); fetchTransactions(false); }}
                 transaction={selectedTransaction}
             />
         </>

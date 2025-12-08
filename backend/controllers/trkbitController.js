@@ -6,30 +6,32 @@ exports.getTransactions = async (req, res) => {
     const offset = (page - 1) * limit;
 
     try {
-        let query = "FROM trkbit_transactions WHERE 1=1";
+        let query = `
+            FROM trkbit_transactions tt
+            LEFT JOIN invoices i ON tt.uid = i.linked_transaction_id AND i.linked_transaction_source = 'Trkbit'
+            WHERE 1=1
+        `;
         const params = [];
 
         if (search) {
-            query += " AND (tx_payer_name LIKE ? OR tx_id LIKE ? OR e2e_id LIKE ? OR amount LIKE ?)";
+            query += " AND (tt.tx_payer_name LIKE ? OR tt.tx_id LIKE ? OR tt.e2e_id LIKE ? OR tt.amount LIKE ?)";
             const searchTerm = `%${search}%`;
             params.push(searchTerm, searchTerm, searchTerm, searchTerm);
         }
-        if (dateFrom) {
-            query += " AND DATE(tx_date) >= ?";
-            params.push(dateFrom);
-        }
-        if (dateTo) {
-            query += " AND DATE(tx_date) <= ?";
-            params.push(dateTo);
-        }
+        if (dateFrom) { query += " AND DATE(tt.tx_date) >= ?"; params.push(dateFrom); }
+        if (dateTo) { query += " AND DATE(tt.tx_date) <= ?"; params.push(dateTo); }
 
-        const countQuery = `SELECT count(*) as total ${query}`;
+        const countQuery = `SELECT count(DISTINCT tt.id) as total ${query}`;
         const [[{ total }]] = await pool.query(countQuery, params);
 
         const dataQuery = `
-            SELECT id, tx_date, amount, tx_type, tx_payer_name, tx_id, e2e_id
+            SELECT 
+                tt.*,
+                i.id as linked_invoice_id,
+                i.message_id as linked_invoice_message_id
             ${query}
-            ORDER BY tx_date DESC
+            GROUP BY tt.id
+            ORDER BY tt.tx_date DESC
             LIMIT ? OFFSET ?
         `;
         const finalParams = [...params, parseInt(limit), parseInt(offset)];

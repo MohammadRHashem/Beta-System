@@ -7,6 +7,7 @@ import InvoiceFilter from '../components/InvoiceFilter';
 import InvoiceTable from '../components/InvoiceTable';
 import InvoiceModal from '../components/InvoiceModal';
 import { useSocket } from '../context/SocketContext';
+import LinkTransactionModal from '../components/LinkTransactionModal';
 
 // Debounce hook to prevent excessive API calls while typing
 const useDebounce = (value, delay) => {
@@ -82,142 +83,176 @@ const RefreshBanner = styled.div`
     gap: 0.75rem;
 `;
 
-const InvoicesPage = ({ allGroups }) => { 
-    const socket = useSocket(); 
-    const [invoices, setInvoices] = useState([]);
-    const [loading, setLoading] = useState(true);
-    const [isExporting, setIsExporting] = useState(false);
-    const [recipientNames, setRecipientNames] = useState([]);
-    const [hasNewInvoices, setHasNewInvoices] = useState(false);
-    const [pagination, setPagination] = useState({ page: 1, limit: 50, totalPages: 1, totalRecords: 0 });
-    
-    const [filters, setFilters] = useState({
-        search: '', dateFrom: '', dateTo: '', timeFrom: '', timeTo: '',
-        sourceGroups: [], recipientNames: [],
-        reviewStatus: '', status: '',
-    });
-    
-    const { isAuthenticated } = useAuth();
-    const [isInvoiceModalOpen, setIsInvoiceModalOpen] = useState(false);
-    const [editingInvoice, setEditingInvoice] = useState(null);
+const InvoicesPage = ({ allGroups }) => {
+  const socket = useSocket();
+  const [invoices, setInvoices] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [isExporting, setIsExporting] = useState(false);
+  const [recipientNames, setRecipientNames] = useState([]);
+  const [hasNewInvoices, setHasNewInvoices] = useState(false);
+  const [pagination, setPagination] = useState({
+    page: 1,
+    limit: 50,
+    totalPages: 1,
+    totalRecords: 0,
+  });
+  const [filters, setFilters] = useState({
+    /* ... */
+  });
+  const { isAuthenticated } = useAuth();
+  const [isInvoiceModalOpen, setIsInvoiceModalOpen] = useState(false);
+  const [editingInvoice, setEditingInvoice] = useState(null);
+  const [isLinkModalOpen, setIsLinkModalOpen] = useState(false);
+  const [linkingInvoice, setLinkingInvoice] = useState(null);
 
-    const debouncedSearch = useDebounce(filters.search, 500);
+  const debouncedSearch = useDebounce(filters.search, 500);
 
-    const fetchInvoices = useCallback(async () => {
-        setLoading(true);
-        setHasNewInvoices(false);
-        try {
-            const params = { 
-                ...filters,
-                search: debouncedSearch,
-                page: pagination.page, 
-                limit: pagination.limit 
-            };
-            Object.keys(params).forEach(key => (!params[key] || (Array.isArray(params[key]) && params[key].length === 0)) && delete params[key]);
-            
-            const { data } = await getInvoices(params);
-            setInvoices(data.invoices || []);
-            setPagination(prev => ({ ...prev, totalPages: data.totalPages, totalRecords: data.totalRecords }));
-        } catch (error) {
-            console.error("Failed to fetch invoices:", error);
-            setInvoices([]);
-        } finally {
-            setLoading(false);
-        }
-    }, [pagination.page, pagination.limit, filters, debouncedSearch]);
+  const fetchInvoices = useCallback(async () => {
+    setLoading(true);
+    setHasNewInvoices(false);
+    try {
+      const params = {
+        ...filters,
+        search: debouncedSearch,
+        page: pagination.page,
+        limit: pagination.limit,
+      };
+      Object.keys(params).forEach(
+        (key) =>
+          (!params[key] ||
+            (Array.isArray(params[key]) && params[key].length === 0)) &&
+          delete params[key]
+      );
 
-    useEffect(() => {
-        if (isAuthenticated) { 
-            fetchInvoices(); 
-        }
-    }, [fetchInvoices, isAuthenticated]);
-    
-    useEffect(() => {
-        if (isAuthenticated) {
-            getRecipientNames().then(response => setRecipientNames(response.data || [])).catch(err => console.error(err));
-        }
-    }, [isAuthenticated]);
+      const { data } = await getInvoices(params);
+      setInvoices(data.invoices || []);
+      setPagination((prev) => ({
+        ...prev,
+        totalPages: data.totalPages,
+        totalRecords: data.totalRecords,
+      }));
+    } catch (error) {
+      console.error("Failed to fetch invoices:", error);
+      setInvoices([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [pagination.page, pagination.limit, filters, debouncedSearch]);
 
-    useEffect(() => {
-        if (isAuthenticated && socket) {
-            const handleInvoiceUpdate = () => setHasNewInvoices(true);
-            socket.on('invoices:updated', handleInvoiceUpdate);
-            return () => socket.off('invoices:updated', handleInvoiceUpdate);
-        }
-    }, [isAuthenticated, socket]);
+  useEffect(() => {
+    if (isAuthenticated) {
+      fetchInvoices();
+    }
+  }, [fetchInvoices, isAuthenticated]);
 
-    const handleFilterChange = (newFilters) => {
-        setPagination(p => ({ ...p, page: 1 })); 
-        setFilters(newFilters);
-    };
+  useEffect(() => {
+    if (isAuthenticated) {
+      fetchInvoices();
+    }
+  }, [fetchInvoices, isAuthenticated]);
+  useEffect(() => {
+    if (isAuthenticated) {
+      getRecipientNames().then((res) => setRecipientNames(res.data));
+    }
+  }, [isAuthenticated]);
+  useEffect(() => {
+    if (socket) {
+      socket.on("invoices:updated", () => setHasNewInvoices(true));
+      return () => socket.off("invoices:updated");
+    }
+  }, [socket]);
 
-    const handleExport = async () => {
-        setIsExporting(true);
-        try {
-            const exportParams = {
-                ...filters,
-                search: debouncedSearch, 
-            };
-            await exportInvoices(exportParams);
-        } catch (error) {
-            console.error("Failed to export invoices:", error);
-            alert("Failed to export invoices.");
-        } finally {
-            setIsExporting(false);
-        }
-    };
-    
-    const openEditModal = (invoice) => {
-        setEditingInvoice(invoice);
-        setIsInvoiceModalOpen(true);
-    };
+  const handleFilterChange = (newFilters) => {
+    setPagination((p) => ({ ...p, page: 1 }));
+    setFilters(newFilters);
+  };
 
-    const handleSave = () => { closeAllModals(); fetchInvoices(); };
-    const closeAllModals = () => { setIsInvoiceModalOpen(false); setEditingInvoice(null); };
+  const handleExport = async () => {
+    setIsExporting(true);
+    try {
+      const exportParams = {
+        ...filters,
+        search: debouncedSearch,
+      };
+      await exportInvoices(exportParams);
+    } catch (error) {
+      console.error("Failed to export invoices:", error);
+      alert("Failed to export invoices.");
+    } finally {
+      setIsExporting(false);
+    }
+  };
 
-    return (
-        <>
-            <PageContainer>
-                <Header>
-                    <Title>Invoices</Title>
-                    <Actions>
-                        <Button onClick={handleExport} disabled={isExporting}>
-                            <FaFileExcel /> {isExporting ? 'Exporting...' : 'Export'}
-                        </Button>
-                        <Button primary onClick={() => openEditModal(null)}><FaPlus /> Add Entry</Button>
-                    </Actions>
-                </Header>
-                
-                {hasNewInvoices && (
-                    <RefreshBanner onClick={fetchInvoices}>
-                        <FaSyncAlt /> New invoices have arrived. Click to refresh the list.
-                    </RefreshBanner>
-                )}
+  const openEditModal = (invoice) => {
+    setEditingInvoice(invoice);
+    setIsInvoiceModalOpen(true);
+  };
+  const openLinkModal = (invoice) => {
+    setLinkingInvoice(invoice);
+    setIsLinkModalOpen(true);
+  };
 
-                <InvoiceFilter
-                    filters={filters}
-                    onFilterChange={handleFilterChange}
-                    allGroups={allGroups}
-                    recipientNames={recipientNames}
-                />
-                <InvoiceTable
-                    invoices={invoices}
-                    loading={loading}
-                    onEdit={openEditModal}
-                    pagination={pagination}
-                    setPagination={setPagination}
-                />
-            </PageContainer>
-            
-            <InvoiceModal
-                isOpen={isInvoiceModalOpen}
-                onClose={closeAllModals}
-                onSave={handleSave}
-                invoice={editingInvoice}
-                allGroups={allGroups} // <--- Passing the groups to the modal
-            />
-        </>
-    );
+  const handleSaveAndRefresh = () => {
+    closeAllModals();
+    fetchInvoices();
+  };
+  const closeAllModals = () => {
+    setIsInvoiceModalOpen(false);
+    setEditingInvoice(null);
+    setIsLinkModalOpen(false);
+    setLinkingInvoice(null);
+  };
+
+  return (
+    <>
+      <PageContainer>
+        <Header>
+          <Title>Invoices</Title>
+          <Actions>
+            <Button onClick={handleExport} disabled={isExporting}>
+              {isExporting ? "Exporting..." : "Export"}
+            </Button>
+            <Button primary onClick={() => openEditModal(null)}>
+              <FaPlus /> Add Entry
+            </Button>
+          </Actions>
+        </Header>
+
+        {hasNewInvoices && (
+          <RefreshBanner onClick={fetchInvoices}>
+            <FaSyncAlt /> New invoices. Click to refresh.
+          </RefreshBanner>
+        )}
+
+        <InvoiceFilter
+          {...{ filters, onFilterChange, allGroups, recipientNames }}
+        />
+        <InvoiceTable
+          {...{
+            invoices,
+            loading,
+            onEdit: openEditModal,
+            onLink: openLinkModal,
+            pagination,
+            setPagination,
+          }}
+        />
+      </PageContainer>
+
+      <InvoiceModal
+        isOpen={isInvoiceModalOpen}
+        onClose={closeAllModals}
+        onSave={handleSaveAndRefresh}
+        invoice={editingInvoice}
+        allGroups={allGroups}
+      />
+      <LinkTransactionModal
+        isOpen={isLinkModalOpen}
+        onClose={handleSaveAndRefresh}
+        invoice={linkingInvoice}
+      />
+    </>
+  );
 };
 
 export default InvoicesPage;

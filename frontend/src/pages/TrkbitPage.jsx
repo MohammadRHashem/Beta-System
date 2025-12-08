@@ -1,9 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import styled from 'styled-components';
 import { getTrkbitTransactions, exportTrkbit } from '../services/api';
-import { FaFileExcel, FaSearch, FaLink } from 'react-icons/fa';
+import { FaFileExcel, FaSearch, FaLink, FaUnlink } from 'react-icons/fa';
 import Pagination from '../components/Pagination';
-import { format } from 'date-fns';
 import LinkInvoiceModal from '../components/LinkInvoiceModal';
 
 const PageContainer = styled.div`
@@ -88,8 +87,6 @@ const TrkbitPage = () => {
     const [loading, setLoading] = useState(false);
     const [filters, setFilters] = useState({ search: '', dateFrom: '', dateTo: '' });
     const [pagination, setPagination] = useState({ page: 1, limit: 50, totalPages: 1, totalRecords: 0 });
-
-    // === NEW STATE FOR MODAL ===
     const [isLinkModalOpen, setIsLinkModalOpen] = useState(false);
     const [selectedTransaction, setSelectedTransaction] = useState(null);
 
@@ -133,11 +130,7 @@ const TrkbitPage = () => {
     };
 
     const openLinkModal = (tx) => {
-        setSelectedTransaction({
-            id: tx.uid, // Use uid for Trkbit
-            amount: tx.amount,
-            source: 'Trkbit'
-        });
+        setSelectedTransaction({ id: tx.uid, amount: tx.amount, source: 'Trkbit' });
         setIsLinkModalOpen(true);
     };
 
@@ -173,7 +166,7 @@ const TrkbitPage = () => {
                                 <th>Payer Name</th>
                                 <th>Amount</th>
                                 <th>Tx ID</th>
-                                <th>Actions</th> {/* <-- NEW COLUMN */}
+                                <th>Link Status</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -181,13 +174,18 @@ const TrkbitPage = () => {
                                 <tr key={tx.id}>
                                     <td>{formatAdjustedDate(tx.tx_date)}</td>
                                     <td>{tx.tx_payer_name}</td>
-                                    <td style={{color: '#217346', fontWeight: 'bold'}}>
-                                        {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(tx.amount)}
-                                    </td>
+                                    <td>{/* ... */}</td>
                                     <td>{tx.tx_id}</td>
-                                    <td>
-                                        {/* Show link icon only if not used */}
-                                        {!tx.is_used && <ActionLink onClick={() => openLinkModal(tx)} title="Link to Invoice" />}
+                                    <td style={{ textAlign: 'center' }}>
+                                        {tx.is_used || tx.linked_invoice_id ? (
+                                            <ActionIcon linked={true} title={`Linked to Invoice ID: ${tx.linked_invoice_message_id}`}>
+                                                <FaLink />
+                                            </ActionIcon>
+                                        ) : (
+                                            <ActionIcon linked={false} onClick={() => openLinkModal(tx)} title="Link to Invoice">
+                                                <FaUnlink />
+                                            </ActionIcon>
+                                        )}
                                     </td>
                                 </tr>
                             ))}
@@ -196,11 +194,9 @@ const TrkbitPage = () => {
                 </TableWrapper>
                 <Pagination pagination={pagination} setPagination={setPagination} />
             </PageContainer>
-            
-            {/* === RENDER THE MODAL === */}
             <LinkInvoiceModal 
                 isOpen={isLinkModalOpen}
-                onClose={() => setIsLinkModalOpen(false)}
+                onClose={() => { setIsLinkModalOpen(false); fetchData(); }}
                 transaction={selectedTransaction}
             />
         </>

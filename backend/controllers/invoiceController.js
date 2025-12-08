@@ -187,12 +187,18 @@ exports.getAllInvoices = async (req, res) => {
         const countQuery = `SELECT count(*) as total ${query}`;
         const [[{ total }]] = await pool.query(countQuery, params);
 
+        // === MODIFIED: Select the new columns ===
         const dataQuery = `
-            SELECT i.*, wg.group_name as source_group_name
+            SELECT 
+                i.*, 
+                wg.group_name as source_group_name,
+                i.linked_transaction_id,
+                i.linked_transaction_source
             ${query}
             ORDER BY ${orderByClause}, i.id ${sortOrder === 'asc' ? 'ASC' : 'DESC'}
             LIMIT ? OFFSET ?
         `;
+        // =====================================
         const finalParams = [...params, parseInt(limit), parseInt(offset)];
         const [invoices] = await pool.query(dataQuery, finalParams);
         

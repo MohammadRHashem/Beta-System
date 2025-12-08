@@ -1,6 +1,6 @@
 import React from 'react';
 import styled, { css } from 'styled-components';
-import { FaDownload, FaLink } from 'react-icons/fa';
+import { FaDownload, FaLink, FaUnlink } from 'react-icons/fa';
 import Pagination from './Pagination';
 
 const TableWrapper = styled.div`
@@ -148,12 +148,19 @@ const AlfaTrustTable = ({ transactions, loading, pagination, setPagination, onLi
                                         {tx.operation === 'D' ? '-' : ''}
                                         {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(tx.value)}
                                     </Td>
-                                    <Td className="actions">
-                                        {/* === NEW LOGIC: Show link button if not linked and it's a credit transaction === */}
-                                        {tx.operation === 'C' && !tx.linked_invoice_id && (
-                                            <ActionLink onClick={() => onLinkClick(tx)} title="Link to Invoice" />
+                                    <Td className="actions" style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+                                        {tx.operation === 'C' && (
+                                            tx.linked_invoice_id ? (
+                                                <ActionIcon linked={true} title={`Linked to Invoice ID: ${tx.linked_invoice_id}`}>
+                                                    <FaLink />
+                                                </ActionIcon>
+                                            ) : (
+                                                <ActionIcon linked={false} onClick={() => onLinkClick(tx)} title="Link to Invoice">
+                                                    <FaUnlink />
+                                                </ActionIcon>
+                                            )
                                         )}
-                                        <FaDownload onClick={() => handleDownloadReceipt(tx)} title="Download Receipt (Not Available)" />
+                                        <FaDownload title="Download Receipt (Not Available)" />
                                     </Td>
                                 </Tr>
                             );

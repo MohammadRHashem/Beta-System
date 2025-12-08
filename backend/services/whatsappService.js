@@ -468,9 +468,6 @@ const invoiceWorker = new Worker(
       return;
     }
 
-    // ============================================================
-    // MEDIA PROCESSING (Strict Duplicate Checking Applied)
-    // ============================================================
     const chat = await originalMessage.getChat();
     const tempFilePaths = [];
 
@@ -480,40 +477,21 @@ const invoiceWorker = new Worker(
 
       const cleanMimeType = media.mimetype.split(";")[0];
       const extension = cleanMimeType.split("/")[1] || "bin";
-      const tempFilePath = path.join(
-        os.tmpdir(),
-        `${originalMessage.id.id}.${extension}`
-      );
+      const tempFilePath = path.join(os.tmpdir(), `${originalMessage.id.id}.${extension}`);
       tempFilePaths.push(tempFilePath);
       await fs.writeFile(tempFilePath, Buffer.from(media.data, "base64"));
 
-      const pythonScriptsDir = path.join(__dirname, "..", "python_scripts");
-      const pythonExecutable =
-        process.platform === "win32" ? "python.exe" : "python3";
-      const pythonScriptPath = path.join(pythonScriptsDir, "main.py");
-      const pythonEnv = dotenv.config({
-        path: path.join(pythonScriptsDir, ".env"),
-      }).parsed;
-
-      if (!pythonEnv || !pythonEnv.GOOGLE_API_KEY)
-        throw new Error("Could not load GOOGLE_API_KEY.");
-
-      const { stdout } = await execa(pythonExecutable, [
-        pythonScriptPath,
-        tempFilePath,
-      ]);
+      const { stdout } = await execa('python', [path.join(__dirname, "..", "python_scripts", "main.py"), tempFilePath]);
       const invoiceJson = JSON.parse(stdout);
 
       const { amount, sender, recipient, transaction_id } = invoiceJson;
       if (!amount || (!recipient?.name && !recipient?.pix_key)) {
-        console.log(`[WORKER] OCR failed for message ${messageId}. Stopping.`);
         await originalMessage.react("");
         return;
       }
 
       const recipientNameLower = (recipient.name || "").toLowerCase();
 
-      // --- PRIORITY 0: OCR DUPLICATE CHECK (Standard) ---
       if (
         recipientNameLower.includes("troca") ||
         recipientNameLower.includes("mks") ||
@@ -556,6 +534,11 @@ const invoiceWorker = new Worker(
 
       let runStandardForwarding = true;
       let wasActioned = false;
+      
+      // === NEW: Variables to hold link data ===
+      let linkedTransactionId = null;
+      let linkedTransactionSource = null;
+      // =======================================
 
       // --- 1. TRKBIT / CROSS (Atomic Update) ---
       if (runStandardForwarding && isTrkbitConfirmationEnabled && 
@@ -612,15 +595,15 @@ const invoiceWorker = new Worker(
 
           if (confirmedId) {
               // 3. Atomic Update (Prevent Double Spending)
-              const [updateResult] = await pool.query(
-                  'UPDATE trkbit_transactions SET is_used = 1 WHERE id = ? AND is_used = 0', 
-                  [confirmedId]
-              );
+              const [updateResult] = await pool.query('UPDATE trkbit_transactions SET is_used = 1 WHERE uid = ? AND is_used = 0', [matchId]);
 
               if (updateResult.affectedRows > 0) {
+                  linkedTransactionId = matchId; // <-- Capture Link Info
+                  linkedTransactionSource = 'Trkbit'; // <-- Capture Link Info
                   await originalMessage.reply("Caiu");
                   await originalMessage.react("🟢");
                   wasActioned = true;
+                  runStandardForwarding = false;
 
                   // 4. Informative Forwarding
                   try {
@@ -697,12 +680,11 @@ const invoiceWorker = new Worker(
 
           if (matchId) {
             // === ATOMIC UPDATE ===
-            const [updateResult] = await pool.query(
-              "UPDATE usdt_transactions SET is_used = 1 WHERE id = ? AND is_used = 0",
-              [matchId]
-            );
+            const [updateResult] = await pool.query("UPDATE usdt_transactions SET is_used = 1 WHERE id = ? AND is_used = 0", [matchId]);
 
             if (updateResult.affectedRows > 0) {
+              linkedTransactionId = matchId; // <-- Capture Link Info
+              linkedTransactionSource = 'USDT'; // <-- Capture Link Info
               await originalMessage.reply(`Informed ✅`);
               await originalMessage.react("🟢");
               wasActioned = true;
@@ -710,7 +692,7 @@ const invoiceWorker = new Worker(
             } else {
               await originalMessage.reply("❌Repeated❌");
               await originalMessage.react("❌");
-              wasActioned = true;
+              wasActioned = 'duplicate';
               runStandardForwarding = false;
             }
           } else {
@@ -776,12 +758,11 @@ const invoiceWorker = new Worker(
 
         if (matchId) {
           // === ATOMIC UPDATE ===
-          const [updateResult] = await pool.query(
-            "UPDATE xpayz_transactions SET is_used = 1 WHERE id = ? AND is_used = 0",
-            [matchId]
-          );
+          const [updateResult] = await pool.query("UPDATE xpayz_transactions SET is_used = 1 WHERE id = ? AND is_used = 0", [matchId]);
 
           if (updateResult.affectedRows > 0) {
+            linkedTransactionId = matchId; // <-- Capture Link Info
+            linkedTransactionSource = 'XPayz'; // <-- Capture Link Info
             await originalMessage.reply("Caiu");
             await originalMessage.react("🟢");
             wasActioned = true;
@@ -789,7 +770,7 @@ const invoiceWorker = new Worker(
           } else {
             await originalMessage.reply("❌Repeated❌");
             await originalMessage.react("❌");
-            wasActioned = true;
+            wasActioned = 'duplicate';
             runStandardForwarding = false;
           }
         } else if (isAssigned) {
@@ -838,6 +819,7 @@ const invoiceWorker = new Worker(
       ) {
         let matchId = null;
         let updateTable = "";
+        let sourceName = "";
 
         if (trocaCoinConfirmationMethod === "telegram") {
           matchId = await findBestTelegramMatch(
@@ -865,12 +847,11 @@ const invoiceWorker = new Worker(
 
         if (matchId) {
           // === ATOMIC UPDATE ===
-          const [updateResult] = await pool.query(
-            `UPDATE ${updateTable} SET is_used = 1 WHERE id = ? AND is_used = 0`,
-            [matchId]
-          );
+          const [updateResult] = await pool.query(`UPDATE ${updateTable} SET is_used = 1 WHERE id = ? AND is_used = 0`, [matchId]);
 
           if (updateResult.affectedRows > 0) {
+            linkedTransactionId = matchId; // <-- Capture Link Info
+            linkedTransactionSource = sourceName; // <-- Capture Link Info
             await originalMessage.reply("Caiu");
             await originalMessage.react("🟢");
             wasActioned = true;
@@ -878,7 +859,7 @@ const invoiceWorker = new Worker(
           } else {
             await originalMessage.reply("❌Repeated❌");
             await originalMessage.react("❌");
-            wasActioned = true;
+            wasActioned = 'duplicate';
             runStandardForwarding = false;
           }
         }
@@ -895,7 +876,7 @@ const invoiceWorker = new Worker(
         wasActioned = true;
         runStandardForwarding = false;
       }
-
+      
       // --- 6. MANUAL FORWARDING ---
       if (runStandardForwarding) {
         const [settings] = await pool.query(
@@ -1009,44 +990,41 @@ const invoiceWorker = new Worker(
         }
       }
 
-      // --- 7. ARCHIVING ---
-      const [archiveSettings] = await pool.query(
-        "SELECT archiving_enabled FROM group_settings WHERE group_jid = ?",
-        [chat.id._serialized]
-      );
-      const groupArchiveSettings = archiveSettings[0] || {
-        archiving_enabled: true,
-      };
-
+      // --- 7. ARCHIVING (Modified to include link data) ---
+      const [archiveSettings] = await pool.query("SELECT archiving_enabled FROM group_settings WHERE group_jid = ?", [chat.id._serialized]);
+      const groupArchiveSettings = archiveSettings[0] || { archiving_enabled: true };
+      
       if (groupArchiveSettings.archiving_enabled) {
         const archiveFileName = `${messageId}.${extension}`;
         const finalMediaPath = path.join(MEDIA_ARCHIVE_DIR, archiveFileName);
-        await fs.rename(tempFilePath, finalMediaPath);
-        tempFilePaths.pop();
+        // Ensure file is moved before proceeding
+        if (fsSync.existsSync(tempFilePath)) {
+          await fs.rename(tempFilePath, finalMediaPath);
+          tempFilePaths.pop();
+        }
+
         const correctUtcDate = new Date(originalMessage.timestamp * 1000);
+        // === MODIFIED INSERT STATEMENT ===
         await pool.query(
-          `INSERT INTO invoices (message_id, transaction_id, sender_name, recipient_name, pix_key, amount, source_group_jid, received_at, raw_json_data, media_path, is_deleted) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          `INSERT INTO invoices (message_id, transaction_id, sender_name, recipient_name, pix_key, amount, source_group_jid, received_at, raw_json_data, media_path, is_deleted, linked_transaction_id, linked_transaction_source) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
-            messageId,
-            transaction_id,
-            sender?.name,
-            recipient.name,
-            recipient.pix_key,
-            amount,
-            chat.id._serialized,
-            correctUtcDate,
-            JSON.stringify(invoiceJson),
-            finalMediaPath,
-            false,
+            messageId, transaction_id, sender?.name, recipient.name, recipient.pix_key,
+            amount, chat.id._serialized, correctUtcDate, JSON.stringify(invoiceJson),
+            finalMediaPath, false, linkedTransactionId, linkedTransactionSource
           ]
         );
+        // ==================================
       }
+      
+      // Handle replies for duplicate state
+      if (wasActioned === 'duplicate') {
+        await originalMessage.reply("❌Repeated❌");
+        await originalMessage.react("❌");
+      }
+
     } catch (error) {
-      console.error(
-        `[WORKER-ERROR] Critical error processing job ${job?.id}:`,
-        error
-      );
-      await originalMessage.react("");
+      console.error(`[WORKER-ERROR] Critical error processing job ${job?.id}:`, error);
+      await originalMessage.react("⚠️");
       throw error;
     } finally {
       for (const tempPath of tempFilePaths) {
