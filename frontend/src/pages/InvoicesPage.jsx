@@ -1,86 +1,91 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import styled from 'styled-components';
-import { useAuth } from '../context/AuthContext';
-import { getInvoices, getRecipientNames, exportInvoices } from '../services/api';
-import { FaPlus, FaFileExcel, FaSyncAlt } from 'react-icons/fa';
-import InvoiceFilter from '../components/InvoiceFilter';
-import InvoiceTable from '../components/InvoiceTable';
-import InvoiceModal from '../components/InvoiceModal';
-import { useSocket } from '../context/SocketContext';
-import LinkTransactionModal from '../components/LinkTransactionModal';
+import React, { useState, useEffect, useCallback } from "react";
+import styled from "styled-components";
+import { useAuth } from "../context/AuthContext";
+import {
+  getInvoices,
+  getRecipientNames,
+  exportInvoices,
+} from "../services/api";
+import { FaPlus, FaFileExcel, FaSyncAlt } from "react-icons/fa";
+import InvoiceFilter from "../components/InvoiceFilter";
+import InvoiceTable from "../components/InvoiceTable";
+import InvoiceModal from "../components/InvoiceModal";
+import LinkTransactionModal from "../components/LinkTransactionModal";
+import { useSocket } from "../context/SocketContext";
 
 // Debounce hook to prevent excessive API calls while typing
 const useDebounce = (value, delay) => {
-    const [debouncedValue, setDebouncedValue] = useState(value);
-    useEffect(() => {
-        const handler = setTimeout(() => {
-            setDebouncedValue(value);
-        }, delay);
-        return () => clearTimeout(handler);
-    }, [value, delay]);
-    return debouncedValue;
+  const [debouncedValue, setDebouncedValue] = useState(value);
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedValue(value);
+    }, delay);
+    return () => clearTimeout(handler);
+  }, [value, delay]);
+  return debouncedValue;
 };
 
 const PageContainer = styled.div`
-    display: flex;
-    flex-direction: column;
-    gap: 1.5rem;
-    height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  height: 100%;
 `;
 
 const Header = styled.div`
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 1rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 1rem;
 `;
 
 const Title = styled.h2`
-    margin: 0;
+  margin: 0;
 `;
 
 const Actions = styled.div`
-    display: flex;
-    gap: 1rem;
+  display: flex;
+  gap: 1rem;
 `;
 
 const Button = styled.button`
-    display: inline-flex;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 0.6rem 1.2rem;
-    border: none;
-    border-radius: 6px;
-    font-weight: 600;
-    cursor: pointer;
-    background-color: ${({ theme, primary }) => primary ? theme.secondary : theme.primary};
-    color: white;
-    font-size: 0.9rem;
-    
-    &:hover {
-        opacity: 0.9;
-    }
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.6rem 1.2rem;
+  border: none;
+  border-radius: 6px;
+  font-weight: 600;
+  cursor: pointer;
+  background-color: ${({ theme, primary }) =>
+    primary ? theme.secondary : theme.primary};
+  color: white;
+  font-size: 0.9rem;
 
-    &:disabled {
-        opacity: 0.6;
-        cursor: not-allowed;
-    }
+  &:hover {
+    opacity: 0.9;
+  }
+
+  &:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
 `;
 
 const RefreshBanner = styled.div`
-    background-color: ${({ theme }) => theme.secondary};
-    color: white;
-    padding: 0.75rem 1rem;
-    border-radius: 6px;
-    text-align: center;
-    font-weight: 600;
-    cursor: pointer;
-    margin-bottom: 1rem;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.75rem;
+  background-color: ${({ theme }) => theme.secondary};
+  color: white;
+  padding: 0.75rem 1rem;
+  border-radius: 6px;
+  text-align: center;
+  font-weight: 600;
+  cursor: pointer;
+  margin-bottom: 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
 `;
 
 const InvoicesPage = ({ allGroups }) => {
@@ -97,7 +102,15 @@ const InvoicesPage = ({ allGroups }) => {
     totalRecords: 0,
   });
   const [filters, setFilters] = useState({
-    /* ... */
+    search: "",
+    dateFrom: "",
+    dateTo: "",
+    timeFrom: "",
+    timeTo: "",
+    sourceGroups: [],
+    recipientNames: [],
+    reviewStatus: "",
+    status: "",
   });
   const { isAuthenticated } = useAuth();
   const [isInvoiceModalOpen, setIsInvoiceModalOpen] = useState(false);
@@ -187,6 +200,7 @@ const InvoicesPage = ({ allGroups }) => {
     setEditingInvoice(invoice);
     setIsInvoiceModalOpen(true);
   };
+
   const openLinkModal = (invoice) => {
     setLinkingInvoice(invoice);
     setIsLinkModalOpen(true);
@@ -210,7 +224,7 @@ const InvoicesPage = ({ allGroups }) => {
           <Title>Invoices</Title>
           <Actions>
             <Button onClick={handleExport} disabled={isExporting}>
-              {isExporting ? "Exporting..." : "Export"}
+              <FaFileExcel /> {isExporting ? "Exporting..." : "Export"}
             </Button>
             <Button primary onClick={() => openEditModal(null)}>
               <FaPlus /> Add Entry
@@ -220,22 +234,26 @@ const InvoicesPage = ({ allGroups }) => {
 
         {hasNewInvoices && (
           <RefreshBanner onClick={fetchInvoices}>
-            <FaSyncAlt /> New invoices. Click to refresh.
+            <FaSyncAlt /> New invoices have arrived. Click to refresh the list.
           </RefreshBanner>
         )}
 
+        {/* === THIS IS THE CORRECTED LINE === */}
         <InvoiceFilter
-          {...{ filters, onFilterChange, allGroups, recipientNames }}
+          filters={filters}
+          onFilterChange={handleFilterChange}
+          allGroups={allGroups}
+          recipientNames={recipientNames}
         />
+        {/* ================================ */}
+
         <InvoiceTable
-          {...{
-            invoices,
-            loading,
-            onEdit: openEditModal,
-            onLink: openLinkModal,
-            pagination,
-            setPagination,
-          }}
+          invoices={invoices}
+          loading={loading}
+          onEdit={openEditModal}
+          onLink={openLinkModal}
+          pagination={pagination}
+          setPagination={setPagination}
         />
       </PageContainer>
 
@@ -246,6 +264,7 @@ const InvoicesPage = ({ allGroups }) => {
         invoice={editingInvoice}
         allGroups={allGroups}
       />
+
       <LinkTransactionModal
         isOpen={isLinkModalOpen}
         onClose={handleSaveAndRefresh}
