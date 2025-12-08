@@ -103,10 +103,28 @@ exports.getDashboardSummary = async (req, res) => {
             [[balance]] = await pool.query(allTimeBalanceQuery, [chavePix]);
             
         } else { // Default to 'xpayz'
-            const dailySummaryQuery = `/* ... existing XPayz query ... */`;
+            // === FIX STARTS HERE: RESTORED XPAYZ LOGIC ===
+            const dailySummaryQuery = `
+                SELECT 
+                    SUM(CASE WHEN operation_direct = 'in' THEN amount ELSE 0 END) as dailyTotalIn,
+                    SUM(CASE WHEN operation_direct = 'out' THEN amount ELSE 0 END) as dailyTotalOut,
+                    COUNT(CASE WHEN operation_direct = 'in' THEN 1 END) as dailyCountIn,
+                    COUNT(CASE WHEN operation_direct = 'out' THEN 1 END) as dailyCountOut,
+                    COUNT(*) as dailyCountTotal
+                FROM xpayz_transactions
+                WHERE subaccount_id = ? AND DATE(transaction_date) = ?;
+            `;
             [[dailySummary]] = await pool.query(dailySummaryQuery, [subaccountNumber, date]);
-            const allTimeBalanceQuery = `/* ... existing XPayz query ... */`;
+
+            const allTimeBalanceQuery = `
+                SELECT 
+                    (SUM(CASE WHEN operation_direct = 'in' THEN amount ELSE 0 END) - 
+                     SUM(CASE WHEN operation_direct = 'out' THEN amount ELSE 0 END)) as allTimeBalance
+                FROM xpayz_transactions
+                WHERE subaccount_id = ?;
+            `;
             [[balance]] = await pool.query(allTimeBalanceQuery, [subaccountNumber]);
+            // === FIX ENDS HERE ===
         }
 
         res.json({ 
@@ -169,11 +187,9 @@ exports.getTransactions = async (req, res) => {
             const finalParams = [...params, parseInt(limit), (page - 1) * limit];
             [transactions] = await pool.query(dataQuery, finalParams);
 
-        } else {
-            query = `
-            FROM xpayz_transactions
-            WHERE subaccount_id = ?
-            `;
+        } else { // Default to 'xpayz'
+            // === FIX STARTS HERE: RESTORED XPAYZ LOGIC ===
+            let query = `FROM xpayz_transactions WHERE subaccount_id = ?`;
             const params = [subaccountNumber];
 
             if (search) {
@@ -187,17 +203,19 @@ exports.getTransactions = async (req, res) => {
             }
 
             const countQuery = `SELECT count(*) as total ${query}`;
-            const [[{ total }]] = await pool.query(countQuery, params);
+            [[{ total }]] = await pool.query(countQuery, params);
 
-            // === FIX: Select BOTH sender_name and counterparty_name ===
-            const dataQuery = `
-                SELECT id, transaction_date, sender_name, counterparty_name, amount, operation_direct, xpayz_transaction_id, raw_details
-                ${query}
-                ORDER BY transaction_date DESC
-                LIMIT ? OFFSET ?
-            `;
-            const finalParams = [...params, parseInt(limit), (page - 1) * limit];
-            const [transactions] = await pool.query(dataQuery, finalParams);
+            if (total > 0) {
+                const dataQuery = `
+                    SELECT id, transaction_date, sender_name, counterparty_name, amount, operation_direct, xpayz_transaction_id, raw_details
+                    ${query}
+                    ORDER BY transaction_date DESC
+                    LIMIT ? OFFSET ?
+                `;
+                const finalParams = [...params, parseInt(limit), (page - 1) * limit];
+                [transactions] = await pool.query(dataQuery, finalParams);
+            }
+            // === FIX ENDS HERE ===
         }
         
         res.json({
