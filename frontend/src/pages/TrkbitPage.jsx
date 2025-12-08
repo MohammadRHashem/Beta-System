@@ -183,16 +183,8 @@ const TrkbitPage = () => {
                                 <tr key={tx.id}>
                                     <td>{formatAdjustedDate(tx.tx_date)}</td>
                                     <td>{tx.tx_payer_name}</td>
-                                    <td style={{ textAlign: 'center' }}>
-                                        {tx.is_used || tx.linked_invoice_id ? (
-                                            <ActionIcon linked={true} title={`Linked to Invoice ID: ${tx.linked_invoice_message_id || tx.linked_invoice_id}`}>
-                                                <FaLink />
-                                            </ActionIcon>
-                                        ) : (
-                                            <ActionIcon linked={false} onClick={() => openLinkModal(tx)} title="Link to Invoice">
-                                                <FaUnlink />
-                                            </ActionIcon>
-                                        )}
+                                    <td style={{color: '#217346', fontWeight: 'bold'}}>
+                                        {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(tx.amount)}
                                     </td>
                                     <td>{tx.tx_id}</td>
                                     <td style={{ textAlign: 'center' }}>
