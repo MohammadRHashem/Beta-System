@@ -595,13 +595,13 @@ const invoiceWorker = new Worker(
           
           if (confirmedId) {
               // 3. Atomic Update (Prevent Double Spending)
-              const [updateResult] = await connection.query(
+              const [updateResult] = await pool.query(
                   'UPDATE trkbit_transactions SET is_used = 1 WHERE id = ? AND is_used = 0', 
                   [confirmedId]
               );
 
               if (updateResult.affectedRows > 0) {
-                 const [[{ uid }]] = await connection.query('SELECT uid FROM trkbit_transactions WHERE id = ?', [confirmedId]);
+                 const [[{ uid }]] = await pool.query('SELECT uid FROM trkbit_transactions WHERE id = ?', [confirmedId]);
                   linkedTransactionId = uid; // <-- Capture Link Info
                   linkedTransactionSource = 'Trkbit'; // <-- Capture Link Info
                   await originalMessage.reply("Caiu");
