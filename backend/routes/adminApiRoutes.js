@@ -18,6 +18,7 @@ const scheduledBroadcastRoutes = require('./scheduledBroadcastRoutes');
 const subCustomerController = require('../controllers/subCustomerController');
 const trkbitController = require('../controllers/trkbitController');
 const manualReviewController = require('../controllers/manualReviewController');
+const walletRequestController = require('../controllers/walletRequestController');
 
 
 router.get('/manual/pending', manualReviewController.getPendingInvoices);
@@ -126,5 +127,8 @@ router.get('/trkbit/export', trkbitController.exportExcel);
 
 router.get('/settings/trkbit-confirmation', settingsController.getTrkbitConfirmationStatus);
 router.post('/settings/trkbit-confirmation', settingsController.setTrkbitConfirmationStatus);
+
+router.get('/wallet-requests', walletRequestController.getPendingRequests);
+router.patch('/wallet-requests/:id/complete', walletRequestController.completeRequest);
 
 module.exports = router;

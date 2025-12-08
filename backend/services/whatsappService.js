@@ -1380,8 +1380,51 @@ const handleMessage = async (message) => {
     const chat = await message.getChat();
     if (!chat.isGroup) return;
 
-    
+
+
+
+
     if (message.body) {
+      // --- NEW: USDT Wallet Address Detection Logic ---
+      const messageBody = message.body.trim();
+      const tronAddressRegex = /^T[1-9A-HJ-NP-Za-km-z]{33}$/;
+      if (tronAddressRegex.test(messageBody)) {
+          console.log(`[WALLET-REQ] Detected potential TRC-20 address: ${messageBody}`);
+          const [[ourWallet]] = await pool.query(
+              'SELECT id FROM usdt_wallets WHERE wallet_address = ?',
+              [messageBody]
+          );
+
+          if (ourWallet) {
+              console.log(`[WALLET-REQ] Address belongs to us. Ignoring.`);
+              // Mark as processed to prevent re-queuing, but take no further action.
+              await pool.query("INSERT IGNORE INTO processed_messages (message_id) VALUES (?)", [message.id._serialized]);
+              return; // Stop processing
+          }
+
+          // It's a new, external wallet. Store it.
+          await pool.query(
+              `INSERT INTO wallet_address_requests (message_id, wallet_address, source_group_jid, source_group_name, received_at) 
+               VALUES (?, ?, ?, ?, ?)
+               ON DUPLICATE KEY UPDATE wallet_address = VALUES(wallet_address)`, // Prevents error on re-run
+              [
+                  message.id._serialized,
+                  messageBody,
+                  chat.id._serialized,
+                  chat.name,
+                  new Date(message.timestamp * 1000)
+              ]
+          );
+          
+          if (io) io.emit('wallet_request:new');
+          await message.react('🔔');
+          
+          // Mark as processed and stop further execution for this message
+          await pool.query("INSERT IGNORE INTO processed_messages (message_id) VALUES (?)", [message.id._serialized]);
+          return;
+      }
+
+
       //usdt link detection
       const tronScanRegex = /https?:\/\/(?:www\.)?tronscan\.org\/#\/transaction\/([a-fA-F0-9]+)/;
       const linkMatch = message.body.match(tronScanRegex);

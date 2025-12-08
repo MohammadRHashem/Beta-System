@@ -182,7 +182,8 @@ export const getCandidateInvoices = (amount) => apiClient.get('/manual/candidate
 export const clearAllPendingInvoices = (messageIds) => apiClient.post('/manual/clear-all', { messageIds });
 
 
-
+export const getWalletRequests = () => apiClient.get('/wallet-requests');
+export const completeWalletRequest = (id) => apiClient.patch(`/wallet-requests/${id}/complete`);
 
 
 export const exportAlfaExcel = async (params) => {
