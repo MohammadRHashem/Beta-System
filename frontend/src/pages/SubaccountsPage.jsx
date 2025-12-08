@@ -102,6 +102,29 @@ const SuggestionBadge = styled.div`
     }
 `;
 
+const ModalForm = styled.form`
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+`;
+
+const InputGroup = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+`;
+
+const Label = styled.label`
+  font-weight: 500;
+`;
+
+const Input = styled.input`
+  padding: 0.75rem;
+  border: 1px solid ${({ theme }) => theme.border};
+  border-radius: 4px;
+  font-size: 1rem;
+`;
+
 const SubaccountsPage = ({ allGroups }) => {
   const [subaccounts, setSubaccounts] = useState([]);
   const [loading, setLoading] = useState(true);
