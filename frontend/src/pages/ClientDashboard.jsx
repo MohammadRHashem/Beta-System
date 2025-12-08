@@ -5,7 +5,6 @@ import { getPortalTransactions, getPortalDashboardSummary } from '../services/ap
 import { FaSyncAlt, FaSearch, FaArrowUp, FaArrowDown } from 'react-icons/fa';
 import Pagination from '../components/Pagination';
 import { usePortal } from '../context/PortalContext';
-// Removed DatePicker imports
 
 const useDebounce = (value, delay) => {
     const [debouncedValue, setDebouncedValue] = useState(value);
@@ -17,60 +16,228 @@ const useDebounce = (value, delay) => {
 };
 
 const PageContainer = styled(motion.div)``;
-const ControlsContainer = styled.div` display: flex; flex-direction: column; gap: 1.5rem; margin-bottom: 1.5rem; `;
-const TopControls = styled.div` display: flex; flex-wrap: wrap; gap: 1rem; justify-content: space-between; align-items: flex-start; `;
-const FilterContainer = styled.div` display: flex; flex-wrap: wrap; gap: 1rem; align-items: center; `;
-const Input = styled.input` padding: 0.75rem; border: 1px solid ${({ theme }) => theme.border}; border-radius: 8px; font-size: 1rem; min-width: 240px; transition: all 0.2s; &:focus { outline: none; border-color: ${({ theme }) => theme.secondary}; box-shadow: 0 0 0 3px rgba(0, 196, 154, 0.2); } `;
-const InputGroup = styled.div` position: relative; display: flex; align-items: center; svg { position: absolute; left: 12px; color: ${({ theme }) => theme.lightText}; } ${Input} { padding-left: 35px; } `;
-
-// === RESTORED: Styled Native Date Input ===
-const DateInput = styled(Input).attrs({type: 'date'})` 
-    padding-left: 0.75rem; 
-    min-width: auto;
-    font-family: inherit;
+const ControlsContainer = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  margin-bottom: 1.5rem;
 `;
-
-const RefreshButton = styled.button` padding: 0.75rem 1rem; border: none; background: ${({ theme }) => theme.secondary}; color: white; font-weight: 600; border-radius: 8px; cursor: pointer; display: flex; align-items: center; gap: 0.5rem; transition: all 0.2s; &:hover { transform: translateY(-2px); } `;
-const Card = styled.div` background: #fff; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.06); overflow: hidden; `;
-const TableWrapper = styled.div` overflow-x: auto; @media (max-width: 768px) { display: none; } `;
-const Table = styled.table` width: 100%; border-collapse: collapse; font-size: 0.95rem; th, td { padding: 1rem 1.5rem; text-align: left; border-bottom: 1px solid ${({ theme }) => theme.border}; } th { background-color: #F6F9FC; font-weight: 600; color: ${({ theme }) => theme.lightText}; } tr:last-child td { border-bottom: none; } `;
-const AmountCell = styled.td` font-weight: 600; font-family: 'Courier New', Courier, monospace; color: ${({ isCredit, theme }) => isCredit ? theme.success : theme.error}; `;
-const TypeCell = styled.td` font-weight: 700; text-transform: uppercase; color: ${({ isCredit, theme }) => isCredit ? theme.success : theme.error}; `;
-const EmptyStateContainer = styled.div` text-align: center; padding: 4rem; color: ${({ theme }) => theme.lightText}; `;
-const SkeletonCell = styled.div` height: 20px; width: 80%; border-radius: 4px; background: #f6f7f8; `;
-const VolumeContainer = styled.div` display: grid; gap: 1rem; grid-template-columns: repeat(3, 1fr); @media (max-width: 768px) { grid-template-columns: repeat(2, 1fr); } `;
-const VolumeCard = styled.div` background: #fff; padding: 1rem 1.5rem; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); border-left: 4px solid ${({ theme, color }) => theme[color] || theme.primary}; h3 { margin: 0; font-size: 0.9rem; color: ${({ theme }) => theme.lightText}; font-weight: 500; } p { margin: 0; font-size: 1.75rem; font-weight: 700; color: ${({ theme, color }) => theme[color] || theme.primary}; font-family: 'Courier New', Courier, monospace; } @media (max-width: 768px) { ${({ fullWidthOnMobile }) => fullWidthOnMobile && ` grid-column: 1 / -1; `} padding: 0.75rem 1rem; h3 { font-size: 0.8rem; } p { font-size: 1.5rem; } } `;
-
-const MobileListContainer = styled.div`
+const TopControls = styled.div`
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  justify-content: space-between;
+  align-items: flex-start;
+`;
+const FilterContainer = styled.div`
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  align-items: center;
+`;
+const Input = styled.input`
+  padding: 0.75rem;
+  border: 1px solid ${({ theme }) => theme.border};
+  border-radius: 8px;
+  font-size: 1rem;
+  min-width: 240px;
+  transition: all 0.2s;
+  &:focus {
+    outline: none;
+    border-color: ${({ theme }) => theme.secondary};
+    box-shadow: 0 0 0 3px rgba(0, 196, 154, 0.2);
+  }
+`;
+const InputGroup = styled.div`
+  position: relative;
+  display: flex;
+  align-items: center;
+  svg {
+    position: absolute;
+    left: 12px;
+    color: ${({ theme }) => theme.lightText};
+  }
+  ${Input} {
+    padding-left: 35px;
+  }
+`;
+const DateInput = styled(Input).attrs({ type: "date" })`
+  padding-left: 0.75rem;
+  min-width: auto;
+  font-family: inherit;
+`;
+const RefreshButton = styled.button`
+  padding: 0.75rem 1rem;
+  border: none;
+  background: ${({ theme }) => theme.secondary};
+  color: white;
+  font-weight: 600;
+  border-radius: 8px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  transition: all 0.2s;
+  &:hover {
+    transform: translateY(-2px);
+  }
+`;
+const Card = styled.div`
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.06);
+  overflow: hidden;
+`;
+const TableWrapper = styled.div`
+  overflow-x: auto;
+  @media (max-width: 768px) {
     display: none;
-    flex-direction: column;
-    @media (max-width: 768px) {
-        display: flex;
-        padding: 0 1rem;
-    }
+  }
 `;
-
-const MobileCard = styled(motion.div)`
-    background: transparent;
-    box-shadow: none;
-    border-radius: 0;
+const Table = styled.table`
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.95rem;
+  th,
+  td {
+    padding: 1rem 1.5rem;
+    text-align: left;
     border-bottom: 1px solid ${({ theme }) => theme.border};
-    padding: 1rem 0.5rem;
-
-    &:last-child {
-        border-bottom: none;
-    }
+  }
+  th {
+    background-color: #f6f9fc;
+    font-weight: 600;
+    color: ${({ theme }) => theme.lightText};
+  }
+  tr:last-child td {
+    border-bottom: none;
+  }
 `;
-
-const MobileCardHeader = styled.div` display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; font-size: 1.2rem; font-weight: 700; font-family: 'Courier New', Courier, monospace; color: ${({ isCredit, theme }) => isCredit ? theme.success : theme.error}; `;
-const MobileCardBody = styled.div` font-size: 0.9rem; color: ${({ theme }) => theme.lightText}; p { margin: 0.25rem 0; } strong { color: ${({ theme }) => theme.text}; } `;
-
+const AmountCell = styled.td`
+  font-weight: 600;
+  font-family: "Courier New", Courier, monospace;
+  color: ${({ isCredit, theme }) => (isCredit ? theme.success : theme.error)};
+`;
+const TypeCell = styled.td`
+  font-weight: 700;
+  text-transform: uppercase;
+  color: ${({ isCredit, theme }) => (isCredit ? theme.success : theme.error)};
+`;
+const EmptyStateContainer = styled.div`
+  text-align: center;
+  padding: 4rem;
+  color: ${({ theme }) => theme.lightText};
+`;
+const shimmer = keyframes`
+  0% { background-position: -1000px 0; }
+  100% { background-position: 1000px 0; }
+`;
+const SkeletonCell = styled.div`
+  height: 20px;
+  width: 80%;
+  border-radius: 4px;
+  background: #f6f7f8;
+  background-image: linear-gradient(
+    to right,
+    #f6f7f8 0%,
+    #edeef1 20%,
+    #f6f7f8 40%,
+    #f6f7f8 100%
+  );
+  background-repeat: no-repeat;
+  background-size: 2000px 100%;
+  animation: ${shimmer} 2s linear infinite;
+`;
+const VolumeContainer = styled.div`
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(3, 1fr);
+  @media (max-width: 768px) {
+    grid-template-columns: repeat(2, 1fr);
+  }
+`;
+const VolumeCard = styled.div`
+  background: #fff;
+  padding: 1rem 1.5rem;
+  border-radius: 8px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+  border-left: 4px solid ${({ theme, color }) => theme[color] || theme.primary};
+  h3 {
+    margin: 0;
+    font-size: 0.9rem;
+    color: ${({ theme }) => theme.lightText};
+    font-weight: 500;
+  }
+  p {
+    margin: 0;
+    font-size: 1.75rem;
+    font-weight: 700;
+    color: ${({ theme, color }) => theme[color] || theme.primary};
+    font-family: "Courier New", Courier, monospace;
+  }
+  @media (max-width: 768px) {
+    ${({ fullWidthOnMobile }) =>
+      fullWidthOnMobile && ` grid-column: 1 / -1; `} padding: 0.75rem 1rem;
+    h3 {
+      font-size: 0.8rem;
+    }
+    p {
+      font-size: 1.5rem;
+    }
+  }
+`;
+const MobileListContainer = styled.div`
+  display: none;
+  flex-direction: column;
+  @media (max-width: 768px) {
+    display: flex;
+    padding: 0 1rem;
+  }
+`;
+const MobileCard = styled(motion.div)`
+  background: transparent;
+  box-shadow: none;
+  border-radius: 0;
+  border-bottom: 1px solid ${({ theme }) => theme.border};
+  padding: 1rem 0.5rem;
+  &:last-child {
+    border-bottom: none;
+  }
+`;
+const MobileCardHeader = styled.div`
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.5rem;
+  font-size: 1.2rem;
+  font-weight: 700;
+  font-family: "Courier New", Courier, monospace;
+  color: ${({ isCredit, theme }) => (isCredit ? theme.success : theme.error)};
+`;
+const MobileCardBody = styled.div`
+  font-size: 0.9rem;
+  color: ${({ theme }) => theme.lightText};
+  p {
+    margin: 0.25rem 0;
+  }
+  strong {
+    color: ${({ theme }) => theme.text};
+  }
+`;
+const SkeletonRow = () => (
+  <tr>
+    {" "}
+    <td colSpan="4">
+      <SkeletonCell />
+    </td>{" "}
+  </tr>
+);
 
 const ClientDashboard = () => {
     const [transactions, setTransactions] = useState([]);
     const [summary, setSummary] = useState({ 
         dailyTotalIn: 0, dailyTotalOut: 0, allTimeBalance: 0,
-        dailyCountIn: 0, dailyCountOut: 0
+        dailyCountIn: 0, dailyCountOut: 0, dailyCountTotal: 0
     });
     const [loadingTable, setLoadingTable] = useState(true);
     const [loadingSummary, setLoadingSummary] = useState(true);
@@ -128,9 +295,7 @@ const ClientDashboard = () => {
         }
     }, [fetchSummaryData]);
 
-    // Standard change handler for native inputs
     const handleFilterChange = (e) => {
-        setPagination(p => ({ ...p, page: 1 }));
         setFilters(prevFilters => ({ ...prevFilters, [e.target.name]: e.target.value }));
     };
     
@@ -159,21 +324,15 @@ const ClientDashboard = () => {
                   type="text"
                   value={filters.search}
                   onChange={handleFilterChange}
-                  placeholder="Search by name..."
+                  placeholder="Search by name, amount..."
                 />
               </InputGroup>
-              {/* === REVERTED: Native Date Input === */}
               <DateInput
                 name="date"
                 value={filters.date || ""}
                 onChange={handleFilterChange}
               />
-              <RefreshButton
-                onClick={() => {
-                  fetchTableData();
-                  fetchSummaryData();
-                }}
-              >
+              <RefreshButton onClick={() => { fetchTableData(); fetchSummaryData(); }}>
                 <FaSyncAlt /> Refresh
               </RefreshButton>
             </FilterContainer>
@@ -182,35 +341,27 @@ const ClientDashboard = () => {
           <VolumeContainer>
             <VolumeCard color="success">
               <h3>IN TRANSACTIONS (BRL)</h3>
-              <p>
-                {loadingSummary ? "..." : formatCurrency(summary.dailyTotalIn)}
-              </p>
+              <p>{loadingSummary ? "..." : formatCurrency(summary.dailyTotalIn)}</p>
             </VolumeCard>
             <VolumeCard color="error">
               <h3>OUT TRANSACTIONS (BRL)</h3>
-              <p>
-                {loadingSummary ? "..." : formatCurrency(summary.dailyTotalOut)}
-              </p>
+              <p>{loadingSummary ? "..." : formatCurrency(summary.dailyTotalOut)}</p>
             </VolumeCard>
             <VolumeCard color="primary" fullWidthOnMobile>
               <h3>All-Time Balance (BRL)</h3>
-              <p>
-                {loadingSummary
-                  ? "..."
-                  : formatCurrency(summary.allTimeBalance)}
-              </p>
+              <p>{loadingSummary ? "..." : formatCurrency(summary.allTimeBalance)}</p>
             </VolumeCard>
             <VolumeCard color="success">
-              <h3>Number of Transactions (IN)</h3>
-              <p>
-                {loadingSummary ? "..." : formatNumber(summary.dailyCountIn)}
-              </p>
+              <h3># Transactions (IN)</h3>
+              <p>{loadingSummary ? "..." : formatNumber(summary.dailyCountIn)}</p>
             </VolumeCard>
             <VolumeCard color="error">
-              <h3>Number of Transactions (OUT)</h3>
-              <p>
-                {loadingSummary ? "..." : formatNumber(summary.dailyCountOut)}
-              </p>
+              <h3># Transactions (OUT)</h3>
+              <p>{loadingSummary ? "..." : formatNumber(summary.dailyCountOut)}</p>
+            </VolumeCard>
+             <VolumeCard color="primary">
+              <h3># Total Transactions</h3>
+              <p>{loadingSummary ? "..." : formatNumber(summary.dailyCountTotal)}</p>
             </VolumeCard>
           </VolumeContainer>
         </ControlsContainer>
@@ -226,85 +377,47 @@ const ClientDashboard = () => {
                   <th>Amount (BRL)</th>
                 </tr>
               </thead>
-              <motion.tbody
-                variants={containerVariants}
-                initial="hidden"
-                animate="visible"
-              >
+              <motion.tbody variants={containerVariants} initial="hidden" animate="visible">
                 {loadingTable ? (
-                  [...Array(10)].map((_, i) => (
-                    <tr key={i}>
-                      <td colSpan="4">
-                        <SkeletonCell />
-                      </td>
-                    </tr>
-                  ))
+                  [...Array(10)].map((_, i) => <SkeletonRow key={i} />)
                 ) : transactions.length === 0 ? (
-                  <tr>
-                    <td colSpan="4">
-                      <EmptyStateContainer>
-                        <h3>No transactions found</h3>
-                      </EmptyStateContainer>
-                    </td>
-                  </tr>
+                  <tr><td colSpan="4"><EmptyStateContainer><h3>No transactions found</h3></EmptyStateContainer></td></tr>
                 ) : (
-                  transactions.map((tx) => (
-                    <motion.tr key={tx.id} variants={itemVariants}>
-                      <td>{formatDateTime(tx.transaction_date)}</td>
-                      <TypeCell isCredit={tx.operation_direct === "in"}>
-                        {tx.operation_direct}
-                      </TypeCell>
-
-                      {/* === FIX: Intelligent Name Display === */}
-                      <td>
-                        {tx.operation_direct === "in"
-                          ? tx.sender_name || "Unknown"
-                          : tx.counterparty_name || "Unknown Receiver"}
-                      </td>
-
-                      <AmountCell isCredit={tx.operation_direct === "in"}>
-                        {tx.operation_direct === "in" ? "+" : "-"}
-                        {formatCurrency(tx.amount)}
-                      </AmountCell>
-                    </motion.tr>
-                  ))
+                  transactions.map((tx) => {
+                    const isCredit = tx.operation_direct === "in" || tx.operation_direct === "C";
+                    return (
+                        <motion.tr key={tx.id} variants={itemVariants}>
+                            <td>{formatDateTime(tx.transaction_date)}</td>
+                            <TypeCell isCredit={isCredit}>{isCredit ? "IN" : "OUT"}</TypeCell>
+                            <td>{isCredit ? (tx.sender_name || "Unknown Sender") : (tx.counterparty_name || "Unknown Receiver")}</td>
+                            <AmountCell isCredit={isCredit}>
+                                {isCredit ? "+" : "-"}
+                                {formatCurrency(tx.amount)}
+                            </AmountCell>
+                        </motion.tr>
+                    );
+                  })
                 )}
               </motion.tbody>
             </Table>
           </TableWrapper>
           <MobileListContainer>
-            {loadingTable ? (
-              <p>Loading...</p>
-            ) : (
-              transactions.map((tx) => (
-                <MobileCard
-                  key={tx.id}
-                  isCredit={tx.operation_direct === "in"}
-                  variants={itemVariants}
-                >
-                  <MobileCardHeader isCredit={tx.operation_direct === "in"}>
-                    {tx.operation_direct === "in" ? "+" : "-"}{" "}
-                    {formatCurrency(tx.amount)}
-                    <span>
-                      {tx.operation_direct === "in" ? (
-                        <FaArrowUp />
-                      ) : (
-                        <FaArrowDown />
-                      )}
-                    </span>
-                  </MobileCardHeader>
-                  <MobileCardBody>
-                    <p>
-                      <strong>
-                        {tx.operation_direct === "in"
-                          ? tx.sender_name || "Unknown"
-                          : tx.counterparty_name || "Unknown Receiver"}
-                      </strong>
-                    </p>
-                    <p>{formatDateTime(tx.transaction_date)}</p>
-                  </MobileCardBody>
-                </MobileCard>
-              ))
+            {loadingTable ? ( <p>Loading...</p> ) : (
+              transactions.map((tx) => {
+                const isCredit = tx.operation_direct === "in" || tx.operation_direct === "C";
+                return (
+                    <MobileCard key={tx.id} isCredit={isCredit} variants={itemVariants}>
+                        <MobileCardHeader isCredit={isCredit}>
+                            {isCredit ? "+" : "-"} {formatCurrency(tx.amount)}
+                            <span>{isCredit ? <FaArrowUp /> : <FaArrowDown />}</span>
+                        </MobileCardHeader>
+                        <MobileCardBody>
+                            <p><strong>{isCredit ? (tx.sender_name || "Unknown") : (tx.counterparty_name || "Unknown Receiver")}</strong></p>
+                            <p>{formatDateTime(tx.transaction_date)}</p>
+                        </MobileCardBody>
+                    </MobileCard>
+                );
+              })
             )}
           </MobileListContainer>
           <Pagination pagination={pagination} setPagination={setPagination} />

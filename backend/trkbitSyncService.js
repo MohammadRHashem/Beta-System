@@ -51,13 +51,15 @@ const fetchAndStoreTransactions = async (customStartDate = null) => {
 
         const connection = await pool.getConnection();
         try {
+            // --- MODIFIED QUERY ---
             const query = `
                 INSERT INTO trkbit_transactions 
-                (uid, tx_id, e2e_id, tx_date, amount, tx_type, tx_payer_name, tx_payer_id, raw_data)
+                (uid, tx_id, e2e_id, tx_date, amount, tx_pix_key, tx_type, tx_payer_name, tx_payer_id, raw_data)
                 VALUES ?
                 ON DUPLICATE KEY UPDATE 
                     tx_id = VALUES(tx_id),
                     tx_payer_name = VALUES(tx_payer_name),
+                    tx_pix_key = VALUES(tx_pix_key),
                     updated_at = NOW();
             `;
 
@@ -65,12 +67,14 @@ const fetchAndStoreTransactions = async (customStartDate = null) => {
             const chunkSize = 500;
             for (let i = 0; i < allTransactions.length; i += chunkSize) {
                 const chunk = allTransactions.slice(i, i + chunkSize);
+                // --- MODIFIED VALUES ---
                 const values = chunk.map(tx => [
                     tx.uid,
                     tx.tx_id,
                     tx.e2e_id,
                     tx.tx_date,
                     parseFloat(tx.amount),
+                    tx.tx_pix_key, // <-- ADDED
                     tx.tx_type,
                     tx.tx_payer_name,
                     tx.tx_payer_id,

@@ -7,7 +7,8 @@ exports.getAll = async (req, res) => {
     const userId = req.user.id;
     try {
         const [subaccounts] = await pool.query(
-            'SELECT * FROM subaccounts WHERE user_id = ? ORDER BY name ASC',
+            // --- MODIFIED: Select account_type ---
+            'SELECT id, name, account_type, subaccount_number, chave_pix, assigned_group_name FROM subaccounts WHERE user_id = ? ORDER BY name ASC',
             [userId]
         );
         res.json(subaccounts);
@@ -20,11 +21,18 @@ exports.getAll = async (req, res) => {
 // POST a new subaccount
 exports.create = async (req, res) => {
     const userId = req.user.id;
-    const { name, subaccount_number, chave_pix, assigned_group_jid } = req.body;
+    const { name, account_type, subaccount_number, chave_pix, assigned_group_jid } = req.body;
 
-    if (!name || !subaccount_number) {
-        return res.status(400).json({ message: 'Subaccount name and number are required.' });
+    if (!name || !account_type) {
+        return res.status(400).json({ message: 'Subaccount name and type are required.' });
     }
+    if (account_type === 'xpayz' && !subaccount_number) {
+        return res.status(400).json({ message: 'Subaccount Number is required for XPayz type.' });
+    }
+    if (account_type === 'cross' && !chave_pix) {
+        return res.status(400).json({ message: 'Chave PIX is required for Cross type.' });
+    }
+
 
     const connection = await pool.getConnection();
     try {
@@ -39,8 +47,8 @@ exports.create = async (req, res) => {
         }
         
         const [result] = await connection.query(
-            'INSERT INTO subaccounts (user_id, name, subaccount_number, chave_pix, assigned_group_jid, assigned_group_name) VALUES (?, ?, ?, ?, ?, ?)',
-            [userId, name, subaccount_number, chave_pix || null, assigned_group_jid || null, groupName]
+            'INSERT INTO subaccounts (user_id, name, account_type, subaccount_number, chave_pix, assigned_group_jid, assigned_group_name) VALUES (?, ?, ?, ?, ?, ?, ?)',
+            [userId, name, account_type, subaccount_number || null, chave_pix || null, assigned_group_jid || null, groupName]
         );
         
         await connection.commit();
@@ -66,10 +74,16 @@ exports.create = async (req, res) => {
 exports.update = async (req, res) => {
     const userId = req.user.id;
     const { id } = req.params;
-    const { name, subaccount_number, chave_pix, assigned_group_jid } = req.body;
+    const { name, account_type, subaccount_number, chave_pix, assigned_group_jid } = req.body;
 
-    if (!name || !subaccount_number) {
-        return res.status(400).json({ message: 'Subaccount name and number are required.' });
+    if (!name || !account_type) {
+        return res.status(400).json({ message: 'Subaccount name and type are required.' });
+    }
+    if (account_type === 'xpayz' && !subaccount_number) {
+        return res.status(400).json({ message: 'Subaccount Number is required for XPayz type.' });
+    }
+    if (account_type === 'cross' && !chave_pix) {
+        return res.status(400).json({ message: 'Chave PIX is required for Cross type.' });
     }
 
     const connection = await pool.getConnection();
@@ -85,8 +99,8 @@ exports.update = async (req, res) => {
         }
 
         const [result] = await connection.query(
-            'UPDATE subaccounts SET name = ?, subaccount_number = ?, chave_pix = ?, assigned_group_jid = ?, assigned_group_name = ? WHERE id = ? AND user_id = ?',
-            [name, subaccount_number, chave_pix || null, assigned_group_jid || null, groupName, id, userId]
+            'UPDATE subaccounts SET name = ?, account_type = ?, subaccount_number = ?, chave_pix = ?, assigned_group_jid = ?, assigned_group_name = ? WHERE id = ? AND user_id = ?',
+            [name, account_type, subaccount_number || null, chave_pix || null, assigned_group_jid || null, groupName, id, userId]
         );
 
         if (result.affectedRows === 0) {

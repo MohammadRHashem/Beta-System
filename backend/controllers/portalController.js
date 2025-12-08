@@ -35,7 +35,7 @@ exports.login = async (req, res) => {
         }
 
         const [[subaccount]] = await pool.query(
-            'SELECT id, name, subaccount_number, assigned_group_name FROM subaccounts WHERE id = ?', 
+            'SELECT id, name, account_type, subaccount_number, chave_pix, assigned_group_name FROM subaccounts WHERE id = ?', 
             [client.subaccount_id]
         );
 
@@ -45,7 +45,9 @@ exports.login = async (req, res) => {
             subaccountId: subaccount.id,
             subaccountNumber: subaccount.subaccount_number,
             groupName: subaccount.assigned_group_name,
-            accessLevel: accessLevel // Embed level in token
+            accessLevel: accessLevel,
+            accountType: subaccount.account_type, // <-- ADDED
+            chavePix: subaccount.chave_pix        // <-- ADDED
         };
         
         const token = jwt.sign(tokenPayload, PORTAL_JWT_SECRET, { expiresIn: '8h' });
@@ -66,7 +68,7 @@ exports.login = async (req, res) => {
 };
 
 exports.getDashboardSummary = async (req, res) => {
-    const subaccountNumber = req.client.subaccountNumber;
+    const { accountType, subaccountNumber, chavePix } = req.client;
     const { date } = req.query;
 
     if (!date) {
@@ -77,32 +79,36 @@ exports.getDashboardSummary = async (req, res) => {
     }
 
     try {
-        // --- THIS IS THE FIX ---
-        // The query now calculates SUMs for volume AND COUNTs for transactions in one go.
-        const dailySummaryQuery = `
-            SELECT 
-                SUM(CASE WHEN operation_direct = 'in' THEN amount ELSE 0 END) as dailyTotalIn,
-                SUM(CASE WHEN operation_direct = 'out' THEN amount ELSE 0 END) as dailyTotalOut,
-                COUNT(CASE WHEN operation_direct = 'in' THEN 1 END) as dailyCountIn,
-                COUNT(CASE WHEN operation_direct = 'out' THEN 1 END) as dailyCountOut,
-                COUNT(*) as dailyCountTotal
-            FROM xpayz_transactions
-            WHERE subaccount_id = ? AND DATE(transaction_date) = ?;
-        `;
-        const [[dailySummary]] = await pool.query(dailySummaryQuery, [subaccountNumber, date]);
-        // --- END OF FIX ---
+        let dailySummary, balance;
 
-        // The all-time balance query remains separate and unchanged.
-        const allTimeBalanceQuery = `
-            SELECT 
-                (SUM(CASE WHEN operation_direct = 'in' THEN amount ELSE 0 END) - 
-                 SUM(CASE WHEN operation_direct = 'out' THEN amount ELSE 0 END)) as allTimeBalance
-            FROM xpayz_transactions
-            WHERE subaccount_id = ?;
-        `;
-        const [[balance]] = await pool.query(allTimeBalanceQuery, [subaccountNumber]);
+        // --- BIMODAL LOGIC ---
+        if (accountType === 'cross') {
+            const dailySummaryQuery = `
+                SELECT 
+                    SUM(CASE WHEN tx_type = 'C' THEN amount ELSE 0 END) as dailyTotalIn,
+                    SUM(CASE WHEN tx_type = 'D' THEN amount ELSE 0 END) as dailyTotalOut,
+                    COUNT(CASE WHEN tx_type = 'C' THEN 1 END) as dailyCountIn,
+                    COUNT(CASE WHEN tx_type = 'D' THEN 1 END) as dailyCountOut,
+                    COUNT(*) as dailyCountTotal
+                FROM trkbit_transactions
+                WHERE tx_pix_key = ? AND DATE(tx_date) = ?;
+            `;
+            [[dailySummary]] = await pool.query(dailySummaryQuery, [chavePix, date]);
 
-        // Add the new count fields to the JSON response.
+            const allTimeBalanceQuery = `
+                SELECT (SUM(CASE WHEN tx_type = 'C' THEN amount ELSE 0 END) - 
+                        SUM(CASE WHEN tx_type = 'D' THEN amount ELSE 0 END)) as allTimeBalance
+                FROM trkbit_transactions WHERE tx_pix_key = ?;
+            `;
+            [[balance]] = await pool.query(allTimeBalanceQuery, [chavePix]);
+            
+        } else { // Default to 'xpayz'
+            const dailySummaryQuery = `/* ... existing XPayz query ... */`;
+            [[dailySummary]] = await pool.query(dailySummaryQuery, [subaccountNumber, date]);
+            const allTimeBalanceQuery = `/* ... existing XPayz query ... */`;
+            [[balance]] = await pool.query(allTimeBalanceQuery, [subaccountNumber]);
+        }
+
         res.json({ 
             dailyTotalIn: parseFloat(dailySummary.dailyTotalIn || 0),
             dailyTotalOut: parseFloat(dailySummary.dailyTotalOut || 0),
@@ -119,38 +125,80 @@ exports.getDashboardSummary = async (req, res) => {
 };
 
 exports.getTransactions = async (req, res) => {
-    const subaccountNumber = req.client.subaccountNumber;
+    const { accountType, subaccountNumber, chavePix } = req.client;
     const { page = 1, limit = 50, search, date } = req.query;
 
     try {
-        let query = `
+        let query, params, countQuery;
+        let total = 0;
+        let transactions = [];
+
+        // --- BIMODAL LOGIC ---
+        if (accountType === 'cross') {
+            query = `FROM trkbit_transactions WHERE tx_pix_key = ?`;
+            params = [chavePix];
+
+            if (search) {
+                query += ` AND (tx_payer_name LIKE ? OR amount LIKE ? OR tx_id LIKE ?)`;
+                const searchTerm = `%${search}%`;
+                params.push(searchTerm, searchTerm, searchTerm);
+            }
+            if (date) {
+                query += ' AND DATE(tx_date) = ?';
+                params.push(date);
+            }
+
+            countQuery = `SELECT count(*) as total ${query}`;
+            [[{ total }]] = await pool.query(countQuery, params);
+
+            // --- MODIFIED: Alias columns to match frontend expectations ---
+            const dataQuery = `
+                SELECT 
+                    uid as id,
+                    tx_date as transaction_date, 
+                    tx_payer_name as sender_name, 
+                    null as counterparty_name,
+                    amount, 
+                    tx_type as operation_direct,
+                    tx_id as xpayz_transaction_id,
+                    raw_data as raw_details
+                ${query}
+                ORDER BY tx_date DESC
+                LIMIT ? OFFSET ?
+            `;
+            const finalParams = [...params, parseInt(limit), (page - 1) * limit];
+            [transactions] = await pool.query(dataQuery, finalParams);
+
+        } else {
+            query = `
             FROM xpayz_transactions
             WHERE subaccount_id = ?
-        `;
-        const params = [subaccountNumber];
+            `;
+            const params = [subaccountNumber];
 
-        if (search) {
-            query += ` AND (sender_name LIKE ? OR counterparty_name LIKE ? OR amount LIKE ? OR xpayz_transaction_id LIKE ?)`;
-            const searchTerm = `%${search}%`;
-            params.push(searchTerm, searchTerm, searchTerm, searchTerm);
+            if (search) {
+                query += ` AND (sender_name LIKE ? OR counterparty_name LIKE ? OR amount LIKE ? OR xpayz_transaction_id LIKE ?)`;
+                const searchTerm = `%${search}%`;
+                params.push(searchTerm, searchTerm, searchTerm, searchTerm);
+            }
+            if (date) {
+                query += ' AND DATE(transaction_date) = ?';
+                params.push(date);
+            }
+
+            const countQuery = `SELECT count(*) as total ${query}`;
+            const [[{ total }]] = await pool.query(countQuery, params);
+
+            // === FIX: Select BOTH sender_name and counterparty_name ===
+            const dataQuery = `
+                SELECT id, transaction_date, sender_name, counterparty_name, amount, operation_direct, xpayz_transaction_id, raw_details
+                ${query}
+                ORDER BY transaction_date DESC
+                LIMIT ? OFFSET ?
+            `;
+            const finalParams = [...params, parseInt(limit), (page - 1) * limit];
+            const [transactions] = await pool.query(dataQuery, finalParams);
         }
-        if (date) {
-            query += ' AND DATE(transaction_date) = ?';
-            params.push(date);
-        }
-
-        const countQuery = `SELECT count(*) as total ${query}`;
-        const [[{ total }]] = await pool.query(countQuery, params);
-
-        // === FIX: Select BOTH sender_name and counterparty_name ===
-        const dataQuery = `
-            SELECT id, transaction_date, sender_name, counterparty_name, amount, operation_direct, xpayz_transaction_id, raw_details
-            ${query}
-            ORDER BY transaction_date DESC
-            LIMIT ? OFFSET ?
-        `;
-        const finalParams = [...params, parseInt(limit), (page - 1) * limit];
-        const [transactions] = await pool.query(dataQuery, finalParams);
         
         res.json({
             transactions,

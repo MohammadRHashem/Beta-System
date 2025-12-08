@@ -7,15 +7,14 @@ import {
   deleteSubaccount,
   getSubaccountCredentials,
   resetSubaccountPassword,
-  getRecibosTransactions, // Import
-  reassignTransaction     // Import
+  getRecibosTransactions,
+  reassignTransaction
 } from "../services/api";
 import Modal from "../components/Modal";
-import { FaPlus, FaEdit, FaTrash, FaKey, FaExchangeAlt, FaMagic } from "react-icons/fa"; // Added icons
+import { FaPlus, FaEdit, FaTrash, FaKey, FaExchangeAlt, FaMagic } from "react-icons/fa";
 import ComboBox from "../components/ComboBox";
-import Select from 'react-select'; // Use React-Select for the target dropdown inside the table
+import Select from 'react-select';
 
-// ... (Existing Styled Components remain) ...
 const PageContainer = styled.div`
   display: flex;
   flex-direction: column;
@@ -82,7 +81,6 @@ const Table = styled.table`
   }
 `;
 
-// === NEW COMPONENT: Suggestion Badge ===
 const SuggestionBadge = styled.div`
     background-color: #e6fffa;
     color: #00C49A;
@@ -108,16 +106,14 @@ const SubaccountsPage = ({ allGroups }) => {
   const [subaccounts, setSubaccounts] = useState([]);
   const [loading, setLoading] = useState(true);
   
-  // Existing Modals
+  // Modals State
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingSubaccount, setEditingSubaccount] = useState(null);
   const [isCredsModalOpen, setIsCredsModalOpen] = useState(false);
   const [currentCreds, setCurrentCreds] = useState(null);
   const [credsLoading, setCredsLoading] = useState(false);
-
-  // === NEW: Recibos Modal State ===
   const [isRecibosModalOpen, setIsRecibosModalOpen] = useState(false);
-  const [recibosAccountId, setRecibosAccountId] = useState(null); // Selected "Source" account
+  const [recibosAccountId, setRecibosAccountId] = useState(null);
   const [recibosTransactions, setRecibosTransactions] = useState([]);
   const [recibosLoading, setRecibosLoading] = useState(false);
 
@@ -147,11 +143,11 @@ const SubaccountsPage = ({ allGroups }) => {
     setEditingSubaccount(null);
     setIsCredsModalOpen(false);
     setCurrentCreds(null);
-    setIsRecibosModalOpen(false); // Close Recibos modal too
+    setIsRecibosModalOpen(false);
   };
 
   const handleDelete = async (id) => {
-    if (window.confirm("Are you sure?")) {
+    if (window.confirm("Are you sure? This will also delete any associated client portal credentials.")) {
       try {
         await deleteSubaccount(id);
         fetchSubaccounts();
@@ -180,7 +176,7 @@ const SubaccountsPage = ({ allGroups }) => {
   };
 
   const handleResetPassword = async (subaccountId, type) => {
-    if (!window.confirm(`Reset ${type === 'master' ? 'Full Access' : 'View-Only'} password?`)) {
+    if (!window.confirm(`Reset ${type === 'master' ? 'Full Access' : 'View-Only'} password? A new password will be generated.`)) {
       return;
     }
     setCredsLoading(true);
@@ -197,7 +193,6 @@ const SubaccountsPage = ({ allGroups }) => {
     }
   };
 
-  // === NEW: Fetch transactions for the selected "Recibos" account ===
   const fetchRecibosData = async (subNumber) => {
       if (!subNumber) return;
       setRecibosLoading(true);
@@ -211,12 +206,10 @@ const SubaccountsPage = ({ allGroups }) => {
       }
   };
 
-  // === NEW: Handle Reassignment ===
   const handleReassign = async (txId, targetSubaccountNumber) => {
       if (!confirm(`Move this transaction to the selected client?`)) return;
       try {
           await reassignTransaction(txId, targetSubaccountNumber);
-          // Remove from UI list immediately
           setRecibosTransactions(prev => prev.filter(tx => tx.id !== txId));
       } catch (error) {
           alert("Failed to reassign transaction.");
@@ -229,7 +222,6 @@ const SubaccountsPage = ({ allGroups }) => {
         <Header>
           <h2>Subaccount Management</h2>
           <div style={{display: 'flex', gap: '1rem'}}>
-            {/* === NEW BUTTON === */}
             <Button onClick={() => setIsRecibosModalOpen(true)} style={{backgroundColor: '#0A2540'}}>
                 <FaExchangeAlt /> Manage Recibos
             </Button>
@@ -239,23 +231,29 @@ const SubaccountsPage = ({ allGroups }) => {
           </div>
         </Header>
         <Card>
-          <p>Manage XPayz subaccounts, generate credentials, and manage internal "Recibos" transfers.</p>
+          <p>Manage XPayz and Cross subaccounts, generate credentials, and manage internal "Recibos" transfers.</p>
           <Table>
             <thead>
               <tr>
                 <th>Name</th>
-                <th>Subaccount Number</th>
+                <th>Type</th>
+                <th>Identifier (Number/PIX)</th>
                 <th>Assigned Group</th>
                 <th>Actions</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan="4">Loading...</td></tr>
+                <tr><td colSpan="5">Loading...</td></tr>
               ) : subaccounts.map((acc) => (
                   <tr key={acc.id}>
                     <td>{acc.name}</td>
-                    <td>{acc.subaccount_number}</td>
+                    <td>
+                        <span style={{ fontWeight: 'bold', color: acc.account_type === 'cross' ? '#217346' : '#7b1fa2' }}>
+                            {acc.account_type.toUpperCase()}
+                        </span>
+                    </td>
+                    <td>{acc.account_type === 'cross' ? acc.chave_pix : acc.subaccount_number}</td>
                     <td>{acc.assigned_group_name || <span style={{ color: "#999" }}>None</span>}</td>
                     <td className="actions">
                       <FaKey onClick={() => handleCredentials(acc)} title="Manage Credentials" />
@@ -269,7 +267,6 @@ const SubaccountsPage = ({ allGroups }) => {
         </Card>
       </PageContainer>
 
-      {/* Existing Modals */}
       <SubaccountModal
         isOpen={isModalOpen}
         onClose={handleCloseModals}
@@ -286,11 +283,10 @@ const SubaccountsPage = ({ allGroups }) => {
         loading={credsLoading}
       />
 
-      {/* === NEW: Recibos Manager Modal === */}
       <RecibosModal 
         isOpen={isRecibosModalOpen}
         onClose={handleCloseModals}
-        subaccounts={subaccounts} // Pass list for dropdown
+        subaccounts={subaccounts}
         loading={recibosLoading}
         transactions={recibosTransactions}
         onSelectAccount={(id) => { setRecibosAccountId(id); fetchRecibosData(id); }}
@@ -301,7 +297,140 @@ const SubaccountsPage = ({ allGroups }) => {
   );
 };
 
-// === NEW MODAL COMPONENT ===
+// --- MODALS ---
+
+const SubaccountModal = ({ isOpen, onClose, onSave, subaccount, allGroups }) => {
+  const [formData, setFormData] = useState({
+    name: "", account_type: "xpayz", subaccount_number: "",
+    chave_pix: "", assigned_group_jid: "",
+  });
+
+  useEffect(() => {
+    if (isOpen) {
+        if (subaccount) {
+            setFormData({
+                name: subaccount.name || "",
+                account_type: subaccount.account_type || 'xpayz',
+                subaccount_number: subaccount.subaccount_number || "",
+                chave_pix: subaccount.chave_pix || "",
+                assigned_group_jid: subaccount.assigned_group_jid || "",
+            });
+        } else {
+            setFormData({
+                name: "", account_type: "xpayz", subaccount_number: "",
+                chave_pix: "", assigned_group_jid: "",
+            });
+        }
+    }
+  }, [subaccount, isOpen]);
+
+  const handleChange = (e) => {
+    setFormData({ ...formData, [e.target.name]: e.target.value });
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    try {
+      if (subaccount) {
+        await updateSubaccount(subaccount.id, formData);
+      } else {
+        await createSubaccount(formData);
+      }
+      onSave();
+      onClose();
+    } catch (error) {
+      alert(error.response?.data?.message || "Failed to save subaccount.");
+    }
+  };
+
+  return (
+    <Modal isOpen={isOpen} onClose={onClose} maxWidth="600px">
+      <h2>{subaccount ? "Edit Subaccount" : "Create Subaccount"}</h2>
+      <ModalForm onSubmit={handleSubmit}>
+        <InputGroup>
+          <Label>Subaccount Name</Label>
+          <Input name="name" value={formData.name} onChange={handleChange} placeholder="e.g., Jupeter" required />
+        </InputGroup>
+
+        <InputGroup>
+            <Label>Account Type</Label>
+            <div style={{ display: 'flex', gap: '1rem', marginTop: '0.5rem' }}>
+                <label style={{cursor: 'pointer'}}><input type="radio" name="account_type" value="xpayz" checked={formData.account_type === 'xpayz'} onChange={handleChange} /> XPayz</label>
+                <label style={{cursor: 'pointer'}}><input type="radio" name="account_type" value="cross" checked={formData.account_type === 'cross'} onChange={handleChange} /> Cross</label>
+            </div>
+        </InputGroup>
+
+        {formData.account_type === 'xpayz' && (
+            <InputGroup>
+                <Label>Subaccount Number (ID)</Label>
+                <Input name="subaccount_number" value={formData.subaccount_number} onChange={handleChange} placeholder="e.g., 110030" required={formData.account_type === 'xpayz'} />
+            </InputGroup>
+        )}
+        {formData.account_type === 'cross' && (
+            <InputGroup>
+                <Label>Chave PIX</Label>
+                <Input name="chave_pix" value={formData.chave_pix} onChange={handleChange} placeholder="e.g., financeirojk@cross-otc.com" required={formData.account_type === 'cross'} />
+            </InputGroup>
+        )}
+
+        <InputGroup>
+          <Label>Assign to WhatsApp Group (Optional)</Label>
+          <ComboBox
+            options={[{ id: "", name: "None" }, ...allGroups]}
+            value={formData.assigned_group_jid}
+            onChange={(e) => setFormData({ ...formData, assigned_group_jid: e.target.value })}
+            placeholder="Select a group to assign..."
+          />
+        </InputGroup>
+        <Button type="submit" style={{ alignSelf: "flex-end", marginTop: "1rem" }}>Save Changes</Button>
+      </ModalForm>
+    </Modal>
+  );
+};
+
+const CredentialsModal = ({ isOpen, onClose, credentials, onReset, loading }) => {
+  if (!credentials) return null;
+
+  const CredentialBox = styled.div`
+    background: #f6f9fc;
+    padding: 1rem;
+    border-radius: 6px;
+    border: 1px solid #e6ebf1;
+    margin-bottom: 1rem;
+    
+    h4 { margin: 0 0 0.5rem 0; color: #0A2540; font-size: 0.95rem; }
+    div { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.25rem; }
+    span { font-size: 0.85rem; color: #6b7c93; }
+    strong { font-family: "Courier New", Courier, monospace; color: #0a2540; }
+  `;
+
+  return (
+    <Modal isOpen={isOpen} onClose={onClose} maxWidth="550px">
+      {loading ? ( <p>Loading...</p> ) : (
+        <>
+          <h2>Credentials for {credentials.subaccountName}</h2>
+          <div style={{marginBottom: '1rem', padding: '0.5rem', background: '#e3f2fd', borderRadius: '4px'}}>
+             <strong>Username:</strong> {credentials.username}
+          </div>
+          <CredentialBox>
+            <h4>Full Access (Master)</h4>
+            <div><span>Password:</span> <strong>{credentials.masterPassword}</strong></div>
+            <ResetButton onClick={() => onReset(credentials.subaccountId, 'master')}>Reset Master Password</ResetButton>
+          </CredentialBox>
+          <CredentialBox>
+            <h4>View Only (Restricted)</h4>
+            <div><span>Password:</span> <strong>{credentials.viewOnlyPassword}</strong></div>
+            <ResetButton onClick={() => onReset(credentials.subaccountId, 'view_only')}>Reset View-Only Password</ResetButton>
+          </CredentialBox>
+          <p style={{ color: "#6b7c93", fontSize: '0.85rem' }}>
+            Note: If a password is hidden (••••••••••), you must reset it to see a new one.
+          </p>
+        </>
+      )}
+    </Modal>
+  );
+};
+
 const RecibosModal = ({ isOpen, onClose, subaccounts, loading, transactions, onSelectAccount, selectedAccountId, onReassign }) => {
     const subOptions = subaccounts.map(s => ({ value: s.subaccount_number, label: s.name }));
 
@@ -309,7 +438,6 @@ const RecibosModal = ({ isOpen, onClose, subaccounts, loading, transactions, onS
         <Modal isOpen={isOpen} onClose={onClose} maxWidth="900px">
             <h2>Recibos / Internal Transfer Manager</h2>
             <p>Select your "Recibos" or "Catch-all" account to distribute transactions to the correct clients.</p>
-            
             <div style={{marginBottom: '1.5rem'}}>
                 <label style={{fontWeight: 'bold', display: 'block', marginBottom: '0.5rem'}}>Select Source Account (Recibos)</label>
                 <Select 
@@ -318,7 +446,6 @@ const RecibosModal = ({ isOpen, onClose, subaccounts, loading, transactions, onS
                     placeholder="Choose account to inspect..."
                 />
             </div>
-
             {selectedAccountId && (
                 <div style={{maxHeight: '500px', overflowY: 'auto', border: '1px solid #eee', borderRadius: '4px'}}>
                     {loading ? <p style={{padding: '1rem'}}>Loading transactions...</p> : (
@@ -352,18 +479,9 @@ const RecibosModal = ({ isOpen, onClose, subaccounts, loading, transactions, onS
     );
 };
 
-// Helper component for row state
 const RecibosRow = ({ tx, subOptions, onReassign }) => {
     const [target, setTarget] = useState(null);
 
-    // Auto-select logic if needed, or just visual
-    const handleSuggestionClick = () => {
-        const opt = subOptions.find(o => o.value == tx.suggestion.subaccount_number) || 
-                    subOptions.find(o => o.label === tx.suggestion.subaccountName); // Fallback matching
-        if (opt) setTarget(opt);
-    };
-
-    // Match suggestion to options safely
     const suggestionOption = tx.suggestion 
         ? subOptions.find(o => o.label === tx.suggestion.subaccountName) 
         : null;
@@ -387,7 +505,7 @@ const RecibosRow = ({ tx, subOptions, onReassign }) => {
                         value={target} 
                         onChange={setTarget} 
                         placeholder="Select Client..."
-                        menuPortalTarget={document.body} // Fix z-index in table
+                        menuPortalTarget={document.body}
                         styles={{ menuPortal: base => ({ ...base, zIndex: 9999 }) }}
                     />
                 </div>
@@ -403,183 +521,6 @@ const RecibosRow = ({ tx, subOptions, onReassign }) => {
     );
 };
 
-// ... (Keep CredentialsModal, ModalForm, SubaccountModal unchanged below) ...
-const CredentialsModal = ({ isOpen, onClose, credentials, onReset, loading }) => {
-  if (!credentials) return null;
 
-  const CredentialBox = styled.div`
-    background: #f6f9fc;
-    padding: 1rem;
-    border-radius: 6px;
-    border: 1px solid #e6ebf1;
-    margin-bottom: 1rem;
-    
-    h4 { margin: 0 0 0.5rem 0; color: #0A2540; font-size: 0.95rem; }
-    div { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.25rem; }
-    span { font-size: 0.85rem; color: #6b7c93; }
-    strong { font-family: "Courier New", Courier, monospace; color: #0a2540; }
-  `;
-
-  return (
-    <Modal isOpen={isOpen} onClose={onClose} maxWidth="550px">
-      {loading ? (
-        <p>Loading...</p>
-      ) : (
-        <>
-          <h2>Credentials for {credentials.subaccountName}</h2>
-          
-          <div style={{marginBottom: '1rem', padding: '0.5rem', background: '#e3f2fd', borderRadius: '4px'}}>
-             <strong>Username:</strong> {credentials.username}
-          </div>
-
-          <CredentialBox>
-            <h4>Full Access (Master)</h4>
-            <div><span>Password:</span> <strong>{credentials.masterPassword}</strong></div>
-            <ResetButton onClick={() => onReset(credentials.subaccountId, 'master')}>Reset Master Password</ResetButton>
-          </CredentialBox>
-
-          <CredentialBox>
-            <h4>View Only (Restricted)</h4>
-            <div><span>Password:</span> <strong>{credentials.viewOnlyPassword}</strong></div>
-            <ResetButton onClick={() => onReset(credentials.subaccountId, 'view_only')}>Reset View-Only Password</ResetButton>
-          </CredentialBox>
-
-          <p style={{ color: "#6b7c93", fontSize: '0.85rem' }}>
-            Note: If a password is hidden (••••), you must reset it to see a new one.
-          </p>
-        </>
-      )}
-    </Modal>
-  );
-};
-
-const ModalForm = styled.form`
-  display: flex;
-  flex-direction: column;
-  gap: 1.5rem;
-`;
-
-const InputGroup = styled.div`
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-`;
-
-const Label = styled.label`
-  font-weight: 500;
-`;
-
-const Input = styled.input`
-  padding: 0.75rem;
-  border: 1px solid ${({ theme }) => theme.border};
-  border-radius: 4px;
-  font-size: 1rem;
-`;
-
-const SubaccountModal = ({
-  isOpen,
-  onClose,
-  onSave,
-  subaccount,
-  allGroups,
-}) => {
-  const [formData, setFormData] = useState({
-    name: "",
-    subaccount_number: "",
-    chave_pix: "",
-    assigned_group_jid: "",
-  });
-
-  useEffect(() => {
-    if (subaccount) {
-      setFormData({
-        name: subaccount.name || "",
-        subaccount_number: subaccount.subaccount_number || "",
-        chave_pix: subaccount.chave_pix || "",
-        assigned_group_jid: subaccount.assigned_group_jid || "",
-      });
-    } else {
-      setFormData({
-        name: "",
-        subaccount_number: "",
-        chave_pix: "",
-        assigned_group_jid: "",
-      });
-    }
-  }, [subaccount, isOpen]);
-
-  const handleChange = (e) => {
-    setFormData({ ...formData, [e.target.name]: e.target.value });
-  };
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    try {
-      if (subaccount) {
-        await updateSubaccount(subaccount.id, formData);
-      } else {
-        await createSubaccount(formData);
-      }
-      onSave();
-      onClose();
-    } catch (error) {
-      alert(error.response?.data?.message || "Failed to save subaccount.");
-    }
-  };
-
-  return (
-    <Modal isOpen={isOpen} onClose={onClose} maxWidth="600px">
-      <h2>{subaccount ? "Edit Subaccount" : "Create Subaccount"}</h2>
-      <ModalForm onSubmit={handleSubmit}>
-        <InputGroup>
-          <Label>Subaccount Name</Label>
-          <Input
-            name="name"
-            value={formData.name}
-            onChange={handleChange}
-            placeholder="e.g., Jupeter"
-            required
-          />
-        </InputGroup>
-        <InputGroup>
-          <Label>Subaccount Number (ID)</Label>
-          <Input
-            name="subaccount_number"
-            value={formData.subaccount_number}
-            onChange={handleChange}
-            placeholder="e.g., 110030"
-            required
-          />
-        </InputGroup>
-        <InputGroup>
-          <Label>Chave PIX</Label>
-          <Input
-            name="chave_pix"
-            value={formData.chave_pix}
-            onChange={handleChange}
-            placeholder="e.g., d05cec4d-..."
-          />
-        </InputGroup>
-        <InputGroup>
-          <Label>Assign to WhatsApp Group (Optional)</Label>
-          <ComboBox
-            options={[{ id: "", name: "None" }, ...allGroups]}
-            value={formData.assigned_group_jid}
-            onChange={(e) =>
-              setFormData({ ...formData, assigned_group_jid: e.target.value })
-            }
-            placeholder="Select a group to assign..."
-          />
-        </InputGroup>
-        <Button
-          type="submit"
-          style={{ alignSelf: "flex-end", marginTop: "1rem" }}
-        >
-          Save Changes
-        </Button>
-      </ModalForm>
-    </Modal>
-  );
-};
-
+// Default export
 export default SubaccountsPage;
