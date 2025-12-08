@@ -25,7 +25,7 @@ const getBusinessDayFromLocalString = (localDateString) => {
 exports.getTransactions = async (req, res) => {
     const {
         page = 1, limit = 50, sortOrder = 'desc',
-        search, dateFrom, dateTo, operation // <-- Changed 'date' to 'dateFrom' and 'dateTo'
+        search, dateFrom, dateTo, operation
     } = req.query;
 
     try {
@@ -37,44 +37,32 @@ exports.getTransactions = async (req, res) => {
         const params = [];
 
         if (search) {
-            query += ` AND (end_to_end_id LIKE ? OR payer_name LIKE ? OR value LIKE ?)`;
+            query += ` AND (at.end_to_end_id LIKE ? OR at.payer_name LIKE ? OR at.value LIKE ?)`;
             const searchTerm = `%${search}%`;
             params.push(searchTerm, searchTerm, searchTerm);
         }
-        
-        // <-- Logic updated to handle a range -->
-        if (dateFrom) {
-            query += ' AND DATE(inclusion_date) >= ?';
-            params.push(dateFrom);
-        }
-        if (dateTo) {
-            query += ' AND DATE(inclusion_date) <= ?';
-            params.push(dateTo);
-        }
-        // <-- End of range logic -->
+        if (dateFrom) { query += ' AND DATE(at.inclusion_date) >= ?'; params.push(dateFrom); }
+        if (dateTo) { query += ' AND DATE(at.inclusion_date) <= ?'; params.push(dateTo); }
+        if (operation) { query += ' AND at.operation = ?'; params.push(operation); }
 
-        if (operation) {
-            query += ' AND operation = ?';
-            params.push(operation);
-        }
-
-        const countQuery = `SELECT count(*) as total ${query}`;
+        const countQuery = `SELECT count(DISTINCT at.id) as total ${query}`;
         const [countRows] = await pool.query(countQuery, params);
         const total = countRows[0]?.total || 0;
 
         if (total === 0) {
-            return res.json({
-                transactions: [], totalPages: 0, currentPage: 1, totalRecords: 0,
-            });
+            return res.json({ transactions: [], totalPages: 0, currentPage: 1, totalRecords: 0 });
         }
 
+        // === THIS IS THE FIX: Use MAX() to resolve GROUP BY ambiguity ===
         const dataQuery = `
-            SELECT at.*, i.id as linked_invoice_id
+            SELECT at.*, MAX(i.id) as linked_invoice_id
             ${query}
             GROUP BY at.id
             ORDER BY at.inclusion_date ${sortOrder === 'asc' ? 'ASC' : 'DESC'}
             LIMIT ? OFFSET ?
         `;
+        // =============================================================
+        
         const finalParams = [...params, parseInt(limit), (page - 1) * limit];
         const [transactions] = await pool.query(dataQuery, finalParams);
         

@@ -24,16 +24,19 @@ exports.getTransactions = async (req, res) => {
         const countQuery = `SELECT count(DISTINCT tt.id) as total ${query}`;
         const [[{ total }]] = await pool.query(countQuery, params);
 
+        // === THIS IS THE FIX: Use MAX() to resolve GROUP BY ambiguity ===
         const dataQuery = `
             SELECT 
                 tt.*,
-                i.id as linked_invoice_id,
-                i.message_id as linked_invoice_message_id
+                MAX(i.id) as linked_invoice_id,
+                MAX(i.message_id) as linked_invoice_message_id
             ${query}
             GROUP BY tt.id
             ORDER BY tt.tx_date DESC
             LIMIT ? OFFSET ?
         `;
+        // =============================================================
+
         const finalParams = [...params, parseInt(limit), parseInt(offset)];
         const [transactions] = await pool.query(dataQuery, finalParams);
 
