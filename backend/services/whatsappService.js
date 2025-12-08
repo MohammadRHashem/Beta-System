@@ -592,14 +592,13 @@ const invoiceWorker = new Worker(
                   break;
               }
           }
-
-          let matchId = confirmedId;
+          
           if (confirmedId) {
               // 3. Atomic Update (Prevent Double Spending)
-              const [updateResult] = await pool.query('UPDATE trkbit_transactions SET is_used = 1 WHERE uid = ? AND is_used = 0', [matchId]);
+              const [updateResult] = await pool.query('UPDATE trkbit_transactions SET is_used = 1 WHERE uid = ? AND is_used = 0', [confirmedId]);
 
               if (updateResult.affectedRows > 0) {
-                  linkedTransactionId = matchId; // <-- Capture Link Info
+                  linkedTransactionId = confirmedId; // <-- Capture Link Info
                   linkedTransactionSource = 'Trkbit'; // <-- Capture Link Info
                   await originalMessage.reply("Caiu");
                   await originalMessage.react("🟢");
