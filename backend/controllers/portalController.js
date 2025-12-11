@@ -6,6 +6,7 @@ const ExcelJS = require('exceljs');
 const PDFDocument = require('pdfkit');
 const jwt = require('jsonwebtoken');
 require('dotenv').config();
+const axios = require('axios');
 
 const PORTAL_JWT_SECRET = process.env.PORTAL_JWT_SECRET;
 
@@ -303,5 +304,53 @@ exports.exportTransactions = async (req, res) => {
     } catch (error) {
         console.error(`[PORTAL-EXPORT-ERROR] Failed to export for subaccount ${subaccountId}:`, error);
         res.status(500).json({ message: 'Failed to export transactions.' });
+    }
+};
+
+exports.triggerPartnerConfirmation = async (req, res) => {
+    // This is the new secure endpoint for the portal
+    const { correlation_id } = req.body;
+    const clientUsername = req.client.username;
+
+    // Security Check: Only allow the 'xplus' user to perform this action
+    if (clientUsername !== 'xplus') {
+        return res.status(403).json({ message: 'Forbidden: You do not have permission to perform this action.' });
+    }
+
+    if (!correlation_id) {
+        return res.status(400).json({ message: 'Correlation ID is required.' });
+    }
+
+    const BRIDGE_API_URL = process.env.BRIDGE_API_URL;
+    const BRIDGE_API_KEY = process.env.BRIDGE_API_KEY;
+
+    if (!BRIDGE_API_URL || !BRIDGE_API_KEY) {
+        console.error('[PORTAL-BRIDGE-CONFIRM] Bridge API URL or Key is not configured on the server.');
+        return res.status(500).json({ message: 'Bridge API is not configured on the server.' });
+    }
+
+    try {
+        console.log(`[PORTAL-BRIDGE-CONFIRM] Relaying manual confirmation for Correlation ID: ${correlation_id}`);
+        
+        // This is the secure, server-to-server call to the Payment Bridge microservice
+        const response = await axios.post(
+            `${BRIDGE_API_URL}/webhook/trigger`,
+            { correlation_id },
+            {
+                headers: {
+                    'api-key': BRIDGE_API_KEY,
+                    'Content-Type': 'application/json'
+                },
+                timeout: 15000
+            }
+        );
+
+        res.status(200).json(response.data);
+
+    } catch (error) {
+        console.error('[PORTAL-BRIDGE-CONFIRM] Error calling bridge trigger endpoint:', error.response?.data || error.message);
+        const status = error.response?.status || 502;
+        const message = error.response?.data?.message || 'Failed to communicate with the payment bridge.';
+        res.status(status).json({ message });
     }
 };
