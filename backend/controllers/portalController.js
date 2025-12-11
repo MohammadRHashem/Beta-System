@@ -190,7 +190,29 @@ exports.getTransactions = async (req, res) => {
             }
 
         } else { // Default to 'xpayz'
-            let query = `FROM xpayz_transactions xt WHERE xt.subaccount_id = ?`;
+            
+            // Step 1: Link unsynced transactions first.
+            // This ensures new payments are linked before being displayed.
+            try {
+                const linkQuery = `
+                    UPDATE bridge_transactions AS bt
+                    JOIN xpayz_transactions AS xt ON bt.external_id = xt.external_id
+                    SET bt.xpayz_transaction_id = xt.id
+                    WHERE bt.xpayz_transaction_id IS NULL 
+                      AND xt.subaccount_id = ?;
+                `;
+                await pool.query(linkQuery, [subaccountNumber]);
+            } catch (linkError) {
+                // Log the collation error if it happens here, but don't stop the request
+                console.error('[PORTAL-LINK-ERROR] Failed to auto-link transactions:', linkError.sqlMessage || linkError.message);
+            }
+            
+            // Step 2: Build the final query for fetching data.
+            let query = `
+                FROM xpayz_transactions xt
+                LEFT JOIN bridge_transactions bt ON xt.id = bt.xpayz_transaction_id
+                WHERE xt.subaccount_id = ?
+            `;
             const params = [subaccountNumber];
 
             if (search) {
@@ -203,13 +225,7 @@ exports.getTransactions = async (req, res) => {
                 params.push(date);
             }
 
-            // --- THIS IS THE CRITICAL CHANGE ---
-            // We modify the query to join our new table.
-            const joinQuery = query.replace('FROM xpayz_transactions xt', 
-                `FROM xpayz_transactions xt LEFT JOIN bridge_transactions bt ON xt.id = bt.xpayz_transaction_id`
-            );
-
-            const countQuery = `SELECT count(xt.id) as total ${joinQuery}`;
+            const countQuery = `SELECT count(xt.id) as total ${query}`;
             const [[{ total: queryTotal }]] = await pool.query(countQuery, params);
             total = queryTotal;
 
@@ -217,9 +233,9 @@ exports.getTransactions = async (req, res) => {
                 const dataQuery = `
                     SELECT 
                         xt.id, xt.transaction_date, xt.sender_name, xt.counterparty_name, 
-                        xt.amount, xt.operation_direct, xt.xpayz_transaction_id, xt.raw_details,
+                        xt.amount, xt.operation_direct, xt.xpayz_transaction_id,
                         bt.correlation_id, bt.status as bridge_status
-                    ${joinQuery}
+                    ${query}
                     ORDER BY xt.transaction_date DESC
                     LIMIT ? OFFSET ?
                 `;
@@ -236,6 +252,7 @@ exports.getTransactions = async (req, res) => {
         });
 
     } catch (error) {
+        // The detailed error log will now show the exact point of failure
         console.error(`[PORTAL-TRANSACTIONS-ERROR] Failed to fetch transactions:`, error);
         res.status(500).json({ message: 'Failed to fetch transactions.' });
     }

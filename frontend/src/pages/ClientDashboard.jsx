@@ -389,14 +389,14 @@ const ClientDashboard = () => {
                   <th>Type</th>
                   <th>Counterparty</th>
                   <th>Amount (BRL)</th>
-                  {clientData.username === 'ORBITUK' && <th>Partner Actions</th>}
+                  {clientData.username === 'xplus' && <th>Partner Actions</th>}
                 </tr>
               </thead>
               <tbody>
                 {loadingTable ? (
-                  [...Array(10)].map((_, i) => ( <tr><td colSpan={clientData.username === 'ORBITUK' ? 5 : 4}><SkeletonCell /></td></tr> ))
+                  [...Array(10)].map((_, i) => ( <tr><td colSpan={clientData.username === 'xplus' ? 5 : 4}><SkeletonCell /></td></tr> ))
                 ) : transactions.length === 0 ? (
-                  <tr><td colSpan={clientData.username === 'ORBITUK' ? 5 : 4}><EmptyStateContainer><h3>No transactions found</h3></EmptyStateContainer></td></tr>
+                  <tr><td colSpan={clientData.username === 'xplus' ? 5 : 4}><EmptyStateContainer><h3>No transactions found</h3></EmptyStateContainer></td></tr>
                 ) : (
                   transactions.map((tx) => {
                     const isCredit = tx.operation_direct === "in" || tx.operation_direct === "C";
@@ -408,7 +408,7 @@ const ClientDashboard = () => {
                             <td>{isCredit ? (tx.sender_name || "Unknown") : (tx.counterparty_name || "Unknown")}</td>
                             <AmountCell isCredit={isCredit}>{formatCurrency(tx.amount)}</AmountCell>
                             
-                            {clientData.username === 'ORBITUK' && (
+                            {clientData.username === 'xplus' && (
                                 <td>
                                     {isCredit && tx.correlation_id && (
                                         isConfirmed ? (
@@ -431,19 +431,40 @@ const ClientDashboard = () => {
             </Table>
           </TableWrapper>
           <MobileListContainer>
-            {loadingTable ? ( <p>Loading...</p> ) : (
+            {loadingTable ? (
+              <p>Loading...</p>
+            ) : transactions.length === 0 ? (
+                <EmptyStateContainer><h3>No transactions found</h3></EmptyStateContainer>
+            ) : (
               transactions.map((tx) => {
                 const isCredit = tx.operation_direct === "in" || tx.operation_direct === "C";
+                const isConfirmed = tx.bridge_status === 'paid' || tx.bridge_status === 'paid_manual';
                 return (
                     <MobileCard key={tx.id} isCredit={isCredit} variants={itemVariants}>
                         <MobileCardHeader isCredit={isCredit}>
-                            {isCredit ? "+" : "-"} {formatCurrency(tx.amount)}
+                            <span>{isCredit ? "+" : "-"} {formatCurrency(tx.amount)}</span>
                             <span>{isCredit ? <FaArrowUp /> : <FaArrowDown />}</span>
                         </MobileCardHeader>
                         <MobileCardBody>
                             <p><strong>{isCredit ? (tx.sender_name || "Unknown") : (tx.counterparty_name || "Unknown Receiver")}</strong></p>
                             <p>{formatDateTime(tx.transaction_date)}</p>
                         </MobileCardBody>
+
+                        {/* --- NEW: Partner Actions for Mobile --- */}
+                        {clientData.username === 'xplus' && isCredit && tx.correlation_id && (
+                            <div style={{ marginTop: '0.75rem', paddingTop: '0.75rem', borderTop: '1px solid #eee' }}>
+                                {isConfirmed ? (
+                                    <span style={{ color: '#10b981', display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: '600', fontSize: '0.9rem' }}>
+                                        <FaCheckCircle /> Partner Confirmed
+                                    </span>
+                                ) : (
+                                    <ActionButton onClick={() => handleManualConfirm(tx.correlation_id)}>
+                                        <FaPaperPlane /> Confirm for Partner
+                                    </ActionButton>
+                                )}
+                            </div>
+                        )}
+                        {/* --- END of NEW --- */}
                     </MobileCard>
                 );
               })

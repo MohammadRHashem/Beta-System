@@ -41,6 +41,7 @@ class Transaction:
     operation_direct: str
     sender_name: str | None
     destination_name: str | None
+    external_id: str | None
     raw: dict
 
 class XPayzClient:
@@ -101,6 +102,7 @@ class XPayzClient:
             operation_direct=d.get("operation_direct"),
             sender_name=d.get("sender_name"),
             destination_name=d.get("destination_name"),
+            external_id=d.get("external_id"),
             raw=d,
         )
 
@@ -125,17 +127,20 @@ def save_transactions_to_db(subaccount_id: int, transactions: list[Transaction])
         return
         
     cursor = db.cursor()
+
+    partner_subaccount_id = os.getenv("PARTNER_SUBACCOUNT_NUMBER")
     
     insert_query = """
         INSERT INTO xpayz_transactions (
             xpayz_transaction_id, subaccount_id, amount, operation_direct,
             sender_name, sender_name_normalized, counterparty_name, 
-            transaction_date, raw_details
-        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            transaction_date, raw_details, external_id
+        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         ON DUPLICATE KEY UPDATE 
             xpayz_transaction_id=xpayz_transaction_id,
             operation_direct=VALUES(operation_direct),
-            counterparty_name=VALUES(counterparty_name);
+            counterparty_name=VALUES(counterparty_name),
+            external_id=VALUES(external_id);
     """
     
     count = 0
@@ -171,10 +176,32 @@ def save_transactions_to_db(subaccount_id: int, transactions: list[Transaction])
                 normalized,
                 counterparty,
                 tx_date,
-                json.dumps(tx.raw)
+                json.dumps(tx.raw),
+                tx.external_id
             )
             cursor.execute(insert_query, values)
             count += cursor.rowcount
+
+            if str(subaccount_id) == partner_subaccount_id and tx.operation_direct == 'in':
+                # The python script gets a fresh ID from the DB after insert
+                xpayz_tx_id = cursor.lastrowid 
+                
+                # Find a matching bridge transaction
+                link_query = """
+                    UPDATE bridge_transactions 
+                    SET xpayz_transaction_id = %s 
+                    WHERE payer_document = %s 
+                      AND amount = %s 
+                      AND status = 'pending' 
+                      AND xpayz_transaction_id IS NULL
+                    LIMIT 1;
+                """
+                # We need to normalize the sender name to get the document
+                payer_doc = ''.join(filter(str.isdigit, tx.sender_name or ''))
+
+                if payer_doc:
+                    cursor.execute(link_query, (xpayz_tx_id, payer_doc, amount))
+
         except Exception as e:
             print(f"⚠️ Could not process transaction ID {tx.id}: {e}", file=sys.stderr)
             
