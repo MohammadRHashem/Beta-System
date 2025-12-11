@@ -1417,7 +1417,7 @@ const handleMessage = async (message) => {
           );
           
           if (io) io.emit('wallet_request:new');
-          await message.react('🔔');
+          await message.react('🔔');          
           
           // Mark as processed and stop further execution for this message
           await pool.query("INSERT IGNORE INTO processed_messages (message_id) VALUES (?)", [message.id._serialized]);
