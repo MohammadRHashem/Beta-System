@@ -1,3 +1,5 @@
+// frontend/src/pages/ClientDashboard.jsx
+
 import React, { useState, useEffect, useCallback } from 'react';
 import styled, { keyframes } from 'styled-components';
 import { motion } from 'framer-motion';
@@ -82,6 +84,23 @@ const RefreshButton = styled.button`
     transform: translateY(-2px);
   }
 `;
+
+const ActionButton = styled.button`
+  background-color: #e3f2fd;
+  color: #0A2540;
+  border: 1px solid #bbdefb;
+  padding: 0.5rem 1rem;
+  border-radius: 6px;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  transition: all 0.2s;
+  &:hover { background-color: #bbdefb; }
+`;
+
 const Card = styled.div`
   background: #fff;
   border-radius: 12px;
@@ -450,7 +469,6 @@ const ClientDashboard = () => {
                             <p>{formatDateTime(tx.transaction_date)}</p>
                         </MobileCardBody>
 
-                        {/* --- NEW: Partner Actions for Mobile --- */}
                         {clientData.username === 'xplus' && isCredit && tx.correlation_id && (
                             <div style={{ marginTop: '0.75rem', paddingTop: '0.75rem', borderTop: '1px solid #eee' }}>
                                 {isConfirmed ? (
@@ -464,7 +482,6 @@ const ClientDashboard = () => {
                                 )}
                             </div>
                         )}
-                        {/* --- END of NEW --- */}
                     </MobileCard>
                 );
               })

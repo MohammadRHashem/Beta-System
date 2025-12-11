@@ -143,33 +143,33 @@ exports.getDashboardSummary = async (req, res) => {
 };
 
 exports.getTransactions = async (req, res) => {
-    const { accountType, subaccountNumber, chavePix } = req.client;
-    const { page = 1, limit = 50, search, date } = req.query;
+  const { accountType, subaccountNumber, chavePix } = req.client;
+  const { page = 1, limit = 50, search, date } = req.query;
 
-    try {
-        let total = 0;
-        let transactions = [];
+  try {
+    let total = 0;
+    let transactions = [];
 
-        if (accountType === 'cross') {
-            let query = `FROM trkbit_transactions WHERE tx_pix_key = ?`;
-            const params = [chavePix];
+    if (accountType === "cross") {
+      let query = `FROM trkbit_transactions WHERE tx_pix_key = ?`;
+      const params = [chavePix];
 
-            if (search) {
-                query += ` AND (tx_payer_name LIKE ? OR amount LIKE ? OR tx_id LIKE ?)`;
-                const searchTerm = `%${search}%`;
-                params.push(searchTerm, searchTerm, searchTerm);
-            }
-            if (date) {
-                query += ' AND DATE(tx_date) = ?';
-                params.push(date);
-            }
+      if (search) {
+        query += ` AND (tx_payer_name LIKE ? OR amount LIKE ? OR tx_id LIKE ?)`;
+        const searchTerm = `%${search}%`;
+        params.push(searchTerm, searchTerm, searchTerm);
+      }
+      if (date) {
+        query += " AND DATE(tx_date) = ?";
+        params.push(date);
+      }
 
-            const countQuery = `SELECT count(*) as total ${query}`;
-            const [[{ total: queryTotal }]] = await pool.query(countQuery, params);
-            total = queryTotal;
+      const countQuery = `SELECT count(*) as total ${query}`;
+      const [[{ total: queryTotal }]] = await pool.query(countQuery, params);
+      total = queryTotal;
 
-            if (total > 0) {
-                const dataQuery = `
+      if (total > 0) {
+        const dataQuery = `
                     SELECT 
                         uid as id,
                         tx_date as transaction_date, 
@@ -185,77 +185,72 @@ exports.getTransactions = async (req, res) => {
                     ORDER BY tx_date DESC
                     LIMIT ? OFFSET ?
                 `;
-                const finalParams = [...params, parseInt(limit), (page - 1) * limit];
-                [transactions] = await pool.query(dataQuery, finalParams);
-            }
+        const finalParams = [...params, parseInt(limit), (page - 1) * limit];
+        [transactions] = await pool.query(dataQuery, finalParams);
+      }
+    } else {
+      // Default to 'xpayz'
 
-        } else { // Default to 'xpayz'
-            
-            // Step 1: Link unsynced transactions first.
-            // This ensures new payments are linked before being displayed.
-            try {
-                const linkQuery = `
+      // Step 1: Link unsynced transactions first.
+      // This ensures new payments are linked before being displayed.
+      try {
+        const linkQuery = `
                     UPDATE bridge_transactions AS bt
                     JOIN xpayz_transactions AS xt ON bt.external_id = xt.external_id
                     SET bt.xpayz_transaction_id = xt.id
                     WHERE bt.xpayz_transaction_id IS NULL 
                       AND xt.subaccount_id = ?;
                 `;
-                await pool.query(linkQuery, [subaccountNumber]);
-            } catch (linkError) {
-                // Log the collation error if it happens here, but don't stop the request
-                console.error('[PORTAL-LINK-ERROR] Failed to auto-link transactions:', linkError.sqlMessage || linkError.message);
-            }
-            
-            // Step 2: Build the final query for fetching data.
-            let query = `
+        await pool.query(linkQuery, [subaccountNumber]);
+      } catch (linkError) {
+        // Log the collation error if it happens here, but don't stop the request
+        console.error(
+          "[PORTAL-LINK-ERROR] Failed to auto-link transactions:",
+          linkError.sqlMessage || linkError.message
+        );
+      }
+
+      // Step 2: Build the final query for fetching data.
+      // The new bridgeLinkerService.js handles linking in the background.
+      // We just need to join the tables to retrieve the linked data.
+      let query = `
                 FROM xpayz_transactions xt
+                // Use a LEFT JOIN to include all xpayz transactions, even those not from the bridge.
                 LEFT JOIN bridge_transactions bt ON xt.id = bt.xpayz_transaction_id
                 WHERE xt.subaccount_id = ?
             `;
-            const params = [subaccountNumber];
-
-            if (search) {
-                query += ` AND (xt.sender_name LIKE ? OR xt.counterparty_name LIKE ? OR xt.amount LIKE ? OR xt.xpayz_transaction_id LIKE ?)`;
-                const searchTerm = `%${search}%`;
-                params.push(searchTerm, searchTerm, searchTerm, searchTerm);
-            }
-            if (date) {
-                query += ' AND DATE(xt.transaction_date) = ?';
-                params.push(date);
-            }
-
-            const countQuery = `SELECT count(xt.id) as total ${query}`;
-            const [[{ total: queryTotal }]] = await pool.query(countQuery, params);
-            total = queryTotal;
-
-            if (total > 0) {
-                const dataQuery = `
+      const params = [subaccountNumber];
+      if (total > 0) {
+        const dataQuery = `
                     SELECT 
                         xt.id, xt.transaction_date, xt.sender_name, xt.counterparty_name, 
+                        xt.id, xt.transaction_date, xt.sender_name, xt.counterparty_name,
                         xt.amount, xt.operation_direct, xt.xpayz_transaction_id,
+                        // Select the correlation_id and status from the bridge table
                         bt.correlation_id, bt.status as bridge_status
                     ${query}
                     ORDER BY xt.transaction_date DESC
-                    LIMIT ? OFFSET ?
+                   LIMIT ? OFFSET ?
                 `;
-                const finalParams = [...params, parseInt(limit), (page - 1) * limit];
-                [transactions] = await pool.query(dataQuery, finalParams);
-            }
-        }
-        
-        res.json({
-            transactions,
-            totalPages: Math.ceil(total / limit),
-            currentPage: parseInt(page),
-            totalRecords: total,
-        });
-
-    } catch (error) {
-        // The detailed error log will now show the exact point of failure
-        console.error(`[PORTAL-TRANSACTIONS-ERROR] Failed to fetch transactions:`, error);
-        res.status(500).json({ message: 'Failed to fetch transactions.' });
+        const finalParams = [...params, parseInt(limit), (page - 1) * limit];
+        [transactions] = await pool.query(dataQuery, finalParams);
+      }
     }
+
+    res.json({
+      transactions,
+      totalPages: Math.ceil(total / limit),
+      currentPage: parseInt(page),
+      totalRecords: total,
+    });
+  } catch (error) {
+    // The detailed error log will now show the exact point of failure
+    console.error(
+      `[PORTAL-TRANSACTIONS-ERROR] Failed to fetch transactions:`,
+      error
+    );
+    res.status(500).json({ message: "Failed to fetch transactions." });
+  }
 };
 
 // ... (The export and PDF functions remain unchanged and are omitted for brevity) ...
