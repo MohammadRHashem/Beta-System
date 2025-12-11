@@ -4,7 +4,8 @@ require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') }
 const cron = require('node-cron');
 const pool = require('../config/db');
 
-const PARTNER_SUBACCOUNT_NUMBER = process.env.PARTNER_SUBACCOUNT_NUMBER;
+// More descriptive variable name to avoid confusion
+const PARTNER_XPAYZ_SUBACCOUNT_ID = process.env.PARTNER_SUBACCOUNT_NUMBER;
 
 let isLinking = false;
 
@@ -13,7 +14,7 @@ const linkTransactions = async () => {
         console.log('[BRIDGE-LINKER] Linking is already in progress. Skipping run.');
         return;
     }
-    if (!PARTNER_SUBACCOUNT_NUMBER) {
+    if (!PARTNER_XPAYZ_SUBACCOUNT_ID) {
         console.log('[BRIDGE-LINKER] PARTNER_SUBACCOUNT_NUMBER not set in .env. Skipping.');
         return;
     }
@@ -22,7 +23,6 @@ const linkTransactions = async () => {
     console.log('[BRIDGE-LINKER] Running job to link bridge transactions to xpayz transactions...');
 
     try {
-        // This is the core linking logic based on Amount, Payer Document, and Subaccount ID.
         const linkQuery = `
             UPDATE bridge_transactions AS bt
             JOIN xpayz_transactions AS xt 
@@ -34,7 +34,8 @@ const linkTransactions = async () => {
               AND xt.transaction_date >= DATE_SUB(NOW(), INTERVAL 48 HOUR);
         `;
         
-        const [result] = await pool.query(linkQuery, [PARTNER_SUBACCOUNT_NUMBER]);
+        // Use the more descriptive variable
+        const [result] = await pool.query(linkQuery, [PARTNER_XPAYZ_SUBACCOUNT_ID]);
 
         if (result.affectedRows > 0) {
             console.log(`[BRIDGE-LINKER] Success! Linked ${result.affectedRows} new transaction(s).`);
