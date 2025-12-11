@@ -16,12 +16,12 @@ portalRouter.post('/auth/login', (req, res) => {
 });
 
 // A GET route for basic testing
-portalRouter.get('/status', (req, res) => {
+portalRouter.get('/', (req, res) => {
     res.status(200).json({ status: 'Test server is running' });
 });
 
 app.use('/portal', portalRouter);
 
-app.listen(PORT, '0.0.0.0', () => {
-    console.log(`[TEST SERVER] Minimal test server listening on http://0.0.0.0:${PORT}`);
+app.listen(5500, '0.0.0.0', () => {
+    console.log(`[TEST SERVER] Minimal test server listening on http://0.0.0.0:5500`);
 });
