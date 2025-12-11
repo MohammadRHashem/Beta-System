@@ -46,15 +46,15 @@ exports.login = async (req, res) => {
             subaccountNumber: subaccount.subaccount_number,
             groupName: subaccount.assigned_group_name,
             accessLevel: accessLevel,
-            accountType: subaccount.account_type, // <-- ADDED
-            chavePix: subaccount.chave_pix        // <-- ADDED
+            accountType: subaccount.account_type,
+            chavePix: subaccount.chave_pix
         };
         
         const token = jwt.sign(tokenPayload, PORTAL_JWT_SECRET, { expiresIn: '8h' });
         
         res.json({ 
             token, 
-            accessLevel, // Return level to frontend for redirection
+            accessLevel,
             client: { 
                 username: client.username, 
                 name: subaccount.name,
@@ -68,7 +68,8 @@ exports.login = async (req, res) => {
 };
 
 exports.getDashboardSummary = async (req, res) => {
-    const { accountType, subaccountNumber, chavePix } = req.client;
+    // === THIS IS THE FIX: Use subaccountId for xpayz, chavePix for cross ===
+    const { accountType, subaccountId, chavePix } = req.client;
     const { date } = req.query;
 
     if (!date) {
@@ -81,7 +82,6 @@ exports.getDashboardSummary = async (req, res) => {
     try {
         let dailySummary, balance;
 
-        // --- BIMODAL LOGIC ---
         if (accountType === 'cross') {
             const dailySummaryQuery = `
                 SELECT 
@@ -103,7 +103,6 @@ exports.getDashboardSummary = async (req, res) => {
             [[balance]] = await pool.query(allTimeBalanceQuery, [chavePix]);
             
         } else { // Default to 'xpayz'
-            // === FIX STARTS HERE: RESTORED XPAYZ LOGIC ===
             const dailySummaryQuery = `
                 SELECT 
                     SUM(CASE WHEN operation_direct = 'in' THEN amount ELSE 0 END) as dailyTotalIn,
@@ -114,7 +113,8 @@ exports.getDashboardSummary = async (req, res) => {
                 FROM xpayz_transactions
                 WHERE subaccount_id = ? AND DATE(transaction_date) = ?;
             `;
-            [[dailySummary]] = await pool.query(dailySummaryQuery, [subaccountNumber, date]);
+            // Use subaccountId (the Primary Key) here
+            [[dailySummary]] = await pool.query(dailySummaryQuery, [subaccountId, date]);
 
             const allTimeBalanceQuery = `
                 SELECT 
@@ -123,8 +123,8 @@ exports.getDashboardSummary = async (req, res) => {
                 FROM xpayz_transactions
                 WHERE subaccount_id = ?;
             `;
-            [[balance]] = await pool.query(allTimeBalanceQuery, [subaccountNumber]);
-            // === FIX ENDS HERE ===
+            // Use subaccountId (the Primary Key) here
+            [[balance]] = await pool.query(allTimeBalanceQuery, [subaccountId]);
         }
 
         res.json({ 
@@ -137,123 +137,110 @@ exports.getDashboardSummary = async (req, res) => {
         });
 
     } catch (error) {
-        console.error(`[PORTAL-SUMMARY-ERROR] for subaccount ${subaccountNumber}:`, error);
+        console.error(`[PORTAL-SUMMARY-ERROR] for subaccount ID ${subaccountId}:`, error);
         res.status(500).json({ message: 'Failed to calculate dashboard summary.' });
     }
 };
 
 exports.getTransactions = async (req, res) => {
-  const { accountType, subaccountNumber, chavePix } = req.client;
-  const { page = 1, limit = 50, search, date } = req.query;
+    // === THIS IS THE FIX: Use subaccountId for xpayz, chavePix for cross ===
+    const { accountType, subaccountId, chavePix } = req.client;
+    const { page = 1, limit = 50, search, date } = req.query;
 
-  try {
-    let total = 0;
-    let transactions = [];
+    try {
+        let total = 0;
+        let transactions = [];
 
-    if (accountType === "cross") {
-      let query = `FROM trkbit_transactions WHERE tx_pix_key = ?`;
-      const params = [chavePix];
+        if (accountType === 'cross') {
+            let query = `FROM trkbit_transactions WHERE tx_pix_key = ?`;
+            const params = [chavePix];
 
-      if (search) {
-        query += ` AND (tx_payer_name LIKE ? OR amount LIKE ? OR tx_id LIKE ?)`;
-        const searchTerm = `%${search}%`;
-        params.push(searchTerm, searchTerm, searchTerm);
-      }
-      if (date) {
-        query += " AND DATE(tx_date) = ?";
-        params.push(date);
-      }
+            if (search) {
+                query += ` AND (tx_payer_name LIKE ? OR amount LIKE ? OR tx_id LIKE ?)`;
+                const searchTerm = `%${search}%`;
+                params.push(searchTerm, searchTerm, searchTerm);
+            }
+            if (date) {
+                query += ' AND DATE(tx_date) = ?';
+                params.push(date);
+            }
 
-      const countQuery = `SELECT count(*) as total ${query}`;
-      const [[{ total: queryTotal }]] = await pool.query(countQuery, params);
-      total = queryTotal;
+            const countQuery = `SELECT count(*) as total ${query}`;
+            const [[{ total: queryTotal }]] = await pool.query(countQuery, params);
+            total = queryTotal;
 
-      if (total > 0) {
-        const dataQuery = `
+            if (total > 0) {
+                const dataQuery = `
                     SELECT 
                         uid as id,
                         tx_date as transaction_date, 
                         tx_payer_name as sender_name, 
-                        tx_payee_name as counterparty_name,
+                        NULL as counterparty_name, /* Cross schema doesn't have payee name */
                         amount, 
                         tx_type as operation_direct,
                         tx_id as xpayz_transaction_id,
                         raw_data as raw_details,
-                        NULL as correlation_id, /* Add placeholders for compatibility */
+                        NULL as correlation_id,
                         NULL as bridge_status
                     ${query}
                     ORDER BY tx_date DESC
                     LIMIT ? OFFSET ?
                 `;
-        const finalParams = [...params, parseInt(limit), (page - 1) * limit];
-        [transactions] = await pool.query(dataQuery, finalParams);
-      }
-    } else {
-      // Default to 'xpayz'
+                const finalParams = [...params, parseInt(limit), (page - 1) * limit];
+                [transactions] = await pool.query(dataQuery, finalParams);
+            }
 
-      // Step 1: Link unsynced transactions first.
-      // This ensures new payments are linked before being displayed.
-      try {
-        const linkQuery = `
-                    UPDATE bridge_transactions AS bt
-                    JOIN xpayz_transactions AS xt ON bt.external_id = xt.external_id
-                    SET bt.xpayz_transaction_id = xt.id
-                    WHERE bt.xpayz_transaction_id IS NULL 
-                      AND xt.subaccount_id = ?;
-                `;
-        await pool.query(linkQuery, [subaccountNumber]);
-      } catch (linkError) {
-        // Log the collation error if it happens here, but don't stop the request
-        console.error(
-          "[PORTAL-LINK-ERROR] Failed to auto-link transactions:",
-          linkError.sqlMessage || linkError.message
-        );
-      }
-
-      // Step 2: Build the final query for fetching data.
-      // The new bridgeLinkerService.js handles linking in the background.
-      // We just need to join the tables to retrieve the linked data.
-      let query = `
+        } else { // Default to 'xpayz'
+            
+            let query = `
                 FROM xpayz_transactions xt
-                // Use a LEFT JOIN to include all xpayz transactions, even those not from the bridge.
                 LEFT JOIN bridge_transactions bt ON xt.id = bt.xpayz_transaction_id
                 WHERE xt.subaccount_id = ?
             `;
-      const params = [subaccountNumber];
-      if (total > 0) {
-        const dataQuery = `
+            // Use subaccountId (the Primary Key) here
+            const params = [subaccountId];
+
+            if (search) {
+                query += ` AND (xt.sender_name LIKE ? OR xt.counterparty_name LIKE ? OR xt.amount LIKE ? OR xt.xpayz_transaction_id LIKE ?)`;
+                const searchTerm = `%${search}%`;
+                params.push(searchTerm, searchTerm, searchTerm, searchTerm);
+            }
+            if (date) {
+                query += ' AND DATE(xt.transaction_date) = ?';
+                params.push(date);
+            }
+
+            const countQuery = `SELECT count(xt.id) as total ${query}`;
+            const [[{ total: queryTotal }]] = await pool.query(countQuery, params);
+            total = queryTotal;
+
+            if (total > 0) {
+                const dataQuery = `
                     SELECT 
                         xt.id, xt.transaction_date, xt.sender_name, xt.counterparty_name, 
-                        xt.id, xt.transaction_date, xt.sender_name, xt.counterparty_name,
                         xt.amount, xt.operation_direct, xt.xpayz_transaction_id,
-                        // Select the correlation_id and status from the bridge table
                         bt.correlation_id, bt.status as bridge_status
                     ${query}
                     ORDER BY xt.transaction_date DESC
-                   LIMIT ? OFFSET ?
+                    LIMIT ? OFFSET ?
                 `;
-        const finalParams = [...params, parseInt(limit), (page - 1) * limit];
-        [transactions] = await pool.query(dataQuery, finalParams);
-      }
+                const finalParams = [...params, parseInt(limit), (page - 1) * limit];
+                [transactions] = await pool.query(dataQuery, finalParams);
+            }
+        }
+        
+        res.json({
+            transactions,
+            totalPages: Math.ceil(total / limit),
+            currentPage: parseInt(page),
+            totalRecords: total,
+        });
+
+    } catch (error) {
+        console.error(`[PORTAL-TRANSACTIONS-ERROR] Failed to fetch transactions:`, error);
+        res.status(500).json({ message: 'Failed to fetch transactions.' });
     }
-
-    res.json({
-      transactions,
-      totalPages: Math.ceil(total / limit),
-      currentPage: parseInt(page),
-      totalRecords: total,
-    });
-  } catch (error) {
-    // The detailed error log will now show the exact point of failure
-    console.error(
-      `[PORTAL-TRANSACTIONS-ERROR] Failed to fetch transactions:`,
-      error
-    );
-    res.status(500).json({ message: "Failed to fetch transactions." });
-  }
 };
-
-// ... (The export and PDF functions remain unchanged and are omitted for brevity) ...
 
 const generatePdfTable = (doc, transactions, clientName) => {
     // --- Header ---
@@ -261,7 +248,6 @@ const generatePdfTable = (doc, transactions, clientName) => {
     doc.fontSize(12).font('Helvetica').text(`Client: ${clientName}`, { align: 'center' });
     doc.moveDown(2);
 
-    // --- Table Constants ---
     const tableTop = doc.y;
     const dateX = 50;
     const senderX = 170;
@@ -269,7 +255,6 @@ const generatePdfTable = (doc, transactions, clientName) => {
     const rowHeight = 25;
     const tableBottomMargin = 50;
 
-    // --- Draw Table Header ---
     const drawHeader = (y) => {
         doc.fontSize(10).font('Helvetica-Bold');
         doc.text('Date', dateX, y);
@@ -281,14 +266,12 @@ const generatePdfTable = (doc, transactions, clientName) => {
     drawHeader(tableTop);
     let y = tableTop + 30;
 
-    // --- Draw Table Rows ---
     doc.fontSize(9).font('Helvetica');
     transactions.forEach(tx => {
-        // Check if a new page is needed BEFORE drawing the row
         if (y + rowHeight > doc.page.height - tableBottomMargin) {
             doc.addPage();
-            y = tableTop; // Reset Y position to the top of the new page
-            drawHeader(y - 15); // Redraw the header
+            y = tableTop;
+            drawHeader(y - 15);
             y += 15;
         }
         
@@ -305,9 +288,7 @@ const generatePdfTable = (doc, transactions, clientName) => {
 };
 
 exports.exportTransactions = async (req, res) => {
-    // === MODIFICATION: Get the full groupName from the JWT token ===
-    const subaccountNumber = req.subaccountNumberForPortal;
-    const { username } = req.client;
+    const { subaccountId, username } = req.client;
     const { search, date, format = 'excel' } = req.query;
 
     try {
@@ -316,7 +297,7 @@ exports.exportTransactions = async (req, res) => {
             FROM xpayz_transactions
             WHERE subaccount_id = ?
         `;
-        const params = [subaccountNumber];
+        const params = [subaccountId];
 
         if (search) {
             query += ` AND (sender_name LIKE ? OR amount LIKE ? OR xpayz_transaction_id LIKE ?)`;
@@ -339,7 +320,6 @@ exports.exportTransactions = async (req, res) => {
             res.setHeader('Content-Disposition', `attachment; filename="${filename}.pdf"`);
             doc.pipe(res);
             
-            // === FIX 1: Pass the full groupName (or username fallback) to the PDF generator ===
             generatePdfTable(doc, transactions, username);
             
             doc.end();
@@ -359,9 +339,6 @@ exports.exportTransactions = async (req, res) => {
             worksheet.getRow(1).alignment = { vertical: 'middle', horizontal: 'center' };
 
             transactions.forEach(tx => {
-                // === FIX 2: Prevent timezone conversion for Excel ===
-                // The database gives a DATETIME object. We format it to a timezone-naive ISO string
-                // WITHOUT the 'Z' (which signifies UTC). ExcelJS will parse this correctly as local time.
                 const naiveDate = new Date(tx.transaction_date);
                 const year = naiveDate.getFullYear();
                 const month = String(naiveDate.getMonth() + 1).padStart(2, '0');
@@ -369,7 +346,6 @@ exports.exportTransactions = async (req, res) => {
                 const hours = String(naiveDate.getHours()).padStart(2, '0');
                 const minutes = String(naiveDate.getMinutes()).padStart(2, '0');
                 const seconds = String(naiveDate.getSeconds()).padStart(2, '0');
-                // Format: YYYY-MM-DDTHH:MM:SS
                 const excelDate = `${year}-${month}-${day}T${hours}:${minutes}:${seconds}`;
 
                 const dateObj = new Date(excelDate);
@@ -389,7 +365,7 @@ exports.exportTransactions = async (req, res) => {
         }
 
     } catch (error) {
-        console.error(`[PORTAL-EXPORT-ERROR] Failed to export for subaccount ${subaccountNumber}:`, error);
+        console.error(`[PORTAL-EXPORT-ERROR] Failed to export for subaccount ${subaccountId}:`, error);
         res.status(500).json({ message: 'Failed to export transactions.' });
     }
 };
