@@ -19,6 +19,7 @@ const subCustomerController = require('../controllers/subCustomerController');
 const trkbitController = require('../controllers/trkbitController');
 const manualReviewController = require('../controllers/manualReviewController');
 const walletRequestController = require('../controllers/walletRequestController');
+const bridgeController = require('../controllers/bridgeController');
 
 
 router.get('/manual/pending', manualReviewController.getPendingInvoices);
@@ -130,5 +131,7 @@ router.post('/settings/trkbit-confirmation', settingsController.setTrkbitConfirm
 
 router.get('/wallet-requests', walletRequestController.getPendingRequests);
 router.patch('/wallet-requests/:id/complete', walletRequestController.completeRequest);
+
+router.post('/bridge/confirm-payment', bridgeController.triggerPartnerConfirmation);
 
 module.exports = router;

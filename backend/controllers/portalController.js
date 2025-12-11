@@ -147,14 +147,12 @@ exports.getTransactions = async (req, res) => {
     const { page = 1, limit = 50, search, date } = req.query;
 
     try {
-        let query, params, countQuery;
         let total = 0;
         let transactions = [];
 
-        // --- BIMODAL LOGIC ---
         if (accountType === 'cross') {
-            query = `FROM trkbit_transactions WHERE tx_pix_key = ?`;
-            params = [chavePix];
+            let query = `FROM trkbit_transactions WHERE tx_pix_key = ?`;
+            const params = [chavePix];
 
             if (search) {
                 query += ` AND (tx_payer_name LIKE ? OR amount LIKE ? OR tx_id LIKE ?)`;
@@ -166,56 +164,68 @@ exports.getTransactions = async (req, res) => {
                 params.push(date);
             }
 
-            countQuery = `SELECT count(*) as total ${query}`;
-            [[{ total }]] = await pool.query(countQuery, params);
-
-            // --- MODIFIED: Alias columns to match frontend expectations ---
-            const dataQuery = `
-                SELECT 
-                    uid as id,
-                    tx_date as transaction_date, 
-                    tx_payer_name as sender_name, 
-                    null as counterparty_name,
-                    amount, 
-                    tx_type as operation_direct,
-                    tx_id as xpayz_transaction_id,
-                    raw_data as raw_details
-                ${query}
-                ORDER BY tx_date DESC
-                LIMIT ? OFFSET ?
-            `;
-            const finalParams = [...params, parseInt(limit), (page - 1) * limit];
-            [transactions] = await pool.query(dataQuery, finalParams);
-
-        } else { // Default to 'xpayz'
-            // === FIX STARTS HERE: RESTORED XPAYZ LOGIC ===
-            let query = `FROM xpayz_transactions WHERE subaccount_id = ?`;
-            const params = [subaccountNumber];
-
-            if (search) {
-                query += ` AND (sender_name LIKE ? OR counterparty_name LIKE ? OR amount LIKE ? OR xpayz_transaction_id LIKE ?)`;
-                const searchTerm = `%${search}%`;
-                params.push(searchTerm, searchTerm, searchTerm, searchTerm);
-            }
-            if (date) {
-                query += ' AND DATE(transaction_date) = ?';
-                params.push(date);
-            }
-
             const countQuery = `SELECT count(*) as total ${query}`;
-            [[{ total }]] = await pool.query(countQuery, params);
+            const [[{ total: queryTotal }]] = await pool.query(countQuery, params);
+            total = queryTotal;
 
             if (total > 0) {
                 const dataQuery = `
-                    SELECT id, transaction_date, sender_name, counterparty_name, amount, operation_direct, xpayz_transaction_id, raw_details
+                    SELECT 
+                        uid as id,
+                        tx_date as transaction_date, 
+                        tx_payer_name as sender_name, 
+                        tx_payee_name as counterparty_name,
+                        amount, 
+                        tx_type as operation_direct,
+                        tx_id as xpayz_transaction_id,
+                        raw_data as raw_details,
+                        NULL as correlation_id, /* Add placeholders for compatibility */
+                        NULL as bridge_status
                     ${query}
-                    ORDER BY transaction_date DESC
+                    ORDER BY tx_date DESC
                     LIMIT ? OFFSET ?
                 `;
                 const finalParams = [...params, parseInt(limit), (page - 1) * limit];
                 [transactions] = await pool.query(dataQuery, finalParams);
             }
-            // === FIX ENDS HERE ===
+
+        } else { // Default to 'xpayz'
+            let query = `FROM xpayz_transactions xt WHERE xt.subaccount_id = ?`;
+            const params = [subaccountNumber];
+
+            if (search) {
+                query += ` AND (xt.sender_name LIKE ? OR xt.counterparty_name LIKE ? OR xt.amount LIKE ? OR xt.xpayz_transaction_id LIKE ?)`;
+                const searchTerm = `%${search}%`;
+                params.push(searchTerm, searchTerm, searchTerm, searchTerm);
+            }
+            if (date) {
+                query += ' AND DATE(xt.transaction_date) = ?';
+                params.push(date);
+            }
+
+            // --- THIS IS THE CRITICAL CHANGE ---
+            // We modify the query to join our new table.
+            const joinQuery = query.replace('FROM xpayz_transactions xt', 
+                `FROM xpayz_transactions xt LEFT JOIN bridge_transactions bt ON xt.id = bt.xpayz_transaction_id`
+            );
+
+            const countQuery = `SELECT count(xt.id) as total ${joinQuery}`;
+            const [[{ total: queryTotal }]] = await pool.query(countQuery, params);
+            total = queryTotal;
+
+            if (total > 0) {
+                const dataQuery = `
+                    SELECT 
+                        xt.id, xt.transaction_date, xt.sender_name, xt.counterparty_name, 
+                        xt.amount, xt.operation_direct, xt.xpayz_transaction_id, xt.raw_details,
+                        bt.correlation_id, bt.status as bridge_status
+                    ${joinQuery}
+                    ORDER BY xt.transaction_date DESC
+                    LIMIT ? OFFSET ?
+                `;
+                const finalParams = [...params, parseInt(limit), (page - 1) * limit];
+                [transactions] = await pool.query(dataQuery, finalParams);
+            }
         }
         
         res.json({
@@ -226,7 +236,7 @@ exports.getTransactions = async (req, res) => {
         });
 
     } catch (error) {
-        console.error(`[PORTAL-TRANSACTIONS-ERROR] Failed to fetch transactions for subaccount ${subaccountNumber}:`, error);
+        console.error(`[PORTAL-TRANSACTIONS-ERROR] Failed to fetch transactions:`, error);
         res.status(500).json({ message: 'Failed to fetch transactions.' });
     }
 };

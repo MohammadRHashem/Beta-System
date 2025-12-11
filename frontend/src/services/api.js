@@ -225,4 +225,6 @@ export const exportTrkbit = async (params) => {
     triggerBrowserDownload(blob, 'trkbit_export.xlsx');
 };
 
+export const triggerPartnerConfirmation = (correlation_id) => apiClient.post('/bridge/confirm-payment', { correlation_id });
+
 export default apiClient;

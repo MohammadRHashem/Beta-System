@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import styled, { keyframes } from 'styled-components';
 import { motion } from 'framer-motion';
-import { getPortalTransactions, getPortalDashboardSummary } from '../services/api';
-import { FaSyncAlt, FaSearch, FaArrowUp, FaArrowDown } from 'react-icons/fa';
+import { getPortalTransactions, getPortalDashboardSummary, triggerPartnerConfirmation } from '../services/api';
+import { FaSyncAlt, FaSearch, FaArrowUp, FaArrowDown, FaCheckCircle, FaPaperPlane } from 'react-icons/fa';
 import Pagination from '../components/Pagination';
 import { usePortal } from '../context/PortalContext';
 
@@ -235,16 +235,30 @@ const SkeletonRow = () => (
 
 const ClientDashboard = () => {
     const [transactions, setTransactions] = useState([]);
-    const [summary, setSummary] = useState({ 
-        dailyTotalIn: 0, dailyTotalOut: 0, allTimeBalance: 0,
-        dailyCountIn: 0, dailyCountOut: 0, dailyCountTotal: 0
-    });
+    const [summary, setSummary] = useState({ /* ... */ });
     const [loadingTable, setLoadingTable] = useState(true);
     const [loadingSummary, setLoadingSummary] = useState(true);
     const { filters, setFilters } = usePortal();
     const [pagination, setPagination] = useState({ page: 1, limit: 20, totalPages: 1, totalRecords: 0 });
-    
     const debouncedSearch = useDebounce(filters.search, 500);
+    const clientData = JSON.parse(localStorage.getItem('portalClient')) || {};
+
+    const handleManualConfirm = async (correlationId) => {
+        if (!correlationId) {
+            alert('Error: This transaction is not linked to a partner order.');
+            return;
+        }
+        if (!window.confirm(`Manually confirm this payment for the partner store? This will mark their order as PAID.`)) {
+            return;
+        }
+        try {
+            await triggerPartnerConfirmation(correlationId);
+            alert(`Confirmation signal sent for order: ${correlationId}`);
+            fetchTableData();
+        } catch (error) {
+            alert(error.response?.data?.message || 'Failed to send confirmation.');
+        }
+    };
 
     const fetchTableData = useCallback(async () => {
         setLoadingTable(true);
@@ -375,30 +389,45 @@ const ClientDashboard = () => {
                   <th>Type</th>
                   <th>Counterparty</th>
                   <th>Amount (BRL)</th>
+                  {clientData.username === 'ORBITUK' && <th>Partner Actions</th>}
                 </tr>
               </thead>
-              <motion.tbody variants={containerVariants} initial="hidden" animate="visible">
+              <tbody>
                 {loadingTable ? (
-                  [...Array(10)].map((_, i) => <SkeletonRow key={i} />)
+                  [...Array(10)].map((_, i) => ( <tr><td colSpan={clientData.username === 'ORBITUK' ? 5 : 4}><SkeletonCell /></td></tr> ))
                 ) : transactions.length === 0 ? (
-                  <tr><td colSpan="4"><EmptyStateContainer><h3>No transactions found</h3></EmptyStateContainer></td></tr>
+                  <tr><td colSpan={clientData.username === 'ORBITUK' ? 5 : 4}><EmptyStateContainer><h3>No transactions found</h3></EmptyStateContainer></td></tr>
                 ) : (
                   transactions.map((tx) => {
                     const isCredit = tx.operation_direct === "in" || tx.operation_direct === "C";
+                    const isConfirmed = tx.bridge_status === 'paid' || tx.bridge_status === 'paid_manual';
                     return (
-                        <motion.tr key={tx.id} variants={itemVariants}>
+                        <motion.tr key={tx.id}>
                             <td>{formatDateTime(tx.transaction_date)}</td>
                             <TypeCell isCredit={isCredit}>{isCredit ? "IN" : "OUT"}</TypeCell>
-                            <td>{isCredit ? (tx.sender_name || "Unknown Sender") : (tx.counterparty_name || "Unknown Receiver")}</td>
-                            <AmountCell isCredit={isCredit}>
-                                {isCredit ? "+" : "-"}
-                                {formatCurrency(tx.amount)}
-                            </AmountCell>
+                            <td>{isCredit ? (tx.sender_name || "Unknown") : (tx.counterparty_name || "Unknown")}</td>
+                            <AmountCell isCredit={isCredit}>{formatCurrency(tx.amount)}</AmountCell>
+                            
+                            {clientData.username === 'ORBITUK' && (
+                                <td>
+                                    {isCredit && tx.correlation_id && (
+                                        isConfirmed ? (
+                                            <span style={{ color: '#10b981', display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: '600' }}>
+                                                <FaCheckCircle /> Confirmed
+                                            </span>
+                                        ) : (
+                                            <ActionButton onClick={() => handleManualConfirm(tx.correlation_id)}>
+                                                <FaPaperPlane /> Confirm
+                                            </ActionButton>
+                                        )
+                                    )}
+                                </td>
+                            )}
                         </motion.tr>
                     );
                   })
                 )}
-              </motion.tbody>
+              </tbody>
             </Table>
           </TableWrapper>
           <MobileListContainer>
