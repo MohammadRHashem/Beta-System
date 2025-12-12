@@ -7,6 +7,7 @@ import { getPortalTransactions, getPortalDashboardSummary, triggerPartnerConfirm
 import { FaSyncAlt, FaSearch, FaArrowUp, FaArrowDown, FaCheckCircle, FaPaperPlane } from 'react-icons/fa';
 import Pagination from '../components/Pagination';
 import { usePortal } from '../context/PortalContext';
+import axios from 'axios';
 
 const useDebounce = (value, delay) => {
     const [debouncedValue, setDebouncedValue] = useState(value);
