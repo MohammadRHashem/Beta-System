@@ -18,17 +18,27 @@ const linkTransactions = async () => {
     }
 
     isLinking = true;
-    console.log('[BRIDGE-LINKER] Running job with RESILIENT, SUBSTRING-BASED logic...');
-
+    
     try {
-        // === THE DEFINITIVE, RESILIENT FIX ===
-        // This query now uses a bi-directional LIKE to match names,
-        // allowing for one name to be a subset of the other.
+        // === THE DEFINITIVE HYBRID FIX ===
+        // This query now links a transaction if the amounts match AND EITHER:
+        // 1. The document number from the bridge is found inside the raw sender name from XPayz.
+        // OR
+        // 2. The normalized names are subsets of each other (the previous fix).
+        // This covers all possible data variations from the XPayz API.
         const linkQuery = `
             UPDATE bridge_transactions AS bt
             JOIN xpayz_transactions AS xt 
                 ON bt.amount = xt.amount
                 AND (
+                    -- Condition A: Match by Document Number (Most Reliable)
+                    -- Strips non-digits from the xpayz sender_name and checks if it contains the bridge's document number.
+                    REGEXP_REPLACE(xt.sender_name, '[^0-9]+', '') LIKE CONCAT('%', bt.payer_document, '%')
+                    
+                    OR
+                    
+                    -- Condition B: Match by Name (Fallback)
+                    -- Compares the normalized name from xpayz with the lowercase name from the bridge.
                     xt.sender_name_normalized LIKE CONCAT('%', LOWER(bt.payer_name), '%')
                     OR
                     LOWER(bt.payer_name) LIKE CONCAT('%', xt.sender_name_normalized, '%')
@@ -37,15 +47,14 @@ const linkTransactions = async () => {
             WHERE bt.xpayz_transaction_id IS NULL 
               AND xt.subaccount_id = ?
               AND xt.operation_direct = 'in'
+              AND xt.is_used = 0
               AND xt.transaction_date >= DATE_SUB(NOW(), INTERVAL 48 HOUR);
         `;
         
         const [result] = await pool.query(linkQuery, [PARTNER_XPAYZ_SUBACCOUNT_ID]);
 
         if (result.affectedRows > 0) {
-            console.log(`[BRIDGE-LINKER] SUCCESS! Linked ${result.affectedRows} new transaction(s).`);
-        } else {
-            console.log('[BRIDGE-LINKER] No new transactions found to link with the resilient logic.');
+            console.log(`[BRIDGE-LINKER] SUCCESS! Linked ${result.affectedRows} new transaction(s) using HYBRID logic.`);
         }
 
     } catch (error) {
@@ -56,9 +65,9 @@ const linkTransactions = async () => {
 };
 
 const main = () => {
-    console.log('--- Bridge Linker Service Started (v2.1 - Resilient Fix) ---');
-    linkTransactions();
-    cron.schedule('*/5 * * * * *', linkTransactions);
+    console.log('--- Bridge Linker Service Started (v3.0 - HYBRID FIX) ---');
+    linkTransactions(); // Run immediately on startup
+    cron.schedule('*/5 * * * * *', linkTransactions); // Continues to run every 5 seconds
     console.log('[BRIDGE-LINKER] Scheduled to run every 5s.');
 };
 
