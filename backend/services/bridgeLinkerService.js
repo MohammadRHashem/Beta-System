@@ -18,17 +18,21 @@ const linkTransactions = async () => {
     }
 
     isLinking = true;
-    console.log('[BRIDGE-LINKER] Running job with DEFINITIVE NAME-BASED logic...');
+    console.log('[BRIDGE-LINKER] Running job with RESILIENT, SUBSTRING-BASED logic...');
 
     try {
-        // === THE DEFINITIVE, FINAL FIX ===
-        // This query now joins on amount AND by comparing the pre-normalized sender_name from the xpayz table
-        // against the lowercase payer_name from the bridge table. This is robust and correct.
+        // === THE DEFINITIVE, RESILIENT FIX ===
+        // This query now uses a bi-directional LIKE to match names,
+        // allowing for one name to be a subset of the other.
         const linkQuery = `
             UPDATE bridge_transactions AS bt
             JOIN xpayz_transactions AS xt 
                 ON bt.amount = xt.amount
-                AND xt.sender_name_normalized = LOWER(bt.payer_name)
+                AND (
+                    xt.sender_name_normalized LIKE CONCAT('%', LOWER(bt.payer_name), '%')
+                    OR
+                    LOWER(bt.payer_name) LIKE CONCAT('%', xt.sender_name_normalized, '%')
+                )
             SET bt.xpayz_transaction_id = xt.id
             WHERE bt.xpayz_transaction_id IS NULL 
               AND xt.subaccount_id = ?
@@ -41,7 +45,7 @@ const linkTransactions = async () => {
         if (result.affectedRows > 0) {
             console.log(`[BRIDGE-LINKER] SUCCESS! Linked ${result.affectedRows} new transaction(s).`);
         } else {
-            console.log('[BRIDGE-LINKER] No new transactions found to link with the new logic.');
+            console.log('[BRIDGE-LINKER] No new transactions found to link with the resilient logic.');
         }
 
     } catch (error) {
@@ -52,10 +56,10 @@ const linkTransactions = async () => {
 };
 
 const main = () => {
-    console.log('--- Bridge Linker Service Started (v2.0 - DEFINITIVE FIX) ---');
+    console.log('--- Bridge Linker Service Started (v2.1 - Resilient Fix) ---');
     linkTransactions();
-    cron.schedule('* * * * *', linkTransactions);
-    console.log('[BRIDGE-LINKER] Scheduled to run every minute.');
+    cron.schedule('*/5 * * * * *', linkTransactions);
+    console.log('[BRIDGE-LINKER] Scheduled to run every 5s.');
 };
 
 main();
