@@ -52,6 +52,9 @@ io.on('connection', (socket) => {
 const portalController = require('./controllers/portalController');
 app.post('/portal/auth/login', portalController.login);
 
+app.post('/portal/bridge/confirm-payment', portalAuthMiddleware, portalController.triggerPartnerConfirmation);
+
+
 // 2. Protected Portal Routes
 // All routes from portalRoutes will be prefixed with /portal AND will use the portalAuthMiddleware.
 app.use('/portal', portalAuthMiddleware, portalRoutes);

@@ -10,6 +10,4 @@ router.get("/transactions", portalController.getTransactions);
 router.get("/dashboard-summary", portalController.getDashboardSummary);
 router.get("/export-excel", portalController.exportTransactions);
 
-router.post("/bridge/confirm-payment", portalController.triggerPartnerConfirmation);
-
 module.exports = router;
