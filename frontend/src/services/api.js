@@ -36,12 +36,9 @@ portalApiClient.interceptors.request.use(config => {
 portalApiClient.interceptors.response.use(
     response => response,
     error => {
-        // If we get a 401 error, the token is invalid or expired.
         if (error.response?.status === 401 && !window.location.pathname.includes('/portal/login')) {
-            // Clean up the invalid session data.
             localStorage.removeItem('portalAuthToken');
             localStorage.removeItem('portalClient');
-            // Force a redirect to the login page.
             window.location.href = '/portal/login'; 
         }
         return Promise.reject(error);

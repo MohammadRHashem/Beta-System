@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import styled, { keyframes } from 'styled-components';
 import { motion } from 'framer-motion';
-import { getPortalTransactions, getPortalDashboardSummary, triggerPartnerConfirmation } from '../services/api';
+import { getPortalTransactions, getPortalDashboardSummary, triggerPartnerConfirmation } from '../services/api'; 
 import { FaSyncAlt, FaSearch, FaArrowUp, FaArrowDown, FaCheckCircle, FaPaperPlane } from 'react-icons/fa';
 import Pagination from '../components/Pagination';
 import { usePortal } from '../context/PortalContext';
@@ -271,11 +271,32 @@ const ClientDashboard = () => {
             return;
         }
         try {
-            await triggerPartnerConfirmation(correlationId);
+            // === THE DEFINITIVE FIX: DIRECT API CALL ===
+            const token = localStorage.getItem('portalAuthToken');
+            if (!token) {
+                alert('Authentication error: No portal token found. Please log out and log back in.');
+                return;
+            }
+
+            await axios.post(
+                'https://platform.betaserver.dev:4433/portal/bridge/confirm-payment',
+                { correlation_id: correlationId },
+                {
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    }
+                }
+            );
+            // ==========================================
+
             alert(`Confirmation signal sent for order: ${correlationId}`);
             fetchTableData();
         } catch (error) {
-            alert(error.response?.data?.message || 'Failed to send confirmation.');
+            // Use the detailed error from the axios response
+            const errorMessage = error.response?.data?.message || 'Failed to send confirmation. Please check the console.';
+            console.error("Confirmation Error:", error.response || error);
+            alert(errorMessage);
         }
     };
 

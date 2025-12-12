@@ -132,6 +132,5 @@ router.post('/settings/trkbit-confirmation', settingsController.setTrkbitConfirm
 router.get('/wallet-requests', walletRequestController.getPendingRequests);
 router.patch('/wallet-requests/:id/complete', walletRequestController.completeRequest);
 
-router.post('/bridge/confirm-payment', bridgeController.triggerPartnerConfirmation);
 
 module.exports = router;
