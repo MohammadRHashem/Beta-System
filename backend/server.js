@@ -50,14 +50,15 @@ io.on('connection', (socket) => {
 // 1. Public Portal Routes (Login)
 // We will now handle the login route directly here for clarity.
 const portalController = require('./controllers/portalController');
-app.post('/portal/auth/login', portalController.login);
+app.post('/api/portal/auth/login', portalController.login);
+
 
 app.post('/portal/bridge/confirm-payment', portalAuthMiddleware, portalController.triggerPartnerConfirmation);
 
 
 // 2. Protected Portal Routes
 // All routes from portalRoutes will be prefixed with /portal AND will use the portalAuthMiddleware.
-app.use('/portal', portalAuthMiddleware, portalRoutes);
+app.use('/api/portal', portalAuthMiddleware, portalRoutes);
 
 // 3. Public Admin Routes (Login/Register)
 const authController = require('./controllers/authController');

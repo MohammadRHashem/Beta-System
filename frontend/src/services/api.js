@@ -1,7 +1,7 @@
 import axios from 'axios';
 
 const apiClient = axios.create({ baseURL: 'https://platform.betaserver.dev:4433/api' });
-const portalApiClient = axios.create({ baseURL: 'https://platform.betaserver.dev:4433/portal' });
+const portalApiClient = axios.create({ baseURL: 'https://platform.betaserver.dev:4433/api/portal' });
 
 // --- INTERCEPTOR FOR ADMIN PANEL ---
 apiClient.interceptors.request.use(config => {
