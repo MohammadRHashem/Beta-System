@@ -7,8 +7,9 @@ import json
 import time
 import re
 import typing as t
+import base64
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 import argparse
 from dateutil.parser import isoparse
 from dotenv import load_dotenv
@@ -22,13 +23,15 @@ load_dotenv()
 API_BASE = os.getenv("XPAYZ_API_BASE", "https://api.xpayz.us")
 LOGIN_PATH = "/user/customer/auth/signin"
 TRANSACTIONS_BASE_PATH = "/payment/customer/v1/web/sub/"
-
 PRINCIPAL_NAME = os.getenv("XPAYZ_PRINCIPAL_NAME", "").strip().lower()
 
 DB_HOST = os.getenv('DB_HOST')
 DB_USER = os.getenv('DB_USER')
 DB_PASSWORD = os.getenv('DB_PASSWORD')
 DB_DATABASE = os.getenv('DB_DATABASE')
+
+# === NEW: Cache file definition ===
+TOKEN_CACHE_PATH = os.path.join(os.path.dirname(__file__), 'xpayz_token_cache.json')
 
 class XPayzError(RuntimeError):
     pass
@@ -57,16 +60,53 @@ class XPayzClient:
             "Referer": "https://app.xpayz.us/",
         })
 
-    def login(self, email: str, password: str) -> None:
+    def _load_token_from_cache(self) -> bool:
+        """Tries to load and validate a token from the cache file."""
+        try:
+            if not os.path.exists(TOKEN_CACHE_PATH):
+                return False
+            with open(TOKEN_CACHE_PATH, 'r') as f:
+                cache = json.load(f)
+            
+            token = cache.get('token')
+            expires_at = cache.get('expires_at')
+
+            # Check if token exists and is not expired (with a 60-second buffer)
+            if token and expires_at and time.time() < expires_at - 60:
+                self.session.headers["Authorization"] = f"Bearer {token}"
+                # print("✅ Authenticated with cached token.") # Reduced logging for frequent runs
+                return True
+        except (IOError, json.JSONDecodeError):
+            pass
+        return False
+
+    def _save_token_to_cache(self, token: str):
+        """Saves a new token and its expiration time to the cache file."""
+        try:
+            payload = json.loads(base64.b64decode(token.split('.')[1] + '=='))
+            expires_at = payload.get('exp')
+
+            with open(TOKEN_CACHE_PATH, 'w') as f:
+                json.dump({'token': token, 'expires_at': expires_at}, f)
+        except Exception as e:
+            print(f"⚠️  Warning: Could not save token to cache file: {e}", file=sys.stderr)
+
+    def ensure_auth(self, email: str, password: str) -> None:
+        """Ensures the client is authenticated, using cache first."""
+        if self._load_token_from_cache():
+            return
+
+        print("No valid cached token. Performing full login...")
         url = f"{self.base_url}{LOGIN_PATH}"
         payload = {"email": email, "password": password}
         resp = self._request_with_retries("POST", url, json=payload)
         token = resp.json().get("token")
         if not token:
             raise XPayzError(f"Login failed: 'token' missing in response")
+        
         self.session.headers["Authorization"] = f"Bearer {token}"
-        print("✅ Login successful.")
-
+        self._save_token_to_cache(token)
+        print("✅ Login successful and token cached.")
 
     def iter_transactions(self, subaccount_id: int, per_page: int = 200) -> t.Iterator[Transaction]:
         url = f"{self.base_url}{TRANSACTIONS_BASE_PATH}{subaccount_id}/transactions"
@@ -106,6 +146,7 @@ class XPayzClient:
             raw=d,
         )
 
+# (The database functions below are unchanged)
 def get_db_connection():
     try:
         return mysql.connector.connect(
@@ -127,7 +168,6 @@ def save_transactions_to_db(subaccount_id: int, transactions: list[Transaction])
         return
         
     cursor = db.cursor()
-
     partner_subaccount_id = os.getenv("PARTNER_SUBACCOUNT_NUMBER")
     
     insert_query = """
@@ -145,68 +185,33 @@ def save_transactions_to_db(subaccount_id: int, transactions: list[Transaction])
     
     count = 0
     skipped_principal = 0
-
     for tx in transactions:
-        if not tx.sender_name: 
-            tx.sender_name = "Unknown"
-
-        # Anti-Duplicate Filter (Only for incoming)
+        if not tx.sender_name: tx.sender_name = "Unknown"
         if tx.operation_direct == 'in' and PRINCIPAL_NAME and PRINCIPAL_NAME in tx.sender_name.lower():
             skipped_principal += 1
             continue
-
         try:
             amount = float(tx.amount)
             tx_date = isoparse(tx.created_at)
-            
             normalized = normalize_name(tx.sender_name)
-            
-            # === MODIFICATION: Hardcode name for OUT transactions ===
             if tx.operation_direct == 'out':
                 counterparty = "USD BETA OUT / E"
             else:
                 counterparty = tx.destination_name if tx.destination_name else ""
-
-            values = (
-                tx.id,
-                subaccount_id,
-                amount,
-                tx.operation_direct,
-                tx.sender_name,
-                normalized,
-                counterparty,
-                tx_date,
-                json.dumps(tx.raw),
-                tx.external_id
-            )
+            values = (tx.id, subaccount_id, amount, tx.operation_direct, tx.sender_name, normalized, counterparty, tx_date, json.dumps(tx.raw), tx.external_id)
             cursor.execute(insert_query, values)
             count += cursor.rowcount
-
             if str(subaccount_id) == partner_subaccount_id and tx.operation_direct == 'in':
-                # The python script gets a fresh ID from the DB after insert
                 xpayz_tx_id = cursor.lastrowid 
-                
-                # Find a matching bridge transaction
-                link_query = """
-                    UPDATE bridge_transactions 
-                    SET xpayz_transaction_id = %s 
-                    WHERE payer_document = %s 
-                      AND amount = %s 
-                      AND status = 'pending' 
-                      AND xpayz_transaction_id IS NULL
-                    LIMIT 1;
-                """
-                # We need to normalize the sender name to get the document
+                link_query = "UPDATE bridge_transactions SET xpayz_transaction_id = %s WHERE payer_document = %s AND amount = %s AND status = 'pending' AND xpayz_transaction_id IS NULL LIMIT 1;"
                 payer_doc = ''.join(filter(str.isdigit, tx.sender_name or ''))
-
                 if payer_doc:
                     cursor.execute(link_query, (xpayz_tx_id, payer_doc, amount))
-
         except Exception as e:
             print(f"⚠️ Could not process transaction ID {tx.id}: {e}", file=sys.stderr)
             
     db.commit()
-    print(f"✅ DB Sync: Inserted/Updated {count} txs. Skipped {skipped_principal} internal transfers.")
+    print(f"✅ DB Sync: Inserted/Updated {count} txs for subaccount {subaccount_id}. Skipped {skipped_principal} internal transfers.")
     cursor.close()
     db.close()
 
@@ -219,17 +224,20 @@ def main():
     password = os.getenv("XPAYZ_PASSWORD")
 
     if not all([email, password, DB_HOST, DB_USER, DB_DATABASE]):
-        print("❌ ERROR: Missing required environment variables (XPAYZ_EMAIL, XPAYZ_PASSWORD, DB_...)", file=sys.stderr)
+        print("❌ ERROR: Missing required environment variables", file=sys.stderr)
         return 1
 
     try:
         client = XPayzClient()
-        client.login(email, password)
+        client.ensure_auth(email, password)
+        
+        # print(f"Fetching transactions for subaccount {args.subaccount_id}...")
         transactions = list(client.iter_transactions(subaccount_id=args.subaccount_id, per_page=200))
+        
         if transactions:
             save_transactions_to_db(args.subaccount_id, transactions)
-        else:
-            print(f"No transactions found for subaccount {args.subaccount_id}.")
+        # else:
+            # print(f"No new transactions found for subaccount {args.subaccount_id}.")
             
     except XPayzError as e:
         print(f"❌ An API error occurred: {e}", file=sys.stderr)
@@ -241,9 +249,4 @@ def main():
     return 0
 
 if __name__ == "__main__":
-    try:
-        import dateutil
-    except ImportError as e:
-        pass
-        
     raise SystemExit(main())
