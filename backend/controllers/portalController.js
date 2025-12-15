@@ -143,21 +143,41 @@ exports.getTransactions = async (req, res) => {
                 [transactions] = await pool.query(dataQuery, finalParams);
             }
         } else { // 'xpayz'
-            let query = `FROM xpayz_transactions xt LEFT JOIN bridge_transactions bt ON xt.id = bt.xpayz_transaction_id WHERE xt.subaccount_id = ?`;
-            // DEFINITIVE FIX: Use subaccountNumber (the XPayz ID)
+            
+            // === THE CLEAN VIEW FIX ===
+            // By using an INNER JOIN, we ONLY select xpayz_transactions that have a successful link.
+            // This automatically hides all the unlinked, duplicate bridge orders from the portal.
+            let query = `
+                FROM xpayz_transactions xt
+                INNER JOIN bridge_transactions bt ON xt.id = bt.xpayz_transaction_id
+                WHERE xt.subaccount_id = ?
+            `;
             const params = [subaccountNumber];
 
             if (search) {
-                query += ` AND (xt.sender_name LIKE ? OR xt.counterparty_name LIKE ? OR xt.amount LIKE ? OR xt.xpayz_transaction_id LIKE ?)`;
+                query += ` AND (xt.sender_name LIKE ? OR xt.amount LIKE ?)`;
                 const searchTerm = `%${search}%`;
-                params.push(searchTerm, searchTerm, searchTerm, searchTerm);
+                params.push(searchTerm, searchTerm);
             }
-            if (date) { query += ' AND DATE(xt.transaction_date) = ?'; params.push(date); }
+            if (date) {
+                query += ' AND DATE(xt.transaction_date) = ?';
+                params.push(date);
+            }
+
             const countQuery = `SELECT count(xt.id) as total ${query}`;
             const [[{ total: queryTotal }]] = await pool.query(countQuery, params);
             total = queryTotal;
+
             if (total > 0) {
-                const dataQuery = `SELECT xt.id, xt.transaction_date, xt.sender_name, xt.counterparty_name, xt.amount, xt.operation_direct, xt.xpayz_transaction_id, bt.correlation_id, bt.status as bridge_status ${query} ORDER BY xt.transaction_date DESC LIMIT ? OFFSET ?`;
+                const dataQuery = `
+                    SELECT 
+                        xt.id, xt.transaction_date, xt.sender_name, xt.counterparty_name, 
+                        xt.amount, xt.operation_direct, xt.xpayz_transaction_id,
+                        bt.correlation_id, bt.status as bridge_status
+                    ${query}
+                    ORDER BY xt.transaction_date DESC
+                    LIMIT ? OFFSET ?
+                `;
                 const finalParams = [...params, parseInt(limit), (page - 1) * limit];
                 [transactions] = await pool.query(dataQuery, finalParams);
             }
@@ -329,28 +349,52 @@ exports.triggerPartnerConfirmation = async (req, res) => {
         return res.status(500).json({ message: 'Bridge API is not configured on the server.' });
     }
 
+    const connection = await pool.getConnection();
+    
     try {
-        console.log(`[PORTAL-BRIDGE-CONFIRM] Relaying manual confirmation for Correlation ID: ${correlation_id}`);
+        // === THE API HARDENING FIX ===
+        await connection.beginTransaction();
+
+        // Step 1: Check the current status of the order.
+        const [[order]] = await connection.query(
+            'SELECT status FROM bridge_transactions WHERE correlation_id = ? FOR UPDATE', // Lock the row
+            [correlation_id]
+        );
+
+        if (!order) {
+            await connection.rollback();
+            return res.status(404).json({ message: 'Order not found.' });
+        }
         
-        // This is the secure, server-to-server call to the Payment Bridge microservice
+        // Step 2: If already paid, reject the request.
+        if (order.status === 'paid' || order.status === 'paid_manual') {
+            await connection.rollback();
+            return res.status(409).json({ message: 'This order has already been confirmed.' });
+        }
+
+        // Step 3: If pending, proceed to send the webhook.
         const response = await axios.post(
             `${BRIDGE_API_URL}/webhook/trigger`,
             { correlation_id },
-            {
-                headers: {
-                    'api-key': BRIDGE_API_KEY,
-                    'Content-Type': 'application/json'
-                },
-                timeout: 15000
-            }
+            { headers: { 'api-key': BRIDGE_API_KEY, 'Content-Type': 'application/json' }, timeout: 15000 }
+        );
+        
+        // Step 4: After a successful webhook, update our database status.
+        await connection.query(
+            "UPDATE bridge_transactions SET status = 'paid_manual' WHERE correlation_id = ?",
+            [correlation_id]
         );
 
+        await connection.commit();
         res.status(200).json(response.data);
 
     } catch (error) {
-        console.error('[PORTAL-BRIDGE-CONFIRM] Error calling bridge trigger endpoint:', error.response?.data || error.message);
+        await connection.rollback();
+        console.error('[PORTAL-BRIDGE-CONFIRM] Error:', error.response?.data || error.message);
         const status = error.response?.status || 502;
         const message = error.response?.data?.message || 'Failed to communicate with the payment bridge.';
         res.status(status).json({ message });
+    } finally {
+        connection.release();
     }
 };
