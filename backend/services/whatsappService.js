@@ -611,39 +611,52 @@ const invoiceWorker = new Worker(
 
                   // 4. Informative Forwarding
                   try {
-                      let destJid = null;
-                      
-                      // Priority 1: Check Direct Rule
-                      const [[directRule]] = await pool.query(
-                          "SELECT destination_group_jid FROM direct_forwarding_rules WHERE source_group_jid = ?", 
-                          [chat.id._serialized]
+                      // Determine whether we should forward based on subaccount type
+                      const [[subaccount]] = await pool.query(
+                        'SELECT account_type FROM subaccounts WHERE assigned_group_jid = ? LIMIT 1',
+                        [chat.id._serialized]
                       );
-                      
-                      if (directRule) {
-                          destJid = directRule.destination_group_jid;
-                      } else {
-                          // Priority 2: Check AI Keyword Rule
-                          const recipientCheck = (recipient.name || "").toLowerCase().trim();
-                          const [rules] = await pool.query("SELECT trigger_keyword, destination_group_jid FROM forwarding_rules WHERE is_enabled = 1");
-                          
-                          for (const rule of rules) {
-                              const triggerKeywordLower = rule.trigger_keyword.toLowerCase();
-                              if (recipientCheck.includes(triggerKeywordLower)) {
-                                  destJid = rule.destination_group_jid;
-                                  break;
-                              }
-                          }
+
+                      let shouldForward = true;
+                      if (subaccount && subaccount.account_type === 'cross') {
+                          console.log(`[WORKER] Source group is a 'cross' subaccount. Skipping informative forward.`);
+                          shouldForward = false;
                       }
 
-                      if (destJid) {
-                          const numberRegex = /\b(\d[\d-]{2,})\b/g;
-                          const matches = chat.name.match(numberRegex);
-                          const captionLabel = (matches && matches.length > 0) ? matches[matches.length - 1] : chat.name;
-                          const finalCaption = `${captionLabel} ✅`;
+                      if (shouldForward) {
+                          // Determine destination JID (direct rule first, then keyword rules)
+                          let destJid = null;
+                          
+                          const [[directRule]] = await pool.query(
+                              "SELECT destination_group_jid FROM direct_forwarding_rules WHERE source_group_jid = ?", 
+                              [chat.id._serialized]
+                          );
+                          
+                          if (directRule) {
+                              destJid = directRule.destination_group_jid;
+                          } else {
+                              const recipientCheck = (recipient.name || "").toLowerCase().trim();
+                              const [rules] = await pool.query("SELECT trigger_keyword, destination_group_jid FROM forwarding_rules WHERE is_enabled = 1");
+                              
+                              for (const rule of rules) {
+                                  const triggerKeywordLower = rule.trigger_keyword.toLowerCase();
+                                  if (recipientCheck.includes(triggerKeywordLower)) {
+                                      destJid = rule.destination_group_jid;
+                                      break;
+                                  }
+                              }
+                          }
 
-                          const mediaToForward = new MessageMedia(media.mimetype, media.data, media.filename);
-                          await client.sendMessage(destJid, mediaToForward, { caption: finalCaption });
-                          console.log(`[TRKBIT-INFO] Informative forward sent to ${destJid}`);
+                          if (destJid) {
+                              const numberRegex = /\b(\d[\d-]{2,})\b/g;
+                              const matches = chat.name.match(numberRegex);
+                              const captionLabel = (matches && matches.length > 0) ? matches[matches.length - 1] : chat.name;
+                              const finalCaption = `${captionLabel} ✅`;
+
+                              const mediaToForward = new MessageMedia(media.mimetype, media.data, media.filename);
+                              await client.sendMessage(destJid, mediaToForward, { caption: finalCaption });
+                              console.log(`[TRKBIT-INFO] Informative forward sent to ${destJid}`);
+                          }
                       }
                   } catch (infoError) {
                       console.error('[TRKBIT-INFO-ERROR]', infoError);
