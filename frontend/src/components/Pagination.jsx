@@ -1,3 +1,5 @@
+// frontend/src/components/Pagination.jsx
+
 import React, { useState, useEffect, useMemo } from 'react';
 import styled, { css } from 'styled-components';
 
@@ -94,7 +96,13 @@ const GoToPageButton = styled.button`
     }
 `;
 
-const Pagination = ({ pagination, setPagination }) => { // Changed prop name to setPagination
+// Helper to create a range of numbers
+const range = (start, end) => {
+    let length = end - start + 1;
+    return Array.from({ length }, (_, idx) => idx + start);
+};
+
+const Pagination = ({ pagination, setPagination }) => {
     const { currentPage, totalPages, totalRecords } = pagination;
     const [goToPage, setGoToPage] = useState(currentPage);
 
@@ -114,40 +122,48 @@ const Pagination = ({ pagination, setPagination }) => { // Changed prop name to 
         handlePageChange(goToPage);
     };
 
+    // === THIS IS THE NEW "SLIDING WINDOW" LOGIC ===
     const pageRange = useMemo(() => {
-        const totalPageNumbers = 7;
+        const siblingCount = 1; // How many pages to show on each side of the current page
+        const totalPageNumbers = siblingCount + 5; // 1 current, 2 siblings, 2 dots, first, last
+
+        // Case 1: Total pages is less than the number we want to show. Show all pages.
         if (totalPages <= totalPageNumbers) {
-            return Array.from({ length: totalPages }, (_, i) => i + 1);
+            return range(1, totalPages);
         }
 
-        const leftSiblingIndex = Math.max(currentPage - 1, 1);
-        const rightSiblingIndex = Math.min(currentPage + 1, totalPages);
-        
+        const leftSiblingIndex = Math.max(currentPage - siblingCount, 1);
+        const rightSiblingIndex = Math.min(currentPage + siblingCount, totalPages);
+
         const shouldShowLeftDots = leftSiblingIndex > 2;
         const shouldShowRightDots = rightSiblingIndex < totalPages - 2;
 
         const firstPageIndex = 1;
         const lastPageIndex = totalPages;
 
+        // Case 2: No left dots, but right dots are needed (we are near the start).
         if (!shouldShowLeftDots && shouldShowRightDots) {
-            let leftItemCount = 2;
-            let leftRange = Array.from({ length: leftItemCount }, (_, i) => i + 1);
+            let leftItemCount = 3 + 2 * siblingCount;
+            let leftRange = range(1, leftItemCount);
             return [...leftRange, '...', totalPages];
         }
 
+        // Case 3: Left dots needed, but no right dots (we are near the end).
         if (shouldShowLeftDots && !shouldShowRightDots) {
-            let rightItemCount = 2;
-            let rightRange = Array.from({ length: rightItemCount }, (_, i) => totalPages - rightItemCount + i + 1);
+            let rightItemCount = 3 + 2 * siblingCount;
+            let rightRange = range(totalPages - rightItemCount + 1, totalPages);
             return [firstPageIndex, '...', ...rightRange];
         }
 
+        // Case 4: Both left and right dots are needed (we are in the middle).
         if (shouldShowLeftDots && shouldShowRightDots) {
-            let middleRange = [currentPage - 1, currentPage, currentPage + 1];
+            let middleRange = range(leftSiblingIndex, rightSiblingIndex);
             return [firstPageIndex, '...', ...middleRange, '...', lastPageIndex];
         }
         
-        return [];
+        return []; // Should be unreachable
     }, [currentPage, totalPages]);
+    // === END OF NEW LOGIC ===
 
     if (totalPages <= 1) {
         return (
