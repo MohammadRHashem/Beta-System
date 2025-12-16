@@ -1,5 +1,3 @@
-// backend/xpayzSyncService.js
-
 require('dotenv').config();
 const cron = require('node-cron');
 const path = require('path');
@@ -8,7 +6,8 @@ const pool = require('./config/db');
 
 let isSyncing = false;
 
-const syncSingleSubaccount = async (subaccountId) => {
+// The orchestrator function now accepts the 'historical' flag
+const syncSingleSubaccount = async (subaccountId, historical = false) => {
     if (!subaccountId) {
         console.error('[XPAYZ-SYNC-JIT] No subaccount ID provided for on-demand sync.');
         return;
@@ -17,14 +16,17 @@ const syncSingleSubaccount = async (subaccountId) => {
         const pythonExecutable = process.platform === 'win32' ? 'python' : 'python3';
         const scriptPath = path.join(__dirname, 'python_scripts', 'xpayz_subaccount_exporter.py');
         
-        const subprocess = execa(
-            pythonExecutable, 
-            [scriptPath, subaccountId],
-            {
-                encoding: 'utf8',
-                env: { ...process.env, PYTHONUTF8: '1' }
-            }
-        );
+        // Build the arguments for the script
+        const scriptArgs = [scriptPath, subaccountId];
+        if (historical) {
+            scriptArgs.push('--historical'); // Add the flag if the trigger demands it
+            console.log(`[XPAYZ-SYNC] ==> Starting HISTORICAL sync for subaccount ID: ${subaccountId}...`);
+        }
+        
+        const subprocess = execa(pythonExecutable, scriptArgs, {
+            encoding: 'utf8',
+            env: { ...process.env, PYTHONUTF8: '1' }
+        });
 
         subprocess.stdout.pipe(process.stdout);
         subprocess.stderr.pipe(process.stderr);
@@ -36,9 +38,10 @@ const syncSingleSubaccount = async (subaccountId) => {
     }
 };
 
+// This function for the regular 5-second sync remains the same
 const syncAllSubaccounts = async () => {
     if (isSyncing) {
-        return; // Silently exit if already running
+        return;
     }
     isSyncing = true;
     
@@ -51,7 +54,8 @@ const syncAllSubaccounts = async () => {
 
         for (const account of subaccounts) {
             if (account.subaccount_number) {
-                 await syncSingleSubaccount(account.subaccount_number);
+                 // The regular sync calls without the 'historical' flag, so it remains fast
+                 await syncSingleSubaccount(account.subaccount_number, false);
             }
         }
     } catch (dbError) {
@@ -61,14 +65,14 @@ const syncAllSubaccounts = async () => {
     }
 };
 
-const main = async () => {
-    console.log('--- XPayz Multi-Account Sync Service Started (v2.1 - 5 Second Interval) ---');
+const main = () => {
+    console.log('--- XPayz Sync Service Started (v3.0 - Hard Refresh Enabled) ---');
     
-    await syncAllSubaccounts();
+    // Perform a standard (fast) sync on startup
+    syncAllSubaccounts();
 
-    // === THE CRON SCHEDULE CHANGE ===
     cron.schedule('*/5 * * * * *', syncAllSubaccounts);
-    console.log('[XPAYZ-SYNC] Recurring sync scheduled to run every 5 seconds.');
+    console.log('[XPAYZ-SYNC] Recurring 5-second sync scheduled.');
 };
 
 if (require.main === module) {
