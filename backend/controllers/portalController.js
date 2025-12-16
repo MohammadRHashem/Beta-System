@@ -9,6 +9,7 @@ require('dotenv').config();
 const axios = require('axios');
 
 const PORTAL_JWT_SECRET = process.env.PORTAL_JWT_SECRET;
+const PARTNER_USERNAME = 'xplus'; // Define the partner username as a constant
 
 // Client Login Endpoint
 exports.login = async (req, res) => {
@@ -116,16 +117,16 @@ exports.getDashboardSummary = async (req, res) => {
 };
 
 exports.getTransactions = async (req, res) => {
-    // CORRECTED: Use subaccountNumber for xpayz, chavePix for cross
-    const { accountType, subaccountNumber, chavePix } = req.client;
+    // Destructure all necessary info from the token
+    const { accountType, subaccountNumber, chavePix, username } = req.client;
     const { page = 1, limit = 50, search, date } = req.query;
 
     try {
         let total = 0;
         let transactions = [];
 
+        // --- Case 1: CROSS Account ---
         if (accountType === 'cross') {
-            // This logic is correct
             let query = `FROM trkbit_transactions WHERE tx_pix_key = ?`;
             const params = [chavePix];
             if (search) {
@@ -134,26 +135,36 @@ exports.getTransactions = async (req, res) => {
                 params.push(searchTerm, searchTerm, searchTerm);
             }
             if (date) { query += ' AND DATE(tx_date) = ?'; params.push(date); }
+            
             const countQuery = `SELECT count(*) as total ${query}`;
             const [[{ total: queryTotal }]] = await pool.query(countQuery, params);
             total = queryTotal;
+
             if (total > 0) {
-                const dataQuery = `SELECT uid as id, tx_date as transaction_date, tx_payer_name as sender_name, NULL as counterparty_name, amount, tx_type as operation_direct, tx_id as xpayz_transaction_id, raw_data as raw_details, NULL as correlation_id, NULL as bridge_status ${query} ORDER BY tx_date DESC LIMIT ? OFFSET ?`;
+                const dataQuery = `SELECT uid as id, tx_date as transaction_date, tx_payer_name as sender_name, tx_payee_name as counterparty_name, amount, tx_type as operation_direct ${query} ORDER BY tx_date DESC LIMIT ? OFFSET ?`;
                 const finalParams = [...params, parseInt(limit), (page - 1) * limit];
                 [transactions] = await pool.query(dataQuery, finalParams);
             }
-        } else { // 'xpayz'
-            
-            // === THE CLEAN VIEW FIX ===
-            // By using an INNER JOIN, we ONLY select xpayz_transactions that have a successful link.
-            // This automatically hides all the unlinked, duplicate bridge orders from the portal.
-            let query = `
-                FROM xpayz_transactions xt
-                INNER JOIN bridge_transactions bt ON xt.id = bt.xpayz_transaction_id
-                WHERE xt.subaccount_id = ?
-            `;
-            const params = [subaccountNumber];
+        } 
+        // --- Case 2: XPAYZ Account ---
+        else { // This block now handles both 'xplus' and other 'xpayz' accounts
+            let query = `FROM xpayz_transactions xt `;
+            let params = [];
+            let selectFields = `xt.id, xt.transaction_date, xt.sender_name, xt.counterparty_name, xt.amount, xt.operation_direct `;
 
+            // --- Sub-Case 2a: Partner Account (xplus) ---
+            if (username === PARTNER_USERNAME) {
+                query += `INNER JOIN bridge_transactions bt ON xt.id = bt.xpayz_transaction_id WHERE xt.subaccount_id = ?`;
+                params.push(subaccountNumber);
+                selectFields += `, bt.correlation_id, bt.status as bridge_status`;
+            } 
+            // --- Sub-Case 2b: Regular XPayz Account ---
+            else {
+                query += `WHERE xt.subaccount_id = ?`;
+                params.push(subaccountNumber);
+            }
+
+            // Apply common filters
             if (search) {
                 query += ` AND (xt.sender_name LIKE ? OR xt.amount LIKE ?)`;
                 const searchTerm = `%${search}%`;
@@ -169,15 +180,7 @@ exports.getTransactions = async (req, res) => {
             total = queryTotal;
 
             if (total > 0) {
-                const dataQuery = `
-                    SELECT 
-                        xt.id, xt.transaction_date, xt.sender_name, xt.counterparty_name, 
-                        xt.amount, xt.operation_direct, xt.xpayz_transaction_id,
-                        bt.correlation_id, bt.status as bridge_status
-                    ${query}
-                    ORDER BY xt.transaction_date DESC
-                    LIMIT ? OFFSET ?
-                `;
+                const dataQuery = `SELECT ${selectFields} ${query} ORDER BY xt.transaction_date DESC LIMIT ? OFFSET ?`;
                 const finalParams = [...params, parseInt(limit), (page - 1) * limit];
                 [transactions] = await pool.query(dataQuery, finalParams);
             }
