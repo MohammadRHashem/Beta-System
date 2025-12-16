@@ -1,6 +1,7 @@
 const pool = require('../config/db');
 const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
+const { syncSingleSubaccount } = require('../services/xpayzSyncService');
 
 // GET all subaccounts for the logged-in user
 exports.getAll = async (req, res) => {
