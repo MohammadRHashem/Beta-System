@@ -214,19 +214,118 @@ exports.getTransactions = async (req, res) => {
     }
 };
 
-// The export and PDF functions are omitted for brevity but they should also use subaccountNumber.
-// If you need them, let me know.
-// ... (exportTransactions and generatePdfTable functions remain here)
+exports.exportTransactions = async (req, res) => {
+    const { accountType, subaccountNumber, chavePix, username } = req.client;
+    const { search, date, format = 'excel' } = req.query;
 
+    try {
+        let transactions = [];
+
+        // --- BIMODAL LOGIC: Query the correct table based on account type ---
+        if (accountType === 'cross') {
+            let query = `
+                SELECT 
+                    uid as id, 
+                    tx_date as transaction_date, 
+                    amount, 
+                    tx_type as operation_direct,
+                    CASE WHEN tx_type = 'C' THEN tx_payer_name ELSE 'CROSS INTERMEDIAÇÃO LTDA' END AS sender_name,
+                    CASE WHEN tx_type = 'D' THEN JSON_UNQUOTE(JSON_EXTRACT(raw_data, '$.tx_payee_name')) ELSE 'CROSS INTERMEDIAÇÃO LTDA' END AS counterparty_name
+                FROM trkbit_transactions 
+                WHERE tx_pix_key = ?
+            `;
+            const params = [chavePix];
+            if (search) {
+                query += ` AND (tx_payer_name LIKE ? OR amount LIKE ?)`;
+                params.push(`%${search}%`, `%${search}%`);
+            }
+            if (date) {
+                query += ' AND DATE(tx_date) = ?';
+                params.push(date);
+            }
+            query += ' ORDER BY tx_date DESC';
+            [transactions] = await pool.query(query, params);
+
+        } else { // 'xpayz'
+            let query = `
+                SELECT transaction_date, sender_name, counterparty_name, amount, operation_direct
+                FROM xpayz_transactions
+                WHERE subaccount_id = ?
+            `;
+            const params = [subaccountNumber];
+            if (search) {
+                query += ` AND (sender_name LIKE ? OR amount LIKE ?)`;
+                params.push(`%${search}%`, `%${search}%`);
+            }
+            if (date) {
+                query += ' AND DATE(transaction_date) = ?';
+                params.push(date);
+            }
+            query += ' ORDER BY transaction_date DESC';
+            [transactions] = await pool.query(query, params);
+        }
+
+        const filename = `statement_${username}_${date || 'all_time'}`;
+
+        if (format === 'pdf') {
+            const doc = new PDFDocument({ margin: 50, size: 'A4' });
+            res.setHeader('Content-Type', 'application/pdf');
+            res.setHeader('Content-Disposition', `attachment; filename="${filename}.pdf"`);
+            doc.pipe(res);
+            generatePdfTable(doc, transactions, username); // Use the universal helper
+            doc.end();
+
+        } else { // Excel export
+            const workbook = new ExcelJS.Workbook();
+            const worksheet = workbook.addWorksheet('Transactions');
+
+            worksheet.columns = [
+                { header: 'Date', key: 'date', width: 25, style: { numFmt: 'yyyy-mm-dd hh:mm:ss' } },
+                { header: 'Type', key: 'type', width: 10 },
+                { header: 'Counterparty', key: 'counterparty', width: 40 },
+                { header: 'Amount (BRL)', key: 'amount', width: 20, style: { numFmt: '#,##0.00' } },
+            ];
+
+            worksheet.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } };
+            worksheet.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0A2540' } };
+            worksheet.getRow(1).alignment = { vertical: 'middle', horizontal: 'center' };
+
+            transactions.forEach(tx => {
+                const isCredit = tx.operation_direct.toLowerCase() === 'in' || tx.operation_direct.toLowerCase() === 'c';
+                const dateObj = new Date(tx.transaction_date);
+                worksheet.addRow({
+                    date: dateObj,
+                    type: isCredit ? 'IN' : 'OUT',
+                    counterparty: isCredit ? tx.sender_name : tx.counterparty_name || 'N/A',
+                    amount: isCredit ? parseFloat(tx.amount) : -parseFloat(tx.amount)
+                });
+            });
+
+            res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+            res.setHeader('Content-Disposition', `attachment; filename="${filename}.xlsx"`);
+            await workbook.xlsx.write(res);
+            res.end();
+        }
+
+    } catch (error) {
+        console.error(`[PORTAL-EXPORT-ERROR] Failed to export for ${username}:`, error);
+        res.status(500).json({ message: 'Failed to export transactions.' });
+    }
+};
+
+
+// ===================================================================
+// === THIS IS THE CORRECTED PDF HELPER FUNCTION ===
+// ===================================================================
 const generatePdfTable = (doc, transactions, clientName) => {
-    // --- Header ---
-    doc.fontSize(20).font('Helvetica-Bold').text('Account Balance', { align: 'center' });
+    doc.fontSize(20).font('Helvetica-Bold').text('Transaction Statement', { align: 'center' });
     doc.fontSize(12).font('Helvetica').text(`Client: ${clientName}`, { align: 'center' });
     doc.moveDown(2);
 
     const tableTop = doc.y;
     const dateX = 50;
-    const senderX = 170;
+    const typeX = 170;
+    const partyX = 230;
     const amountX = 420;
     const rowHeight = 25;
     const tableBottomMargin = 50;
@@ -234,7 +333,8 @@ const generatePdfTable = (doc, transactions, clientName) => {
     const drawHeader = (y) => {
         doc.fontSize(10).font('Helvetica-Bold');
         doc.text('Date', dateX, y);
-        doc.text('Sender', senderX, y);
+        doc.text('Type', typeX, y);
+        doc.text('Counterparty', partyX, y);
         doc.text('Amount (BRL)', amountX, y, { width: 130, align: 'right' });
         doc.moveTo(dateX, y + 15).lineTo(550, y + 15).strokeColor("#cccccc").stroke();
     };
@@ -251,99 +351,19 @@ const generatePdfTable = (doc, transactions, clientName) => {
             y += 15;
         }
         
+        const isCredit = tx.operation_direct.toLowerCase() === 'in' || tx.operation_direct.toLowerCase() === 'c';
         const date = new Date(tx.transaction_date);
         const formattedDate = new Intl.DateTimeFormat('en-GB', { dateStyle: 'short', timeStyle: 'short' }).format(date);
-        const formattedAmount = parseFloat(tx.amount).toFixed(2);
-
+        const formattedAmount = (isCredit ? '' : '-') + parseFloat(tx.amount).toFixed(2);
+        const counterparty = isCredit ? tx.sender_name : tx.counterparty_name || 'N/A';
+        
         doc.text(formattedDate, dateX, y, { width: 110, lineBreak: false });
-        doc.text(tx.sender_name, senderX, y, { width: 240, lineBreak: false, ellipsis: true });
+        doc.font(isCredit ? 'Helvetica-Bold' : 'Helvetica').fillColor(isCredit ? '#00C49A' : '#DE350B').text(isCredit ? 'IN' : 'OUT', typeX, y);
+        doc.font('Helvetica').fillColor('#32325D').text(counterparty, partyX, y, { width: 180, lineBreak: false, ellipsis: true });
         doc.text(formattedAmount, amountX, y, { width: 130, align: 'right' });
         
         y += rowHeight;
     });
-};
-
-exports.exportTransactions = async (req, res) => {
-    const { subaccountId, username } = req.client;
-    const { search, date, format = 'excel' } = req.query;
-
-    try {
-        let query = `
-            SELECT transaction_date, sender_name, counterparty_name, amount, operation_direct
-            FROM xpayz_transactions
-            WHERE subaccount_id = ?
-        `;
-        const params = [subaccountId];
-
-        if (search) {
-            query += ` AND (sender_name LIKE ? OR amount LIKE ? OR xpayz_transaction_id LIKE ?)`;
-            const searchTerm = `%${search}%`;
-            params.push(searchTerm, searchTerm, searchTerm);
-        }
-        if (date) {
-            query += ' AND DATE(transaction_date) = ?';
-            params.push(date);
-        }
-        
-        query += ' ORDER BY transaction_date DESC';
-        const [transactions] = await pool.query(query, params);
-
-        const filename = `accountBalance_${username}`;
-
-        if (format === 'pdf') {
-            const doc = new PDFDocument({ margin: 50, size: 'A4' });
-            res.setHeader('Content-Type', 'application/pdf');
-            res.setHeader('Content-Disposition', `attachment; filename="${filename}.pdf"`);
-            doc.pipe(res);
-            
-            generatePdfTable(doc, transactions, username);
-            
-            doc.end();
-
-        } else { // Excel export
-            const workbook = new ExcelJS.Workbook();
-            const worksheet = workbook.addWorksheet('Transactions');
-
-            worksheet.columns = [
-                { header: 'Date', key: 'date', width: 25, style: { numFmt: 'yyyy-mm-dd hh:mm:ss' } },
-                { header: 'Sender', key: 'sender', width: 40 },
-                { header: 'Amount (BRL)', key: 'amount', width: 20, style: { numFmt: '#,##0.00' } },
-            ];
-
-            worksheet.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } };
-            worksheet.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0A2540' } };
-            worksheet.getRow(1).alignment = { vertical: 'middle', horizontal: 'center' };
-
-            transactions.forEach(tx => {
-                const naiveDate = new Date(tx.transaction_date);
-                const year = naiveDate.getFullYear();
-                const month = String(naiveDate.getMonth() + 1).padStart(2, '0');
-                const day = String(naiveDate.getDate()).padStart(2, '0');
-                const hours = String(naiveDate.getHours()).padStart(2, '0');
-                const minutes = String(naiveDate.getMinutes()).padStart(2, '0');
-                const seconds = String(naiveDate.getSeconds()).padStart(2, '0');
-                const excelDate = `${year}-${month}-${day}T${hours}:${minutes}:${seconds}`;
-
-                const dateObj = new Date(excelDate);
-                dateObj.setHours(dateObj.getHours() - 3);
-
-                worksheet.addRow({
-                    date: dateObj,
-                    sender: tx.sender_name || tx.counterparty_name || 'N/A',
-                    amount: parseFloat(tx.amount)
-                });
-            });
-
-            res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-            res.setHeader('Content-Disposition', `attachment; filename="${filename}.xlsx"`);
-            await workbook.xlsx.write(res);
-            res.end();
-        }
-
-    } catch (error) {
-        console.error(`[PORTAL-EXPORT-ERROR] Failed to export for subaccount ${subaccountId}:`, error);
-        res.status(500).json({ message: 'Failed to export transactions.' });
-    }
 };
 
 exports.triggerPartnerConfirmation = async (req, res) => {
