@@ -117,7 +117,6 @@ exports.getDashboardSummary = async (req, res) => {
 };
 
 exports.getTransactions = async (req, res) => {
-    // Destructure all necessary info from the token
     const { accountType, subaccountNumber, chavePix, username } = req.client;
     const { page = 1, limit = 50, search, date } = req.query;
 
@@ -141,13 +140,24 @@ exports.getTransactions = async (req, res) => {
             total = queryTotal;
 
             if (total > 0) {
-                const dataQuery = `SELECT uid as id, tx_date as transaction_date, tx_payer_name as sender_name, tx_payee_name as counterparty_name, amount, tx_type as operation_direct ${query} ORDER BY tx_date DESC LIMIT ? OFFSET ?`;
+                const dataQuery = `
+                    SELECT 
+                        uid as id, 
+                        tx_date as transaction_date, 
+                        amount, 
+                        tx_type as operation_direct,
+                        CASE WHEN tx_type = 'C' THEN tx_payer_name ELSE 'CROSS INTERMEDIAÇÃO LTDA' END AS sender_name,
+                        CASE WHEN tx_type = 'D' THEN tx_payee_name ELSE 'CROSS INTERMEDIAÇÃO LTDA' END AS counterparty_name
+                    ${query} 
+                    ORDER BY tx_date DESC 
+                    LIMIT ? OFFSET ?
+                `;
                 const finalParams = [...params, parseInt(limit), (page - 1) * limit];
                 [transactions] = await pool.query(dataQuery, finalParams);
             }
         } 
         // --- Case 2: XPAYZ Account ---
-        else { // This block now handles both 'xplus' and other 'xpayz' accounts
+        else { 
             let query = `FROM xpayz_transactions xt `;
             let params = [];
             let selectFields = `xt.id, xt.transaction_date, xt.sender_name, xt.counterparty_name, xt.amount, xt.operation_direct `;
