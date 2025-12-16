@@ -124,7 +124,6 @@ exports.getTransactions = async (req, res) => {
         let total = 0;
         let transactions = [];
 
-        // --- Case 1: CROSS Account ---
         if (accountType === 'cross') {
             let query = `FROM trkbit_transactions WHERE tx_pix_key = ?`;
             const params = [chavePix];
@@ -140,14 +139,22 @@ exports.getTransactions = async (req, res) => {
             total = queryTotal;
 
             if (total > 0) {
+                // === THE DEFINITIVE FIX FOR CROSS ACCOUNTS ===
+                // This query now correctly uses JSON_EXTRACT to get the payee name from the raw_data column.
                 const dataQuery = `
                     SELECT 
                         uid as id, 
                         tx_date as transaction_date, 
                         amount, 
                         tx_type as operation_direct,
-                        CASE WHEN tx_type = 'C' THEN tx_payer_name ELSE 'CROSS INTERMEDIAÇÃO LTDA' END AS sender_name,
-                        CASE WHEN tx_type = 'D' THEN tx_payee_name ELSE 'CROSS INTERMEDIAÇÃO LTDA' END AS counterparty_name
+                        CASE
+                            WHEN tx_type = 'C' THEN tx_payer_name
+                            ELSE 'CROSS INTERMEDIAÇÃO LTDA' 
+                        END AS sender_name,
+                        CASE
+                            WHEN tx_type = 'D' THEN JSON_UNQUOTE(JSON_EXTRACT(raw_data, '$.tx_payee_name'))
+                            ELSE 'CROSS INTERMEDIAÇÃO LTDA'
+                        END AS counterparty_name
                     ${query} 
                     ORDER BY tx_date DESC 
                     LIMIT ? OFFSET ?
@@ -156,7 +163,6 @@ exports.getTransactions = async (req, res) => {
                 [transactions] = await pool.query(dataQuery, finalParams);
             }
         } 
-        // --- Case 2: XPAYZ Account ---
         else { 
             let query = `FROM xpayz_transactions xt `;
             let params = [];
