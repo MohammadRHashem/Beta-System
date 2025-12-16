@@ -17,9 +17,15 @@ const syncSingleSubaccount = async (subaccountId) => {
         const pythonExecutable = process.platform === 'win32' ? 'python' : 'python3';
         const scriptPath = path.join(__dirname, 'python_scripts', 'xpayz_subaccount_exporter.py');
         
+        // Build the arguments for the script
+        const scriptArgs = [scriptPath, subaccountId];
+        if (historical) {
+            scriptArgs.push('--historical'); // Add the flag if requested
+        }
+        
         const subprocess = execa(
             pythonExecutable, 
-            [scriptPath, subaccountId],
+            scriptArgs, // Use the new arguments array
             {
                 encoding: 'utf8',
                 env: { ...process.env, PYTHONUTF8: '1' }

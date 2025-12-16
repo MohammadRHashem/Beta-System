@@ -8,10 +8,11 @@ import {
   getSubaccountCredentials,
   resetSubaccountPassword,
   getRecibosTransactions,
-  reassignTransaction
+  reassignTransaction,
+  triggerHardRefresh
 } from "../services/api";
 import Modal from "../components/Modal";
-import { FaPlus, FaEdit, FaTrash, FaKey, FaExchangeAlt, FaMagic } from "react-icons/fa";
+import { FaPlus, FaEdit, FaTrash, FaKey, FaExchangeAlt, FaMagic, FaHistory } from "react-icons/fa";
 import ComboBox from "../components/ComboBox";
 import Select from 'react-select';
 
@@ -139,6 +140,17 @@ const SubaccountsPage = ({ allGroups }) => {
   const [recibosAccountId, setRecibosAccountId] = useState(null);
   const [recibosTransactions, setRecibosTransactions] = useState([]);
   const [recibosLoading, setRecibosLoading] = useState(false);
+
+  const handleHardRefresh = async (subaccount) => {
+    if (window.confirm(`This will perform a full historical re-sync for "${subaccount.name}" to find and add any missing transactions. This is a safe, non-destructive operation that will not break existing links. Continue?`)) {
+      try {
+        const { data } = await triggerHardRefresh(subaccount.id);
+        alert(data.message);
+      } catch (error) {
+        alert(error.response?.data?.message || 'Failed to start the refresh process.');
+      }
+    }
+  };
 
   const fetchSubaccounts = useCallback(async () => {
     setLoading(true);
@@ -280,6 +292,9 @@ const SubaccountsPage = ({ allGroups }) => {
                     <td>{acc.assigned_group_name || <span style={{ color: "#999" }}>None</span>}</td>
                     <td className="actions">
                       <FaKey onClick={() => handleCredentials(acc)} title="Manage Credentials" />
+                      {acc.account_type === 'xpayz' && (
+                        <FaHistory onClick={() => handleHardRefresh(acc)} title="Hard Refresh History" />
+                      )}
                       <FaEdit onClick={() => handleOpenModal(acc)} title="Edit" />
                       <FaTrash onClick={() => handleDelete(acc.id)} title="Delete" />
                     </td>

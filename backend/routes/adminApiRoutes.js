@@ -119,6 +119,8 @@ router.get('/sub-customers', subCustomerController.getSubCustomers);
 router.get('/subaccounts/:subaccountId/recibos', subaccountController.getRecibosTransactions);
 router.post('/subaccounts/reassign', subaccountController.reassignTransaction);
 
+router.post('/subaccounts/:id/hard-refresh', subaccountController.triggerHardRefresh);
+
 // USDT & Schedules
 router.use('/usdt-wallets', usdtWalletRoutes);
 router.use('/scheduled-broadcasts', scheduledBroadcastRoutes);

@@ -233,6 +233,37 @@ exports.getCredentials = async (req, res) => {
     }
 };
 
+exports.triggerHardRefresh = async (req, res) => {
+    const userId = req.user.id;
+    const { id: subaccountId } = req.params;
+
+    try {
+        // Find the subaccount to get its platform-specific number
+        const [[subaccount]] = await pool.query(
+            'SELECT subaccount_number, account_type FROM subaccounts WHERE id = ? AND user_id = ?',
+            [subaccountId, userId]
+        );
+
+        if (!subaccount) {
+            return res.status(404).json({ message: 'Subaccount not found.' });
+        }
+
+        if (subaccount.account_type !== 'xpayz' || !subaccount.subaccount_number) {
+            return res.status(400).json({ message: 'This operation is only available for XPayz subaccounts with a valid number.' });
+        }
+
+        // We don't wait for the sync to finish. We trigger it and respond immediately.
+        // We pass the new 'historical' flag.
+        syncSingleSubaccount(subaccount.subaccount_number, true); // true for historical
+
+        res.status(202).json({ message: `A full historical sync has been started for subaccount ${subaccount.subaccount_number}. It will run in the background.` });
+
+    } catch (error) {
+        console.error(`[HARD-REFRESH-ERROR] for subaccount ID ${subaccountId}:`, error);
+        res.status(500).json({ message: 'Failed to start the hard refresh process.' });
+    }
+};
+
 exports.resetPassword = async (req, res) => {
     const userId = req.user.id;
     const { id: subaccountId } = req.params;

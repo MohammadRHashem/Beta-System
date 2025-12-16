@@ -108,13 +108,29 @@ class XPayzClient:
         self._save_token_to_cache(token)
         print("✅ Login successful and token cached.")
 
-    def iter_transactions(self, subaccount_id: int, per_page: int = 200) -> t.Iterator[Transaction]:
+    def iter_transactions(self, subaccount_id: int, per_page: int = 200, historical: bool = False) -> t.Iterator[Transaction]:
         url = f"{self.base_url}{TRANSACTIONS_BASE_PATH}{subaccount_id}/transactions"
-        resp = self._request_with_retries("GET", url, params={"page": 1, "per_page": per_page})
-        blob = resp.json()
-        items = blob.get("data", []) or []
-        for item in items:
-            yield self._to_transaction(item)
+        page = 1
+        
+        while True:
+            # For a normal sync, we only fetch page 1. For historical, we fetch all.
+            if not historical and page > 1:
+                break
+
+            print(f"Fetching page {page}...")
+            resp = self._request_with_retries("GET", url, params={"page": page, "per_page": per_page})
+            blob = resp.json()
+            items = blob.get("data", []) or []
+            
+            if not items:
+                print("Last page reached. Sync complete.")
+                break # Exit the loop if the API returns no more transactions
+
+            for item in items:
+                yield self._to_transaction(item)
+            
+            page += 1
+            time.sleep(1) # Be respectful to the API between pages
 
     def _request_with_retries(self, method: str, url: str, **kwargs) -> requests.Response:
         max_attempts = 3
@@ -217,6 +233,7 @@ def save_transactions_to_db(subaccount_id: int, transactions: list[Transaction])
 
 def main():
     parser = argparse.ArgumentParser(description="XPayz: fetch and store subaccount transactions.")
+    parser.add_argument("--historical", action="store_true", help="Fetch all pages of transactions, not just the most recent.")
     parser.add_argument("subaccount_id", help="The numeric ID of the subaccount to fetch.")
     args = parser.parse_args()
     
@@ -232,7 +249,7 @@ def main():
         client.ensure_auth(email, password)
         
         # print(f"Fetching transactions for subaccount {args.subaccount_id}...")
-        transactions = list(client.iter_transactions(subaccount_id=args.subaccount_id, per_page=200))
+        transactions = list(client.iter_transactions(subaccount_id=args.subaccount_id, per_page=200, historical=args.historical))
         
         if transactions:
             save_transactions_to_db(args.subaccount_id, transactions)

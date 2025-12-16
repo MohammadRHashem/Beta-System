@@ -93,6 +93,9 @@ export const updateTemplate = (id, data) => apiClient.put(`/templates/${id}`, da
 export const deleteTemplate = (id) => apiClient.delete(`/templates/${id}`);
 export const toggleForwardingRule = (id, is_enabled) => apiClient.patch(`/settings/forwarding/${id}/toggle`, { is_enabled });
 export const toggleReplyRule = (id, reply_with_group_name) => apiClient.patch(`/settings/forwarding/${id}/toggle-reply`, { reply_with_group_name });
+
+export const triggerHardRefresh = (id) => apiClient.post(`/subaccounts/${id}/hard-refresh`);
+
 const downloadFile = async (url, params) => {
     const config = {
         params,
