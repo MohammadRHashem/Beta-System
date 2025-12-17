@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
+import { getRequestTypes, createRequestType, updateRequestType, deleteRequestType } from '../services/api'; // <-- THIS LINE WAS MISSING
 import styled from 'styled-components';
-import { getRequestTypes, createRequestType, updateRequestType, deleteRequestType } from '../services/api';
 import Modal from '../components/Modal';
 import { FaEdit, FaTrash, FaPlus, FaCodeBranch } from 'react-icons/fa';
 
@@ -35,11 +35,13 @@ const RequestTypesPage = () => {
     const [editingType, setEditingType] = useState(null);
 
     const fetchTypes = async () => {
-        const { data } = await api.get('/request-types');
+        const { data } = await getRequestTypes();
         setTypes(data);
     };
 
-    useEffect(() => { fetchTypes(); }, []);
+    useEffect(() => {
+        fetchTypes();
+    }, []);
 
     const openEditModal = (type) => {
         setEditingType(type);
@@ -50,9 +52,9 @@ const RequestTypesPage = () => {
         e.preventDefault();
         try {
             if (editingType.id) {
-                await api.put(`/request-types/${editingType.id}`, editingType);
+                await updateRequestType(editingType.id, editingType);
             } else {
-                await api.post('/request-types', editingType);
+                await createRequestType(editingType);
             }
             fetchTypes();
             setIsModalOpen(false);
@@ -63,7 +65,7 @@ const RequestTypesPage = () => {
 
     const handleDelete = async (id) => {
         if (window.confirm('Are you sure you want to delete this trigger?')) {
-            await api.delete(`/request-types/${id}`);
+            await deleteRequestType(id);
             fetchTypes();
         }
     };
