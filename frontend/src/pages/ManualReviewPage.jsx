@@ -85,6 +85,8 @@ const MediaLink = styled.button`
     text-decoration: underline;
 `;
 
+const SAO_PAULO_TIMEZONE = 'America/Sao_Paulo';
+
 const ManualReviewPage = () => {
     const socket = useSocket();
     const [invoices, setInvoices] = useState([]);
@@ -209,7 +211,7 @@ const ManualReviewPage = () => {
                             {invoices.length === 0 ? (<tr><td colSpan="7">All caught up!</td></tr>) :
                             invoices.map(inv => (
                                 <tr key={inv.id}>
-                                    <td>{format(new Date(inv.received_at), 'dd/MM HH:mm')}</td>
+                                    <td>{formatInTimeZone(new Date(inv.received_at), SAO_PAULO_TIMEZONE, 'dd/MM HH:mm')}</td>
                                     <td>{inv.source_group_name}</td>
                                     <td>{inv.sender_name}</td>
                                     <td>{inv.recipient_name}</td> {/* <-- NEW COLUMN */}
