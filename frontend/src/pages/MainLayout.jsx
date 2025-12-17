@@ -23,7 +23,8 @@ import UsdtWalletsPage from "./UsdtWalletsPage";
 import SubCustomersPage from "./SubCustomersPage";
 import TrkbitPage from "./TrkbitPage";
 import ManualReviewPage from "./ManualReviewPage";
-import WalletRequestsPage from "./WalletRequestsPage";
+import WalletRequestsPage from "./ClientRequestsPage"; // Will be renamed soon
+import RequestTypesPage from "./RequestTypesPage"; // New Page
 
 const AppLayout = styled.div`
   display: flex;
@@ -161,7 +162,10 @@ const MainLayout = () => {
                   <InvoicesPage allGroups={allGroups} />
                 }
               />
-              <Route path="/wallet-requests" element={<WalletRequestsPage />} />
+              <Route path="/client-requests" element={<WalletRequestsPage />} />
+              <Route path="/request-types" element={<RequestTypesPage />} />
+              {/* ... (rest of the routes) ... */}
+              <Route path="/wallet-requests" element={<Navigate to="/client-requests" replace />} />
               <Route path="/trkbit" element={<TrkbitPage />} />
               <Route path="/alfa-trust" element={<AlfaTrustPage />} />
               <Route

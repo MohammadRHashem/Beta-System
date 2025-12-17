@@ -18,7 +18,8 @@ const scheduledBroadcastRoutes = require('./scheduledBroadcastRoutes');
 const subCustomerController = require('../controllers/subCustomerController');
 const trkbitController = require('../controllers/trkbitController');
 const manualReviewController = require('../controllers/manualReviewController');
-const walletRequestController = require('../controllers/walletRequestController');
+const clientRequestController = require('../controllers/clientRequestController'); // Renamed
+const requestTypesController = require('../controllers/requestTypesController'); // New Controller
 const bridgeController = require('../controllers/bridgeController');
 
 
@@ -131,8 +132,15 @@ router.get('/trkbit/export', trkbitController.exportExcel);
 router.get('/settings/trkbit-confirmation', settingsController.getTrkbitConfirmationStatus);
 router.post('/settings/trkbit-confirmation', settingsController.setTrkbitConfirmationStatus);
 
-router.get('/wallet-requests', walletRequestController.getPendingRequests);
-router.patch('/wallet-requests/:id/complete', walletRequestController.completeRequest);
+router.get('/client-requests', clientRequestController.getPendingRequests);
+router.patch('/client-requests/:id/complete', clientRequestController.completeRequest);
+router.patch('/client-requests/:id/amount', clientRequestController.updateRequestAmount); // New
+
+// Request Types (New)
+router.get('/request-types', requestTypesController.getAll);
+router.post('/request-types', requestTypesController.create);
+router.put('/request-types/:id', requestTypesController.update);
+router.delete('/request-types/:id', requestTypesController.delete);
 
 
 module.exports = router;

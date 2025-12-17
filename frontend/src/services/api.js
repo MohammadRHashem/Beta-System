@@ -182,8 +182,17 @@ export const getCandidateInvoices = (amount) => apiClient.get('/manual/candidate
 export const clearAllPendingInvoices = (messageIds) => apiClient.post('/manual/clear-all', { messageIds });
 
 
-export const getWalletRequests = () => apiClient.get('/wallet-requests');
-export const completeWalletRequest = (id) => apiClient.patch(`/wallet-requests/${id}/complete`);
+export const getWalletRequests = () => apiClient.get('/client-requests'); // Reroute old function name
+export const completeWalletRequest = (id) => apiClient.patch(`/client-requests/${id}/complete`); // Reroute
+
+export const getClientRequests = () => apiClient.get('/client-requests');
+export const completeClientRequest = (id) => apiClient.patch(`/client-requests/${id}/complete`);
+export const updateClientRequestAmount = (id, amount) => apiClient.patch(`/client-requests/${id}/amount`, { amount });
+
+export const getRequestTypes = () => apiClient.get('/request-types');
+export const createRequestType = (data) => apiClient.post('/request-types', data);
+export const updateRequestType = (id, data) => apiClient.put(`/request-types/${id}`, data);
+export const deleteRequestType = (id) => apiClient.delete(`/request-types/${id}`);
 
 
 export const exportAlfaExcel = async (params) => {

@@ -19,6 +19,7 @@ let client;
 let qrCodeData;
 let connectionStatus = "disconnected";
 let abbreviationCache = [];
+let requestTypeCache = [];
 let io; // To hold the socket.io instance
 
 // === NEW: State for Auto Confirmation ===
@@ -1387,6 +1388,36 @@ const reconcileDeletedMessages = async () => {
     }
 };
 
+const refreshRequestTypeCache = async () => {
+    try {
+        console.log("[CACHE] Refreshing client request types cache...");
+        const [types] = await pool.query(
+            "SELECT name, trigger_regex, acknowledgement_reaction FROM request_types WHERE is_enabled = 1"
+        );
+        requestTypeCache = types.map(t => ({
+            ...t,
+            // Compile regex on load for performance
+            regex: new RegExp(t.trigger_regex, 'i') 
+        }));
+        console.log(`[CACHE] Loaded ${requestTypeCache.length} active request types.`);
+    } catch (error) {
+        console.error("[CACHE-ERROR] Failed to refresh request types cache:", error);
+    }
+};
+
+// === NEW: Function to clear reactions from a message ===
+const clearReaction = async (messageId) => {
+    try {
+        if (!client || connectionStatus !== "connected") return;
+        const message = await client.getMessageById(messageId);
+        if (message) {
+            await message.react(''); // Sending an empty string removes reactions
+        }
+    } catch (error) {
+        console.warn(`[REACTION-CLEAR] Could not clear reaction for message ${messageId}:`, error.message);
+    }
+};
+
 const handleMessage = async (message) => {
   try {
     await pool.query("INSERT IGNORE INTO raw_message_log (message_id) VALUES (?)", [message.id._serialized]);
@@ -1400,41 +1431,41 @@ const handleMessage = async (message) => {
     if (message.body) {
       // --- NEW: USDT Wallet Address Detection Logic ---
       const messageBody = message.body.trim();
-      const tronAddressRegex = /^T[1-9A-HJ-NP-Za-km-z]{33}$/;
-      if (tronAddressRegex.test(messageBody)) {
-          console.log(`[WALLET-REQ] Detected potential TRC-20 address: ${messageBody}`);
-          const [[ourWallet]] = await pool.query(
-              'SELECT id FROM usdt_wallets WHERE wallet_address = ?',
-              [messageBody]
-          );
+      for (const rule of requestTypeCache) {
+          const match = messageBody.match(rule.regex);
+          // match[0] is the full match, match[1] is the first capture group
+          if (match && match[1]) { 
+              const capturedContent = match[1];
+              console.log(`[REQUEST-DETECT] Rule "${rule.name}" triggered. Content: ${capturedContent}`);
+              
+              const [[ourWallet]] = await pool.query(
+                  'SELECT id FROM usdt_wallets WHERE wallet_address = ?',
+                  [capturedContent]
+              );
+              if (ourWallet) {
+                  console.log(`[REQUEST-DETECT] Content is one of our own wallets. Ignoring.`);
+                  await pool.query("INSERT IGNORE INTO processed_messages (message_id) VALUES (?)", [message.id._serialized]);
+                  return;
+              }
 
-          if (ourWallet) {
-              console.log(`[WALLET-REQ] Address belongs to us. Ignoring.`);
-              // Mark as processed to prevent re-queuing, but take no further action.
+              await pool.query(
+                  `INSERT INTO client_requests (message_id, content, request_type, source_group_jid, source_group_name, received_at) 
+                   VALUES (?, ?, ?, ?, ?, ?)
+                   ON DUPLICATE KEY UPDATE content = VALUES(content)`,
+                  [
+                      message.id._serialized, capturedContent, rule.name,
+                      chat.id._serialized, chat.name, new Date(message.timestamp * 1000)
+                  ]
+              );
+              
+              if (io) io.emit('client_request:new');
+              if (rule.acknowledgement_reaction) {
+                  await message.react(rule.acknowledgement_reaction);          
+              }
+              
               await pool.query("INSERT IGNORE INTO processed_messages (message_id) VALUES (?)", [message.id._serialized]);
-              return; // Stop processing
+              return; // Stop processing after the first match
           }
-
-          // It's a new, external wallet. Store it.
-          await pool.query(
-              `INSERT INTO wallet_address_requests (message_id, wallet_address, source_group_jid, source_group_name, received_at) 
-               VALUES (?, ?, ?, ?, ?)
-               ON DUPLICATE KEY UPDATE wallet_address = VALUES(wallet_address)`, // Prevents error on re-run
-              [
-                  message.id._serialized,
-                  messageBody,
-                  chat.id._serialized,
-                  chat.name,
-                  new Date(message.timestamp * 1000)
-              ]
-          );
-          
-          if (io) io.emit('wallet_request:new');
-          await message.react('🔔');          
-          
-          // Mark as processed and stop further execution for this message
-          await pool.query("INSERT IGNORE INTO processed_messages (message_id) VALUES (?)", [message.id._serialized]);
-          return;
       }
 
 
@@ -1684,6 +1715,7 @@ const initializeWhatsApp = (socketIoInstance) => {
       refreshAlfaApiConfirmationStatus();
       refreshTrocaCoinStatus();
       refreshTrocaCoinMethod();
+      refreshRequestTypeCache();
       refreshAbbreviationCache();
       refreshTrkbitConfirmationStatus();
       refreshAutoConfirmationStatus();
@@ -1803,6 +1835,7 @@ module.exports = {
   getStatus,
   fetchAllGroups,
   broadcast,
+  refreshRequestTypeCache,
   refreshAbbreviationCache,
   refreshAutoConfirmationStatus,
   refreshAlfaApiConfirmationStatus,
@@ -1810,5 +1843,6 @@ module.exports = {
   refreshTrocaCoinMethod,
   refreshTrkbitConfirmationStatus,
   sendManualConfirmation,
-  sendManualRejection
+  sendManualRejection,
+  clearReaction
 };
