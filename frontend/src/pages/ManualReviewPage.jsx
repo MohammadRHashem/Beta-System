@@ -11,7 +11,7 @@ import {
 import { useSocket } from '../context/SocketContext';
 import Modal from '../components/Modal';
 import { FaCheck, FaTimes, FaMagic, FaBroom } from 'react-icons/fa';
-import { format } from 'date-fns';
+import { formatInTimeZone } from 'date-fns-tz';
 
 const PageContainer = styled.div`
     display: flex;
@@ -86,6 +86,18 @@ const MediaLink = styled.button`
 `;
 
 const SAO_PAULO_TIMEZONE = 'America/Sao_Paulo';
+
+const formatSaoPauloDateTime = (dbDateString, formatString) => {
+    if (!dbDateString) return '';
+    try {
+        // Append 'Z' to tell JavaScript to parse the date as UTC
+        const utcDate = new Date(dbDateString + 'Z');
+        return formatInTimeZone(utcDate, SAO_PAULO_TIMEZONE, formatString);
+    } catch (e) {
+        console.warn("Could not format date:", dbDateString);
+        return dbDateString; // Fallback
+    }
+};
 
 const ManualReviewPage = () => {
     const socket = useSocket();
@@ -211,7 +223,7 @@ const ManualReviewPage = () => {
                             {invoices.length === 0 ? (<tr><td colSpan="7">All caught up!</td></tr>) :
                             invoices.map(inv => (
                                 <tr key={inv.id}>
-                                    <td>{formatInTimeZone(new Date(inv.received_at), SAO_PAULO_TIMEZONE, 'dd/MM HH:mm')}</td>
+                                    <td>{formatSaoPauloDateTime(inv.received_at, 'dd/MM HH:mm')}</td>
                                     <td>{inv.source_group_name}</td>
                                     <td>{inv.sender_name}</td>
                                     <td>{inv.recipient_name}</td> {/* <-- NEW COLUMN */}
