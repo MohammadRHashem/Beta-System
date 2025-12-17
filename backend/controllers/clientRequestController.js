@@ -4,12 +4,16 @@ const whatsappService = require('../services/whatsappService');
 // GET /api/client-requests - Fetch all pending requests
 exports.getPendingRequests = async (req, res) => {
     try {
-        const [requests] = await pool.query(
-            `SELECT id, content, amount, source_group_name, request_type, received_at 
-             FROM client_requests 
-             WHERE is_completed = 0 
-             ORDER BY received_at ASC`
-        );
+        const query = `
+            SELECT 
+                cr.id, cr.content, cr.amount, cr.source_group_name, cr.request_type, cr.received_at,
+                COALESCE(rt.color, '#E0E0E0') as type_color
+            FROM client_requests cr
+            LEFT JOIN request_types rt ON cr.request_type = rt.name
+            WHERE cr.is_completed = 0 
+            ORDER BY cr.received_at ASC
+        `;
+        const [requests] = await pool.query(query);
         res.json(requests);
     } catch (error) {
         console.error('[CLIENT-REQ-ERROR] Failed to fetch pending requests:', error);
