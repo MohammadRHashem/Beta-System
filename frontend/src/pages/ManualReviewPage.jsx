@@ -269,7 +269,7 @@ const ManualReviewPage = () => {
                                 ) : candidates.map(cand => (
                                     <tr key={cand.id + cand.source} style={{borderBottom: '1px solid #eee'}}>
                                         <td style={{padding: '0.5rem'}}>{cand.source}</td>
-                                        <td style={{padding: '0.5rem'}}>{format(new Date(cand.date), 'dd/MM HH:mm')}</td>
+                                        <td>{formatSaoPauloDateTime(cand.date, 'dd/MM HH:mm')}</td>
                                         <td style={{padding: '0.5rem', fontWeight: 'bold'}}>{cand.name}</td>
                                         <td style={{padding: '0.5rem'}}>
                                             <button 
