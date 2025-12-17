@@ -45,6 +45,18 @@ const formatAmount = (value) => {
     }).format(number);
 };
 
+const formatSaoPauloDateTime = (dbDateString, formatString) => {
+    if (!dbDateString) return '';
+    try {
+        // Append 'Z' to tell JavaScript to parse the date as UTC
+        const utcDate = new Date(dbDateString + 'Z');
+        return formatInTimeZone(utcDate, SAO_PAULO_TIMEZONE, formatString);
+    } catch (e) {
+        console.warn("Could not format date:", dbDateString);
+        return dbDateString; // Fallback
+    }
+};
+
 
 const ClientRequestsPage = () => {
     const [requests, setRequests] = useState([]);
@@ -161,7 +173,7 @@ const ClientRequestsPage = () => {
                         ) : (
                             sortedRequests.map(req => (
                                 <TableRow key={req.id} highlightColor={req.type_color}>
-                                    <td>{formatInTimeZone(new Date(req.received_at), SAO_PAULO_TIMEZONE, 'dd/MM/yyyy HH:mm:ss')}</td>
+                                    <td>{formatSaoPauloDateTime(req.received_at, 'dd/MM/yyyy HH:mm:ss')}</td>
                                     <td>{req.source_group_name}</td>
                                     <td>{req.request_type}</td>
                                     <ContentCell>{req.content}</ContentCell>
