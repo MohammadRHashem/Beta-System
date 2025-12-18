@@ -88,3 +88,33 @@ exports.updateRequestAmount = async (req, res) => {
         res.status(500).json({ message: 'Failed to update amount.' });
     }
 };
+
+exports.updateRequestContent = async (req, res) => {
+    const { id } = req.params;
+    const { content } = req.body;
+    const io = req.app.get('io');
+
+    // Basic validation
+    if (content === undefined || content === null) {
+        return res.status(400).json({ message: 'Content must be provided.' });
+    }
+
+    try {
+        const [result] = await pool.query(
+            'UPDATE client_requests SET content = ? WHERE id = ?',
+            [content, id]
+        );
+
+        if (result.affectedRows === 0) {
+            return res.status(404).json({ message: 'Request not found.' });
+        }
+        
+        // Notify all clients that data has changed
+        io.emit('client_request:update');
+        res.json({ message: 'Information updated successfully.' });
+
+    } catch (error) {
+        console.error(`[CLIENT-REQ-ERROR] Failed to update content for request ${id}:`, error);
+        res.status(500).json({ message: 'Failed to update information.' });
+    }
+};

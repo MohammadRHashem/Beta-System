@@ -188,6 +188,8 @@ export const completeWalletRequest = (id) => apiClient.patch(`/client-requests/$
 export const getClientRequests = () => apiClient.get('/client-requests');
 export const completeClientRequest = (id) => apiClient.patch(`/client-requests/${id}/complete`);
 export const updateClientRequestAmount = (id, amount) => apiClient.patch(`/client-requests/${id}/amount`, { amount });
+// --- NEW FUNCTION ---
+export const updateClientRequestContent = (id, content) => apiClient.patch(`/client-requests/${id}/content`, { content });
 
 export const getRequestTypes = () => apiClient.get('/request-types');
 export const createRequestType = (data) => apiClient.post('/request-types', data);

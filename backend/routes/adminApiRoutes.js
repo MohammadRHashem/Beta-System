@@ -135,6 +135,10 @@ router.post('/settings/trkbit-confirmation', settingsController.setTrkbitConfirm
 router.get('/client-requests', clientRequestController.getPendingRequests);
 router.patch('/client-requests/:id/complete', clientRequestController.completeRequest);
 router.patch('/client-requests/:id/amount', clientRequestController.updateRequestAmount); // New
+router.patch('/client-requests/:id/content', clientRequestController.updateRequestContent);
+
+// Request Types (New)
+router.get('/request-types', requestTypesController.getAll);
 
 // Request Types (New)
 router.get('/request-types', requestTypesController.getAll);

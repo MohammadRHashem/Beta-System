@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import styled from 'styled-components';
-import { getClientRequests, completeClientRequest, updateClientRequestAmount } from '../services/api';
+import { getClientRequests, completeClientRequest, updateClientRequestAmount, updateClientRequestContent } from '../services/api';
 import { useSocket } from '../context/SocketContext';
 import { FaClipboardList, FaCheck, FaDollarSign, FaEdit, FaSort, FaSortUp, FaSortDown } from 'react-icons/fa';
 import { formatInTimeZone } from 'date-fns-tz';
@@ -147,13 +147,25 @@ const ClientRequestsPage = () => {
         }
     };
 
+    const handleContentUpdate = async (id) => {
+        const currentContent = requests.find(r => r.id === id)?.content || '';
+        const newContent = prompt("Enter the new information:", currentContent);
+
+        if (newContent !== null) { // Proceed if user didn't click cancel
+            try {
+                await updateClientRequestContent(id, newContent);
+                // The socket listener will automatically refresh the data
+            } catch (error) {
+                alert('Failed to update information.');
+            }
+        }
+    };
+
     return (
         <PageContainer>
-            <Header>
-                <Title><FaClipboardList /> Client Requests</Title>
-            </Header>
+            <Header><Title><FaClipboardList /> Client Requests</Title></Header>
             <Card>
-                <p>These are special requests captured from clients based on custom triggers. Review them and mark as complete when handled.</p>
+                <p>These are special requests captured from clients... Review and mark as complete when handled.</p>
                 <Table>
                     <thead>
                         <tr>
@@ -176,13 +188,18 @@ const ClientRequestsPage = () => {
                                     <td>{formatSaoPauloDateTime(req.received_at, 'dd/MM/yyyy HH:mm:ss')}</td>
                                     <td>{req.source_group_name}</td>
                                     <td>{req.request_type}</td>
-                                    <ContentCell>{req.content}</ContentCell>
+                                    <ContentCell>
+                                        <EditableCell>
+                                            <span title={req.content}>{req.content}</span>
+                                            <FaEdit onClick={() => handleContentUpdate(req.id)} />
+                                        </EditableCell>
+                                    </ContentCell>
                                     <td>
                                         {req.amount ? (
-                                            <AmountDisplay>
+                                            <EditableCell>
                                                 {formatAmount(req.amount)}
                                                 <FaEdit onClick={() => handleAmountUpdate(req.id)} />
-                                            </AmountDisplay>
+                                            </EditableCell>
                                         ) : (
                                             <AmountButton onClick={() => handleAmountUpdate(req.id)}>
                                                 <FaDollarSign /> Add
