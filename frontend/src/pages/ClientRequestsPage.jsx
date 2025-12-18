@@ -5,34 +5,42 @@ import { useSocket } from '../context/SocketContext';
 import { FaClipboardList, FaCheck, FaDollarSign, FaEdit, FaSort, FaSortUp, FaSortDown } from 'react-icons/fa';
 import { formatInTimeZone } from 'date-fns-tz';
 
-const PageContainer = styled.div`
-    display: flex;
-    flex-direction: column;
-    gap: 2rem;
-`;
+const PageContainer = styled.div` display: flex; flex-direction: column; gap: 2rem; `;
 const Header = styled.div` display: flex; justify-content: space-between; align-items: center; `;
 const Card = styled.div` background: #fff; padding: 1.5rem 2rem; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); `;
 const Title = styled.h2` display: flex; align-items: center; gap: 0.75rem; margin: 0; color: ${({ theme }) => theme.primary}; `;
 const Table = styled.table` width: 100%; border-collapse: collapse; margin-top: 1.5rem; th, td { padding: 1rem; text-align: left; border-bottom: 1px solid ${({ theme }) => theme.border}; } `;
-const TableHeader = styled.th`
-    background-color: ${({ theme }) => theme.background};
-    cursor: pointer;
-    user-select: none;
-    &:hover {
-        background-color: #eef2f7;
-    }
-`;
-const TableRow = styled.tr`
-    border-left: 5px solid ${props => props.highlightColor || 'transparent'};
-    transition: background-color 0.2s;
-    &:hover {
-        background-color: ${props => props.highlightColor ? `${props.highlightColor}20` : '#f9f9f9'};
-    }
-`;
+const TableHeader = styled.th` background-color: ${({ theme }) => theme.background}; cursor: pointer; user-select: none; &:hover { background-color: #eef2f7; } `;
+const TableRow = styled.tr` border-left: 5px solid ${props => props.highlightColor || '#E0E0E0'}; transition: background-color 0.2s; &:hover { background-color: ${props => props.highlightColor ? `${props.highlightColor}4D` : '#f9f9f9'}; } `;
 const Button = styled.button` background-color: #e3fcef; color: #006644; border: none; padding: 0.5rem 1rem; border-radius: 4px; cursor: pointer; font-weight: bold; display: flex; align-items: center; gap: 0.5rem; &:hover { background-color: #d1f7e2; } `;
-const ContentCell = styled.td` font-family: 'Courier New', Courier, monospace; font-weight: 500; word-break: break-all; `;
+const EditableCell = styled.div`
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    font-weight: bold;
+    color: ${({ theme }) => theme.primary};
+
+    svg {
+        cursor: pointer;
+        color: #999;
+        flex-shrink: 0; /* Prevents icon from shrinking */
+        &:hover { color: #333; }
+    }
+`;
+const ContentCell = styled.td`
+    font-family: 'Courier New', Courier, monospace;
+    font-weight: 500;
+    word-break: break-all;
+    
+    /* Make the content part of the editable cell have a max-width */
+    ${EditableCell} > span {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      max-width: 300px; /* Adjust as needed */
+    }
+`;
 const AmountButton = styled.button` background: transparent; border: 1px dashed #ccc; color: #666; cursor: pointer; padding: 0.3rem 0.8rem; border-radius: 4px; display: flex; align-items: center; gap: 0.5rem; &:hover { background: #f0f0f0; border-color: #999; } `;
-const AmountDisplay = styled.div` font-weight: bold; color: ${({ theme }) => theme.primary}; display: flex; align-items: center; gap: 0.5rem; svg { cursor: pointer; color: #999; &:hover { color: #333; } } `;
 
 const SAO_PAULO_TIMEZONE = 'America/Sao_Paulo';
 
