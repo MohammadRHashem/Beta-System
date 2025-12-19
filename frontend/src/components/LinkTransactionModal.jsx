@@ -12,7 +12,8 @@ const ListContainer = styled.div`
     border-radius: 6px;
 `;
 
-const InvoiceItem = styled.div`
+// === FIX #1: Renamed from InvoiceItem to TransactionItem for clarity and to match usage ===
+const TransactionItem = styled.div`
     padding: 1rem;
     border-bottom: 1px solid ${({ theme }) => theme.border};
     cursor: pointer;
@@ -29,7 +30,8 @@ const InvoiceItem = styled.div`
     }
 `;
 
-const InvoiceInfo = styled.div`
+// === FIX #2: Renamed from InvoiceInfo to TransactionInfo for clarity ===
+const TransactionInfo = styled.div`
     p { margin: 0; }
     strong { color: ${({ theme }) => theme.primary}; }
     small { color: #6b7c93; }
