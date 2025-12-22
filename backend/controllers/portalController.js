@@ -88,7 +88,15 @@ exports.getDashboardSummary = async (req, res) => {
             // This logic is correct
             const dailySummaryQuery = `SELECT SUM(CASE WHEN tx_type = 'C' THEN amount ELSE 0 END) as dailyTotalIn, SUM(CASE WHEN tx_type = 'D' THEN amount ELSE 0 END) as dailyTotalOut, COUNT(CASE WHEN tx_type = 'C' THEN 1 END) as dailyCountIn, COUNT(CASE WHEN tx_type = 'D' THEN 1 END) as dailyCountOut, COUNT(*) as dailyCountTotal FROM trkbit_transactions WHERE tx_pix_key = ? AND DATE(tx_date) = ?;`;
             [[dailySummary]] = await pool.query(dailySummaryQuery, [chavePix, date]);
-            const allTimeBalanceQuery = `SELECT (SUM(CASE WHEN tx_type = 'C' THEN amount ELSE 0 END) - SUM(CASE WHEN tx_type = 'D' THEN amount ELSE 0 END)) as allTimeBalance FROM trkbit_transactions WHERE tx_pix_key = ?;`;
+            const allTimeBalanceQuery = `
+                SELECT SUM(CASE 
+                                WHEN tx_type = 'C' THEN amount 
+                                WHEN tx_type = 'D' THEN -amount 
+                                ELSE 0 
+                            END) as allTimeBalance 
+                FROM trkbit_transactions 
+                WHERE tx_pix_key = ?;
+            `;
             [[balance]] = await pool.query(allTimeBalanceQuery, [chavePix]);
             
         } else { // 'xpayz'
