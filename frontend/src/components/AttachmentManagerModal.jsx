@@ -111,11 +111,11 @@ const Button = styled.button`
 
 const AttachmentManagerModal = ({ isOpen, onClose, onSelect }) => {
     const [uploads, setUploads] = useState([]);
-    const fileInputRef = useRef(null); // Changed from React.useRef to useRef
+    const fileInputRef = useRef(null);
 
     useEffect(() => {
         if (isOpen) {
-            getBroadcastUploads().then(res => setUploads(res.data));
+            getBroadcastUploads().then(res => setUploads(res.data || [])); // Ensure uploads is always an array
         }
     }, [isOpen]);
 
@@ -132,10 +132,8 @@ const AttachmentManagerModal = ({ isOpen, onClose, onSelect }) => {
         if (!file) return;
         try {
             const { data: newUpload } = await uploadBroadcastAttachment(file);
-            // Prepend the new upload to the list and pass it to the onSelect handler
-            const updatedUploads = [newUpload, ...uploads];
-            setUploads(updatedUploads);
-            onSelect(newUpload); // Automatically select the newly uploaded file
+            setUploads([newUpload, ...uploads]);
+            onSelect(newUpload);
         } catch (error) {
             alert('File upload failed.');
         }
@@ -153,10 +151,16 @@ const AttachmentManagerModal = ({ isOpen, onClose, onSelect }) => {
             <Gallery>
                 {uploads.map(upload => {
                     const icon = getFileIcon(upload.mimetype);
+                    
+                    // === THIS IS THE FIX for the UNDEFINED URL ===
+                    // The image will only render if upload.url is a valid, non-empty string.
+                    const canPreviewImage = upload.mimetype.startsWith('image/') && typeof upload.url === 'string' && upload.url.length > 0;
+                    // ===============================================
+
                     return (
                         <FileCard key={upload.id} onClick={() => onSelect(upload)}>
                             <FilePreview>
-                                {icon ? icon : <img src={`https://platform.betaserver.dev${upload.url}`} alt={upload.original_filename} />}
+                                {canPreviewImage ? <img src={`https://platform.betaserver.dev${upload.url}`} alt={upload.original_filename} /> : icon}
                             </FilePreview>
                             <FileName title={upload.original_filename}>{upload.original_filename}</FileName>
                             <Overlay className="overlay">

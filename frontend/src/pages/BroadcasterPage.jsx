@@ -42,21 +42,16 @@ const BroadcasterPage = ({ allGroups }) => {
   const [batches, setBatches] = useState([]);
   const [templates, setTemplates] = useState([]);
   const [message, setMessage] = useState("");
-  const [attachment, setAttachment] = useState(null); // New state for attachment
-  const [isAttachmentModalOpen, setIsAttachmentModalOpen] = useState(false); // New state for modal
-
+  const [attachment, setAttachment] = useState(null);
   const [editingBatch, setEditingBatch] = useState(null);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [isAttachmentModalOpen, setIsAttachmentModalOpen] = useState(false);
 
   const socket = useRef(null);
   const [socketId, setSocketId] = useState(null);
   const [isBroadcasting, setIsBroadcasting] = useState(false);
   const [broadcastLogs, setBroadcastLogs] = useState([]);
-  const [broadcastSummary, setBroadcastSummary] = useState({
-    total: 0,
-    successful: 0,
-    failed: 0,
-  });
+  const [broadcastSummary, setBroadcastSummary] = useState({ total: 0, successful: 0, failed: 0 });
   const [isBroadcastComplete, setIsBroadcastComplete] = useState(false);
 
   useEffect(() => {
@@ -157,7 +152,7 @@ const BroadcasterPage = ({ allGroups }) => {
     }
   };
 
-  const startBroadcast = (groupObjects, broadcastMessage) => {
+  const startBroadcast = (groupObjects, broadcastMessage, broadcastAttachment) => {
     setIsBroadcasting(true);
     setIsBroadcastComplete(false);
     setBroadcastLogs([]);
@@ -167,18 +162,20 @@ const BroadcasterPage = ({ allGroups }) => {
       failed: 0,
     });
 
+    // The payload now correctly includes the attachment.
     api.post("/broadcast", {
       groupObjects,
       message: broadcastMessage,
-      attachment: broadcastAttachment, // Pass attachment
+      attachment: broadcastAttachment, 
       socketId,
     });
   };
+  // =================================================================
 
   const handleSelectAttachment = (selectedFile) => {
     setAttachment(selectedFile);
-    setIsAttachmentModalOpen(false); // Close modal on select
-  };  
+    setIsAttachmentModalOpen(false);
+  };
 
   return (
     <>
