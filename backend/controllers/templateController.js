@@ -1,69 +1,82 @@
 const pool = require('../config/db');
 
-// --- GET ALL TEMPLATES (User-Specific) ---
 exports.getAllTemplates = async (req, res) => {
-    const userId = req.user.id; // Get the logged-in user's ID from the token
+    const userId = req.user.id;
     try {
-        const [templates] = await pool.query(
-            'SELECT id, name, text FROM message_templates WHERE user_id = ? ORDER BY name',
-            [userId] // Use the ID in the query
-        );
-        res.json(templates);
+        const query = `
+            SELECT 
+                mt.id, mt.name, mt.text, mt.upload_id,
+                bu.original_filename, bu.stored_filename, bu.mimetype, bu.filepath
+            FROM message_templates mt
+            LEFT JOIN broadcast_uploads bu ON mt.upload_id = bu.id
+            WHERE mt.user_id = ? 
+            ORDER BY mt.name
+        `;
+        const [templates] = await pool.query(query, [userId]);
+        
+        const formattedTemplates = templates.map(t => ({
+            id: t.id,
+            name: t.name,
+            text: t.text,
+            attachment: t.upload_id ? {
+                id: t.upload_id,
+                original_filename: t.original_filename,
+                stored_filename: t.stored_filename,
+                mimetype: t.mimetype,
+                filepath: t.filepath,
+                url: `/uploads/broadcasts/${t.stored_filename}`
+            } : null
+        }));
+        
+        res.json(formattedTemplates);
     } catch (error) {
-        console.error('Error fetching templates:', error);
+        console.error("Error fetching templates:", error);
         res.status(500).json({ message: 'Failed to fetch templates' });
     }
 };
 
-// --- CREATE TEMPLATE (User-Specific) ---
 exports.createTemplate = async (req, res) => {
-    const userId = req.user.id; // Get the logged-in user's ID
-    const { name, text } = req.body;
-    if (!name || !text) {
-        return res.status(400).json({ message: 'Template name and text are required.' });
+    const userId = req.user.id;
+    const { name, text, upload_id } = req.body;
+    if (!name || (!text && !upload_id)) {
+        return res.status(400).json({ message: 'Template name and either text or an attachment are required.' });
     }
     try {
-        // Add user_id to the INSERT statement
         const [result] = await pool.query(
-            'INSERT INTO message_templates (user_id, name, text) VALUES (?, ?, ?)',
-            [userId, name, text]
+            'INSERT INTO message_templates (user_id, name, text, upload_id) VALUES (?, ?, ?, ?)',
+            [userId, name, text || '', upload_id || null]
         );
-        res.status(201).json({ id: result.insertId, name, text });
+        res.status(201).json({ id: result.insertId });
     } catch (error) {
-        console.error('Error creating template:', error);
+        console.error("Error creating template:", error);
         res.status(500).json({ message: 'Failed to create template' });
     }
 };
 
-// --- UPDATE TEMPLATE (User-Specific) ---
 exports.updateTemplate = async (req, res) => {
-    const userId = req.user.id; // Get the logged-in user's ID
+    const userId = req.user.id;
     const { id } = req.params;
-    const { name, text } = req.body;
+    const { name, text, upload_id } = req.body;
 
-    if (!name || !text) {
-        return res.status(400).json({ message: 'Template name and text are required.' });
+    if (!name || (!text && !upload_id)) {
+        return res.status(400).json({ message: 'Template name and either text or an attachment are required.' });
     }
     try {
-        // Add user_id to the WHERE clause for security
-        // This ensures a user can only edit their own templates
         await pool.query(
-            'UPDATE message_templates SET name = ?, text = ? WHERE id = ? AND user_id = ?',
-            [name, text, id, userId]
+            'UPDATE message_templates SET name = ?, text = ?, upload_id = ? WHERE id = ? AND user_id = ?',
+            [name, text || '', upload_id || null, id, userId]
         );
         res.status(200).json({ message: 'Template updated successfully.' });
     } catch (error) {
-        console.error('Error updating template:', error);
+        console.error("Error updating template:", error);
         res.status(500).json({ message: 'Failed to update template' });
     }
 };
 
-// --- DELETE TEMPLATE (User-Specific) ---
 exports.deleteTemplate = async (req, res) => {
-    const userId = req.user.id; // Get the logged-in user's ID
+    const userId = req.user.id;
     const { id } = req.params;
     try {
-        // Add user_id to the WHERE clause for security
         await pool.query(
             'DELETE FROM message_templates WHERE id = ? AND user_id = ?',
             [id, userId]

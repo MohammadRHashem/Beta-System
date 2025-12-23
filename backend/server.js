@@ -88,7 +88,7 @@ app.post('/api/auth/login', authController.login);
 // 4. Protected Admin Routes
 // All routes from adminApiRoutes will be prefixed with /api AND will use the admin authMiddleware.
 app.use('/api', (req, res, next) => {
-    req.broadcastUpload = broadcastUpload; // Attach multer instance to request
+    req.broadcastUpload = broadcastUpload;
     next();
 }, authMiddleware, adminApiRoutes);
 

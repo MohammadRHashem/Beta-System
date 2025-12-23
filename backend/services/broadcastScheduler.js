@@ -1,10 +1,10 @@
 const cron = require('node-cron');
 const pool = require('../config/db');
 const dateFnsTz = require('date-fns-tz');
-const whatsappService = require('./whatsappService'); // <-- IMPORT WHATSAPP SERVICE
+const whatsappService = require('./whatsappService');
 
 let isChecking = false;
-let io = null; // This will be used to pass to the broadcast function for frontend progress updates
+let io = null;
 
 const checkSchedules = async () => {
     if (isChecking) return;
@@ -16,10 +16,20 @@ const checkSchedules = async () => {
         return;
     }
 
-    const connection = await pool.getConnection(); // Use a connection for the transaction
+    const connection = await pool.getConnection();
 
     try {
-        const [jobs] = await connection.query('SELECT * FROM scheduled_broadcasts WHERE is_active = 1');
+        const [jobs] = await connection.query(`
+            SELECT 
+                sb.*,
+                bu.filepath as attachment_filepath,
+                bu.mimetype as attachment_mimetype,
+                bu.original_filename as attachment_filename
+            FROM scheduled_broadcasts sb
+            LEFT JOIN broadcast_uploads bu ON sb.upload_id = bu.id
+            WHERE sb.is_active = 1
+        `);
+        
         const nowUtc = new Date();
 
         for (const job of jobs) {
@@ -42,16 +52,14 @@ const checkSchedules = async () => {
                 } else if (job.schedule_type === 'DAILY' && !hasRunToday) {
                     shouldRun = true;
                 } else if (job.schedule_type === 'WEEKLY' && !hasRunToday) {
-                    // Directly use the array and add a safety check
-                    const scheduledDays = job.scheduled_days_of_week;
-                    if (Array.isArray(scheduledDays) && scheduledDays.includes(nowInJobTimezone.getDay())) {
+                    const scheduledDays = Array.isArray(job.scheduled_days_of_week) ? job.scheduled_days_of_week : JSON.parse(job.scheduled_days_of_week || '[]');
+                    if (scheduledDays.includes(nowInJobTimezone.getDay())) {
                         shouldRun = true;
                     }
                 }
             }
 
             if (shouldRun) {
-                // --- THIS IS THE NEW, DIRECT EXECUTION LOGIC ---
                 console.log(`[SCHEDULER] Triggering broadcast for job ID: ${job.id}`);
                 
                 const [groups] = await connection.query('SELECT group_id FROM batch_group_link WHERE batch_id = ?', [job.batch_id]);
@@ -63,8 +71,16 @@ const checkSchedules = async () => {
                     .filter(g => g.name !== 'Unknown Group');
 
                 if (groupObjects.length > 0) {
-                    // Directly call the broadcast function. Pass `null` for socketId as this is a system task.
-                    whatsappService.broadcast(io, null, groupObjects, job.message);
+                    let attachment = null;
+                    if (job.upload_id && job.attachment_filepath) {
+                        attachment = {
+                            filepath: job.attachment_filepath,
+                            mimetype: job.attachment_mimetype,
+                            original_filename: job.attachment_filename
+                        };
+                    }
+
+                    whatsappService.broadcast(io, null, groupObjects, job.message, attachment);
 
                     const updateQuery = 'UPDATE scheduled_broadcasts SET last_run_at = ?' + (job.schedule_type === 'ONCE' ? ', is_active = 0' : '') + ' WHERE id = ?';
                     await connection.query(updateQuery, [nowUtc, job.id]);

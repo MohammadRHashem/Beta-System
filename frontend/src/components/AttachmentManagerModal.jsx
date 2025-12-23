@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react'; // useRef was used but not imported
+import React, { useState, useEffect, useRef } from 'react';
 import styled from 'styled-components';
 import Modal from './Modal';
 import { getBroadcastUploads, deleteBroadcastUpload, uploadBroadcastAttachment } from '../services/api';
@@ -15,7 +15,6 @@ const Gallery = styled.div`
     border: 1px solid ${({ theme }) => theme.border};
     border-radius: 8px;
 `;
-
 const FileCard = styled.div`
     position: relative;
     border: 1px solid ${({ theme }) => theme.border};
@@ -27,7 +26,6 @@ const FileCard = styled.div`
         opacity: 1;
     }
 `;
-
 const FilePreview = styled.div`
     height: 120px;
     display: flex;
@@ -41,7 +39,6 @@ const FilePreview = styled.div`
         object-fit: cover;
     }
 `;
-
 const FileName = styled.p`
     font-size: 0.8rem;
     font-weight: 500;
@@ -51,7 +48,6 @@ const FileName = styled.p`
     overflow: hidden;
     text-overflow: ellipsis;
 `;
-
 const Overlay = styled.div`
     position: absolute;
     top: 0;
@@ -67,7 +63,6 @@ const Overlay = styled.div`
     opacity: 0;
     transition: opacity 0.2s;
 `;
-
 const ActionButton = styled.button`
     background: ${props => props.color || '#fff'};
     color: ${props => props.textColor || '#333'};
@@ -77,18 +72,14 @@ const ActionButton = styled.button`
     font-weight: bold;
     cursor: pointer;
 `;
-
 const UploadButtonContainer = styled.div`
     margin-top: 1rem;
     border-top: 1px solid ${({ theme }) => theme.border};
     padding-top: 1rem;
 `;
-
 const HiddenInput = styled.input.attrs({ type: 'file' })`
     display: none;
 `;
-
-// === THIS IS THE FIX: The missing 'Button' component definition is now added ===
 const Button = styled.button`
     background-color: ${({ theme }) => theme.primary};
     color: white;
@@ -102,12 +93,10 @@ const Button = styled.button`
     gap: 0.5rem;
     width: 100%;
     justify-content: center;
-
     &:hover {
         opacity: 0.9;
     }
 `;
-// ==============================================================================
 
 const AttachmentManagerModal = ({ isOpen, onClose, onSelect }) => {
     const [uploads, setUploads] = useState([]);
@@ -115,7 +104,7 @@ const AttachmentManagerModal = ({ isOpen, onClose, onSelect }) => {
 
     useEffect(() => {
         if (isOpen) {
-            getBroadcastUploads().then(res => setUploads(res.data || [])); // Ensure uploads is always an array
+            getBroadcastUploads().then(res => setUploads(res.data || []));
         }
     }, [isOpen]);
 
@@ -132,7 +121,8 @@ const AttachmentManagerModal = ({ isOpen, onClose, onSelect }) => {
         if (!file) return;
         try {
             const { data: newUpload } = await uploadBroadcastAttachment(file);
-            setUploads([newUpload, ...uploads]);
+            const updatedUploads = [newUpload, ...uploads];
+            setUploads(updatedUploads);
             onSelect(newUpload);
         } catch (error) {
             alert('File upload failed.');
@@ -151,12 +141,8 @@ const AttachmentManagerModal = ({ isOpen, onClose, onSelect }) => {
             <Gallery>
                 {uploads.map(upload => {
                     const icon = getFileIcon(upload.mimetype);
-                    
-                    // === THIS IS THE FIX for the UNDEFINED URL ===
-                    // The image will only render if upload.url is a valid, non-empty string.
                     const canPreviewImage = upload.mimetype.startsWith('image/') && typeof upload.url === 'string' && upload.url.length > 0;
-                    // ===============================================
-
+                    
                     return (
                         <FileCard key={upload.id} onClick={() => onSelect(upload)}>
                             <FilePreview>

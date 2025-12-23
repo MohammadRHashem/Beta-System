@@ -90,10 +90,7 @@ const BroadcasterPage = ({ allGroups }) => {
 
   const fetchBroadcasterData = useCallback(async () => {
     try {
-      const [batchesRes, templatesRes] = await Promise.all([
-        getBatches(),
-        getTemplates(),
-      ]);
+      const [batchesRes, templatesRes] = await Promise.all([getBatches(), getTemplates()]);
       setBatches(batchesRes.data || []);
       setTemplates(templatesRes.data || []);
     } catch (error) {
@@ -108,7 +105,6 @@ const BroadcasterPage = ({ allGroups }) => {
   const handleDataUpdate = async () => {
     await fetchBroadcasterData();
   };
-
   const loadGroupsForBatch = async (batchId) => {
     if (!batchId) {
       setSelectedGroups(new Set());
@@ -156,21 +152,20 @@ const BroadcasterPage = ({ allGroups }) => {
     setIsBroadcasting(true);
     setIsBroadcastComplete(false);
     setBroadcastLogs([]);
-    setBroadcastSummary({
-      total: groupObjects.length,
-      successful: 0,
-      failed: 0,
-    });
+    setBroadcastSummary({ total: groupObjects.length, successful: 0, failed: 0 });
 
-    // The payload now correctly includes the attachment.
     api.post("/broadcast", {
       groupObjects,
       message: broadcastMessage,
-      attachment: broadcastAttachment, 
+      attachment: broadcastAttachment,
       socketId,
     });
   };
-  // =================================================================
+
+  const handleTemplateSelect = (template) => {
+      setMessage(template.text || '');
+      setAttachment(template.attachment || null);
+  };
 
   const handleSelectAttachment = (selectedFile) => {
     setAttachment(selectedFile);
@@ -181,51 +176,24 @@ const BroadcasterPage = ({ allGroups }) => {
     <>
       <MainContent>
         <LeftPanel>
-          <BatchManager
-            batches={batches}
-            onBatchSelect={handleBatchSelect}
-            onBatchEdit={handleBatchEdit}
-            onBatchesUpdate={handleDataUpdate}
-          />
-          <GroupSelector
-            allGroups={allGroups}
-            selectedGroups={selectedGroups}
-            setSelectedGroups={setSelectedGroups}
-            onBatchUpdate={handleDataUpdate}
-            editingBatch={editingBatch}
-            setEditingBatch={setEditingBatch}
-            onSync={handleSyncGroups}
-            isSyncing={isSyncing}
-          />
+          <BatchManager onBatchesUpdate={handleDataUpdate} {...{batches, onBatchSelect, onBatchEdit}}/>
+          <GroupSelector onBatchUpdate={handleDataUpdate} {...{allGroups, selectedGroups, setSelectedGroups, editingBatch, setEditingBatch, onSync, isSyncing}}/>
         </LeftPanel>
 
         <RightPanel>
-          <TemplateManager
-            templates={templates}
-            onTemplateSelect={(text) => setMessage(text)}
-            onTemplatesUpdate={handleDataUpdate}
+          <TemplateManager 
+            templates={templates} 
+            onTemplateSelect={handleTemplateSelect} 
+            onTemplatesUpdate={handleDataUpdate} 
           />
           <BroadcastForm
-            selectedGroupIds={Array.from(selectedGroups)}
-            allGroups={allGroups}
-            message={message}
-            setMessage={setMessage}
-            attachment={attachment}
-            setAttachment={setAttachment}
             onTemplateSave={handleDataUpdate}
-            onBroadcastStart={startBroadcast}
-            isBroadcasting={isBroadcasting}
             onOpenAttachmentManager={() => setIsAttachmentModalOpen(true)}
+            {...{selectedGroupIds: Array.from(selectedGroups), allGroups, message, setMessage, attachment, setAttachment, onBroadcastStart: startBroadcast, isBroadcasting}}
           />
         </RightPanel>
       </MainContent>
-      <BroadcastProgressModal
-        isOpen={isBroadcasting}
-        onClose={() => setIsBroadcasting(false)}
-        logs={broadcastLogs}
-        summary={broadcastSummary}
-        isComplete={isBroadcastComplete}
-      />
+      <BroadcastProgressModal {...{isOpen: isBroadcasting, onClose: () => setIsBroadcasting(false), logs: broadcastLogs, summary: broadcastSummary, isComplete: isBroadcastComplete}} />
       <AttachmentManagerModal
         isOpen={isAttachmentModalOpen}
         onClose={() => setIsAttachmentModalOpen(false)}

@@ -113,12 +113,17 @@ const TemplateManager = ({ templates, onTemplateSelect, onTemplatesUpdate }) => 
     };
 
     const handleSaveChanges = async () => {
-        if (!editingTemplate.name || !editingTemplate.text) {
-            alert('Name and text cannot be empty.');
+        const hasContent = editingTemplate.text || editingTemplate.upload_id;
+        if (!editingTemplate.name || !hasContent) {
+            alert('Name and either text or an attachment are required.');
             return;
         }
         try {
-            await updateTemplate(editingTemplate.id, { name: editingTemplate.name, text: editingTemplate.text });
+            await updateTemplate(editingTemplate.id, { 
+                name: editingTemplate.name, 
+                text: editingTemplate.text,
+                upload_id: editingTemplate.attachment ? editingTemplate.attachment.id : null
+            });
             setIsModalOpen(false);
             onTemplatesUpdate();
         } catch (error)
@@ -148,7 +153,7 @@ const TemplateManager = ({ templates, onTemplateSelect, onTemplatesUpdate }) => 
                 <TemplateList>
                     {filteredTemplates.map(template => (
                         <TemplateItem key={template.id}>
-                            <ItemName onClick={() => onTemplateSelect(template.text)} title={template.name}>
+                            <ItemName onClick={() => onTemplateSelect(template)} title={template.name}>
                                 {template.name}
                             </ItemName>
                             <ActionsContainer>
@@ -173,8 +178,9 @@ const TemplateManager = ({ templates, onTemplateSelect, onTemplatesUpdate }) => 
                         <textarea
                             value={editingTemplate.text}
                             onChange={(e) => setEditingTemplate({ ...editingTemplate, text: e.target.value })}
-                            placeholder="Template Message"
+                            placeholder="Template Message/Caption"
                         />
+                        {/* Note: Editing the attachment directly here is complex. For now, users can create a new template if they need to change the attachment. */}
                         <button onClick={handleSaveChanges}>Save Changes</button>
                     </ModalForm>
                 )}
