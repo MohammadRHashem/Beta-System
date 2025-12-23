@@ -15,3 +15,4 @@ backend/python_scripts/beta_troca_confirmation.session
 
 backend/services/certs/*
 backend/python_scripts/xpayz_token_cache.json
+backend/broadcast_uploads/*
