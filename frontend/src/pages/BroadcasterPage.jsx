@@ -182,7 +182,16 @@ const BroadcasterPage = ({ allGroups }) => {
             onBatchEdit={handleBatchEdit}
             onBatchesUpdate={handleDataUpdate}
           />
-          <GroupSelector onBatchUpdate={handleDataUpdate} {...{allGroups, selectedGroups, setSelectedGroups, editingBatch, setEditingBatch, onSync, isSyncing}}/>
+          <GroupSelector
+            allGroups={allGroups}
+            selectedGroups={selectedGroups}
+            setSelectedGroups={setSelectedGroups}
+            editingBatch={editingBatch}
+            setEditingBatch={setEditingBatch}
+            onBatchUpdate={handleDataUpdate}
+            onSync={handleSyncGroups}
+            isSyncing={isSyncing}
+          />
         </LeftPanel>
 
         <RightPanel>
