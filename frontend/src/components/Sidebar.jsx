@@ -70,11 +70,9 @@ const Sidebar = () => {
         <NavItem to="/request-types"><FaCodeBranch /><span>Request Triggers</span></NavItem>
         <NavItem to="/scheduled-broadcasts"><FaCalendarAlt /><span>Schedules</span></NavItem>
         <NavItem to="/ai-forwarding"><FaRobot /><span>AI Forwarding</span></NavItem>
-        {/* === NEW: Link to the Auto Confirmation Page === */}
         <NavItem to="/auto-confirmation"><FaCheckCircle /><span>Auto Confirmation</span></NavItem>
         <NavItem to="/direct-forwarding"><FaRoute /><span>Direct Forwarding</span></NavItem>
         <NavItem to="/abbreviations"><FaKeyboard /><span>Abbreviations</span></NavItem>
-        {/* Chave PIX disabled: render as non-interactive element */}
         <NavItem as="div" aria-disabled="true" style={{ opacity: 0.5, cursor: 'not-allowed', pointerEvents: 'none' }}>
           <FaKey /><span>Chave PIX</span>
         </NavItem>
