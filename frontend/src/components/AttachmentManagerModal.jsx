@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react'; // useRef was used but not imported
 import styled from 'styled-components';
 import Modal from './Modal';
 import { getBroadcastUploads, deleteBroadcastUpload, uploadBroadcastAttachment } from '../services/api';
@@ -88,9 +88,30 @@ const HiddenInput = styled.input.attrs({ type: 'file' })`
     display: none;
 `;
 
+// === THIS IS THE FIX: The missing 'Button' component definition is now added ===
+const Button = styled.button`
+    background-color: ${({ theme }) => theme.primary};
+    color: white;
+    border: none;
+    padding: 0.75rem 1.5rem;
+    border-radius: 4px;
+    cursor: pointer;
+    font-weight: bold;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    width: 100%;
+    justify-content: center;
+
+    &:hover {
+        opacity: 0.9;
+    }
+`;
+// ==============================================================================
+
 const AttachmentManagerModal = ({ isOpen, onClose, onSelect }) => {
     const [uploads, setUploads] = useState([]);
-    const fileInputRef = React.useRef(null);
+    const fileInputRef = useRef(null); // Changed from React.useRef to useRef
 
     useEffect(() => {
         if (isOpen) {
@@ -111,14 +132,17 @@ const AttachmentManagerModal = ({ isOpen, onClose, onSelect }) => {
         if (!file) return;
         try {
             const { data: newUpload } = await uploadBroadcastAttachment(file);
-            setUploads([newUpload, ...uploads]);
+            // Prepend the new upload to the list and pass it to the onSelect handler
+            const updatedUploads = [newUpload, ...uploads];
+            setUploads(updatedUploads);
+            onSelect(newUpload); // Automatically select the newly uploaded file
         } catch (error) {
             alert('File upload failed.');
         }
     };
 
     const getFileIcon = (mimetype) => {
-        if (mimetype.startsWith('image/')) return null; // Will show image preview instead
+        if (mimetype.startsWith('image/')) return null;
         if (mimetype === 'application/pdf') return <FaFilePdf color="#B30B00" />;
         return <FaFile />;
     };
@@ -136,7 +160,7 @@ const AttachmentManagerModal = ({ isOpen, onClose, onSelect }) => {
                             </FilePreview>
                             <FileName title={upload.original_filename}>{upload.original_filename}</FileName>
                             <Overlay className="overlay">
-                                <ActionButton color="#00C49A" textColor="#fff" onClick={() => onSelect(upload)}><FaCheckCircle/> Select</ActionButton>
+                                <ActionButton color="#00C49A" textColor="#fff" onClick={(e) => { e.stopPropagation(); onSelect(upload); }}><FaCheckCircle/> Select</ActionButton>
                                 <ActionButton color="#DE350B" textColor="#fff" onClick={(e) => handleDelete(e, upload.id)}><FaTrash/> Delete</ActionButton>
                             </Overlay>
                         </FileCard>
@@ -145,7 +169,7 @@ const AttachmentManagerModal = ({ isOpen, onClose, onSelect }) => {
             </Gallery>
             <UploadButtonContainer>
                 <HiddenInput ref={fileInputRef} onChange={handleFileSelect} />
-                <Button onClick={() => fileInputRef.current.click()} style={{width: '100%', justifyContent: 'center'}}><FaUpload/> Upload New File</Button>
+                <Button onClick={() => fileInputRef.current.click()}><FaUpload/> Upload & Select New File</Button>
             </UploadButtonContainer>
         </Modal>
     );
