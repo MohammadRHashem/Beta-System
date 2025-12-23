@@ -85,7 +85,10 @@ const BroadcastForm = ({ selectedGroupIds, allGroups, message, setMessage, attac
 
         if (window.confirm(`You are about to send this content to ${selectedGroupIds.length} groups. Proceed?`)) {
             const groupObjects = allGroups.filter(g => selectedGroupIds.includes(g.id));
+            
+            // === THIS IS THE FIX: Use the 'attachment' prop directly ===
             onBroadcastStart(groupObjects, message, attachment);
+            // ==========================================================
         }
     };
     const handleFileUpload = async (e) => {

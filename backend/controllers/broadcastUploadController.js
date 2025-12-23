@@ -28,13 +28,18 @@ exports.handleUpload = async (req, res) => {
             'INSERT INTO broadcast_uploads (user_id, original_filename, stored_filename, mimetype, filepath) VALUES (?, ?, ?, ?, ?)',
             [userId, originalname, filename, mimetype, path]
         );
+        
+        // === THIS IS THE FIX: The response object is now correct ===
         res.status(201).json({
             id: result.insertId,
             original_filename: originalname,
-            filepath: path, // Send the full path back
+            stored_filename: filename, // The unique name on the server
             mimetype: mimetype,
-            url: `/uploads/broadcasts/${filename}` // A relative URL for previews
+            filepath: path, // The full system path for the backend service
+            url: `/uploads/broadcasts/${filename}` // The correct relative URL for the frontend
         });
+        // =========================================================
+
     } catch (error) {
         console.error('[UPLOAD-ERROR] Failed to save upload metadata:', error);
         res.status(500).json({ message: 'Failed to save file information.' });
