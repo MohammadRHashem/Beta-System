@@ -21,6 +21,7 @@ const manualReviewController = require('../controllers/manualReviewController');
 const clientRequestController = require('../controllers/clientRequestController'); // Renamed
 const requestTypesController = require('../controllers/requestTypesController'); // New Controller
 const bridgeController = require('../controllers/bridgeController');
+const broadcastUploadController = require('../controllers/broadcastUploadController');
 
 
 router.get('/manual/pending', manualReviewController.getPendingInvoices);
@@ -145,6 +146,20 @@ router.get('/request-types', requestTypesController.getAll);
 router.post('/request-types', requestTypesController.create);
 router.put('/request-types/:id', requestTypesController.update);
 router.delete('/request-types/:id', requestTypesController.delete);
+
+
+// Broadcast Uploads
+router.get('/broadcasts/uploads', broadcastUploadController.getAllUploads);
+router.post('/broadcasts/upload', (req, res, next) => {
+    // Middleware to handle the upload
+    req.broadcastUpload.single('file')(req, res, (err) => {
+        if (err) {
+            return res.status(400).json({ message: 'File upload failed.', error: err.message });
+        }
+        next();
+    });
+}, broadcastUploadController.handleUpload);
+router.delete('/broadcasts/uploads/:id', broadcastUploadController.deleteUpload);
 
 
 module.exports = router;

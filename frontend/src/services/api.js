@@ -238,4 +238,18 @@ export const exportTrkbit = async (params) => {
 
 export const triggerPartnerConfirmation = (correlation_id) => portalApiClient.post('/bridge/confirm-payment', { correlation_id });
 
+
+
+export const uploadBroadcastAttachment = (file) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    return apiClient.post('/broadcasts/upload', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+    });
+};
+
+export const getBroadcastUploads = () => apiClient.get('/broadcasts/uploads');
+
+export const deleteBroadcastUpload = (id) => apiClient.delete(`/broadcasts/uploads/${id}`);
+
 export default apiClient;

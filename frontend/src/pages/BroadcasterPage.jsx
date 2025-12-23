@@ -7,6 +7,8 @@ import GroupSelector from "../components/GroupSelector";
 import BroadcastForm from "../components/BroadcastForm";
 import TemplateManager from "../components/TemplateManager";
 import BroadcastProgressModal from "../components/BroadcastProgressModal";
+import AttachmentManagerModal from "../components/AttachmentManagerModal"; // Import the new modal
+
 
 const MainContent = styled.div`
   display: grid;
@@ -40,6 +42,9 @@ const BroadcasterPage = ({ allGroups }) => {
   const [batches, setBatches] = useState([]);
   const [templates, setTemplates] = useState([]);
   const [message, setMessage] = useState("");
+  const [attachment, setAttachment] = useState(null); // New state for attachment
+  const [isAttachmentModalOpen, setIsAttachmentModalOpen] = useState(false); // New state for modal
+
   const [editingBatch, setEditingBatch] = useState(null);
   const [isSyncing, setIsSyncing] = useState(false);
 
@@ -165,9 +170,15 @@ const BroadcasterPage = ({ allGroups }) => {
     api.post("/broadcast", {
       groupObjects,
       message: broadcastMessage,
+      attachment: broadcastAttachment, // Pass attachment
       socketId,
     });
   };
+
+  const handleSelectAttachment = (selectedFile) => {
+    setAttachment(selectedFile);
+    setIsAttachmentModalOpen(false); // Close modal on select
+  };  
 
   return (
     <>
@@ -202,9 +213,12 @@ const BroadcasterPage = ({ allGroups }) => {
             allGroups={allGroups}
             message={message}
             setMessage={setMessage}
+            attachment={attachment}
+            setAttachment={setAttachment}
             onTemplateSave={handleDataUpdate}
             onBroadcastStart={startBroadcast}
             isBroadcasting={isBroadcasting}
+            onOpenAttachmentManager={() => setIsAttachmentModalOpen(true)}
           />
         </RightPanel>
       </MainContent>
@@ -214,6 +228,11 @@ const BroadcasterPage = ({ allGroups }) => {
         logs={broadcastLogs}
         summary={broadcastSummary}
         isComplete={isBroadcastComplete}
+      />
+      <AttachmentManagerModal
+        isOpen={isAttachmentModalOpen}
+        onClose={() => setIsAttachmentModalOpen(false)}
+        onSelect={handleSelectAttachment}
       />
     </>
   );

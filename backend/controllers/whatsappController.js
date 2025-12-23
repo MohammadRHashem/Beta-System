@@ -91,18 +91,18 @@ exports.syncGroups = async (req, res) => {
 
 exports.broadcastMessage = (req, res) => {
   // === THE FIX: Make socketId optional ===
-  const { groupObjects, message, socketId } = req.body;
+  const { groupObjects, message, socketId, attachment } = req.body;
 
   // The broadcast can proceed even if the socketId is missing.
-  if (!groupObjects || !message || !Array.isArray(groupObjects)) {
-    return res.status(400).json({ message: "Invalid request body: Missing groups or message." });
+  if (!groupObjects || (!message && !attachment) || !Array.isArray(groupObjects)) {
+    return res.status(400).json({ message: "Invalid request body: Missing groups or content." });
   }
 
   try {
     res.status(202).json({ message: "Broadcast accepted and will start shortly." });
 
     // The service will handle the case where socketId is null.
-    whatsappService.broadcast(req.io, socketId, groupObjects, message);
+    whatsappService.broadcast(req.io, socketId, groupObjects, message, attachment);
   } catch (error) {
     console.error("[CONTROLLER-ERROR] Failed to start broadcast job:", error);
     // This error won't be sent if the socket is down, but it's good practice.

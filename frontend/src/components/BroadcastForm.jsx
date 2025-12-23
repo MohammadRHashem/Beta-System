@@ -1,40 +1,46 @@
 import React, { useState } from 'react';
 import styled from 'styled-components';
 import api, { createTemplate } from '../services/api';
+import { FaPaperclip, FaFolderOpen, FaTimesCircle, FaImage, FaFilePdf, FaFile } from 'react-icons/fa';
 
-const FormContainer = styled.div`
+const FormContainer = styled.div` background: #fff; padding: 1.5rem; border: 1px solid ${({ theme }) => theme.border}; border-radius: 8px; `;
+const TextArea = styled.textarea` width: 100%; min-height: 150px; padding: 0.75rem; border: 1px solid ${({ theme }) => theme.border}; border-radius: 4px; font-family: inherit; font-size: 1rem; `;
+const SendButton = styled.button` background-color: ${({ theme, disabled }) => disabled ? theme.lightText : theme.secondary}; color: white; border: none; padding: 0.75rem 1.5rem; border-radius: 4px; cursor: ${({ disabled }) => disabled ? 'not-allowed' : 'pointer'}; font-weight: bold; font-size: 1rem; width: 100%; transition: background-color 0.2s; &:hover { opacity: ${({ disabled }) => disabled ? 1 : 0.9}; } `;
+
+const AttachmentControls = styled.div`
+    display: flex;
+    gap: 1rem;
+    margin-top: 1rem;
+    padding-top: 1rem;
+    border-top: 1px solid ${({ theme }) => theme.border};
+`;
+
+const ControlButton = styled.button`
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.6rem 1rem;
+    border: 1px solid ${({ theme }) => theme.border};
     background: #fff;
-    padding: 1.5rem;
+    border-radius: 4px;
+    font-weight: 600;
+    cursor: pointer;
+    &:hover { background: #f9f9f9; }
+`;
+
+const HiddenInput = styled.input.attrs({ type: 'file' })` display: none; `;
+const AttachmentPreview = styled.div`
+    margin-top: 1rem;
+    padding: 1rem;
+    background: #f6f9fc;
     border: 1px solid ${({ theme }) => theme.border};
     border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
 `;
-
-const TextArea = styled.textarea`
-    width: 100%;
-    min-height: 150px;
-    padding: 0.75rem;
-    border: 1px solid ${({ theme }) => theme.border};
-    border-radius: 4px;
-    margin-bottom: 1rem;
-    font-family: inherit;
-    font-size: 1rem;
-`;
-
-const SendButton = styled.button`
-    background-color: ${({ theme, disabled }) => disabled ? theme.lightText : theme.secondary};
-    color: white;
-    border: none;
-    padding: 0.75rem 1.5rem;
-    border-radius: 4px;
-    cursor: ${({ disabled }) => disabled ? 'not-allowed' : 'pointer'};
-    font-weight: bold;
-    font-size: 1rem;
-    width: 100%;
-    transition: background-color 0.2s;
-    &:hover {
-        opacity: ${({ disabled }) => disabled ? 1 : 0.9};
-    }
-`;
+const FileInfo = styled.div` display: flex; align-items: center; gap: 1rem; .icon { font-size: 2rem; color: #666; } `;
+const RemoveButton = styled(FaTimesCircle)` cursor: pointer; color: #999; &:hover { color: ${({ theme }) => theme.error}; } `;
 
 const ResultMessage = styled.p`
     margin-top: 1rem;
@@ -68,18 +74,38 @@ const SaveTemplateButton = styled.button`
     font-weight: bold;
 `;
 
-const BroadcastForm = ({ selectedGroupIds, allGroups, message, setMessage, onTemplateSave, onBroadcastStart, isBroadcasting }) => {
+const BroadcastForm = ({ selectedGroupIds, allGroups, message, setMessage, attachment, setAttachment, onTemplateSave, onBroadcastStart, isBroadcasting, onOpenAttachmentManager }) => {
     const [templateName, setTemplateName] = useState('');
+    const fileInputRef = useRef(null);
 
     const handleSubmit = async (e) => {
         e.preventDefault();
-        if (!message || selectedGroupIds.length === 0 || isBroadcasting) return;
+        const hasContent = (message && !attachment) || attachment;
+        if (!hasContent || selectedGroupIds.length === 0 || isBroadcasting) return;
 
-        if (window.confirm(`You are about to send a message to ${selectedGroupIds.length} groups. Are you sure you want to proceed?`)) {
+        if (window.confirm(`You are about to send this content to ${selectedGroupIds.length} groups. Proceed?`)) {
             const groupObjects = allGroups.filter(g => selectedGroupIds.includes(g.id));
-            onBroadcastStart(groupObjects, message);
+            onBroadcastStart(groupObjects, message, attachment);
         }
     };
+    const handleFileUpload = async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        try {
+            const { data } = await uploadBroadcastAttachment(file);
+            setAttachment(data);
+        } catch (error) {
+            alert('File upload failed.');
+        }
+    };
+
+    const getFileIcon = (mimetype) => {
+        if (mimetype.startsWith('image/')) return <FaImage className="icon" />;
+        if (mimetype === 'application/pdf') return <FaFilePdf className="icon" color="#B30B00" />;
+        return <FaFile className="icon" />;
+    };
+
+    const canSend = (message && !attachment) || attachment;
 
     const handleSaveTemplate = async () => {
         if (!templateName || !message) {
@@ -102,30 +128,32 @@ const BroadcastForm = ({ selectedGroupIds, allGroups, message, setMessage, onTem
             <h3>Compose Message</h3>
             <form onSubmit={handleSubmit}>
                 <TextArea
-                    placeholder="Type your message here, or select a template..."
+                    placeholder={attachment ? "Add a caption (optional)..." : "Type your message here, or attach a file..."}
                     value={message}
                     onChange={(e) => setMessage(e.target.value)}
                     disabled={isBroadcasting}
                 />
-                <TemplateSaveContainer>
-                    <TemplateInput
-                        type="text"
-                        placeholder="New template name..."
-                        value={templateName}
-                        onChange={(e) => setTemplateName(e.target.value)}
-                    />
-                    <SaveTemplateButton
-                        type="button"
-                        disabled={!templateName || !message}
-                        onClick={handleSaveTemplate}
-                    >
-                        Save
-                    </SaveTemplateButton>
-                </TemplateSaveContainer>
+                
+                {attachment && (
+                    <AttachmentPreview>
+                        <FileInfo>
+                            {getFileIcon(attachment.mimetype)}
+                            <span>{attachment.original_filename}</span>
+                        </FileInfo>
+                        <RemoveButton onClick={() => setAttachment(null)} />
+                    </AttachmentPreview>
+                )}
+
+                <AttachmentControls>
+                    <HiddenInput ref={fileInputRef} onChange={handleFileUpload} />
+                    <ControlButton type="button" onClick={() => fileInputRef.current.click()}><FaPaperclip/> Attach New</ControlButton>
+                    <ControlButton type="button" onClick={onOpenAttachmentManager}><FaFolderOpen/> Use Existing</ControlButton>
+                </AttachmentControls>
+
                 <SendButton
                     type="submit"
-                    disabled={!message || selectedGroupIds.length === 0 || isBroadcasting}
-                    style={{ marginTop: '1rem' }}
+                    disabled={!canSend || selectedGroupIds.length === 0 || isBroadcasting}
+                    style={{ marginTop: '1.5rem' }}
                 >
                     {isBroadcasting ? 'Broadcasting...' : `Send to ${selectedGroupIds.length} Groups`}
                 </SendButton>

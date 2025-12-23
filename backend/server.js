@@ -5,6 +5,8 @@ const http = require('http');
 const { Server } = require("socket.io");
 const path = require('path');
 const fs = require('fs');
+const multer = require('multer'); // <-- Add multer import
+
 
 // --- Middleware ---
 const authMiddleware = require('./middleware/authMiddleware'); // For Admin Panel
@@ -44,8 +46,26 @@ io.on('connection', (socket) => {
     socket.on('disconnect', () => { console.log(`[Socket.io] User disconnected: ${socket.id}`); });
 });
 
+const broadcastUploadsDir = path.join(__dirname, 'broadcast_uploads');
+if (!fs.existsSync(broadcastUploadsDir)) {
+    fs.mkdirSync(broadcastUploadsDir, { recursive: true });
+}
+const broadcastStorage = multer.diskStorage({
+    destination: (req, file, cb) => {
+        cb(null, broadcastUploadsDir);
+    },
+    filename: (req, file, cb) => {
+        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+        cb(null, uniqueSuffix + path.extname(file.originalname));
+    }
+});
+const broadcastUpload = multer({ storage: broadcastStorage });
+
 
 // --- ROUTE DEFINITIONS ---
+
+// Serve uploaded files for frontend previews
+app.use('/uploads/broadcasts', express.static(broadcastUploadsDir));
 
 // 1. Public Portal Routes (Login)
 // We will now handle the login route directly here for clarity.
@@ -67,7 +87,10 @@ app.post('/api/auth/login', authController.login);
 
 // 4. Protected Admin Routes
 // All routes from adminApiRoutes will be prefixed with /api AND will use the admin authMiddleware.
-app.use('/api', authMiddleware, adminApiRoutes);
+app.use('/api', (req, res, next) => {
+    req.broadcastUpload = broadcastUpload; // Attach multer instance to request
+    next();
+}, authMiddleware, adminApiRoutes);
 
 
 // --- Static Frontend Hosting ---

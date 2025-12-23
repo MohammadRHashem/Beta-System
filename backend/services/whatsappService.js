@@ -1787,7 +1787,7 @@ const initializeWhatsApp = (socketIoInstance) => {
     }
   };
 
-const broadcast = async (socketIo, socketId, groupObjects, message) => {
+const broadcast = async (socketIo, socketId, groupObjects, message, attachment = null) => {
   // This function is now perfect. It accepts the `io` instance as its first argument.
   // The scheduler will pass the main `io` object, and the API controller will pass `req.io`.
   const localIo = socketIo || io; // Use passed io, fallback to module-level
@@ -1812,7 +1812,12 @@ const broadcast = async (socketIo, socketId, groupObjects, message) => {
       const chat = await client.getChatById(group.id);
       chat.sendStateTyping();
       await new Promise((resolve) => setTimeout(resolve, 400));
-      await client.sendMessage(group.id, message);
+      if (attachment && attachment.filepath) {
+          const media = MessageMedia.fromFilePath(attachment.filepath);
+          await client.sendMessage(group.id, media, { caption: message || '' });
+      } else {
+          await client.sendMessage(group.id, message);
+      }
       successfulSends++;
       successfulGroups.push(group.name);
       io.to(socketId).emit("broadcast:progress", { groupName: group.name, status: "success", message: `Successfully sent to "${group.name}".` });
