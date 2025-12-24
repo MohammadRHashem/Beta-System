@@ -51,7 +51,7 @@ const SearchInput = styled.input`
     padding: 0.75rem;
     border: 1px solid ${({ theme }) => theme.border};
     border-radius: 4px;
-    margin-bottom: 1rem;
+    margin-bottom: 0.5rem; /* Reduced margin */
 `;
 
 const GroupList = styled.ul`
@@ -61,7 +61,7 @@ const GroupList = styled.ul`
     border: 1px solid ${({ theme }) => theme.border};
     border-radius: 4px;
     padding: 0.5rem;
-    flex-grow: 1; /* Allow list to take up available space */
+    flex-grow: 1;
 `;
 
 const GroupItem = styled.li`
@@ -123,6 +123,21 @@ const CancelButton = styled.button`
     }
 `;
 
+// === NEW: Select All Button ===
+const SelectAllButton = styled.button`
+    width: 100%;
+    padding: 0.5rem;
+    margin-bottom: 1rem;
+    border: 1px solid ${({ theme }) => theme.border};
+    background: ${({ theme }) => theme.background};
+    font-weight: 600;
+    cursor: pointer;
+    border-radius: 4px;
+
+    &:hover {
+        background: #e9ecef;
+    }
+`;
 
 const GroupSelector = ({ allGroups, selectedGroups, setSelectedGroups, onBatchUpdate, editingBatch, setEditingBatch, onSync, isSyncing }) => {
     const [searchTerm, setSearchTerm] = useState('');
@@ -180,25 +195,36 @@ const GroupSelector = ({ allGroups, selectedGroups, setSelectedGroups, onBatchUp
 
     // --- SORTING AND FILTERING LOGIC ---
     const sortedAndFilteredGroups = useMemo(() => {
-        // First, filter by the search term
         const filtered = (allGroups || []).filter(g =>
             g.name && g.name.toLowerCase().includes(searchTerm.toLowerCase())
         );
-        
-        // Then, sort the filtered list
         return filtered.sort((a, b) => {
             const aIsSelected = selectedGroups.has(a.id);
             const bIsSelected = selectedGroups.has(b.id);
-
-            if (aIsSelected && !bIsSelected) {
-                return -1; // a comes first
-            }
-            if (!aIsSelected && bIsSelected) {
-                return 1; // b comes first
-            }
-            return 0; // maintain original order if both are selected or not selected
+            if (aIsSelected && !bIsSelected) return -1;
+            if (!aIsSelected && bIsSelected) return 1;
+            return 0;
         });
     }, [allGroups, searchTerm, selectedGroups]);
+
+    const areAllVisibleSelected = useMemo(() => {
+        if (sortedAndFilteredGroups.length === 0) return false;
+        return sortedAndFilteredGroups.every(g => selectedGroups.has(g.id));
+    }, [sortedAndFilteredGroups, selectedGroups]);
+
+    const handleToggleAll = () => {
+        const visibleGroupIds = sortedAndFilteredGroups.map(g => g.id);
+        const newSelectedGroups = new Set(selectedGroups);
+
+        if (areAllVisibleSelected) {
+            // Deselect all visible
+            visibleGroupIds.forEach(id => newSelectedGroups.delete(id));
+        } else {
+            // Select all visible
+            visibleGroupIds.forEach(id => newSelectedGroups.add(id));
+        }
+        setSelectedGroups(newSelectedGroups);
+    };
 
 
     return (
@@ -217,6 +243,11 @@ const GroupSelector = ({ allGroups, selectedGroups, setSelectedGroups, onBatchUp
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
             />
+            {sortedAndFilteredGroups.length > 0 && (
+                <SelectAllButton onClick={handleToggleAll}>
+                    {areAllVisibleSelected ? 'Deselect All Visible' : 'Select All Visible'}
+                </SelectAllButton>
+            )}
             <GroupList>
                 {sortedAndFilteredGroups.map(group => (
                     <GroupItem key={group.id} onClick={() => handleSelect(group.id)}>
