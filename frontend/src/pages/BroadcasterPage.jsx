@@ -44,6 +44,7 @@ const BroadcasterPage = ({ allGroups }) => {
   const [message, setMessage] = useState("");
   const [attachment, setAttachment] = useState(null);
   const [editingBatch, setEditingBatch] = useState(null);
+  const [selectedBatchIds, setSelectedBatchIds] = useState(new Set()); // New state for multi-select
   const [isSyncing, setIsSyncing] = useState(false);
   const [isAttachmentModalOpen, setIsAttachmentModalOpen] = useState(false);
 
@@ -124,9 +125,57 @@ const BroadcasterPage = ({ allGroups }) => {
   };
 
   const handleBatchEdit = (batch) => {
+    const loadGroupsForBatch = async (batchId) => {
+        const { data: groupIds } = await api.get(`/batches/${batchId}`);
+        setSelectedGroups(new Set(groupIds));
+    };
     setEditingBatch(batch);
     loadGroupsForBatch(batch.id);
   };
+
+  const handleBatchClick = (batchId) => {
+    if (batchId === null) {
+        setSelectedBatchIds(new Set());
+        return;
+    }
+    const newIds = new Set(selectedBatchIds);
+    if (newIds.has(batchId)) {
+        newIds.delete(batchId);
+    } else {
+        newIds.add(batchId);
+    }
+    setSelectedBatchIds(newIds);
+  };
+
+  useEffect(() => {
+    const mergeGroupsFromBatches = async () => {
+        if (selectedBatchIds.size === 0) {
+            setSelectedGroups(new Set());
+            return;
+        }
+
+        const uniqueGroupIds = new Set();
+        const batchIdArray = Array.from(selectedBatchIds);
+        
+        try {
+            const promises = batchIdArray.map(id => api.get(`/batches/${id}`));
+            const results = await Promise.all(promises);
+            
+            for (const result of results) {
+                const groupIds = result.data; // The API returns an array of group IDs
+                if (Array.isArray(groupIds)) {
+                    groupIds.forEach(id => uniqueGroupIds.add(id));
+                }
+            }
+            setSelectedGroups(uniqueGroupIds);
+        } catch (error) {
+            console.error("Failed to merge groups from batches:", error);
+            alert("An error occurred while fetching groups for the selected batches.");
+        }
+    };
+
+    mergeGroupsFromBatches();
+  }, [selectedBatchIds]);
 
   const handleSyncGroups = async () => {
     if (
@@ -178,7 +227,8 @@ const BroadcasterPage = ({ allGroups }) => {
         <LeftPanel>
           <BatchManager
             batches={batches}
-            onBatchSelect={handleBatchSelect}
+            selectedBatchIds={selectedBatchIds}
+            onBatchClick={handleBatchClick}
             onBatchEdit={handleBatchEdit}
             onBatchesUpdate={handleDataUpdate}
           />
