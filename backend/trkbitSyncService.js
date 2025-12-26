@@ -2,36 +2,37 @@ require('dotenv').config();
 const axios = require('axios');
 const cron = require('node-cron');
 const pool = require('./config/db');
-const { format } = require('date-fns');
+const { format, differenceInHours } = require('date-fns');
 
 // Configuration
 const API_URL = "https://shared-api.trkbit.co/supplier/bank/legacy/bank/brasilcash/account/5602362";
-// Date to start fetching from if the database is empty (YYYY-MM-DD)
 const HISTORY_START_DATE = '2024-01-01'; 
 
 let isSyncing = false;
 
 const fetchAndStoreTransactions = async (customStartDate = null) => {
-    if (isSyncing) return;
+    if (isSyncing) {
+        console.log('[TRKBIT-SYNC] Sync is already in progress. Skipping this run.');
+        return;
+    }
     isSyncing = true;
     
     try {
         const today = format(new Date(), 'yyyy-MM-dd');
-        // Use custom start date (for history) or default to today
+        // If no custom start date is provided, default to fetching only today's data.
         const startDate = customStartDate || today;
 
         console.log(`[TRKBIT-SYNC] Starting sync cycle from ${startDate} to ${today}...`);
         
         const { data } = await axios.get(API_URL, {
             params: { start: startDate, end: today },
-            timeout: 60000 // Increased timeout for historical fetch
+            timeout: 90000
         });
 
         if (data.code !== 200 || !data.data || !data.data.inputs) {
             throw new Error('Invalid API response structure.');
         }
 
-        // Flatten the nested structure
         const allTransactions = [];
         if (Array.isArray(data.data.inputs)) {
             data.data.inputs.forEach(dayGroup => {
@@ -42,16 +43,15 @@ const fetchAndStoreTransactions = async (customStartDate = null) => {
         }
 
         if (allTransactions.length === 0) {
-            console.log(`[TRKBIT-SYNC] No transactions found for range ${startDate} - ${today}.`);
+            console.log(`[TRKBIT-SYNC] No new transactions found for range ${startDate} - ${today}.`);
             isSyncing = false;
             return;
         }
 
-        console.log(`[TRKBIT-SYNC] Found ${allTransactions.length} transactions. Inserting...`);
+        console.log(`[TRKBIT-SYNC] Found ${allTransactions.length} transactions in API response. Upserting into DB...`);
 
         const connection = await pool.getConnection();
         try {
-            // --- MODIFIED QUERY ---
             const query = `
                 INSERT INTO trkbit_transactions 
                 (uid, tx_id, e2e_id, tx_date, amount, tx_pix_key, tx_type, tx_payer_name, tx_payer_id, raw_data)
@@ -63,26 +63,17 @@ const fetchAndStoreTransactions = async (customStartDate = null) => {
                     updated_at = NOW();
             `;
 
-            // Process in chunks of 500 to prevent packet size errors during historical sync
             const chunkSize = 500;
             for (let i = 0; i < allTransactions.length; i += chunkSize) {
                 const chunk = allTransactions.slice(i, i + chunkSize);
-                // --- MODIFIED VALUES ---
                 const values = chunk.map(tx => [
-                    tx.uid,
-                    tx.tx_id,
-                    tx.e2e_id,
-                    tx.tx_date,
-                    parseFloat(tx.amount),
-                    tx.tx_pix_key, // <-- ADDED
-                    tx.tx_type,
-                    tx.tx_payer_name,
-                    tx.tx_payer_id,
-                    JSON.stringify(tx)
+                    tx.uid, tx.tx_id, tx.e2e_id, tx.tx_date,
+                    parseFloat(tx.amount), tx.tx_pix_key, tx.tx_type,
+                    tx.tx_payer_name, tx.tx_payer_id, JSON.stringify(tx)
                 ]);
                 
                 const [result] = await connection.query(query, [values]);
-                console.log(`[TRKBIT-SYNC] Processed chunk ${i/chunkSize + 1}. Affected rows: ${result.affectedRows}`);
+                console.log(`[TRKBIT-SYNC] Processed chunk ${Math.floor(i/chunkSize) + 1}. Affected rows: ${result.affectedRows}`);
             }
             
         } finally {
@@ -96,30 +87,47 @@ const fetchAndStoreTransactions = async (customStartDate = null) => {
     }
 };
 
-// Main Execution Logic
+// --- THIS IS THE FINAL, MORE EFFICIENT STARTUP LOGIC ---
 const main = async () => {
-    console.log('--- Trkbit Sync Service Started ---');
+    console.log('--- Trkbit Sync Service Started (Self-Healing v2) ---');
 
     try {
-        // Check if DB is empty
-        const [rows] = await pool.query("SELECT COUNT(*) as count FROM trkbit_transactions");
-        const count = rows[0].count;
+        const [[{ count }]] = await pool.query("SELECT COUNT(*) as count FROM trkbit_transactions");
 
         if (count === 0) {
+            // Case A: Database is empty. Perform full initial history sync.
             console.log('[TRKBIT-SYNC] Database is empty. Performing INITIAL HISTORY SYNC...');
             await fetchAndStoreTransactions(HISTORY_START_DATE);
-            console.log('[TRKBIT-SYNC] Initial sync complete.');
+            console.log('[TRKBIT-SYNC] Initial history sync complete.');
         } else {
-            console.log(`[TRKBIT-SYNC] Database has ${count} records. Performing standard incremental sync...`);
-            await fetchAndStoreTransactions(null); // Sync only today
+            // Case B & C: Database has data. Check how old the latest entry is.
+            const [[{ latest_tx_date }]] = await pool.query("SELECT MAX(tx_date) as latest_tx_date FROM trkbit_transactions");
+            
+            const now = new Date();
+            const lastSyncDate = new Date(latest_tx_date);
+            const hoursSinceLastSync = differenceInHours(now, lastSyncDate);
+
+            // If the last sync was more than 2 hours ago, assume downtime.
+            if (hoursSinceLastSync > 2) {
+                // EFFICIENT CATCH-UP: Start the sync from the date of the last known transaction.
+                const catchUpStartDate = format(lastSyncDate, 'yyyy-MM-dd');
+                console.log(`[TRKBIT-SYNC] Last transaction is from over 2 hours ago (at ${lastSyncDate.toLocaleString()}). Assuming downtime.`);
+                console.log(`[TRKBIT-SYNC] Performing CATCH-UP sync starting from ${catchUpStartDate}...`);
+                await fetchAndStoreTransactions(catchUpStartDate);
+            } else {
+                // If data is recent, just sync today to be safe.
+                console.log(`[TRKBIT-SYNC] Data is recent. Performing standard incremental sync for today.`);
+                await fetchAndStoreTransactions(null); 
+            }
         }
 
     } catch (e) {
-        console.error('[TRKBIT-SYNC] Failed to check DB status:', e.message);
+        console.error('[TRKBIT-SYNC] FATAL: Failed to run startup sync logic:', e.message);
     }
 
-    // Schedule standard sync (Current Day Only)
+    // Schedule the normal, recurring sync to run every minute (fetching only today's data)
     cron.schedule('* * * * *', () => fetchAndStoreTransactions(null));
+    console.log('[TRKBIT-SYNC] Recurring 1-minute sync for "today" has been scheduled.');
 };
 
 if (require.main === module) {
