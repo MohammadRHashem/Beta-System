@@ -12,7 +12,7 @@ import {
   triggerHardRefresh
 } from "../services/api";
 import Modal from "../components/Modal";
-import { FaPlus, FaEdit, FaTrash, FaKey, FaExchangeAlt, FaMagic, FaHistoryz } from "react-icons/fa";
+import { FaPlus, FaEdit, FaTrash, FaKey, FaExchangeAlt, FaMagic, FaHistory } from "react-icons/fa";
 import ComboBox from "../components/ComboBox";
 import Select from 'react-select';
 
