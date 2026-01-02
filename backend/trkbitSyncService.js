@@ -19,7 +19,6 @@ const fetchAndStoreTransactions = async (customStartDate = null) => {
     
     try {
         const today = format(new Date(), 'yyyy-MM-dd');
-        // If no custom start date is provided, default to fetching only today's data.
         const startDate = customStartDate || today;
 
         console.log(`[TRKBIT-SYNC] Starting sync cycle from ${startDate} to ${today}...`);
@@ -48,13 +47,19 @@ const fetchAndStoreTransactions = async (customStartDate = null) => {
             return;
         }
 
-        console.log(`[TRKBIT-SYNC] Found ${allTransactions.length} transactions in API response. Upserting into DB...`);
+        console.log(`[TRKBIT-SYNC] Found ${allTransactions.length} transactions. Pre-processing for auto-lock...`);
+        
+        // --- THIS IS THE NEW AUTO-LOCK LOGIC ---
+        const [autoLockRows] = await pool.query("SELECT chave_pix FROM subaccounts WHERE account_type = 'cross' AND auto_lock_deposits = 1");
+        const autoLockPixKeys = new Set(autoLockRows.map(r => r.chave_pix));
+        console.log(`[TRKBIT-SYNC] Found ${autoLockPixKeys.size} Chave PIX accounts to auto-lock.`);
+        // ------------------------------------------
 
         const connection = await pool.getConnection();
         try {
             const query = `
                 INSERT INTO trkbit_transactions 
-                (uid, tx_id, e2e_id, tx_date, amount, tx_pix_key, tx_type, tx_payer_name, tx_payer_id, raw_data)
+                (uid, tx_id, e2e_id, tx_date, amount, tx_pix_key, tx_type, tx_payer_name, tx_payer_id, raw_data, is_used)
                 VALUES ?
                 ON DUPLICATE KEY UPDATE 
                     tx_id = VALUES(tx_id),
@@ -66,11 +71,16 @@ const fetchAndStoreTransactions = async (customStartDate = null) => {
             const chunkSize = 500;
             for (let i = 0; i < allTransactions.length; i += chunkSize) {
                 const chunk = allTransactions.slice(i, i + chunkSize);
-                const values = chunk.map(tx => [
-                    tx.uid, tx.tx_id, tx.e2e_id, tx.tx_date,
-                    parseFloat(tx.amount), tx.tx_pix_key, tx.tx_type,
-                    tx.tx_payer_name, tx.tx_payer_id, JSON.stringify(tx)
-                ]);
+                const values = chunk.map(tx => {
+                    // Check if the transaction's PIX key is in our auto-lock set
+                    const isUsedFlag = (tx.tx_type === 'C' && autoLockPixKeys.has(tx.tx_pix_key)) ? 1 : 0;
+                    return [
+                        tx.uid, tx.tx_id, tx.e2e_id, tx.tx_date,
+                        parseFloat(tx.amount), tx.tx_pix_key, tx.tx_type,
+                        tx.tx_payer_name, tx.tx_payer_id, JSON.stringify(tx),
+                        isUsedFlag // Add the flag to the values array
+                    ];
+                });
                 
                 const [result] = await connection.query(query, [values]);
                 console.log(`[TRKBIT-SYNC] Processed chunk ${Math.floor(i/chunkSize) + 1}. Affected rows: ${result.affectedRows}`);
