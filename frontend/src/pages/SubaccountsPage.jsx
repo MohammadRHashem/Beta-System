@@ -12,7 +12,7 @@ import {
   triggerHardRefresh
 } from "../services/api";
 import Modal from "../components/Modal";
-import { FaPlus, FaEdit, FaTrash, FaKey, FaExchangeAlt, FaMagic, FaHistory, FaLock } from "react-icons/fa";
+import { FaPlus, FaEdit, FaTrash, FaKey, FaExchangeAlt, FaMagic, FaHistoryz } from "react-icons/fa";
 import ComboBox from "../components/ComboBox";
 import Select from 'react-select';
 
@@ -65,7 +65,9 @@ const Table = styled.table`
     text-align: left;
     border-bottom: 1px solid ${({ theme }) => theme.border};
   }
-  th { background-color: ${({ theme }) => theme.background}; }
+  th {
+    background-color: ${({ theme }) => theme.background};
+  }
   .actions {
     display: flex;
     gap: 1.5rem;
@@ -78,18 +80,6 @@ const Table = styled.table`
       }
     }
   }
-`;
-
-const LockBadge = styled.span`
-    background: #eef2f7;
-    color: #6c757d;
-    padding: 0.3rem 0.8rem;
-    border-radius: 20px;
-    font-size: 0.8rem;
-    font-weight: 600;
-    display: inline-flex;
-    align-items: center;
-    gap: 0.4rem;
 `;
 
 const SuggestionBadge = styled.div`
@@ -297,9 +287,6 @@ const SubaccountsPage = ({ allGroups }) => {
                         <span style={{ fontWeight: 'bold', color: acc.account_type === 'cross' ? '#217346' : '#7b1fa2' }}>
                             {acc.account_type.toUpperCase()}
                         </span>
-                        {acc.auto_lock_deposits ? (
-                                            <LockBadge style={{marginLeft: '0.5rem'}}><FaLock/> Auto-Lock</LockBadge>
-                                        ) : null}
                     </td>
                     <td>{acc.account_type === 'cross' ? acc.chave_pix : acc.subaccount_number}</td>
                     <td>{acc.assigned_group_name || <span style={{ color: "#999" }}>None</span>}</td>
@@ -353,7 +340,7 @@ const SubaccountsPage = ({ allGroups }) => {
 const SubaccountModal = ({ isOpen, onClose, onSave, subaccount, allGroups }) => {
   const [formData, setFormData] = useState({
     name: "", account_type: "xpayz", subaccount_number: "",
-    chave_pix: "", assigned_group_jid: "", auto_lock_deposits: false // Add new field to state
+    chave_pix: "", assigned_group_jid: "",
   });
 
   useEffect(() => {
@@ -365,21 +352,18 @@ const SubaccountModal = ({ isOpen, onClose, onSave, subaccount, allGroups }) => 
                 subaccount_number: subaccount.subaccount_number || "",
                 chave_pix: subaccount.chave_pix || "",
                 assigned_group_jid: subaccount.assigned_group_jid || "",
-                auto_lock_deposits: !!subaccount.auto_lock_deposits // Convert 1/0 to true/false
             });
         } else {
-            // Reset for new entry
-            setFormData({ name: "", account_type: "xpayz", subaccount_number: "", chave_pix: "", assigned_group_jid: "", auto_lock_deposits: false });
+            setFormData({
+                name: "", account_type: "xpayz", subaccount_number: "",
+                chave_pix: "", assigned_group_jid: "",
+            });
         }
     }
   }, [subaccount, isOpen]);
 
   const handleChange = (e) => {
-    const { name, value, type, checked } = e.target;
-    setFormData(prev => ({
-        ...prev,
-        [name]: type === 'checkbox' ? checked : value
-    }));
+    setFormData({ ...formData, [e.target.name]: e.target.value });
   };
 
   const handleSubmit = async (e) => {
@@ -435,19 +419,6 @@ const SubaccountModal = ({ isOpen, onClose, onSave, subaccount, allGroups }) => 
             onChange={(e) => setFormData({ ...formData, assigned_group_jid: e.target.value })}
             placeholder="Select a group to assign..."
           />
-        </InputGroup>
-        <InputGroup style={{flexDirection: 'row', alignItems: 'center', marginTop: '1rem', background: '#f6f9fc', padding: '1rem', borderRadius: '6px' }}>
-          <input
-            type="checkbox"
-            id="auto_lock_deposits"
-            name="auto_lock_deposits"
-            checked={formData.auto_lock_deposits}
-            onChange={handleChange}
-            style={{width: '18px', height: '18px', marginRight: '0.75rem'}}
-          />
-          <Label htmlFor="auto_lock_deposits" style={{fontWeight: 'bold'}}>
-            Automatically lock all incoming deposits (Chave PIX Mode)
-          </Label>
         </InputGroup>
         <Button type="submit" style={{ alignSelf: "flex-end", marginTop: "1rem" }}>Save Changes</Button>
       </ModalForm>

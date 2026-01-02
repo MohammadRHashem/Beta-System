@@ -380,7 +380,7 @@ const refreshTrkbitConfirmationStatus = async () => {
 
 
 const invoiceWorker = new Worker(
-  "invoice-processing-queue", // Corrected queue name from your code
+  "invoice-processing-queue",
   async (job) => {
     const { execa } = await import("execa");
     if (!client || connectionStatus !== "connected") {
@@ -541,59 +541,137 @@ const invoiceWorker = new Worker(
       let linkedTransactionSource = null;
       // =======================================
 
-      // --- 1. TRKBIT / CROSS (with Intelligent Response Logic) ---
-      if (runStandardForwarding && isTrkbitConfirmationEnabled && (recipientNameLower.includes("cross"))) {
-          const searchAmount = parseFormattedCurrency(amount);
-          const ocrSenderName = sender?.name || '';
+      // --- 1. TRKBIT / CROSS (Atomic Update) ---
+      if (runStandardForwarding && isTrkbitConfirmationEnabled && 
+          (recipientNameLower.includes("cross"))) {
           
-          let confirmedId = null; 
-          const [availableMatches] = await pool.query(
-              `SELECT id, tx_payer_name FROM trkbit_transactions WHERE amount = ? AND is_used = 0 AND tx_date >= NOW() - INTERVAL 72 HOUR`,
+          console.log('[WORKER] "Cross" recipient detected. Checking local DB...');
+          
+          const searchAmount = parseFloat(amount.replace(/,/g, ""));
+          const ocrSenderNormalized = normalizeNameForMatching(sender.name);
+
+          // 1. Anchor: Exact Amount + Expanded Time Window (72h for weekends)
+          const [matches] = await pool.query(
+              `SELECT id, tx_payer_name FROM trkbit_transactions 
+                WHERE amount = ? AND is_used = 0 
+                AND tx_date >= NOW() - INTERVAL 72 HOUR`,
               [searchAmount]
           );
 
-          if(availableMatches.length > 0) {
-            confirmedId = findBestTrkbitMatch(ocrSenderName, availableMatches);
+          let confirmedId = null;
+
+          // 2. Verification: 3-Vector Smart Match
+          for (const tx of matches) {
+              if (!tx.tx_payer_name) continue;
+              const dbNameNorm = normalizeNameForMatching(tx.tx_payer_name);
+              
+              // Vector A: Exact Match
+              if (dbNameNorm === ocrSenderNormalized) {
+                  confirmedId = tx.id;
+                  break;
+              }
+              
+              // Vector B: Substring Match
+              if (dbNameNorm.includes(ocrSenderNormalized) || ocrSenderNormalized.includes(dbNameNorm)) {
+                  confirmedId = tx.id;
+                  break;
+              }
+
+              // Vector C: Word Intersection (The "Bag of Words")
+              const dbWords = new Set(dbNameNorm.split(' ').filter(w => w.length > 1));
+              const ocrWords = new Set(ocrSenderNormalized.split(' ').filter(w => w.length > 1));
+              
+              let matchCount = 0;
+              for (const word of ocrWords) {
+                  if (dbWords.has(word)) matchCount++;
+              }
+
+              const totalSignificant = Math.min(ocrWords.size, dbWords.size);
+              // Threshold: 60% match + at least 1 word
+              if (totalSignificant > 0 && (matchCount / totalSignificant) >= 0.6 && matchCount >= 1) {
+                  confirmedId = tx.id;
+                  break;
+              }
           }
           
           if (confirmedId) {
-              const [updateResult] = await pool.query('UPDATE trkbit_transactions SET is_used = 1 WHERE id = ? AND is_used = 0', [confirmedId]);
+              // 3. Atomic Update (Prevent Double Spending)
+              const [updateResult] = await pool.query(
+                  'UPDATE trkbit_transactions SET is_used = 1 WHERE id = ? AND is_used = 0', 
+                  [confirmedId]
+              );
+
               if (updateResult.affectedRows > 0) {
-                  const [[{ uid }]] = await pool.query('SELECT uid FROM trkbit_transactions WHERE id = ?', [confirmedId]);
-                  linkedTransactionId = uid;
-                  linkedTransactionSource = 'Trkbit';
+                 const [[{ uid }]] = await pool.query('SELECT uid FROM trkbit_transactions WHERE id = ?', [confirmedId]);
+                  linkedTransactionId = uid; // <-- Capture Link Info
+                  linkedTransactionSource = 'Trkbit'; // <-- Capture Link Info
                   await originalMessage.reply("Caiu");
                   await originalMessage.react("🟢");
                   wasActioned = true;
                   runStandardForwarding = false;
+
+                  // 4. Informative Forwarding
+                  try {
+                      // Determine whether we should forward based on subaccount type
+                      const [[subaccount]] = await pool.query(
+                        'SELECT account_type FROM subaccounts WHERE assigned_group_jid = ? LIMIT 1',
+                        [chat.id._serialized]
+                      );
+
+                      let shouldForward = true;
+                      if (subaccount && subaccount.account_type === 'cross') {
+                          console.log(`[WORKER] Source group is a 'cross' subaccount. Skipping informative forward.`);
+                          shouldForward = false;
+                      }
+
+                      if (shouldForward) {
+                          // Determine destination JID (direct rule first, then keyword rules)
+                          let destJid = null;
+                          
+                          const [[directRule]] = await pool.query(
+                              "SELECT destination_group_jid FROM direct_forwarding_rules WHERE source_group_jid = ?", 
+                              [chat.id._serialized]
+                          );
+                          
+                          if (directRule) {
+                              destJid = directRule.destination_group_jid;
+                          } else {
+                              const recipientCheck = (recipient.name || "").toLowerCase().trim();
+                              const [rules] = await pool.query("SELECT trigger_keyword, destination_group_jid FROM forwarding_rules WHERE is_enabled = 1");
+                              
+                              for (const rule of rules) {
+                                  const triggerKeywordLower = rule.trigger_keyword.toLowerCase();
+                                  if (recipientCheck.includes(triggerKeywordLower)) {
+                                      destJid = rule.destination_group_jid;
+                                      break;
+                                  }
+                              }
+                          }
+
+                          if (destJid) {
+                              const numberRegex = /\b(\d[\d-]{2,})\b/g;
+                              const matches = chat.name.match(numberRegex);
+                              const captionLabel = (matches && matches.length > 0) ? matches[matches.length - 1] : chat.name;
+                              const finalCaption = `${captionLabel} ✅`;
+
+                              const mediaToForward = new MessageMedia(media.mimetype, media.data, media.filename);
+                              await client.sendMessage(destJid, mediaToForward, { caption: finalCaption });
+                              console.log(`[TRKBIT-INFO] Informative forward sent to ${destJid}`);
+                          }
+                      }
+                  } catch (infoError) {
+                      console.error('[TRKBIT-INFO-ERROR]', infoError);
+                  }
+
+                  runStandardForwarding = false;
+              } else {
+                  console.log(`[TRKBIT-CONFIRM] Race condition prevented double usage for ID ${confirmedId}`);
+                  await originalMessage.reply("❌Repeated❌");
+                  await originalMessage.react("❌");
+                  runStandardForwarding = false; 
               }
           } else {
-              // --- DIAGNOSTIC STEP FOR CHAVE PIX ---
-              const [lockedMatches] = await pool.query(
-                  `SELECT tt.id, sa.assigned_group_jid, tt.tx_payer_name 
-                   FROM trkbit_transactions tt 
-                   JOIN subaccounts sa ON tt.tx_pix_key = sa.chave_pix
-                   WHERE tt.amount = ? AND tt.is_used = 1 AND sa.auto_lock_deposits = 1 AND tt.tx_date >= NOW() - INTERVAL 72 HOUR`,
-                  [searchAmount]
-              );
-
-              let lockedMatchId = null;
-              if (lockedMatches.length > 0) {
-                  lockedMatchId = findBestTrkbitMatch(ocrSenderName, lockedMatches);
-              }
-
-              if (lockedMatchId) {
-                  const lockedMatch = lockedMatches.find(m => m.id === lockedMatchId);
-                  const currentSourceJid = chat.id._serialized;
-                  
-                  if (lockedMatch && lockedMatch.assigned_group_jid && lockedMatch.assigned_group_jid !== currentSourceJid) {
-                      await originalMessage.reply("❌Repeated from another client❌");
-                      await originalMessage.react("❌");
-                      wasActioned = 'duplicate'; // Prevent archiving
-                      runStandardForwarding = false;
-                  }
-                  // If it's the same client, we do nothing and let it fall through to manual forwarding.
-              }
+              console.log('[TRKBIT-CONFIRM] No name match found in DB.');
           }
       }
 
@@ -647,83 +725,107 @@ const invoiceWorker = new Worker(
         }
       }
 
-      // --- 3. UPGRADE ZONE (XPAYZ) (with Intelligent Response Logic) ---
-      if (runStandardForwarding && recipientNameLower.includes("upgrade zone")) {
-        const searchAmount = parseFormattedCurrency(amount);
-        const ocrSenderName = sender?.name || '';
+      // --- 3. UPGRADE ZONE (XPAYZ) (Atomic Update) ---
+      if (
+        runStandardForwarding &&
+        recipientNameLower.includes("upgrade zone")
+      ) {
+        const sourceGroupJid = chat.id._serialized;
+        const searchAmount = parseFloat(amount.replace(/,/g, ""));
+        const [[assignmentRule]] = await pool.query(
+          "SELECT subaccount_number, name FROM subaccounts WHERE assigned_group_jid = ?",
+          [sourceGroupJid]
+        );
 
-        const [[assignmentRule]] = await pool.query("SELECT subaccount_number, name FROM subaccounts WHERE assigned_group_jid = ?", [chat.id._serialized]);
-        
         let targetPool = [];
         let isAssigned = false;
+
         if (assignmentRule) {
-            targetPool.push(assignmentRule.subaccount_number);
-            isAssigned = true;
+          targetPool.push(assignmentRule.subaccount_number);
+          isAssigned = true;
+        } else {
+          const [unassigned] = await pool.query(
+            "SELECT subaccount_number FROM subaccounts WHERE assigned_group_jid IS NULL"
+          );
+          targetPool = unassigned.map((acc) => acc.subaccount_number);
         }
 
-        let matchId = await findBestXPayzMatch(searchAmount, ocrSenderName, targetPool);
+        let matchId = await findBestXPayzMatch(
+          searchAmount,
+          sender.name,
+          targetPool
+        );
 
-        if (!matchId && isAssigned) {
-            await syncSingleSubaccount(assignmentRule.subaccount_number);
-            const POLLING_ATTEMPTS = 4;
-            for (let i = 1; i <= POLLING_ATTEMPTS; i++) {
-                await delay(5000);
-                matchId = await findBestXPayzMatch(searchAmount, ocrSenderName, targetPool);
-                if (matchId) break;
-            }
+        if (!matchId) {
+          console.log(`[WORKER][JIT-SYNC] No initial match. Syncing...`);
+          for (const subId of targetPool) {
+            await syncSingleSubaccount(subId);
+          }
+
+          const POLLING_ATTEMPTS = 4;
+          for (let i = 1; i <= POLLING_ATTEMPTS; i++) {
+            await delay(5000);
+            matchId = await findBestXPayzMatch(
+              searchAmount,
+              sender.name,
+              targetPool
+            );
+            if (matchId) break;
+          }
         }
 
         if (matchId) {
-            const [updateResult] = await pool.query("UPDATE xpayz_transactions SET is_used = 1 WHERE id = ? AND is_used = 0", [matchId]);
-            if (updateResult.affectedRows > 0) {
-                linkedTransactionId = matchId;
-                linkedTransactionSource = 'XPayz';
-                await originalMessage.reply("Caiu");
-                await originalMessage.react("🟢");
-                wasActioned = true;
-                runStandardForwarding = false;
-            }
-        } else {
-             const [lockedMatches] = await pool.query(
-                `SELECT xt.id, sa.assigned_group_jid, xt.sender_name 
-                 FROM xpayz_transactions xt
-                 JOIN subaccounts sa ON xt.subaccount_id = sa.subaccount_number
-                 WHERE xt.amount = ? AND xt.is_used = 1 AND sa.auto_lock_deposits = 1 AND xt.transaction_date >= NOW() - INTERVAL 72 HOUR`,
-                [searchAmount]
-             );
-            
-             let lockedMatchId = null;
-             if(lockedMatches.length > 0) {
-                // We need to check against all possible subaccounts for the name match
-                const lockedSubaccountIds = lockedMatches.map(m => m.subaccount_id);
-                lockedMatchId = await findBestXPayzMatch(searchAmount, ocrSenderName, lockedSubaccountIds);
-             }
+          // === ATOMIC UPDATE ===
+          const [updateResult] = await pool.query("UPDATE xpayz_transactions SET is_used = 1 WHERE id = ? AND is_used = 0", [matchId]);
 
-             if(lockedMatchId) {
-                const lockedMatch = lockedMatches.find(m => m.id === lockedMatchId);
-                const currentSourceJid = chat.id._serialized;
-                if(lockedMatch && lockedMatch.assigned_group_jid && lockedMatch.assigned_group_jid !== currentSourceJid) {
-                    await originalMessage.reply("❌Repeated from another client❌");
-                    await originalMessage.react("❌");
-                    wasActioned = 'duplicate';
-                    runStandardForwarding = false;
-                }
-             } else if (isAssigned) {
-                // Fallback to manual forwarding ONLY if it's an assigned account
-                const [[escalationRule]] = await pool.query("SELECT destination_group_jid FROM forwarding_rules WHERE trigger_keyword = 'upgrade zone' AND is_enabled = 1");
-                if (escalationRule) {
-                    const numberRegex = /\b(\d[\d-]{2,})\b/g;
-                    const matches = chat.name.match(numberRegex);
-                    const clientIdentifier = matches && matches.length > 0 ? matches[matches.length - 1] : chat.name;
-                    const richCaption = `${clientIdentifier}\u200C (Chave: ${assignmentRule.name})`;
-                    const mediaToForward = new MessageMedia(media.mimetype, media.data, media.filename);
-                    const forwardedMessage = await client.sendMessage(escalationRule.destination_group_jid, mediaToForward, { caption: richCaption });
-                    await pool.query(`INSERT INTO forwarded_invoices (original_message_id, forwarded_message_id, destination_group_jid) VALUES (?, ?, ?)`,[messageId, forwardedMessage.id._serialized, escalationRule.destination_group_jid]);
-                    await originalMessage.react("🟡");
-                    wasActioned = true;
-                    runStandardForwarding = false;
-                }
-             }
+          if (updateResult.affectedRows > 0) {
+            linkedTransactionId = matchId; // <-- Capture Link Info
+            linkedTransactionSource = 'XPayz'; // <-- Capture Link Info
+            await originalMessage.reply("Caiu");
+            await originalMessage.react("🟢");
+            wasActioned = true;
+            runStandardForwarding = false;
+          } else {
+            await originalMessage.reply("❌Repeated❌");
+            await originalMessage.react("❌");
+            wasActioned = 'duplicate';
+            runStandardForwarding = false;
+          }
+        } else if (isAssigned) {
+          // Escalation Logic
+          const [[escalationRule]] = await pool.query(
+            "SELECT destination_group_jid FROM forwarding_rules WHERE trigger_keyword = 'upgrade zone' AND is_enabled = 1"
+          );
+          if (escalationRule) {
+            const numberRegex = /\b(\d[\d-]{2,})\b/g;
+            const matches = chat.name.match(numberRegex);
+            const clientIdentifier =
+              matches && matches.length > 0
+                ? matches[matches.length - 1]
+                : chat.name;
+            const richCaption = `${clientIdentifier}\u200C (Chave: ${assignmentRule.name})`;
+            const mediaToForward = new MessageMedia(
+              media.mimetype,
+              media.data,
+              media.filename
+            );
+            const forwardedMessage = await client.sendMessage(
+              escalationRule.destination_group_jid,
+              mediaToForward,
+              { caption: richCaption }
+            );
+            await pool.query(
+              `INSERT INTO forwarded_invoices (original_message_id, forwarded_message_id, destination_group_jid) VALUES (?, ?, ?)`,
+              [
+                messageId,
+                forwardedMessage.id._serialized,
+                escalationRule.destination_group_jid,
+              ]
+            );
+            await originalMessage.react("🟡");
+            wasActioned = true;
+            runStandardForwarding = false;
+          }
         }
       }
 
@@ -906,35 +1008,37 @@ const invoiceWorker = new Worker(
         }
       }
 
-      // --- FINALIZED ARCHIVING LOGIC ---
-      // This special flag 'duplicate' is set when "Repeated from another client" is detected.
-      const shouldArchive = wasActioned !== 'duplicate';
+      // --- 7. ARCHIVING (Modified to include link data) ---
+      const [archiveSettings] = await pool.query("SELECT archiving_enabled FROM group_settings WHERE group_jid = ?", [chat.id._serialized]);
+      const groupArchiveSettings = archiveSettings[0] || { archiving_enabled: true };
+      
+      if (groupArchiveSettings.archiving_enabled) {
+        const archiveFileName = `${messageId}.${extension}`;
+        const finalMediaPath = path.join(MEDIA_ARCHIVE_DIR, archiveFileName);
+        // Ensure file is moved before proceeding
+        if (fsSync.existsSync(tempFilePath)) {
+          await fs.rename(tempFilePath, finalMediaPath);
+          tempFilePaths.pop();
+        }
 
-      if (shouldArchive) {
-          const [archiveSettings] = await pool.query("SELECT archiving_enabled FROM group_settings WHERE group_jid = ?", [chat.id._serialized]);
-          const groupArchiveSettings = archiveSettings[0] || { archiving_enabled: true };
-          
-          if (groupArchiveSettings.archiving_enabled) {
-            const archiveFileName = `${messageId}.${extension}`;
-            const finalMediaPath = path.join(MEDIA_ARCHIVE_DIR, archiveFileName);
-            if (fsSync.existsSync(tempFilePath)) {
-              await fs.rename(tempFilePath, finalMediaPath);
-              tempFilePaths.pop();
-            }
-
-            const correctUtcDate = new Date(originalMessage.timestamp * 1000);
-            await pool.query(
-              `INSERT INTO invoices (message_id, transaction_id, sender_name, recipient_name, pix_key, amount, source_group_jid, received_at, raw_json_data, media_path, is_deleted, linked_transaction_id, linked_transaction_source) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-              [
-                messageId, transaction_id, sender?.name, recipient.name, recipient.pix_key,
-                amount, chat.id._serialized, correctUtcDate, JSON.stringify(invoiceJson),
-                finalMediaPath, false, linkedTransactionId, linkedTransactionSource
-              ]
-            );
-          }
+        const correctUtcDate = new Date(originalMessage.timestamp * 1000);
+        // === MODIFIED INSERT STATEMENT ===
+        await pool.query(
+          `INSERT INTO invoices (message_id, transaction_id, sender_name, recipient_name, pix_key, amount, source_group_jid, received_at, raw_json_data, media_path, is_deleted, linked_transaction_id, linked_transaction_source) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            messageId, transaction_id, sender?.name, recipient.name, recipient.pix_key,
+            amount, chat.id._serialized, correctUtcDate, JSON.stringify(invoiceJson),
+            finalMediaPath, false, linkedTransactionId, linkedTransactionSource
+          ]
+        );
+        // ==================================
       }
-      // Note: The "Repeated from another client" reply is handled inside the logic blocks now.
-      // We don't need the final check you had.
+      
+      // Handle replies for duplicate state
+      if (wasActioned === 'duplicate') {
+        await originalMessage.reply("❌Repeated❌");
+        await originalMessage.react("❌");
+      }
 
     } catch (error) {
       console.error(`[WORKER-ERROR] Critical error processing job ${job?.id}:`, error);

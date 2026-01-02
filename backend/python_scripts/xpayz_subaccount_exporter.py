@@ -141,46 +141,26 @@ def normalize_name(name: str) -> str:
     name = re.sub(r'\b(ltda|me|sa|eireli|epp)\b', '', name, flags=re.IGNORECASE)
     return re.sub(r'\s+', ' ', name).strip().lower()
 
-def save_transactions_to_db(subaccount_id: int, transactions: list[Transaction], auto_lock: bool):
+def save_transactions_to_db(subaccount_id: int, transactions: list[Transaction]):
     db = get_db_connection()
     cursor = db.cursor()
-    # Add 'is_used' to the INSERT and UPDATE statements
-    query = """
-        INSERT INTO xpayz_transactions (
-            xpayz_transaction_id, subaccount_id, amount, operation_direct, sender_name, 
-            sender_name_normalized, counterparty_name, transaction_date, raw_details, external_id, is_used
-        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) 
-        ON DUPLICATE KEY UPDATE 
-            operation_direct=VALUES(operation_direct), 
-            counterparty_name=VALUES(counterparty_name), 
-            external_id=VALUES(external_id), 
-            raw_details=VALUES(raw_details);
-    """
+    # Updated query to refresh raw_details on duplicate
+    query = """INSERT INTO xpayz_transactions (xpayz_transaction_id, subaccount_id, amount, operation_direct, sender_name, sender_name_normalized, counterparty_name, transaction_date, raw_details, external_id) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) ON DUPLICATE KEY UPDATE operation_direct=VALUES(operation_direct), counterparty_name=VALUES(counterparty_name), external_id=VALUES(external_id), raw_details=VALUES(raw_details);"""
     
     values_to_insert = []
     for tx in transactions:
         if not tx.sender_name: tx.sender_name = "Unknown"
         if tx.operation_direct == 'in' and PRINCIPAL_NAME and PRINCIPAL_NAME in tx.sender_name.lower(): continue
         try:
-            amount = float(tx.amount)
-            tx_date = isoparse(tx.created_at)
-            normalized = normalize_name(tx.sender_name)
+            amount = float(tx.amount); tx_date = isoparse(tx.created_at); normalized = normalize_name(tx.sender_name)
             counterparty = "USD BETA OUT / E" if tx.operation_direct == 'out' else (tx.destination_name or "")
-            
-            # This is the new auto-lock logic
-            is_used_flag = 1 if auto_lock and tx.operation_direct == 'in' else 0
-            
-            values_to_insert.append((
-                tx.id, subaccount_id, amount, tx.operation_direct, tx.sender_name, 
-                normalized, counterparty, tx_date, json.dumps(tx.raw), tx.external_id, is_used_flag
-            ))
-        except Exception as e: 
-            print(f"⚠️ Could not process TX ID {tx.id}: {e}", file=sys.stderr)
+            values_to_insert.append((tx.id, subaccount_id, amount, tx.operation_direct, tx.sender_name, normalized, counterparty, tx_date, json.dumps(tx.raw), tx.external_id))
+        except Exception as e: print(f"⚠️ Could not process TX ID {tx.id}: {e}", file=sys.stderr)
     
     if values_to_insert:
         cursor.executemany(query, values_to_insert)
         db.commit()
-        print(f"✅ DB Sync: Upserted {cursor.rowcount} txs for subaccount {subaccount_id} (Auto-Lock: {auto_lock}).")
+        print(f"✅ DB Sync: Upserted {cursor.rowcount} txs for subaccount {subaccount_id}.")
     
     cursor.close()
     db.close()
@@ -196,22 +176,12 @@ def main():
     password = os.getenv("XPAYZ_PASSWORD")
 
     try:
-        # Check the auto_lock_deposits flag for this subaccount
-        db = get_db_connection()
-        cursor = db.cursor(dictionary=True)
-        cursor.execute("SELECT auto_lock_deposits FROM subaccounts WHERE subaccount_number = %s", (args.subaccount_id,))
-        result = cursor.fetchone()
-        cursor.close()
-        db.close()
-        
-        auto_lock = result['auto_lock_deposits'] == 1 if result else False
-
         client = XPayzClient()
         client.ensure_auth(email, password)
+        # Pass the historical flag to the function
         transactions = list(client.iter_transactions(subaccount_id=args.subaccount_id, per_page=200, historical=args.historical))
         if transactions:
-            save_transactions_to_db(args.subaccount_id, transactions, auto_lock)
-            
+            save_transactions_to_db(args.subaccount_id, transactions)
     except Exception as e:
         print(f"❌ An unexpected script error occurred for subaccount {args.subaccount_id}: {e}", file=sys.stderr)
         return 1
