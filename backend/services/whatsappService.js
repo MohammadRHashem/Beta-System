@@ -99,6 +99,64 @@ const findAlfaTrustMatchInDb = async (invoiceJson) => {
     }
 };
 
+// =======================================================================
+// === NEW HELPER FUNCTION: 3-VECTOR SMART MATCH FOR TRKBIT/CROSS      ===
+// =======================================================================
+const findBestTrkbitMatch = async (searchAmount, searchSender, pixKeyOptions) => {
+    if (!searchSender || !searchAmount) return null;
+
+    let query = `
+        SELECT id, tx_payer_name FROM trkbit_transactions 
+        WHERE amount = ? AND is_used = 0 AND tx_date >= NOW() - INTERVAL 72 HOUR
+    `;
+    const params = [searchAmount];
+
+    if (pixKeyOptions.mode === 'include') {
+        if (!pixKeyOptions.keys || pixKeyOptions.keys.length === 0) return null;
+        query += ' AND tx_pix_key IN (?)';
+        params.push(pixKeyOptions.keys);
+    } else if (pixKeyOptions.mode === 'exclude') {
+        if (pixKeyOptions.keys && pixKeyOptions.keys.length > 0) {
+            query += ' AND tx_pix_key NOT IN (?)';
+            params.push(pixKeyOptions.keys);
+        }
+    }
+
+    const [candidates] = await pool.query(query, params);
+    if (candidates.length === 0) return null;
+
+    const ocrNameNormalized = normalizeNameForMatching(searchSender);
+    const ocrWords = new Set(ocrNameNormalized.split(' ').filter(w => w.length > 1));
+
+    for (const tx of candidates) {
+        if (!tx.tx_payer_name) continue;
+        const dbNameNormalized = normalizeNameForMatching(tx.tx_payer_name);
+        
+        // Vector 1: Exact Match
+        if (dbNameNormalized === ocrNameNormalized) {
+            console.log(`[TRKBIT-MATCH] Found via Vector 1 (Exact): ${tx.id}`);
+            return tx.id;
+        }
+
+        // Vector 2: Substring Match
+        if (dbNameNormalized.includes(ocrNameNormalized) || ocrNameNormalized.includes(dbNameNormalized)) {
+            console.log(`[TRKBIT-MATCH] Found via Vector 2 (Substring): ${tx.id}`);
+            return tx.id;
+        }
+
+        // Vector 3: Word Set Intersection
+        const dbWords = new Set(dbNameNormalized.split(' ').filter(w => w.length > 1));
+        const commonWordsCount = [...ocrWords].filter(word => dbWords.has(word)).length;
+        const shorterWordCount = Math.min(ocrWords.size, dbWords.size);
+
+        if (shorterWordCount > 0 && commonWordsCount / shorterWordCount >= 0.6 && commonWordsCount >= 1) {
+            console.log(`[TRKBIT-MATCH] Found via Vector 3 (Word Intersection): ${tx.id}`);
+            return tx.id;
+        }
+    }
+
+    return null; // No suitable match found
+};
 
 // === NEW: Helper function for the smart matching logic ===
 const findBestTelegramMatch = async (searchAmount, searchSender) => {
@@ -541,138 +599,88 @@ const invoiceWorker = new Worker(
       let linkedTransactionSource = null;
       // =======================================
 
-      // --- 1. TRKBIT / CROSS (Atomic Update) ---
-      if (runStandardForwarding && isTrkbitConfirmationEnabled && 
-          (recipientNameLower.includes("cross"))) {
-          
-          console.log('[WORKER] "Cross" recipient detected. Checking local DB...');
-          
-          const searchAmount = parseFloat(amount.replace(/,/g, ""));
-          const ocrSenderNormalized = normalizeNameForMatching(sender.name);
+      // --- 1. TRKBIT / CROSS (Atomic Update with NEW LOGIC) ---
+      // --- START OF CORRECTED TRKBIT/CROSS LOGIC ---
+      if (runStandardForwarding && isTrkbitConfirmationEnabled && (recipientNameLower.includes("trkbit") || recipientNameLower.includes("cross"))) {
+        console.log('[WORKER] "Cross/Trkbit" recipient detected. Applying 3-vector confirmation logic...');
+        const searchAmount = parseFormattedCurrency(amount);
+        const searchSender = sender.name;
+        const sourceGroupJid = chat.id._serialized;
 
-          // 1. Anchor: Exact Amount + Expanded Time Window (72h for weekends)
-          const [matches] = await pool.query(
-              `SELECT id, tx_payer_name FROM trkbit_transactions 
-                WHERE amount = ? AND is_used = 0 
-                AND tx_date >= NOW() - INTERVAL 72 HOUR`,
-              [searchAmount]
-          );
+        const [[assignedSubaccount]] = await pool.query(
+          "SELECT chave_pix FROM subaccounts WHERE account_type = 'cross' AND assigned_group_jid = ? LIMIT 1",
+          [sourceGroupJid]
+        );
 
-          let confirmedId = null;
+        let confirmedTxId = null;
 
-          // 2. Verification: 3-Vector Smart Match
-          for (const tx of matches) {
-              if (!tx.tx_payer_name) continue;
-              const dbNameNorm = normalizeNameForMatching(tx.tx_payer_name);
-              
-              // Vector A: Exact Match
-              if (dbNameNorm === ocrSenderNormalized) {
-                  confirmedId = tx.id;
-                  break;
-              }
-              
-              // Vector B: Substring Match
-              if (dbNameNorm.includes(ocrSenderNormalized) || ocrSenderNormalized.includes(dbNameNorm)) {
-                  confirmedId = tx.id;
-                  break;
-              }
+        // CASE A: GROUP IS ASSIGNED
+        if (assignedSubaccount) {
+            const expectedPixKey = assignedSubaccount.chave_pix;
+            console.log(`[CROSS-CONFIRM] Path A: Group is assigned to PIX Key: ${expectedPixKey}`);
 
-              // Vector C: Word Intersection (The "Bag of Words")
-              const dbWords = new Set(dbNameNorm.split(' ').filter(w => w.length > 1));
-              const ocrWords = new Set(ocrSenderNormalized.split(' ').filter(w => w.length > 1));
-              
-              let matchCount = 0;
-              for (const word of ocrWords) {
-                  if (dbWords.has(word)) matchCount++;
-              }
+            // A.1: Happy Path - Find the best match within the assigned PIX key
+            confirmedTxId = await findBestTrkbitMatch(searchAmount, searchSender, { mode: 'include', keys: [expectedPixKey] });
 
-              const totalSignificant = Math.min(ocrWords.size, dbWords.size);
-              // Threshold: 60% match + at least 1 word
-              if (totalSignificant > 0 && (matchCount / totalSignificant) >= 0.6 && matchCount >= 1) {
-                  confirmedId = tx.id;
-                  break;
-              }
-          }
-          
-          if (confirmedId) {
-              // 3. Atomic Update (Prevent Double Spending)
-              const [updateResult] = await pool.query(
-                  'UPDATE trkbit_transactions SET is_used = 1 WHERE id = ? AND is_used = 0', 
-                  [confirmedId]
-              );
+            if (!confirmedTxId) {
+                // A.2: Mismatch Detection - Check if a match exists on ANY PIX key
+                const [[mismatchCheck]] = await pool.query(
+                    `SELECT id FROM trkbit_transactions WHERE amount = ? AND tx_payer_name = ? AND is_used = 0 LIMIT 1`,
+                    [searchAmount, searchSender]
+                );
+                if (mismatchCheck) {
+                    await originalMessage.reply("❌ Wrong PIX ❌");
+                    wasActioned = true; 
+                }
+            }
+        } 
+        // CASE B: GROUP IS UNASSIGNED
+        else {
+            console.log(`[CROSS-CONFIRM] Path B: Group is unassigned. Searching in the public pool.`);
+            const [assignedPixRows] = await pool.query(
+                "SELECT chave_pix FROM subaccounts WHERE account_type = 'cross' AND assigned_group_jid IS NOT NULL AND assigned_group_jid != ''"
+            );
+            const exclusionList = assignedPixRows.map(r => r.chave_pix);
 
-              if (updateResult.affectedRows > 0) {
-                 const [[{ uid }]] = await pool.query('SELECT uid FROM trkbit_transactions WHERE id = ?', [confirmedId]);
-                  linkedTransactionId = uid; // <-- Capture Link Info
-                  linkedTransactionSource = 'Trkbit'; // <-- Capture Link Info
-                  await originalMessage.reply("Caiu");
-                  await originalMessage.react("🟢");
-                  wasActioned = true;
-                  runStandardForwarding = false;
+            // B.1: Happy Path - Find best match EXCLUDING assigned PIX keys
+            confirmedTxId = await findBestTrkbitMatch(searchAmount, searchSender, { mode: 'exclude', keys: exclusionList });
+            
+            if (!confirmedTxId && exclusionList.length > 0) {
+                 // B.2: Mismatch Detection - Check if it was sent to an ASSIGNED PIX key
+                const [[mismatchCheck]] = await pool.query(
+                    `SELECT id FROM trkbit_transactions WHERE amount = ? AND tx_payer_name = ? AND tx_pix_key IN (?) AND is_used = 0 LIMIT 1`,
+                    [searchAmount, searchSender, exclusionList]
+                );
+                if (mismatchCheck) {
+                    await originalMessage.reply("❌ Wrong PIX ❌");
+                    wasActioned = true;
+                }
+            }
+        }
+        
+        // --- ATOMIC CLAIM STEP ---
+        if (confirmedTxId) {
+            const [updateResult] = await pool.query(
+                'UPDATE trkbit_transactions SET is_used = 1 WHERE id = ? AND is_used = 0', 
+                [confirmedTxId]
+            );
 
-                  // 4. Informative Forwarding
-                  try {
-                      // Determine whether we should forward based on subaccount type
-                      const [[subaccount]] = await pool.query(
-                        'SELECT account_type FROM subaccounts WHERE assigned_group_jid = ? LIMIT 1',
-                        [chat.id._serialized]
-                      );
+            if (updateResult.affectedRows > 0) {
+                const [[{ uid }]] = await pool.query('SELECT uid FROM trkbit_transactions WHERE id = ?', [confirmedTxId]);
+                linkedTransactionId = uid;
+                linkedTransactionSource = 'Trkbit';
+                await originalMessage.reply("Caiu");
+                await originalMessage.react("🟢");
+                wasActioned = true;
+            } else {
+                // This means a race condition happened. Another worker claimed it. Treat as a duplicate.
+                wasActioned = 'duplicate';
+            }
+        }
 
-                      let shouldForward = true;
-                      if (subaccount && subaccount.account_type === 'cross') {
-                          console.log(`[WORKER] Source group is a 'cross' subaccount. Skipping informative forward.`);
-                          shouldForward = false;
-                      }
-
-                      if (shouldForward) {
-                          // Determine destination JID (direct rule first, then keyword rules)
-                          let destJid = null;
-                          
-                          const [[directRule]] = await pool.query(
-                              "SELECT destination_group_jid FROM direct_forwarding_rules WHERE source_group_jid = ?", 
-                              [chat.id._serialized]
-                          );
-                          
-                          if (directRule) {
-                              destJid = directRule.destination_group_jid;
-                          } else {
-                              const recipientCheck = (recipient.name || "").toLowerCase().trim();
-                              const [rules] = await pool.query("SELECT trigger_keyword, destination_group_jid FROM forwarding_rules WHERE is_enabled = 1");
-                              
-                              for (const rule of rules) {
-                                  const triggerKeywordLower = rule.trigger_keyword.toLowerCase();
-                                  if (recipientCheck.includes(triggerKeywordLower)) {
-                                      destJid = rule.destination_group_jid;
-                                      break;
-                                  }
-                              }
-                          }
-
-                          if (destJid) {
-                              const numberRegex = /\b(\d[\d-]{2,})\b/g;
-                              const matches = chat.name.match(numberRegex);
-                              const captionLabel = (matches && matches.length > 0) ? matches[matches.length - 1] : chat.name;
-                              const finalCaption = `${captionLabel} ✅`;
-
-                              const mediaToForward = new MessageMedia(media.mimetype, media.data, media.filename);
-                              await client.sendMessage(destJid, mediaToForward, { caption: finalCaption });
-                              console.log(`[TRKBIT-INFO] Informative forward sent to ${destJid}`);
-                          }
-                      }
-                  } catch (infoError) {
-                      console.error('[TRKBIT-INFO-ERROR]', infoError);
-                  }
-
-                  runStandardForwarding = false;
-              } else {
-                  console.log(`[TRKBIT-CONFIRM] Race condition prevented double usage for ID ${confirmedId}`);
-                  await originalMessage.reply("❌Repeated❌");
-                  await originalMessage.react("❌");
-                  runStandardForwarding = false; 
-              }
-          } else {
-              console.log('[TRKBIT-CONFIRM] No name match found in DB.');
-          }
+        if (wasActioned) {
+          runStandardForwarding = false;
+        }
       }
 
       // --- 2. USDT (Atomic Update) ---
