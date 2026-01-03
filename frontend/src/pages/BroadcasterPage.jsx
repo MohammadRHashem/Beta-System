@@ -7,20 +7,17 @@ import GroupSelector from "../components/GroupSelector";
 import BroadcastForm from "../components/BroadcastForm";
 import TemplateManager from "../components/TemplateManager";
 import BroadcastProgressModal from "../components/BroadcastProgressModal";
-import AttachmentManagerModal from "../components/AttachmentManagerModal"; // Import the new modal
-
+import AttachmentManagerModal from "../components/AttachmentManagerModal";
 
 const MainContent = styled.div`
   display: grid;
   grid-template-columns: 450px 1fr;
   gap: 1.5rem;
   align-items: flex-start;
-
   @media (max-width: 1200px) {
     grid-template-columns: 1fr;
   }
 `;
-
 const LeftPanel = styled.div`
   display: flex;
   flex-direction: column;
@@ -28,13 +25,11 @@ const LeftPanel = styled.div`
   position: sticky;
   top: 1.5rem;
 `;
-
 const RightPanel = styled.div`
   display: flex;
   flex-direction: column;
   gap: 1.5rem;
 `;
-
 const API_URL = "https://platform.betaserver.dev:4433";
 
 const BroadcasterPage = ({ allGroups }) => {
@@ -44,7 +39,6 @@ const BroadcasterPage = ({ allGroups }) => {
   const [message, setMessage] = useState("");
   const [attachment, setAttachment] = useState(null);
   const [editingBatch, setEditingBatch] = useState(null);
-  const [selectedBatchIds, setSelectedBatchIds] = useState(new Set()); // New state for multi-select
   const [isSyncing, setIsSyncing] = useState(false);
   const [isAttachmentModalOpen, setIsAttachmentModalOpen] = useState(false);
 
@@ -106,6 +100,7 @@ const BroadcasterPage = ({ allGroups }) => {
   const handleDataUpdate = async () => {
     await fetchBroadcasterData();
   };
+
   const loadGroupsForBatch = async (batchId) => {
     if (!batchId) {
       setSelectedGroups(new Set());
@@ -125,64 +120,12 @@ const BroadcasterPage = ({ allGroups }) => {
   };
 
   const handleBatchEdit = (batch) => {
-    const loadGroupsForBatch = async (batchId) => {
-        const { data: groupIds } = await api.get(`/batches/${batchId}`);
-        setSelectedGroups(new Set(groupIds));
-    };
     setEditingBatch(batch);
     loadGroupsForBatch(batch.id);
   };
 
-  const handleBatchClick = (batchId) => {
-    if (batchId === null) {
-        setSelectedBatchIds(new Set());
-        return;
-    }
-    const newIds = new Set(selectedBatchIds);
-    if (newIds.has(batchId)) {
-        newIds.delete(batchId);
-    } else {
-        newIds.add(batchId);
-    }
-    setSelectedBatchIds(newIds);
-  };
-
-  useEffect(() => {
-    const mergeGroupsFromBatches = async () => {
-        if (selectedBatchIds.size === 0) {
-            setSelectedGroups(new Set());
-            return;
-        }
-
-        const uniqueGroupIds = new Set();
-        const batchIdArray = Array.from(selectedBatchIds);
-        
-        try {
-            const promises = batchIdArray.map(id => api.get(`/batches/${id}`));
-            const results = await Promise.all(promises);
-            
-            for (const result of results) {
-                const groupIds = result.data; // The API returns an array of group IDs
-                if (Array.isArray(groupIds)) {
-                    groupIds.forEach(id => uniqueGroupIds.add(id));
-                }
-            }
-            setSelectedGroups(uniqueGroupIds);
-        } catch (error) {
-            console.error("Failed to merge groups from batches:", error);
-            alert("An error occurred while fetching groups for the selected batches.");
-        }
-    };
-
-    mergeGroupsFromBatches();
-  }, [selectedBatchIds]);
-
   const handleSyncGroups = async () => {
-    if (
-      !window.confirm(
-        "This will fetch the latest group list from WhatsApp and update the database. Groups you have left will be removed. Continue?"
-      )
-    ) {
+    if (!window.confirm("This will fetch the latest group list... Continue?")) {
       return;
     }
     setIsSyncing(true);
@@ -191,7 +134,6 @@ const BroadcasterPage = ({ allGroups }) => {
       alert(data.message);
       window.location.reload();
     } catch (error) {
-      console.error("Failed to sync groups:", error);
       alert(error.response?.data?.message || "Failed to sync groups.");
       setIsSyncing(false);
     }
@@ -227,8 +169,7 @@ const BroadcasterPage = ({ allGroups }) => {
         <LeftPanel>
           <BatchManager
             batches={batches}
-            selectedBatchIds={selectedBatchIds}
-            onBatchClick={handleBatchClick}
+            onBatchSelect={handleBatchSelect}
             onBatchEdit={handleBatchEdit}
             onBatchesUpdate={handleDataUpdate}
           />
@@ -243,17 +184,23 @@ const BroadcasterPage = ({ allGroups }) => {
             isSyncing={isSyncing}
           />
         </LeftPanel>
-
         <RightPanel>
-          <TemplateManager 
-            templates={templates} 
-            onTemplateSelect={handleTemplateSelect} 
-            onTemplatesUpdate={handleDataUpdate} 
+          <TemplateManager
+            templates={templates}
+            onTemplateSelect={handleTemplateSelect}
+            onTemplatesUpdate={handleDataUpdate}
           />
           <BroadcastForm
+            selectedGroupIds={Array.from(selectedGroups)}
+            allGroups={allGroups}
+            message={message}
+            setMessage={setMessage}
+            attachment={attachment}
+            setAttachment={setAttachment}
             onTemplateSave={handleDataUpdate}
+            onBroadcastStart={startBroadcast}
+            isBroadcasting={isBroadcasting}
             onOpenAttachmentManager={() => setIsAttachmentModalOpen(true)}
-            {...{selectedGroupIds: Array.from(selectedGroups), allGroups, message, setMessage, attachment, setAttachment, onBroadcastStart: startBroadcast, isBroadcasting}}
           />
         </RightPanel>
       </MainContent>

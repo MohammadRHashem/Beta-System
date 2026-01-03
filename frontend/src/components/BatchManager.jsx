@@ -39,17 +39,8 @@ const BatchItem = styled.li`
     border-radius: 4px;
     cursor: pointer;
     font-weight: 500;
-    border: 1px solid transparent; /* Add transparent border for layout consistency */
-
     &:hover {
         background-color: ${({ theme }) => theme.background};
-    }
-
-    /* --- NEW: Style for selected items --- */
-    &.selected {
-        background-color: #e6fff9;
-        border-color: ${({ theme }) => theme.secondary};
-        color: ${({ theme }) => theme.primary};
     }
 `;
 
@@ -73,8 +64,7 @@ const ActionsContainer = styled.div`
     }
 `;
 
-// --- PROPS ARE UPDATED ---
-const BatchManager = ({ batches, selectedBatchIds, onBatchClick, onBatchEdit, onBatchesUpdate }) => {
+const BatchManager = ({ batches, onBatchSelect, onBatchEdit, onBatchesUpdate }) => {
     const [searchTerm, setSearchTerm] = useState('');
 
     const handleDelete = async (batchId, batchName) => {
@@ -84,6 +74,7 @@ const BatchManager = ({ batches, selectedBatchIds, onBatchClick, onBatchEdit, on
                 alert('Batch deleted successfully.');
                 onBatchesUpdate();
             } catch (error) {
+                console.error('Failed to delete batch:', error);
                 alert('Failed to delete batch.');
             }
         }
@@ -97,7 +88,7 @@ const BatchManager = ({ batches, selectedBatchIds, onBatchClick, onBatchEdit, on
 
     return (
         <Container>
-            <Title><FaLayerGroup /> Select Batches (Multi-Select Enabled)</Title>
+            <Title><FaLayerGroup /> Select Batch</Title>
             <SearchInput
                 type="text"
                 placeholder="Search batches..."
@@ -105,17 +96,12 @@ const BatchManager = ({ batches, selectedBatchIds, onBatchClick, onBatchEdit, on
                 onChange={(e) => setSearchTerm(e.target.value)}
             />
             <BatchList>
-                {/* --- UPDATED: Clear button now calls with null --- */}
-                <BatchItem onClick={() => onBatchClick(null)}>
+                <BatchItem onClick={() => onBatchSelect(null)}>
                     <ItemName>-- Clear Selection --</ItemName>
                 </BatchItem>
                 {filteredBatches.map(batch => (
-                    <BatchItem 
-                        key={batch.id}
-                        className={selectedBatchIds.has(batch.id) ? 'selected' : ''}
-                    >
-                        {/* --- UPDATED: Main click toggles the batch --- */}
-                        <ItemName onClick={() => onBatchClick(batch.id)} title={batch.name}>
+                    <BatchItem key={batch.id}>
+                        <ItemName onClick={() => onBatchSelect(batch.id)} title={batch.name}>
                             {batch.name}
                         </ItemName>
                         <ActionsContainer>
@@ -129,4 +115,4 @@ const BatchManager = ({ batches, selectedBatchIds, onBatchClick, onBatchEdit, on
     );
 };
 
-export default BatchManager;
+export default BatchManager;    
