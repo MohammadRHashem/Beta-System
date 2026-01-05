@@ -614,16 +614,13 @@ const invoiceWorker = new Worker(
 
         let confirmedTxId = null;
 
-        // CASE A: GROUP IS ASSIGNED
         if (assignedSubaccount) {
             const expectedPixKey = assignedSubaccount.chave_pix;
             console.log(`[CROSS-CONFIRM] Path A: Group is assigned to PIX Key: ${expectedPixKey}`);
 
-            // A.1: Happy Path - Find the best match within the assigned PIX key
             confirmedTxId = await findBestTrkbitMatch(searchAmount, searchSender, { mode: 'include', keys: [expectedPixKey] });
 
             if (!confirmedTxId) {
-                // A.2: Mismatch Detection - Check if a match exists on ANY PIX key
                 const [[mismatchCheck]] = await pool.query(
                     `SELECT id FROM trkbit_transactions WHERE amount = ? AND tx_payer_name = ? AND is_used = 0 LIMIT 1`,
                     [searchAmount, searchSender]
@@ -634,7 +631,6 @@ const invoiceWorker = new Worker(
                 }
             }
         } 
-        // CASE B: GROUP IS UNASSIGNED
         else {
             console.log(`[CROSS-CONFIRM] Path B: Group is unassigned. Searching in the public pool.`);
             const [assignedPixRows] = await pool.query(
@@ -642,11 +638,9 @@ const invoiceWorker = new Worker(
             );
             const exclusionList = assignedPixRows.map(r => r.chave_pix);
 
-            // B.1: Happy Path - Find best match EXCLUDING assigned PIX keys
             confirmedTxId = await findBestTrkbitMatch(searchAmount, searchSender, { mode: 'exclude', keys: exclusionList });
             
             if (!confirmedTxId && exclusionList.length > 0) {
-                 // B.2: Mismatch Detection - Check if it was sent to an ASSIGNED PIX key
                 const [[mismatchCheck]] = await pool.query(
                     `SELECT id FROM trkbit_transactions WHERE amount = ? AND tx_payer_name = ? AND tx_pix_key IN (?) AND is_used = 0 LIMIT 1`,
                     [searchAmount, searchSender, exclusionList]
@@ -658,7 +652,6 @@ const invoiceWorker = new Worker(
             }
         }
         
-        // --- ATOMIC CLAIM STEP ---
         if (confirmedTxId) {
             const [updateResult] = await pool.query(
                 'UPDATE trkbit_transactions SET is_used = 1 WHERE id = ? AND is_used = 0', 
@@ -672,8 +665,52 @@ const invoiceWorker = new Worker(
                 await originalMessage.reply("Caiu");
                 await originalMessage.react("🟢");
                 wasActioned = true;
+
+                // --- START: INFORMATIVE FORWARDING ON SUCCESS ---
+                try {
+                    const [[subaccount]] = await pool.query(
+                        'SELECT account_type FROM subaccounts WHERE assigned_group_jid = ? LIMIT 1',
+                        [chat.id._serialized]
+                    );
+
+                    if (subaccount && subaccount.account_type === 'cross') {
+                        console.log(`[WORKER] Source group is a 'cross' subaccount. Skipping informative forward.`);
+                    } else {
+                        let destJid = null;
+                        const [[directRule]] = await pool.query(
+                            "SELECT destination_group_jid FROM direct_forwarding_rules WHERE source_group_jid = ?", 
+                            [chat.id._serialized]
+                        );
+                        
+                        if (directRule) {
+                            destJid = directRule.destination_group_jid;
+                        } else {
+                            const [rules] = await pool.query("SELECT trigger_keyword, destination_group_jid FROM forwarding_rules WHERE is_enabled = 1");
+                            for (const rule of rules) {
+                                if (recipientNameLower.includes(rule.trigger_keyword.toLowerCase())) {
+                                    destJid = rule.destination_group_jid;
+                                    break;
+                                }
+                            }
+                        }
+
+                        if (destJid) {
+                            const numberRegex = /\b(\d[\d-]{2,})\b/g;
+                            const matches = chat.name.match(numberRegex);
+                            const captionLabel = (matches && matches.length > 0) ? matches[matches.length - 1] : chat.name;
+                            const finalCaption = `${captionLabel} ✅`;
+
+                            const mediaToForward = new MessageMedia(media.mimetype, media.data, media.filename);
+                            await client.sendMessage(destJid, mediaToForward, { caption: finalCaption });
+                            console.log(`[TRKBIT-INFO] Informative forward sent to ${destJid}`);
+                        }
+                    }
+                } catch (infoError) {
+                    console.error('[TRKBIT-INFO-ERROR] Failed to send informative forward:', infoError);
+                }
+                // --- END: INFORMATIVE FORWARDING ON SUCCESS ---
+
             } else {
-                // This means a race condition happened. Another worker claimed it. Treat as a duplicate.
                 wasActioned = 'duplicate';
             }
         }
