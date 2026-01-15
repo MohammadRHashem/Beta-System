@@ -356,7 +356,7 @@ const sendManualConfirmation = async (originalMessageId) => {
     try {
         const originalMessage = await client.getMessageById(originalMessageId);
         if (originalMessage) {
-            await originalMessage.reply("Caiu", { sendSeen: false });
+            await originalMessage.reply("Caiu");
             await originalMessage.react("🟢");
         }
 
@@ -395,7 +395,7 @@ const sendManualRejection = async (originalMessageId) => {
         }
 
         if (originalMessage) {
-            await originalMessage.reply("no caiu" , { sendSeen: false });
+            await originalMessage.reply("no caiu");
             await originalMessage.react("🔴");
         }
         
@@ -461,14 +461,14 @@ const invoiceWorker = new Worker(
           [txId]
         );
         if (existing && existing.is_used) {
-          await originalMessage.reply("❌Repeated❌", { sendSeen: false });
+          await originalMessage.reply("❌Repeated❌");
           await originalMessage.react("❌");
           return;
         }
 
         const result = await usdtLinkService.processLink(txId);
         if (!result.success) {
-          await originalMessage.reply("⚠️ Failed to load transaction details.", { sendSeen: false });
+          await originalMessage.reply("⚠️ Failed to load transaction details.");
           await originalMessage.react("");
           return;
         }
@@ -478,7 +478,7 @@ const invoiceWorker = new Worker(
           result.screenshot.toString("base64"),
           "tx_details.png"
         );
-        await originalMessage.reply(media, { sendSeen: false });
+        await originalMessage.reply(media);
 
         let isConfirmed = false;
         const [walletRows] = await pool.query(
@@ -515,7 +515,7 @@ const invoiceWorker = new Worker(
               result.data.amount,
             ]
           );
-          await originalMessage.reply("Informed ✅", { sendSeen: false });
+          await originalMessage.reply("Informed ✅");
           await originalMessage.react("🟢");
         } else {
           await originalMessage.react("📤");
@@ -570,12 +570,12 @@ const invoiceWorker = new Worker(
           if (existingById) {
             const currentSourceJid = chat.id._serialized;
             if (currentSourceJid === existingById.source_group_jid) {
-              await originalMessage.reply("❌Repeated❌", { sendSeen: false });
+              await originalMessage.reply("❌Repeated❌");
               try {
                 const oldMessage = await client.getMessageById(
                   existingById.message_id
                 );
-                if (oldMessage) await oldMessage.reply("Original here 👈", { sendSeen: false });
+                if (oldMessage) await oldMessage.reply("Original here 👈");
               } catch (e) {
                 console.warn(
                   `[DUPLICATE] Could not reply to original:`,
@@ -583,7 +583,7 @@ const invoiceWorker = new Worker(
                 );
               }
             } else {
-              await originalMessage.reply("❌Repeated from another client❌", { sendSeen: false });
+              await originalMessage.reply("❌Repeated from another client❌");
             }
             await originalMessage.react("❌");
             return; // EXIT WORKER
@@ -626,7 +626,7 @@ const invoiceWorker = new Worker(
                     [searchAmount, searchSender]
                 );
                 if (mismatchCheck) {
-                    await originalMessage.reply("❌ Wrong PIX ❌", { sendSeen: false });
+                    await originalMessage.reply("❌ Wrong PIX ❌");
                     wasActioned = true; 
                 }
             }
@@ -646,7 +646,7 @@ const invoiceWorker = new Worker(
                     [searchAmount, searchSender, exclusionList]
                 );
                 if (mismatchCheck) {
-                    await originalMessage.reply("❌ Wrong PIX ❌", { sendSeen: false });
+                    await originalMessage.reply("❌ Wrong PIX ❌");
                     wasActioned = true;
                 }
             }
@@ -662,7 +662,7 @@ const invoiceWorker = new Worker(
                 const [[{ uid }]] = await pool.query('SELECT uid FROM trkbit_transactions WHERE id = ?', [confirmedTxId]);
                 linkedTransactionId = uid;
                 linkedTransactionSource = 'Trkbit';
-                await originalMessage.reply("Caiu", { sendSeen: false });
+                await originalMessage.reply("Caiu");
                 await originalMessage.react("🟢");
                 wasActioned = true;
 
@@ -701,7 +701,7 @@ const invoiceWorker = new Worker(
                             const finalCaption = `${captionLabel} ✅`;
 
                             const mediaToForward = new MessageMedia(media.mimetype, media.data, media.filename);
-                            await client.sendMessage(destJid, mediaToForward, { caption: finalCaption, sendSeen: false });
+                            await client.sendMessage(destJid, mediaToForward, { caption: finalCaption });
                             console.log(`[TRKBIT-INFO] Informative forward sent to ${destJid}`);
                         }
                     }
@@ -748,12 +748,12 @@ const invoiceWorker = new Worker(
             if (updateResult.affectedRows > 0) {
               linkedTransactionId = matchId; // <-- Capture Link Info
               linkedTransactionSource = 'USDT'; // <-- Capture Link Info
-              await originalMessage.reply(`Informed ✅`, { sendSeen: false });
+              await originalMessage.reply(`Informed ✅`);
               await originalMessage.react("🟢");
               wasActioned = true;
               runStandardForwarding = false;
             } else {
-              await originalMessage.reply("❌Repeated❌", { sendSeen: false });
+              await originalMessage.reply("❌Repeated❌");
               await originalMessage.react("❌");
               wasActioned = 'duplicate';
               runStandardForwarding = false;
@@ -826,12 +826,12 @@ const invoiceWorker = new Worker(
           if (updateResult.affectedRows > 0) {
             linkedTransactionId = matchId; // <-- Capture Link Info
             linkedTransactionSource = 'XPayz'; // <-- Capture Link Info
-            await originalMessage.reply("Caiu", { sendSeen: false });
+            await originalMessage.reply("Caiu");
             await originalMessage.react("🟢");
             wasActioned = true;
             runStandardForwarding = false;
           } else {
-            await originalMessage.reply("❌Repeated❌", { sendSeen: false });
+            await originalMessage.reply("❌Repeated❌");
             await originalMessage.react("❌");
             wasActioned = 'duplicate';
             runStandardForwarding = false;
@@ -857,7 +857,7 @@ const invoiceWorker = new Worker(
             const forwardedMessage = await client.sendMessage(
               escalationRule.destination_group_jid,
               mediaToForward,
-              { caption: richCaption, sendSeen: false }
+              { caption: richCaption }
             );
             await pool.query(
               `INSERT INTO forwarded_invoices (original_message_id, forwarded_message_id, destination_group_jid) VALUES (?, ?, ?)`,
@@ -915,12 +915,12 @@ const invoiceWorker = new Worker(
           if (updateResult.affectedRows > 0) {
             linkedTransactionId = matchId; // <-- Capture Link Info
             linkedTransactionSource = sourceName; // <-- Capture Link Info
-            await originalMessage.reply("Caiu", { sendSeen: false });
+            await originalMessage.reply("Caiu");
             await originalMessage.react("🟢");
             wasActioned = true;
             runStandardForwarding = false;
           } else {
-            await originalMessage.reply("❌Repeated❌", { sendSeen: false });
+            await originalMessage.reply("❌Repeated❌");
             await originalMessage.react("❌");
             wasActioned = 'duplicate';
             runStandardForwarding = false;
@@ -934,7 +934,7 @@ const invoiceWorker = new Worker(
         isAlfaApiConfirmationEnabled &&
         recipientNameLower.includes("alfa trust")
       ) {
-        await originalMessage.reply("no caiu", { sendSeen: false });
+        await originalMessage.reply("no caiu");
         await originalMessage.react("❌");
         wasActioned = true;
         runStandardForwarding = false;
@@ -970,7 +970,7 @@ const invoiceWorker = new Worker(
             const forwardedMessage = await client.sendMessage(
               directRule.destination_group_jid,
               mediaToForward,
-              { caption: caption, sendSeen: false }
+              { caption: caption }
             );
             forwarded = true;
             if (isAutoConfirmationEnabled) {
@@ -1019,7 +1019,7 @@ const invoiceWorker = new Worker(
                   const forwardedMessage = await client.sendMessage(
                     rule.destination_group_jid,
                     mediaToForward,
-                    { caption: caption, sendSeen: false }
+                    { caption: caption }
                   );
 
                   if (rule.reply_with_group_name) {
@@ -1030,7 +1030,7 @@ const invoiceWorker = new Worker(
                     if (matches && matches.length > 0) {
                       replyText = matches[matches.length - 1];
                     }
-                    await originalMessage.reply("⏩ " + replyText, { sendSeen: false });
+                    await originalMessage.reply("⏩ " + replyText);
                   }
 
                   if (isAutoConfirmationEnabled) {
@@ -1081,7 +1081,7 @@ const invoiceWorker = new Worker(
       
       // Handle replies for duplicate state
       if (wasActioned === 'duplicate') {
-        await originalMessage.reply("❌Repeated❌", { sendSeen: false });
+        await originalMessage.reply("❌Repeated❌");
         await originalMessage.react("❌");
       }
 
@@ -1529,7 +1529,7 @@ const handleMessage = async (message) => {
       const match = abbreviationCache.find((abbr) => abbr.trigger === triggerText);
       if (match) {
         await pool.query("INSERT INTO processed_messages (message_id) VALUES (?) ON DUPLICATE KEY UPDATE message_id=message_id", [message.id._serialized]);
-        await client.sendMessage(chat.id._serialized, match.response, { sendSeen: false });
+        await client.sendMessage(chat.id._serialized, match.response);
         return;
       }
     }
@@ -1651,7 +1651,7 @@ const handleReaction = async (reaction) => {
     if (reactionEmoji === '👍' || reactionEmoji === '✅') {
       const originalMessage = await client.getMessageById(link.original_message_id);
       if (originalMessage) {
-        await originalMessage.reply(confirmMessage, { sendSeen: false });
+        await originalMessage.reply(confirmMessage);
         await originalMessage.react(''); 
         await originalMessage.react('🟢');
         
@@ -1690,7 +1690,7 @@ const handleReaction = async (reaction) => {
         await connection.commit();
 
         if (originalMessage) {
-          await originalMessage.reply(rejectMessage, { sendSeen: false });
+          await originalMessage.reply(rejectMessage);
           await originalMessage.react("");
           await originalMessage.react("🔴");
         }
@@ -1742,6 +1742,10 @@ const initializeWhatsApp = (socketIoInstance) => {
           // This can help prevent navigation-related race conditions
           "--unhandled-rejections=strict",
         ],
+      },
+      webVersionCache: {
+        type: "remote",
+        remotePath: "https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/2.2412.54.html",
       },
     });
   
@@ -1859,9 +1863,9 @@ const broadcast = async (socketIo, socketId, groupObjects, message, attachment =
       await new Promise((resolve) => setTimeout(resolve, 400));
       if (attachment && attachment.filepath) {
           const media = MessageMedia.fromFilePath(attachment.filepath);
-          await client.sendMessage(group.id, media, { caption: message || '', sendSeen: false });
+          await client.sendMessage(group.id, media, { caption: message || '' });
       } else {
-          await client.sendMessage(group.id, message, { sendSeen: false });
+          await client.sendMessage(group.id, message);
       }
       successfulSends++;
       successfulGroups.push(group.name);
