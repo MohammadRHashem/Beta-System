@@ -3,6 +3,7 @@ import styled from 'styled-components';
 import { 
     getPendingManualInvoices, 
     confirmManualInvoice, 
+    getManualCandidates,
     rejectManualInvoice, 
     viewInvoiceMedia, 
     clearAllPendingInvoices
