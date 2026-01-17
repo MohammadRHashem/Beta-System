@@ -145,6 +145,7 @@ router.get('/request-types', requestTypesController.getAll);
 router.get('/request-types', requestTypesController.getAll);
 router.post('/request-types', requestTypesController.create);
 router.put('/request-types/:id', requestTypesController.update);
+router.post('/request-types/update-order', requestTypesController.updateOrder);
 router.delete('/request-types/:id', requestTypesController.delete);
 
 

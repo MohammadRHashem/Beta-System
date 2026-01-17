@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import styled from 'styled-components';
-import { getClientRequests, completeClientRequest, updateClientRequestAmount, updateClientRequestContent, restoreClientRequest } from '../services/api';
+import { getClientRequests, completeClientRequest, updateClientRequestAmount, updateClientRequestContent, getRequestTypes, updateRequestTypeOrder, restoreClientRequest } from '../services/api';
 import { useSocket } from '../context/SocketContext';
 import { FaClipboardList, FaCheck, FaDollarSign, FaEdit, FaSort, FaSortUp, FaSortDown, FaHistory } from 'react-icons/fa';
 import { formatInTimeZone } from 'date-fns-tz';
+import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 
 // --- STYLED COMPONENTS (Mostly unchanged, with additions) ---
 const PageContainer = styled.div` display: flex; flex-direction: column; gap: 1.5rem; `;
@@ -12,31 +13,15 @@ const Card = styled.div` background: #fff; padding: 1.5rem 2rem; border-radius: 
 const Title = styled.h2` display: flex; align-items: center; gap: 0.75rem; margin: 0; color: ${({ theme }) => theme.primary}; `;
 const Table = styled.table` width: 100%; border-collapse: collapse; margin-top: 1.5rem; th, td { padding: 1rem; text-align: left; border-bottom: 1px solid ${({ theme }) => theme.border}; vertical-align: middle; } `;
 const TableHeader = styled.th` background-color: ${({ theme }) => theme.background}; cursor: pointer; user-select: none; &:hover { background-color: #eef2f7; } `;
-const TableRow = styled.tr` border-left: 5px solid ${props => props.highlightColor || '#E0E0E0'}; transition: background-color 0.2s; &:hover { background-color: ${props => props.highlightColor ? `${props.highlightColor}4D` : '#f9f9f9'}; } `;
-
-const Button = styled.button`
-    border: none;
-    padding: 0.5rem 1rem;
-    border-radius: 4px;
-    cursor: pointer;
-    font-weight: bold;
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-
-    &.complete { background-color: #e3fcef; color: #006644; &:hover { background-color: #d1f7e2; } }
-    &.restore { background-color: #e3f2fd; color: #0d47a1; &:hover { background-color: #bbdefb; } }
-`;
-
+const TableRow = styled.tr` border-left: 5px solid ${props => props.highlightColor || '#E0E0E0'}; transition: background-color 0.2s; &:hover { background-color: ${props => props.highlightColor ? `${props => props.highlightColor}4D` : '#f9f9f9'}; } `;
+const Button = styled.button` border: none; padding: 0.5rem 1rem; border-radius: 4px; cursor: pointer; font-weight: bold; display: flex; align-items: center; gap: 0.5rem; &.complete { background-color: #e3fcef; color: #006644; &:hover { background-color: #d1f7e2; } } &.restore { background-color: #e3f2fd; color: #0d47a1; &:hover { background-color: #bbdefb; } }`;
 const EditableCell = styled.div` display: flex; align-items: center; gap: 0.75rem; font-weight: bold; color: ${({ theme }) => theme.primary}; svg { cursor: pointer; color: #999; flex-shrink: 0; &:hover { color: #333; } }`;
 const ContentCell = styled.td` font-family: 'Courier New', Courier, monospace; font-weight: 500; word-break: break-all; ${EditableCell} > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 300px; }`;
 const AmountButton = styled.button` background: transparent; border: 1px dashed #ccc; color: #666; cursor: pointer; padding: 0.3rem 0.8rem; border-radius: 4px; display: flex; align-items: center; gap: 0.5rem; &:hover { background: #f0f0f0; border-color: #999; } `;
 
-// --- NEW: Tab Components ---
-const TabContainer = styled.div`
-    border-bottom: 2px solid ${({ theme }) => theme.border};
-    margin-bottom: 1.5rem;
-`;
+const MainTabContainer = styled.div` border-bottom: 2px solid ${({ theme }) => theme.border}; margin-bottom: 1.5rem; `;
+const SubTabContainer = styled.div` border: none; margin-bottom: 1rem; display: flex; flex-wrap: wrap; gap: 0.5rem; `;
+
 const Tab = styled.button`
     padding: 0.75rem 1.25rem;
     border: none;
@@ -47,8 +32,20 @@ const Tab = styled.button`
     color: ${({ theme, active }) => active ? theme.primary : theme.lightText};
     border-bottom: 3px solid ${({ theme, active }) => active ? theme.secondary : 'transparent'};
     margin-bottom: -2px;
+    transition: all 0.2s ease-in-out;
 `;
-// --- END: Tab Components ---
+
+const DraggableTab = styled(Tab)`
+    border: 1px solid ${({ theme }) => theme.border};
+    border-radius: 20px;
+    margin-bottom: 0;
+    font-size: 0.9rem;
+    padding: 0.5rem 1rem;
+    background-color: ${({ active }) => active ? '#e6fff9' : '#fff'};
+    border-color: ${({ theme, active }) => active ? theme.secondary : theme.border};
+    color: ${({ theme, active }) => active ? theme.secondary : theme.text};
+    cursor: grab;
+`;
 
 const SAO_PAULO_TIMEZONE = 'America/Sao_Paulo';
 
@@ -76,85 +73,71 @@ const formatSaoPauloDateTime = (dbDateString, formatString) => {
 
 const ClientRequestsPage = () => {
     const [allRequests, setAllRequests] = useState([]);
+    const [requestTypes, setRequestTypes] = useState([]);
     const [loading, setLoading] = useState(true);
     const [sortConfig, setSortConfig] = useState({ key: 'received_at', direction: 'asc' });
-    
-    // --- NEW: State for tabs ---
-    const [activeView, setActiveView] = useState('pending'); // 'pending' or 'completed'
-    const [activeTypeTab, setActiveTypeTab] = useState('All'); // 'All' or a specific request_type
-    const [requestTypes, setRequestTypes] = useState([]);
-
+    const [activeView, setActiveView] = useState('pending');
+    const [activeTypeTab, setActiveTypeTab] = useState('All');
     const socket = useSocket();
 
-    const fetchRequests = useCallback(async () => {
+    const fetchData = useCallback(async () => {
+        setLoading(true);
         try {
-            const { data } = await getClientRequests();
-            setAllRequests(data);
-            // Dynamically create a unique list of request types from the data
-            const types = [...new Set(data.map(req => req.request_type))];
-            setRequestTypes(types);
+            const [requestsRes, typesRes] = await Promise.all([getClientRequests(), getRequestTypes()]);
+            setAllRequests(requestsRes.data);
+            setRequestTypes(typesRes.data);
         } catch (error) {
-            alert("Could not load requests.");
+            alert("Could not load page data.");
         } finally {
             setLoading(false);
         }
     }, []);
 
-    useEffect(() => { fetchRequests(); }, [fetchRequests]);
+    useEffect(() => { fetchData(); }, [fetchData]);
     
     useEffect(() => {
         if (socket) {
-            socket.on('client_request:new', fetchRequests);
-            socket.on('client_request:update', fetchRequests);
-            return () => {
-                socket.off('client_request:new', fetchRequests);
-                socket.off('client_request:update', fetchRequests);
-            };
+            socket.on('client_request:update', fetchData);
+            return () => { socket.off('client_request:update', fetchData); };
         }
-    }, [socket, fetchRequests]);
+    }, [socket, fetchData]);
 
     const filteredAndSortedRequests = useMemo(() => {
-        let items = [...allRequests];
-
-        // 1. Filter by the main view: 'pending' or 'completed'
-        items = items.filter(req => {
-            if (activeView === 'completed') {
-                return req.is_completed; // Keep only items where is_completed is true
-            }
-            return !req.is_completed; // Keep only items where is_completed is false
-        });
-
-        // 2. If we are in the 'pending' view, apply the sub-tab filter for request type
+        let items = allRequests.filter(req => activeView === 'completed' ? req.is_completed : !req.is_completed);
         if (activeView === 'pending' && activeTypeTab !== 'All') {
             items = items.filter(req => req.request_type === activeTypeTab);
         }
-        
-        // 3. Apply the final sorting logic based on the user's selected column
         if (sortConfig.key) {
             items.sort((a, b) => {
-                const aValue = a[sortConfig.key];
-                const bValue = b[sortConfig.key];
-
+                const aValue = a[sortConfig.key]; const bValue = b[sortConfig.key];
                 let comparison = 0;
-                
-                // Handle different data types for correct sorting
-                if (sortConfig.key === 'amount') {
-                    comparison = (parseFloat(aValue) || 0) - (parseFloat(bValue) || 0);
-                } else if (sortConfig.key === 'received_at' || sortConfig.key === 'completed_at') {
-                    // Works for both date columns
-                    comparison = new Date(aValue) - new Date(bValue);
-                } else {
-                    // Default to string comparison for text fields
-                    comparison = (aValue || '').toString().localeCompare((bValue || '').toString());
-                }
-                
-                // Apply ascending or descending direction
+                if (sortConfig.key === 'amount') comparison = (parseFloat(aValue) || 0) - (parseFloat(bValue) || 0);
+                else if (sortConfig.key === 'received_at' || sortConfig.key === 'completed_at') comparison = new Date(aValue) - new Date(bValue);
+                else comparison = (aValue || '').toString().localeCompare((bValue || '').toString());
                 return sortConfig.direction === 'asc' ? comparison : -comparison;
             });
         }
-        
         return items;
     }, [allRequests, activeView, activeTypeTab, sortConfig]);
+
+    const handleOnDragEnd = async (result) => {
+        if (!result.destination) return;
+        const items = Array.from(requestTypes);
+        const [reorderedItem] = items.splice(result.source.index, 1);
+        items.splice(result.destination.index, 0, reorderedItem);
+        
+        // Optimistic UI update
+        setRequestTypes(items);
+        
+        // Persist to backend
+        const orderedIds = items.map(item => item.id);
+        try {
+            await updateRequestTypeOrder(orderedIds);
+        } catch (error) {
+            alert("Failed to save new tab order. Reverting.");
+            fetchData(); // Revert to original order on failure
+        }
+    };
 
     const handleSort = (key) => {
         let direction = 'asc';
@@ -214,19 +197,33 @@ const ClientRequestsPage = () => {
         <PageContainer>
             <Header><Title><FaClipboardList /> Client Requests</Title></Header>
             <Card>
-                {/* --- NEW: Tab Navigation --- */}
-                <TabContainer>
+                <MainTabContainer>
                     <Tab active={activeView === 'pending'} onClick={() => setActiveView('pending')}>Pending</Tab>
                     <Tab active={activeView === 'completed'} onClick={() => setActiveView('completed')}>Completed</Tab>
-                </TabContainer>
+                </MainTabContainer>
 
                 {activeView === 'pending' && (
-                    <TabContainer style={{ border: 'none', marginBottom: '1rem' }}>
-                        <Tab active={activeTypeTab === 'All'} onClick={() => setActiveTypeTab('All')}>All Pending</Tab>
-                        {requestTypes.map(type => (
-                            <Tab key={type} active={activeTypeTab === type} onClick={() => setActiveTypeTab(type)}>{type}</Tab>
-                        ))}
-                    </TabContainer>
+                    <DragDropContext onDragEnd={handleOnDragEnd}>
+                        <Droppable droppableId="requestTypeTabs" direction="horizontal">
+                            {(provided) => (
+                                <SubTabContainer {...provided.droppableProps} ref={provided.innerRef}>
+                                    <Tab as="div" active={activeTypeTab === 'All'} onClick={() => setActiveTypeTab('All')} style={{cursor: 'pointer'}}>All Pending</Tab>
+                                    {requestTypes.map((type, index) => (
+                                        <Draggable key={type.id} draggableId={String(type.id)} index={index}>
+                                            {(provided) => (
+                                                <div ref={provided.innerRef} {...provided.draggableProps} {...provided.dragHandleProps}>
+                                                    <DraggableTab active={activeTypeTab === type.name} onClick={() => setActiveTypeTab(type.name)}>
+                                                        {type.name}
+                                                    </DraggableTab>
+                                                </div>
+                                            )}
+                                        </Draggable>
+                                    ))}
+                                    {provided.placeholder}
+                                </SubTabContainer>
+                            )}
+                        </Droppable>
+                    </DragDropContext>
                 )}
                 
                 <Table>

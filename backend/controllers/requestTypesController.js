@@ -1,18 +1,66 @@
 const pool = require('../config/db');
 const whatsappService = require('../services/whatsappService');
 
-// GET all request types for the logged-in user
+// GET all request types for the logged-in user (MODIFIED)
 exports.getAll = async (req, res) => {
     const userId = req.user.id;
     try {
-        // UPDATED: Select the new color column
+        // MODIFIED: Select new sort_order column and order by it
         const [types] = await pool.query(
-            'SELECT id, name, trigger_regex, acknowledgement_reaction, color, is_enabled FROM request_types WHERE user_id = ? ORDER BY name ASC',
+            'SELECT id, name, trigger_regex, acknowledgement_reaction, color, is_enabled, sort_order FROM request_types WHERE user_id = ? ORDER BY sort_order ASC, name ASC',
             [userId]
         );
         res.json(types);
     } catch (error) {
         res.status(500).json({ message: 'Failed to fetch request types.' });
+    }
+};
+
+// --- NEW FUNCTION ---
+// POST /api/request-types/update-order - Updates the sort order of all types
+exports.updateOrder = async (req, res) => {
+    const userId = req.user.id;
+    const orderedIds = req.body; // Expects an array of IDs: [3, 1, 2]
+
+    if (!Array.isArray(orderedIds)) {
+        return res.status(400).json({ message: 'Request body must be an array of IDs.' });
+    }
+
+    const connection = await pool.getConnection();
+    try {
+        await connection.beginTransaction();
+
+        // Use a CASE statement for an efficient bulk update in a single query
+        let caseStatement = 'CASE id ';
+        const params = [];
+        
+        orderedIds.forEach((id, index) => {
+            caseStatement += 'WHEN ? THEN ? ';
+            params.push(id, index);
+        });
+        
+        caseStatement += 'END';
+        params.push(orderedIds); // For the IN clause
+        params.push(userId); // For security
+
+        const query = `
+            UPDATE request_types 
+            SET sort_order = ${caseStatement}
+            WHERE id IN (?) AND user_id = ?
+        `;
+
+        await connection.query(query, params);
+        await connection.commit();
+        
+        whatsappService.refreshRequestTypeCache(); // Refresh cache to respect new order if needed
+        res.json({ message: 'Order updated successfully.' });
+
+    } catch (error) {
+        await connection.rollback();
+        console.error('[ERROR] Failed to update request type order:', error);
+        res.status(500).json({ message: 'Failed to update order.' });
+    } finally {
+        connection.release();
     }
 };
 

@@ -196,6 +196,8 @@ export const getRequestTypes = () => apiClient.get('/request-types');
 export const createRequestType = (data) => apiClient.post('/request-types', data);
 export const updateRequestType = (id, data) => apiClient.put(`/request-types/${id}`, data);
 export const deleteRequestType = (id) => apiClient.delete(`/request-types/${id}`);
+export const updateRequestTypeOrder = (orderedIds) => apiClient.post('/request-types/update-order', orderedIds);
+
 
 
 export const exportAlfaExcel = async (params) => {
