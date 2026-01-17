@@ -2,11 +2,11 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import styled from 'styled-components';
 import { getClientRequests, completeClientRequest, updateClientRequestAmount, updateClientRequestContent, getRequestTypes, updateRequestTypeOrder, restoreClientRequest } from '../services/api';
 import { useSocket } from '../context/SocketContext';
-import { FaClipboardList, FaCheck, FaDollarSign, FaEdit, FaSort, FaSortUp, FaSortDown, FaHistory } from 'react-icons/fa';
+import { FaClipboardList, FaCheck, FaDollarSign, FaEdit, FaSort, FaSortUp, FaSortDown, FaHistory, FaCog, FaArrowUp, FaArrowDown } from 'react-icons/fa';
 import { formatInTimeZone } from 'date-fns-tz';
-import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
+import Modal from '../components/Modal'; // Ensure Modal is imported
 
-// --- STYLED COMPONENTS (Mostly unchanged, with additions) ---
+// --- STYLED COMPONENTS ---
 const PageContainer = styled.div` display: flex; flex-direction: column; gap: 1.5rem; `;
 const Header = styled.div` display: flex; justify-content: space-between; align-items: center; `;
 const Card = styled.div` background: #fff; padding: 1.5rem 2rem; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); `;
@@ -18,8 +18,13 @@ const Button = styled.button` border: none; padding: 0.5rem 1rem; border-radius:
 const EditableCell = styled.div` display: flex; align-items: center; gap: 0.75rem; font-weight: bold; color: ${({ theme }) => theme.primary}; svg { cursor: pointer; color: #999; flex-shrink: 0; &:hover { color: #333; } }`;
 const ContentCell = styled.td` font-family: 'Courier New', Courier, monospace; font-weight: 500; word-break: break-all; ${EditableCell} > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 300px; }`;
 const AmountButton = styled.button` background: transparent; border: 1px dashed #ccc; color: #666; cursor: pointer; padding: 0.3rem 0.8rem; border-radius: 4px; display: flex; align-items: center; gap: 0.5rem; &:hover { background: #f0f0f0; border-color: #999; } `;
-const MainTabContainer = styled.div` border-bottom: 2px solid ${({ theme }) => theme.border}; margin-bottom: 1.5rem; `;
-const SubTabContainer = styled.div` border: none; margin-bottom: 1rem; display: flex; flex-wrap: wrap; gap: 0.5rem; `;
+
+const TabContainer = styled.div`
+    border-bottom: 2px solid ${({ theme }) => theme.border};
+    margin-bottom: 1.5rem;
+    display: flex;
+    flex-wrap: wrap;
+`;
 const Tab = styled.button`
     padding: 0.75rem 1.25rem;
     border: none;
@@ -33,18 +38,45 @@ const Tab = styled.button`
     transition: all 0.2s ease-in-out;
 `;
 
-const DraggableTab = styled(Tab)`
+const ConfigButton = styled.button`
+    background: transparent;
+    border: none;
+    color: ${({ theme }) => theme.lightText};
+    cursor: pointer;
+    font-size: 1.2rem;
+    &:hover { color: ${({ theme }) => theme.primary}; }
+`;
+
+const ModalList = styled.ul` list-style: none; margin: 1rem 0; padding: 0; `;
+const ModalListItem = styled.li`
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.75rem;
     border: 1px solid ${({ theme }) => theme.border};
-    border-radius: 20px;
-    margin-bottom: 0;
-    font-size: 0.9rem;
-    padding: 0.5rem 1rem;
-    background-color: ${({ active, isDragging }) => isDragging ? '#d0f0e8' : (active ? '#e6fff9' : '#fff')};
-    border-color: ${({ theme, active }) => active ? theme.secondary : theme.border};
-    color: ${({ theme, active }) => active ? theme.secondary : theme.text};
-    cursor: grab;
-    // Add transition for a smoother drop
-    transition: background-color 0.2s ease;
+    border-radius: 4px;
+    margin-bottom: 0.5rem;
+    background: #f9f9f9;
+`;
+const ArrowButton = styled.button`
+    background: transparent;
+    border: none;
+    font-size: 1.2rem;
+    cursor: pointer;
+    color: ${({ theme }) => theme.text};
+    &:disabled { color: #ccc; cursor: not-allowed; }
+`;
+
+const SaveOrderButton = styled.button`
+    background-color: ${({ theme }) => theme.primary};
+    color: white;
+    border: none;
+    padding: 0.75rem 1.5rem;
+    border-radius: 4px;
+    cursor: pointer;
+    font-weight: bold;
+    display: block;
+    margin-left: auto;
 `;
 
 const SAO_PAULO_TIMEZONE = 'America/Sao_Paulo';
@@ -71,14 +103,15 @@ const formatSaoPauloDateTime = (dbDateString, formatString) => {
 };
 
 
+
 const ClientRequestsPage = () => {
-    // ... (All state and handler functions remain exactly the same as before) ...
     const [allRequests, setAllRequests] = useState([]);
     const [requestTypes, setRequestTypes] = useState([]);
     const [loading, setLoading] = useState(true);
     const [sortConfig, setSortConfig] = useState({ key: 'received_at', direction: 'asc' });
     const [activeView, setActiveView] = useState('pending');
     const [activeTypeTab, setActiveTypeTab] = useState('All');
+    const [isConfigModalOpen, setIsConfigModalOpen] = useState(false);
     const socket = useSocket();
 
     const fetchData = useCallback(async () => {
@@ -86,7 +119,7 @@ const ClientRequestsPage = () => {
         try {
             const [requestsRes, typesRes] = await Promise.all([getClientRequests(), getRequestTypes()]);
             setAllRequests(requestsRes.data);
-            setRequestTypes(typesRes.data);
+            setRequestTypes(typesRes.data); // This will now be pre-sorted by the backend
         } catch (error) {
             alert("Could not load page data.");
         } finally {
@@ -192,52 +225,53 @@ const ClientRequestsPage = () => {
         }
     };
 
+    const handleMoveTab = (index, direction) => {
+        const items = Array.from(requestTypes);
+        const [movedItem] = items.splice(index, 1);
+        const newIndex = direction === 'up' ? index - 1 : index + 1;
+        items.splice(newIndex, 0, movedItem);
+        setRequestTypes(items);
+    };
+
+    const handleSaveOrder = async () => {
+        const orderedIds = requestTypes.map(item => item.id);
+        try {
+            await updateRequestTypeOrder(orderedIds);
+            setIsConfigModalOpen(false);
+        } catch (error) {
+            alert("Failed to save new tab order.");
+        }
+    };
+
     return (
-        <PageContainer>
-            <Header><Title><FaClipboardList /> Client Requests</Title></Header>
-            <Card>
-                <MainTabContainer>
-                    <Tab active={activeView === 'pending'} onClick={() => setActiveView('pending')}>Pending</Tab>
-                    <Tab active={activeView === 'completed'} onClick={() => setActiveView('completed')}>Completed</Tab>
-                </MainTabContainer>
+        <>
+            <PageContainer>
+                <Header><Title><FaClipboardList /> Client Requests</Title></Header>
+                <Card>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <TabContainer>
+                            <Tab active={activeView === 'pending'} onClick={() => setActiveView('pending')}>Pending</Tab>
+                            <Tab active={activeView === 'completed'} onClick={() => setActiveView('completed')}>Completed</Tab>
+                        </TabContainer>
+                        {activeView === 'pending' && (
+                            <ConfigButton onClick={() => setIsConfigModalOpen(true)} title="Configure Tab Order">
+                                <FaCog />
+                            </ConfigButton>
+                        )}
+                    </div>
 
-                {activeView === 'pending' && (
-                    <DragDropContext onDragEnd={handleOnDragEnd}>
-                        <Droppable droppableId="requestTypeTabs" direction="horizontal">
-                            {(provided) => (
-                                <SubTabContainer {...provided.droppableProps} ref={provided.innerRef}>
-                                    <Tab as="div" active={activeTypeTab === 'All'} onClick={() => setActiveTypeTab('All')} style={{cursor: 'pointer'}}>All Pending</Tab>
-                                    
-                                    {/* --- START OF THE FIX --- */}
-                                    {requestTypes.map((type, index) => (
-                                        <Draggable key={type.id} draggableId={String(type.id)} index={index}>
-                                            {(provided, snapshot) => (
-                                                <div
-                                                    ref={provided.innerRef}
-                                                    {...provided.draggableProps}
-                                                    {...provided.dragHandleProps}
-                                                >
-                                                    <DraggableTab 
-                                                        active={activeTypeTab === type.name} 
-                                                        onClick={() => setActiveTypeTab(type.name)}
-                                                        isDragging={snapshot.isDragging} // Pass dragging state for styling
-                                                    >
-                                                        {type.name}
-                                                    </DraggableTab>
-                                                </div>
-                                            )}
-                                        </Draggable>
-                                    ))}
-                                    {/* --- END OF THE FIX --- */}
-
-                                    {provided.placeholder}
-                                </SubTabContainer>
-                            )}
-                        </Droppable>
-                    </DragDropContext>
-                )}
-                
-                <Table>
+                    {activeView === 'pending' && (
+                        <TabContainer style={{ borderBottom: 'none' }}>
+                            <Tab active={activeTypeTab === 'All'} onClick={() => setActiveTypeTab('All')}>All Pending</Tab>
+                            {requestTypes.map(type => (
+                                <Tab key={type.id} active={activeTypeTab === type.name} onClick={() => setActiveTypeTab(type.name)}>
+                                    {type.name}
+                                </Tab>
+                            ))}
+                        </TabContainer>
+                    )}
+                    
+                    <Table>
                     <thead>
                         <tr>
                             <TableHeader onClick={() => handleSort('received_at')}>
@@ -298,8 +332,30 @@ const ClientRequestsPage = () => {
                         )}
                     </tbody>
                 </Table>
-            </Card>
-        </PageContainer>
+                </Card>
+            </PageContainer>
+
+            <Modal isOpen={isConfigModalOpen} onClose={() => setIsConfigModalOpen(false)}>
+                <h2>Arrange Tab Order</h2>
+                <p>Click the arrows to reorder how the request type tabs appear.</p>
+                <ModalList>
+                    {requestTypes.map((type, index) => (
+                        <ModalListItem key={type.id}>
+                            <span>{type.name}</span>
+                            <div style={{ display: 'flex', gap: '1rem' }}>
+                                <ArrowButton onClick={() => handleMoveTab(index, 'up')} disabled={index === 0}>
+                                    <FaArrowUp />
+                                </ArrowButton>
+                                <ArrowButton onClick={() => handleMoveTab(index, 'down')} disabled={index === requestTypes.length - 1}>
+                                    <FaArrowDown />
+                                </ArrowButton>
+                            </div>
+                        </ModalListItem>
+                    ))}
+                </ModalList>
+                <SaveOrderButton onClick={handleSaveOrder}>Save Order</SaveOrderButton>
+            </Modal>
+        </>
     );
 };
 
