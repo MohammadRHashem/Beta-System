@@ -13,15 +13,13 @@ const Card = styled.div` background: #fff; padding: 1.5rem 2rem; border-radius: 
 const Title = styled.h2` display: flex; align-items: center; gap: 0.75rem; margin: 0; color: ${({ theme }) => theme.primary}; `;
 const Table = styled.table` width: 100%; border-collapse: collapse; margin-top: 1.5rem; th, td { padding: 1rem; text-align: left; border-bottom: 1px solid ${({ theme }) => theme.border}; vertical-align: middle; } `;
 const TableHeader = styled.th` background-color: ${({ theme }) => theme.background}; cursor: pointer; user-select: none; &:hover { background-color: #eef2f7; } `;
-const TableRow = styled.tr` border-left: 5px solid ${props => props.highlightColor || '#E0E0E0'}; transition: background-color 0.2s; &:hover { background-color: ${props => props.highlightColor ? `${props => props.highlightColor}4D` : '#f9f9f9'}; } `;
+const TableRow = styled.tr` border-left: 5px solid ${props => props.highlightColor || '#E0E0E0'}; transition: background-color 0.2s; &:hover { background-color: ${props => props.highlightColor ? `${props.highlightColor}4D` : '#f9f9f9'}; } `;
 const Button = styled.button` border: none; padding: 0.5rem 1rem; border-radius: 4px; cursor: pointer; font-weight: bold; display: flex; align-items: center; gap: 0.5rem; &.complete { background-color: #e3fcef; color: #006644; &:hover { background-color: #d1f7e2; } } &.restore { background-color: #e3f2fd; color: #0d47a1; &:hover { background-color: #bbdefb; } }`;
 const EditableCell = styled.div` display: flex; align-items: center; gap: 0.75rem; font-weight: bold; color: ${({ theme }) => theme.primary}; svg { cursor: pointer; color: #999; flex-shrink: 0; &:hover { color: #333; } }`;
 const ContentCell = styled.td` font-family: 'Courier New', Courier, monospace; font-weight: 500; word-break: break-all; ${EditableCell} > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 300px; }`;
 const AmountButton = styled.button` background: transparent; border: 1px dashed #ccc; color: #666; cursor: pointer; padding: 0.3rem 0.8rem; border-radius: 4px; display: flex; align-items: center; gap: 0.5rem; &:hover { background: #f0f0f0; border-color: #999; } `;
-
 const MainTabContainer = styled.div` border-bottom: 2px solid ${({ theme }) => theme.border}; margin-bottom: 1.5rem; `;
 const SubTabContainer = styled.div` border: none; margin-bottom: 1rem; display: flex; flex-wrap: wrap; gap: 0.5rem; `;
-
 const Tab = styled.button`
     padding: 0.75rem 1.25rem;
     border: none;
@@ -41,10 +39,12 @@ const DraggableTab = styled(Tab)`
     margin-bottom: 0;
     font-size: 0.9rem;
     padding: 0.5rem 1rem;
-    background-color: ${({ active }) => active ? '#e6fff9' : '#fff'};
+    background-color: ${({ active, isDragging }) => isDragging ? '#d0f0e8' : (active ? '#e6fff9' : '#fff')};
     border-color: ${({ theme, active }) => active ? theme.secondary : theme.border};
     color: ${({ theme, active }) => active ? theme.secondary : theme.text};
     cursor: grab;
+    // Add transition for a smoother drop
+    transition: background-color 0.2s ease;
 `;
 
 const SAO_PAULO_TIMEZONE = 'America/Sao_Paulo';
@@ -72,6 +72,7 @@ const formatSaoPauloDateTime = (dbDateString, formatString) => {
 
 
 const ClientRequestsPage = () => {
+    // ... (All state and handler functions remain exactly the same as before) ...
     const [allRequests, setAllRequests] = useState([]);
     const [requestTypes, setRequestTypes] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -101,7 +102,7 @@ const ClientRequestsPage = () => {
             return () => { socket.off('client_request:update', fetchData); };
         }
     }, [socket, fetchData]);
-
+    
     const filteredAndSortedRequests = useMemo(() => {
         let items = allRequests.filter(req => activeView === 'completed' ? req.is_completed : !req.is_completed);
         if (activeView === 'pending' && activeTypeTab !== 'All') {
@@ -126,16 +127,14 @@ const ClientRequestsPage = () => {
         const [reorderedItem] = items.splice(result.source.index, 1);
         items.splice(result.destination.index, 0, reorderedItem);
         
-        // Optimistic UI update
         setRequestTypes(items);
         
-        // Persist to backend
         const orderedIds = items.map(item => item.id);
         try {
             await updateRequestTypeOrder(orderedIds);
         } catch (error) {
             alert("Failed to save new tab order. Reverting.");
-            fetchData(); // Revert to original order on failure
+            fetchData();
         }
     };
 
