@@ -436,6 +436,18 @@ const refreshTrkbitConfirmationStatus = async () => {
   }
 };
 
+const reactToMessage = async (messageId, reaction) => {
+    try {
+        if (!client || connectionStatus !== "connected") return;
+        const message = await client.getMessageById(messageId);
+        if (message) {
+            await message.react(reaction);
+        }
+    } catch (error) {
+        console.warn(`[REACTION-APPLY] Could not apply reaction to message ${messageId}:`, error.message);
+    }
+};
+
 
 const invoiceWorker = new Worker(
   "invoice-processing-queue",
@@ -1898,5 +1910,6 @@ module.exports = {
   refreshTrkbitConfirmationStatus,
   sendManualConfirmation,
   sendManualRejection,
+  reactToMessage,
   clearReaction
 };

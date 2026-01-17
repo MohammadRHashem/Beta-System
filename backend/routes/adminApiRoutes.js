@@ -133,10 +133,10 @@ router.get('/trkbit/export', trkbitController.exportExcel);
 router.get('/settings/trkbit-confirmation', settingsController.getTrkbitConfirmationStatus);
 router.post('/settings/trkbit-confirmation', settingsController.setTrkbitConfirmationStatus);
 
-router.get('/client-requests', clientRequestController.getPendingRequests);
+router.get('/client-requests', clientRequestController.getAllRequests);
 router.patch('/client-requests/:id/complete', clientRequestController.completeRequest);
 router.patch('/client-requests/:id/amount', clientRequestController.updateRequestAmount); // New
-router.patch('/client-requests/:id/content', clientRequestController.updateRequestContent);
+router.patch('/client-requests/:id/restore', clientRequestController.restoreRequest);
 
 // Request Types (New)
 router.get('/request-types', requestTypesController.getAll);
