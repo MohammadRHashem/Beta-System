@@ -208,17 +208,29 @@ const ClientRequestsPage = () => {
                             {(provided) => (
                                 <SubTabContainer {...provided.droppableProps} ref={provided.innerRef}>
                                     <Tab as="div" active={activeTypeTab === 'All'} onClick={() => setActiveTypeTab('All')} style={{cursor: 'pointer'}}>All Pending</Tab>
+                                    
+                                    {/* --- START OF THE FIX --- */}
                                     {requestTypes.map((type, index) => (
                                         <Draggable key={type.id} draggableId={String(type.id)} index={index}>
-                                            {(provided) => (
-                                                <div ref={provided.innerRef} {...provided.draggableProps} {...provided.dragHandleProps}>
-                                                    <DraggableTab active={activeTypeTab === type.name} onClick={() => setActiveTypeTab(type.name)}>
+                                            {(provided, snapshot) => (
+                                                <div
+                                                    ref={provided.innerRef}
+                                                    {...provided.draggableProps}
+                                                    {...provided.dragHandleProps}
+                                                >
+                                                    <DraggableTab 
+                                                        active={activeTypeTab === type.name} 
+                                                        onClick={() => setActiveTypeTab(type.name)}
+                                                        isDragging={snapshot.isDragging} // Pass dragging state for styling
+                                                    >
                                                         {type.name}
                                                     </DraggableTab>
                                                 </div>
                                             )}
                                         </Draggable>
                                     ))}
+                                    {/* --- END OF THE FIX --- */}
+
                                     {provided.placeholder}
                                 </SubTabContainer>
                             )}
