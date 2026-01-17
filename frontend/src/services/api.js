@@ -190,6 +190,7 @@ export const completeClientRequest = (id) => apiClient.patch(`/client-requests/$
 export const updateClientRequestAmount = (id, amount) => apiClient.patch(`/client-requests/${id}/amount`, { amount });
 // --- NEW FUNCTION ---
 export const updateClientRequestContent = (id, content) => apiClient.patch(`/client-requests/${id}/content`, { content });
+export const restoreClientRequest = (id) => apiClient.patch(`/client-requests/${id}/restore`);
 
 export const getRequestTypes = () => apiClient.get('/request-types');
 export const createRequestType = (data) => apiClient.post('/request-types', data);
