@@ -1516,7 +1516,7 @@ const handleMessage = async (message) => {
         if (rate !== null) {
             // Format the rate to 3 decimal places for precision
             const formattedRate = rate.toFixed(3);
-            const replyText = `USDT Rate (BRL): R$ ${formattedRate}`;
+            const replyText = `USDBRL: R$${formattedRate}`;
             await client.sendMessage(chat.id._serialized, replyText);
         } else {
             const errorReply = "⚠️ Could not fetch the exchange rate at this time.";
