@@ -494,6 +494,7 @@ const invoiceWorker = new Worker(
         if (reportPattern.test(filename)) {
             console.log(`[WORKER-SKIP] Skipping report PDF based on filename: "${filename}"`);
             clearReaction(messageId);
+            await originalMessage.react('🗒');
             // Exit the worker. The job is considered complete without further processing.
             return; 
         }
