@@ -479,11 +479,20 @@ const invoiceWorker = new Worker(
       return;
     }
 
-    if (originalMessage.type === 'document' && originalMessage.hasMedia && originalMessage.filename) {
+    // --- START: ROBUST PDF REPORT EXCLUSION WITH DEBUGGING ---
+
+    // 1. Get the filename, prioritizing the direct property but falling back to the raw _data object.
+    const filename = originalMessage.filename || originalMessage._data?.filename;
+
+    // 2. Log the critical properties for debugging every time.
+    console.log(`[WORKER-DEBUG] Message Type: ${originalMessage.type}, Filename: "${filename}"`);
+
+    // 3. Perform the check using the resilient filename variable.
+    if (originalMessage.type === 'document' && filename) {
         // Regex to match "Any Name DD-MM-YYYY.pdf" (case-insensitive)
         const reportPattern = /^.+ \d{2}-\d{2}-\d{4}\.pdf$/i;
-        if (reportPattern.test(originalMessage.filename)) {
-            console.log(`[WORKER-SKIP] Skipping report PDF based on filename: "${originalMessage.filename}"`);
+        if (reportPattern.test(filename)) {
+            console.log(`[WORKER-SKIP] Skipping report PDF based on filename: "${filename}"`);
             // Exit the worker. The job is considered complete without further processing.
             return; 
         }
