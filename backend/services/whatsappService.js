@@ -479,6 +479,16 @@ const invoiceWorker = new Worker(
       return;
     }
 
+    if (originalMessage.type === 'document' && originalMessage.hasMedia && originalMessage.filename) {
+        // Regex to match "Any Name DD-MM-YYYY.pdf" (case-insensitive)
+        const reportPattern = /^.+ \d{2}-\d{2}-\d{4}\.pdf$/i;
+        if (reportPattern.test(originalMessage.filename)) {
+            console.log(`[WORKER-SKIP] Skipping report PDF based on filename: "${originalMessage.filename}"`);
+            // Exit the worker. The job is considered complete without further processing.
+            return; 
+        }
+    }
+
     // ============================================================
     // USDT LINK PROCESSING
     // ============================================================
