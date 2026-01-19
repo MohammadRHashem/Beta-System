@@ -493,6 +493,7 @@ const invoiceWorker = new Worker(
         const reportPattern = /^.+ \d{2}-\d{2}-\d{4}\.pdf$/i;
         if (reportPattern.test(filename)) {
             console.log(`[WORKER-SKIP] Skipping report PDF based on filename: "${filename}"`);
+            clearReaction(messageId);
             // Exit the worker. The job is considered complete without further processing.
             return; 
         }
