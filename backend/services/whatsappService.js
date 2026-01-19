@@ -447,6 +447,22 @@ const reactToMessage = async (messageId, reaction) => {
         console.warn(`[REACTION-APPLY] Could not apply reaction to message ${messageId}:`, error.message);
     }
 };
+// tempppppppppppppppppppppppppppppppppppppppppppppppp
+const fetchExchangeRate = async () => {
+    const apiUrl = process.env.RATE_API_URL || "https://api.fxratesapi.com/latest";
+    try {
+        const response = await axios.get(apiUrl, { timeout: 10000 }); // 10-second timeout
+        if (response.data && response.data.success && response.data.rates && response.data.rates.BRL) {
+            const rate = parseFloat(response.data.rates.BRL);
+            return rate;
+        }
+        console.error("[TAXA] API response was successful but did not contain the BRL rate.");
+        return null;
+    } catch (error) {
+        console.error("[TAXA] Failed to fetch exchange rate from API:", error.message);
+        return null;
+    }
+};
 
 
 const invoiceWorker = new Worker(
@@ -1488,6 +1504,29 @@ const handleMessage = async (message) => {
     if (message.body) {
       // --- NEW: USDT Wallet Address Detection Logic ---
       const messageBody = message.body.trim();
+
+      if (messageBody === '/taxa') {
+        console.log(`[/TAXA] Command received from group: "${chat.name}"`);
+        
+        // Mark as processed to prevent any other logic from running on it
+        await pool.query("INSERT IGNORE INTO processed_messages (message_id) VALUES (?)", [message.id._serialized]);
+
+        const rate = await fetchExchangeRate();
+        
+        if (rate !== null) {
+            // Format the rate to 3 decimal places for precision
+            const formattedRate = rate.toFixed(3);
+            const replyText = `USDT Rate (BRL): R$ ${formattedRate}`;
+            await client.sendMessage(chat.id._serialized, replyText);
+        } else {
+            const errorReply = "⚠️ Could not fetch the exchange rate at this time.";
+            await client.sendMessage(chat.id._serialized, errorReply);
+        }
+        
+        // Crucially, exit the function so it's not processed as an invoice or anything else
+        return; 
+      }
+
       for (const rule of requestTypeCache) {
           const match = messageBody.match(rule.regex);
           // match[0] is the full match, match[1] is the first capture group
