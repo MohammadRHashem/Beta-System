@@ -493,7 +493,8 @@ const invoiceWorker = new Worker(
         // const reportPattern = /^.+ \d{2}-\d{2}-\d{4}\.pdf$/i;
         // const reportPattern = /^.+ \d{2}-\d{1,2}\.pdf$/i;
         // const reportPattern = /^[a-z]+ [a-z]+ \d{2}-\d{1,2}\.pdf$/i;
-        const reportPattern = /^[a-zA-Z]+ [a-zA-Z]+ \d{2}-\d{1,2}\.pdf$/i;
+        // const reportPattern = /^[a-zA-Z]+ [a-zA-Z]+ \d{2}-\d{1,2}\.pdf$/i;
+        const reportPattern = /^[a-zA-Z\s]+ \d{2}-\d{1,2}\.pdf$/i;
         if (reportPattern.test(filename)) {
             console.log(`[WORKER-SKIP] Skipping report PDF based on filename: "${filename}"`);
             clearReaction(messageId);
