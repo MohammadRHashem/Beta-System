@@ -491,7 +491,8 @@ const invoiceWorker = new Worker(
     if (originalMessage.type === 'document' && filename) {
         // Regex to match "Any Name DD-MM-YYYY.pdf" (case-insensitive)
         // const reportPattern = /^.+ \d{2}-\d{2}-\d{4}\.pdf$/i;
-        const reportPattern = /^.+ \d{2}-\d{1,2}\.pdf$/i;
+        // const reportPattern = /^.+ \d{2}-\d{1,2}\.pdf$/i;
+        const reportPattern = /^[a-z]+ [a-z]+ \d{2}-\d{1,2}\.pdf$/i;
         if (reportPattern.test(filename)) {
             console.log(`[WORKER-SKIP] Skipping report PDF based on filename: "${filename}"`);
             clearReaction(messageId);
