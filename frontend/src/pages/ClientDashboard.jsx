@@ -1,9 +1,7 @@
-// frontend/src/pages/ClientDashboard.jsx
-
 import React, { useState, useEffect, useCallback } from 'react';
 import styled, { keyframes } from 'styled-components';
 import { motion } from 'framer-motion';
-import { getPortalTransactions, getPortalDashboardSummary, triggerPartnerConfirmation } from '../services/api'; 
+import { getPortalTransactions, getPortalDashboardSummary, triggerPartnerConfirmation, updatePortalTransactionConfirmation } from '../services/api'; 
 import PasscodeModal from '../components/PasscodeModal'; // <<< IMPORT NEW COMPONENT
 import { FaSyncAlt, FaSearch, FaArrowUp, FaArrowDown, FaCheckCircle, FaPaperPlane, FaSpinner } from 'react-icons/fa';
 import Pagination from '../components/Pagination';

@@ -264,9 +264,7 @@ export const exportTrkbit = async (params) => {
 };
 
 export const updatePortalTransactionConfirmation = (id, source, confirmed, passcode) => {
-    // Change from PATCH to POST
-    // The URL is now simple: /transactions/confirm
-    // All data, including the ID, is now in the request body.
+    // THE CRITICAL "return" KEYWORD IS HERE.
     return portalApiClient.post(`/transactions/confirm`, { 
         transactionId: id, 
         source, 
