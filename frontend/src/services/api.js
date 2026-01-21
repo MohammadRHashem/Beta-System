@@ -264,8 +264,15 @@ export const exportTrkbit = async (params) => {
 };
 
 export const updatePortalTransactionConfirmation = (id, source, confirmed, passcode) => {
-    // The URL now uses the new `:transactionId` parameter name
-    return portalApiClient.patch(`/transactions/${id}/confirm`, { source, confirmed, passcode });
+    // Change from PATCH to POST
+    // The URL is now simple: /transactions/confirm
+    // All data, including the ID, is now in the request body.
+    return portalApiClient.post(`/transactions/confirm`, { 
+        transactionId: id, 
+        source, 
+        confirmed, 
+        passcode 
+    });
 };
 
 export const triggerPartnerConfirmation = (correlation_id) => portalApiClient.post('/bridge/confirm-payment', { correlation_id });

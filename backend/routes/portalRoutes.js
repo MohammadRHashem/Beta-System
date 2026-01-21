@@ -9,6 +9,6 @@ const portalController = require("../controllers/portalController");
 router.get("/transactions", portalController.getTransactions);
 router.get("/dashboard-summary", portalController.getDashboardSummary);
 router.get("/export-excel", portalController.exportTransactions);
-router.patch("/transactions/:transactionId/confirm", portalController.updateTransactionConfirmation);
+router.post("/transactions/confirm", portalController.updateTransactionConfirmation);
 
 module.exports = router;

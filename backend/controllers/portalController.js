@@ -323,21 +323,18 @@ exports.exportTransactions = async (req, res) => {
 };
 
 exports.updateTransactionConfirmation = async (req, res) => {
-    // --- RESTORED DIAGNOSTIC LOGGING ---
+    // Logging is still here, which is good.
     console.log(`\n--- [PORTAL CONTROLLER] updateTransactionConfirmation triggered ---`);
-    console.log('[PORTAL CONTROLLER] Request Params (URL):', req.params);
     console.log('[PORTAL CONTROLLER] Request Body (Payload):', req.body);
     console.log('[PORTAL CONTROLLER] Client Data (from JWT):', req.client);
-    // ------------------------------------
 
-    // === THE FIX: Read from the new `transactionId` parameter ===
-    const { transactionId } = req.params;
-    const { source, confirmed, passcode } = req.body;
+    // === THE FIX: Read the ID from the request BODY, not the URL params ===
+    const { transactionId, source, confirmed, passcode } = req.body;
     const { accountType, subaccountNumber, chavePix } = req.client;
 
-    if (!source || typeof confirmed !== 'boolean') {
-        console.error('[PORTAL CONTROLLER] VALIDATION FAILED: Missing `source` or `confirmed` boolean.');
-        return res.status(400).json({ message: 'Source and confirmation status are required.' });
+    if (!transactionId || !source || typeof confirmed !== 'boolean') {
+        console.error('[PORTAL CONTROLLER] VALIDATION FAILED: Missing `transactionId`, `source`, or `confirmed` boolean in the request body.');
+        return res.status(400).json({ message: 'Transaction ID, source, and confirmation status are required.' });
     }
     
     if (confirmed === false) {
