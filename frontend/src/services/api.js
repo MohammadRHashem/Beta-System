@@ -273,6 +273,14 @@ export const updatePortalTransactionConfirmation = (id, source, confirmed, passc
     });
 };
 
+export const updatePortalTransactionNotes = (id, source, notes) => {
+    return portalApiClient.patch(`/transactions/notes`, {
+        transactionId: id,
+        source,
+        notes
+    });
+};
+
 export const triggerPartnerConfirmation = (correlation_id) => portalApiClient.post('/bridge/confirm-payment', { correlation_id });
 
 

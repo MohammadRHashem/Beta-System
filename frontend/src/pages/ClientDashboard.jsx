@@ -3,7 +3,7 @@ import styled, { keyframes } from 'styled-components';
 import { motion } from 'framer-motion';
 import { getPortalTransactions, getPortalDashboardSummary, triggerPartnerConfirmation, updatePortalTransactionConfirmation } from '../services/api'; 
 import PasscodeModal from '../components/PasscodeModal'; // <<< IMPORT NEW COMPONENT
-import { FaSyncAlt, FaSearch, FaArrowUp, FaArrowDown, FaCheckCircle, FaPaperPlane, FaSpinner, FaUndo } from 'react-icons/fa';
+import { FaSyncAlt, FaSearch, FaArrowUp, FaArrowDown, FaCheckCircle, FaTimesCircle, FaSpinner, FaPaperPlane, FaEdit } from 'react-icons/fa';
 import Pagination from '../components/Pagination';
 import { usePortal } from '../context/PortalContext';
 import axios from 'axios';
@@ -26,32 +26,80 @@ const ConfirmationButton = styled.button`
     background: transparent;
     border: none;
     cursor: pointer;
-    font-size: 1.4rem;
+    font-size: 1.6rem; /* Bigger icon */
     display: flex;
     align-items: center;
     justify-content: center;
     padding: 0.5rem;
     border-radius: 50%;
-    transition: background-color 0.2s;
+    transition: all 0.2s;
 
-    &:disabled {
-        cursor: not-allowed;
-        opacity: 0.5;
-    }
+    &:disabled { cursor: not-allowed; opacity: 0.5; }
 
     &.confirm {
         color: ${({ theme }) => theme.lightText};
-        &:hover:not(:disabled) {
-            background-color: #e6fff9;
-            color: ${({ theme }) => theme.success};
-        }
+        &:hover:not(:disabled) { background-color: #e6fff9; color: #00C49A; }
     }
     &.undo {
         color: ${({ theme }) => theme.lightText};
-        &:hover:not(:disabled) {
-            background-color: #ffebe6;
-            color: ${({ theme }) => theme.error};
-        }
+        &:hover:not(:disabled) { background-color: #ffebe6; color: #DE350B; }
+    }
+`;
+
+const StatusText = styled.span`
+    font-weight: 600;
+    font-size: 0.9rem;
+    margin-left: 0.5rem;
+    color: ${({ confirmed, theme }) => confirmed ? theme.success : theme.lightText};
+`;
+
+const NotesCell = styled.div`
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    min-height: 30px;
+    cursor: pointer;
+    .notes-text {
+        color: ${({ theme }) => theme.text};
+        font-style: italic;
+    }
+    .placeholder {
+        color: ${({ theme }) => theme.lightText};
+        opacity: 0.7;
+    }
+    .edit-icon {
+        visibility: hidden;
+        color: ${({ theme }) => theme.primary};
+    }
+    &:hover .edit-icon {
+        visibility: visible;
+    }
+`;
+
+const NoteInput = styled.input`
+    padding: 0.5rem;
+    border: 1px solid ${({ theme }) => theme.secondary};
+    border-radius: 4px;
+    width: 100%;
+    max-width: 180px;
+`;
+
+const MobileSection = styled.div`
+    margin-top: 1rem;
+    padding-top: 1rem;
+    border-top: 1px solid ${({ theme }) => theme.border};
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+`;
+
+const MobileRow = styled.div`
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    .label {
+        font-weight: 600;
+        color: ${({ theme }) => theme.primary};
     }
 `;
 
@@ -365,22 +413,51 @@ const ClientDashboard = () => {
 
     const handleConfirm = async (tx) => {
         if (updatingIds.has(tx.id)) return;
-        console.log('[HANDLE CONFIRM] Transaction object:', JSON.stringify(tx, null, 2));
-        if (!window.confirm('Are you sure you want to confirm this transaction?')) return;
-
+        if (!window.confirm('Confirm this transaction belongs to one of your customers?')) return;
+        
         setUpdatingIds(prev => new Set(prev).add(tx.id));
         try {
-            // THE FIX: Use the reliable `tx.source` provided by the backend
             await updatePortalTransactionConfirmation(tx.id, tx.source, true);
             setTransactions(prev => prev.map(t => t.id === tx.id ? { ...t, is_portal_confirmed: 1 } : t));
         } catch (error) {
-            alert('Failed to confirm transaction. Please try again.');
+            alert('Something went wrong. Please try again.');
         } finally {
-            setUpdatingIds(prev => {
-                const newSet = new Set(prev);
-                newSet.delete(tx.id);
-                return newSet;
-            });
+            setUpdatingIds(prev => { const newSet = new Set(prev); newSet.delete(tx.id); return newSet; });
+        }
+    };
+
+    const handlePasscodeSubmit = async (passcode) => {
+        if (!transactionToUpdate) return;
+        setUpdatingIds(prev => new Set(prev).add(transactionToUpdate.id));
+        try {
+            await updatePortalTransactionConfirmation(transactionToUpdate.id, transactionToUpdate.source, false, passcode);
+            setTransactions(prev => prev.map(t => t.id === transactionToUpdate.id ? { ...t, is_portal_confirmed: 0 } : t));
+            setIsPasscodeModalOpen(false);
+            setTransactionToUpdate(null);
+        } catch (error) {
+            if (error.response?.status === 403) { setPasscodeError('Incorrect PIN'); } 
+            else { alert('Something went wrong. Please try again.'); setIsPasscodeModalOpen(false); }
+        } finally {
+            setUpdatingIds(prev => { const newSet = new Set(prev); newSet.delete(transactionToUpdate.id); return newSet; });
+        }
+    };
+
+    // --- NEW NOTE HANDLERS ---
+    const handleNoteClick = (tx) => {
+        setEditingNoteId(tx.id);
+        setNoteInputText(tx.portal_notes || '');
+    };
+
+    const handleNoteUpdate = async (tx) => {
+        setUpdatingIds(prev => new Set(prev).add(`note-${tx.id}`));
+        try {
+            await updatePortalTransactionNotes(tx.id, tx.source, noteInputText);
+            setTransactions(prev => prev.map(t => t.id === tx.id ? { ...t, portal_notes: noteInputText.trim() } : t));
+        } catch (error) {
+            alert('Failed to save note.');
+        } finally {
+            setEditingNoteId(null);
+            setUpdatingIds(prev => { const newSet = new Set(prev); newSet.delete(`note-${tx.id}`); return newSet; });
         }
     };
 
@@ -389,33 +466,6 @@ const ClientDashboard = () => {
         setTransactionToUpdate(tx);
         setPasscodeError('');
         setIsPasscodeModalOpen(true);
-    };
-
-    const handlePasscodeSubmit = async (passcode) => {
-        if (!transactionToUpdate) return;
-        
-        setUpdatingIds(prev => new Set(prev).add(transactionToUpdate.id));
-        try {
-            // THE FIX: Use the reliable `transactionToUpdate.source`
-            await updatePortalTransactionConfirmation(transactionToUpdate.id, transactionToUpdate.source, false, passcode);
-            
-            setTransactions(prev => prev.map(t => t.id === transactionToUpdate.id ? { ...t, is_portal_confirmed: 0 } : t));
-            setIsPasscodeModalOpen(false);
-            setTransactionToUpdate(null);
-        } catch (error) {
-            if (error.response?.status === 403) {
-                setPasscodeError('Incorrect PIN');
-            } else {
-                alert('Failed to undo confirmation. Please try again.');
-                setIsPasscodeModalOpen(false);
-            }
-        } finally {
-            setUpdatingIds(prev => {
-                const newSet = new Set(prev);
-                newSet.delete(transactionToUpdate.id);
-                return newSet;
-            });
-        }
     };
 
 
@@ -537,6 +587,7 @@ const ClientDashboard = () => {
                     <th>Amount (BRL)</th>
                     {clientData.username === 'xplus' && <th>Partner Actions</th>}
                     <th>Confirmation</th> {/* <<< NEW COLUMN HEADER */}
+                    <th>Operator Notes</th>
                 </tr>
               </thead>
               <tbody>
@@ -550,6 +601,8 @@ const ClientDashboard = () => {
                     const isConfirmed = tx.bridge_status === 'paid' || tx.bridge_status === 'paid_manual';
                     const isConfirmedByPortal = tx.is_portal_confirmed;
                     const isUpdating = updatingIds.has(tx.id);
+                    const isEditingNote = editingNoteId === tx.id;
+                    const isUpdatingNote = updatingIds.has(`note-${tx.id}`);
                     return (
                         <motion.tr key={tx.id}>
                             <td>{formatDateTime(tx.transaction_date)}</td>
@@ -593,6 +646,27 @@ const ClientDashboard = () => {
                                   </ConfirmationButton>
                               )}
                           </td>
+                          <td>
+                                {isEditingNote ? (
+                                    <NoteInput
+                                        autoFocus
+                                        value={noteInputText}
+                                        onChange={(e) => setNoteInputText(e.target.value)}
+                                        onBlur={() => handleNoteUpdate(tx)}
+                                        onKeyDown={(e) => { if (e.key === 'Enter') handleNoteUpdate(tx); }}
+                                        maxLength="25"
+                                    />
+                                ) : isUpdatingNote ? <LoadingSpinner/> : (
+                                    <NotesCell onClick={() => handleNoteClick(tx)}>
+                                        {tx.portal_notes ? (
+                                            <span className="notes-text">{tx.portal_notes}</span>
+                                        ) : (
+                                            <span className="placeholder">Add note...</span>
+                                        )}
+                                        <FaEdit className="edit-icon" />
+                                    </NotesCell>
+                                )}
+                            </td>
                         </motion.tr>
                     );
                   })
@@ -609,6 +683,10 @@ const ClientDashboard = () => {
               transactions.map((tx) => {
                 const isCredit = tx.operation_direct === "in" || tx.operation_direct === "C";
                 const isConfirmed = tx.bridge_status === 'paid' || tx.bridge_status === 'paid_manual';
+                const isConfirmedByPortal = !!tx.is_portal_confirmed;
+                const isUpdatingConfirmation = updatingIds.has(tx.id);
+                const isEditingNote = editingNoteId === tx.id;
+                const isUpdatingNote = updatingIds.has(`note-${tx.id}`);
                 return (
                     <MobileCard key={tx.id} isCredit={isCredit} variants={itemVariants}>
                         <MobileCardHeader isCredit={isCredit}>
@@ -619,6 +697,34 @@ const ClientDashboard = () => {
                             <p><strong>{isCredit ? (tx.sender_name || "Unknown") : (tx.counterparty_name || "Unknown Receiver")}</strong></p>
                             <p>{formatDateTime(tx.transaction_date)}</p>
                         </MobileCardBody>
+
+                        <MobileSection>
+                            <MobileRow>
+                                <span className='label'>Confirmation</span>
+                                <div style={{ display: 'flex', alignItems: 'center' }}>
+                                    {isUpdatingConfirmation ? <LoadingSpinner/> : 
+                                    isConfirmedByPortal ? (
+                                        <ConfirmationButton className="undo" onClick={() => handleInitiateUnconfirm(tx)}><FaTimesCircle style={{color: '#DE350B'}}/></ConfirmationButton>
+                                    ) : (
+                                        <ConfirmationButton className="confirm" onClick={() => handleConfirm(tx)}><FaCheckCircle style={{color: '#00C49A'}}/></ConfirmationButton>
+                                    )}
+                                    <StatusText confirmed={isConfirmedByPortal}>
+                                        {isConfirmedByPortal ? 'Confirmed' : 'Pending'}
+                                    </StatusText>
+                                </div>
+                            </MobileRow>
+                            <MobileRow>
+                                <span className='label'>Notes</span>
+                                {isEditingNote ? (
+                                    <NoteInput autoFocus value={noteInputText} onChange={(e) => setNoteInputText(e.target.value)} onBlur={() => handleNoteUpdate(tx)} onKeyDown={(e) => { if (e.key === 'Enter') handleNoteUpdate(tx); }} maxLength="25"/>
+                                ) : isUpdatingNote ? <LoadingSpinner/> : (
+                                    <NotesCell onClick={() => handleNoteClick(tx)}>
+                                        {tx.portal_notes ? <span className="notes-text">{tx.portal_notes}</span> : <span className="placeholder">Add note...</span>}
+                                        <FaEdit className="edit-icon"/>
+                                    </NotesCell>
+                                )}
+                            </MobileRow>
+                        </MobileSection>
 
                         {clientData.username === 'xplus' && isCredit && tx.correlation_id && (
                             <div style={{ marginTop: '0.75rem', paddingTop: '0.75rem', borderTop: '1px solid #eee' }}>

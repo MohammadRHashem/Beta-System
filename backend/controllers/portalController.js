@@ -157,6 +157,7 @@ exports.getTransactions = async (req, res) => {
                         tt.amount, 
                         tt.tx_type as operation_direct,
                         tt.is_portal_confirmed,
+                        tt.portal_notes,
                         'trkbit' as source, -- <<< ADD THIS LINE
                         CASE
                             WHEN tt.tx_type = 'C' THEN tt.tx_payer_name
@@ -178,7 +179,7 @@ exports.getTransactions = async (req, res) => {
             let query = `FROM xpayz_transactions xt `;
             let params = [];
             // <<< ADD 'xpayz' as source TO THE SELECT FIELDS
-            let selectFields = `xt.id, xt.transaction_date, xt.sender_name, xt.counterparty_name, xt.amount, xt.operation_direct, xt.is_portal_confirmed, 'xpayz' as source `;
+            let selectFields = `xt.id, xt.transaction_date, xt.sender_name, xt.counterparty_name, xt.amount, xt.operation_direct, xt.is_portal_confirmed, xt.portal_notes, 'xpayz' as source `;
 
             if (username === PARTNER_USERNAME) {
                 query += `INNER JOIN bridge_transactions bt ON xt.id = bt.xpayz_transaction_id WHERE xt.subaccount_id = ?`;
@@ -319,6 +320,52 @@ exports.exportTransactions = async (req, res) => {
     } catch (error) {
         console.error(`[PORTAL-EXPORT-ERROR] Failed to export for ${username}:`, error);
         res.status(500).json({ message: 'Failed to export transactions.' });
+    }
+};
+
+exports.updateTransactionNotes = async (req, res) => {
+    const { transactionId, source, notes } = req.body;
+    const { accountType, subaccountNumber, chavePix } = req.client;
+
+    if (!transactionId || !source) {
+        return res.status(400).json({ message: 'Transaction ID and source are required.' });
+    }
+
+    // Sanitize and truncate notes
+    const finalNotes = (notes || '').trim().slice(0, 30);
+
+    let table, idColumn, ownershipColumn, ownershipValue;
+
+    if (source === 'xpayz' && accountType === 'xpayz') {
+        table = 'xpayz_transactions';
+        idColumn = 'id';
+        ownershipColumn = 'subaccount_id';
+        ownershipValue = subaccountNumber;
+    } else if (source === 'trkbit' && accountType === 'cross') {
+        table = 'trkbit_transactions';
+        idColumn = 'uid';
+        ownershipColumn = 'tx_pix_key';
+        ownershipValue = chavePix;
+    } else {
+        return res.status(400).json({ message: 'Invalid source or mismatched account type.' });
+    }
+
+    try {
+        const query = `
+            UPDATE ${table} 
+            SET portal_notes = ? 
+            WHERE ${idColumn} = ? AND ${ownershipColumn} = ?
+        `;
+        const [result] = await pool.query(query, [finalNotes, transactionId, ownershipValue]);
+
+        if (result.affectedRows === 0) {
+            return res.status(404).json({ message: 'Transaction not found or permission denied.' });
+        }
+
+        res.json({ message: 'Note updated successfully.' });
+    } catch (error) {
+        console.error(`[PORTAL-NOTES-ERROR] Failed to update note for ${transactionId}:`, error);
+        res.status(500).json({ message: 'Failed to update note.' });
     }
 };
 
