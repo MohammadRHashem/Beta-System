@@ -264,6 +264,7 @@ export const exportTrkbit = async (params) => {
 };
 
 export const updatePortalTransactionConfirmation = (id, source, confirmed, passcode) => {
+    // The URL now uses the new `:transactionId` parameter name
     return portalApiClient.patch(`/transactions/${id}/confirm`, { source, confirmed, passcode });
 };
 

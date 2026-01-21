@@ -323,14 +323,15 @@ exports.exportTransactions = async (req, res) => {
 };
 
 exports.updateTransactionConfirmation = async (req, res) => {
-    // === START: DIAGNOSTIC LOGGING ===
+    // --- RESTORED DIAGNOSTIC LOGGING ---
     console.log(`\n--- [PORTAL CONTROLLER] updateTransactionConfirmation triggered ---`);
-    console.log('[PORTAL CONTROLLER] Request Params (URL):', JSON.stringify(req.params, null, 2));
-    console.log('[PORTAL CONTROLLER] Request Body (Payload):', JSON.stringify(req.body, null, 2));
-    console.log('[PORTAL CONTROLLER] Client Data (from JWT):', JSON.stringify(req.client, null, 2));
-    // === END: DIAGNOSTIC LOGGING ===
+    console.log('[PORTAL CONTROLLER] Request Params (URL):', req.params);
+    console.log('[PORTAL CONTROLLER] Request Body (Payload):', req.body);
+    console.log('[PORTAL CONTROLLER] Client Data (from JWT):', req.client);
+    // ------------------------------------
 
-    const { id: transactionId } = req.params;
+    // === THE FIX: Read from the new `transactionId` parameter ===
+    const { transactionId } = req.params;
     const { source, confirmed, passcode } = req.body;
     const { accountType, subaccountNumber, chavePix } = req.client;
 
@@ -359,11 +360,7 @@ exports.updateTransactionConfirmation = async (req, res) => {
         ownershipColumn = 'tx_pix_key';
         ownershipValue = chavePix;
     } else {
-        // === START: DIAGNOSTIC LOGGING ===
-        console.error(`[PORTAL CONTROLLER] LOGIC FAILED: Mismatch between source and accountType.`);
-        console.error(`> Received source: '${source}'`);
-        console.error(`> Client accountType from JWT: '${accountType}'`);
-        // === END: DIAGNOSTIC LOGGING ===
+        console.error(`[PORTAL CONTROLLER] LOGIC FAILED: Mismatch between source ('${source}') and accountType ('${accountType}').`);
         return res.status(400).json({ message: 'Invalid source or mismatched account type.' });
     }
 
@@ -375,17 +372,11 @@ exports.updateTransactionConfirmation = async (req, res) => {
         `;
         const params = [confirmed, transactionId, ownershipValue];
 
-        // === START: DIAGNOSTIC LOGGING ===
-        console.log('[PORTAL CONTROLLER] Executing SQL Query...');
-        console.log(`> Query: ${query.replace(/\s\s+/g, ' ')}`);
-        console.log(`> Params: [${params.join(', ')}]`);
-        // === END: DIAGNOSTIC LOGGING ===
-
+        console.log(`[PORTAL CONTROLLER] Executing SQL: ${query.replace(/\s\s+/g, ' ')} with params [${params.join(', ')}]`);
+        
         const [result] = await pool.query(query, params);
 
-        // === START: DIAGNOSTIC LOGGING ===
-        console.log('[PORTAL CONTROLLER] SQL Result:', JSON.stringify(result, null, 2));
-        // === END: DIAGNOSTIC LOGGING ===
+        console.log('[PORTAL CONTROLLER] SQL Result:', result);
 
         if (result.affectedRows === 0) {
             console.error('[PORTAL CONTROLLER] DB FAILED: Query executed but no rows were updated. Check ownership and ID.');
