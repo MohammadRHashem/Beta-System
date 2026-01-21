@@ -128,7 +128,6 @@ exports.getDashboardSummary = async (req, res) => {
 };
 
 exports.getTransactions = async (req, res) => {
-    // ... (code is modified below to include the new field)
     const { accountType, subaccountNumber, chavePix, username } = req.client;
     const { page = 1, limit = 50, search, date } = req.query;
 
@@ -137,7 +136,7 @@ exports.getTransactions = async (req, res) => {
         let transactions = [];
 
         if (accountType === 'cross') {
-            let query = `FROM trkbit_transactions tt WHERE tt.tx_pix_key = ?`; // Added alias
+            let query = `FROM trkbit_transactions tt WHERE tt.tx_pix_key = ?`;
             const params = [chavePix];
             if (search) {
                 query += ` AND (tt.tx_payer_name LIKE ? OR tt.amount LIKE ? OR tt.tx_id LIKE ?)`;
@@ -157,7 +156,8 @@ exports.getTransactions = async (req, res) => {
                         tt.tx_date as transaction_date, 
                         tt.amount, 
                         tt.tx_type as operation_direct,
-                        tt.is_portal_confirmed, -- <<< NEW FIELD ADDED
+                        tt.is_portal_confirmed,
+                        'trkbit' as source, -- <<< ADD THIS LINE
                         CASE
                             WHEN tt.tx_type = 'C' THEN tt.tx_payer_name
                             ELSE 'CROSS INTERMEDIAÇÃO LTDA' 
@@ -177,7 +177,8 @@ exports.getTransactions = async (req, res) => {
         else { 
             let query = `FROM xpayz_transactions xt `;
             let params = [];
-            let selectFields = `xt.id, xt.transaction_date, xt.sender_name, xt.counterparty_name, xt.amount, xt.operation_direct, xt.is_portal_confirmed `; // <<< NEW FIELD ADDED
+            // <<< ADD 'xpayz' as source TO THE SELECT FIELDS
+            let selectFields = `xt.id, xt.transaction_date, xt.sender_name, xt.counterparty_name, xt.amount, xt.operation_direct, xt.is_portal_confirmed, 'xpayz' as source `;
 
             if (username === PARTNER_USERNAME) {
                 query += `INNER JOIN bridge_transactions bt ON xt.id = bt.xpayz_transaction_id WHERE xt.subaccount_id = ?`;

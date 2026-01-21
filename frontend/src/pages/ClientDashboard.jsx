@@ -371,8 +371,8 @@ const ClientDashboard = () => {
 
         setUpdatingIds(prev => new Set(prev).add(tx.id));
         try {
-            const source = tx.uid ? 'trkbit' : 'xpayz'; // Differentiate source based on available ID
-            await updatePortalTransactionConfirmation(tx.id, source, true);
+            // THE FIX: Use the reliable `tx.source` provided by the backend
+            await updatePortalTransactionConfirmation(tx.id, tx.source, true);
             setTransactions(prev => prev.map(t => t.id === tx.id ? { ...t, is_portal_confirmed: 1 } : t));
         } catch (error) {
             alert('Failed to confirm transaction. Please try again.');
@@ -397,8 +397,8 @@ const ClientDashboard = () => {
         
         setUpdatingIds(prev => new Set(prev).add(transactionToUpdate.id));
         try {
-            const source = transactionToUpdate.uid ? 'trkbit' : 'xpayz';
-            await updatePortalTransactionConfirmation(transactionToUpdate.id, source, false, passcode);
+            // THE FIX: Use the reliable `transactionToUpdate.source`
+            await updatePortalTransactionConfirmation(transactionToUpdate.id, transactionToUpdate.source, false, passcode);
             
             setTransactions(prev => prev.map(t => t.id === transactionToUpdate.id ? { ...t, is_portal_confirmed: 0 } : t));
             setIsPasscodeModalOpen(false);
