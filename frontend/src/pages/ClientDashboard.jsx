@@ -3,7 +3,7 @@ import styled, { keyframes } from 'styled-components';
 import { motion } from 'framer-motion';
 import { getPortalTransactions, getPortalDashboardSummary, triggerPartnerConfirmation, updatePortalTransactionConfirmation } from '../services/api'; 
 import PasscodeModal from '../components/PasscodeModal'; // <<< IMPORT NEW COMPONENT
-import { FaSyncAlt, FaSearch, FaArrowUp, FaArrowDown, FaCheckCircle, FaTimesCircle, FaSpinner, FaPaperPlane, FaEdit, FaUndo } from 'react-icons/fa';
+import { FaSyncAlt, FaSearch, FaArrowUp, FaArrowDown, FaCheckCircle, FaSpinner, FaPaperPlane, FaEdit, FaUndo } from 'react-icons/fa';
 import Pagination from '../components/Pagination';
 import { usePortal } from '../context/PortalContext';
 import axios from 'axios';
@@ -611,6 +611,21 @@ const ClientDashboard = () => {
                             <TypeCell isCredit={isCredit}>{isCredit ? "IN" : "OUT"}</TypeCell>
                             <td>{isCredit ? (tx.sender_name || "Unknown") : (tx.counterparty_name || "Unknown")}</td>
                             <AmountCell isCredit={isCredit}>{formatCurrency(tx.amount)}</AmountCell>
+                            <td style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                                {isUpdatingConfirmation ? ( <LoadingSpinner /> ) : 
+                                isConfirmedByPortal ? (
+                                    <ConfirmationButton className="undo" onClick={() => handleInitiateUnconfirm(tx)} title="Un-confirm">
+                                        <FaUndo />
+                                    </ConfirmationButton>
+                                ) : (
+                                    <ConfirmationButton className="confirm" onClick={() => handleConfirm(tx)} title="Confirm Transaction">
+                                        <FaCheckCircle />
+                                    </ConfirmationButton>
+                                )}
+                                <StatusText confirmed={isConfirmedByPortal}>
+                                    {isConfirmedByPortal ? 'Confirmed' : 'Pending'}
+                                </StatusText>
+                            </td>
                             
                             {clientData.username === 'xplus' && (
                                 <td>
@@ -706,9 +721,9 @@ const ClientDashboard = () => {
                                 <div style={{ display: 'flex', alignItems: 'center' }}>
                                     {isUpdatingConfirmation ? <LoadingSpinner/> : 
                                     isConfirmedByPortal ? (
-                                        <ConfirmationButton className="undo" onClick={() => handleInitiateUnconfirm(tx)}><FaTimesCircle style={{color: '#DE350B'}}/></ConfirmationButton>
+                                        <ConfirmationButton className="undo" onClick={() => handleInitiateUnconfirm(tx)}><FaUndo/></ConfirmationButton>
                                     ) : (
-                                        <ConfirmationButton className="confirm" onClick={() => handleConfirm(tx)}><FaCheckCircle style={{color: '#00C49A'}}/></ConfirmationButton>
+                                        <ConfirmationButton className="confirm" onClick={() => handleConfirm(tx)}><FaCheckCircle/></ConfirmationButton>
                                     )}
                                     <StatusText confirmed={isConfirmedByPortal}>
                                         {isConfirmedByPortal ? 'Confirmed' : 'Pending'}
@@ -720,7 +735,7 @@ const ClientDashboard = () => {
                                 {isEditingNote ? (
                                     <NoteInput autoFocus value={noteInputText} onChange={(e) => setNoteInputText(e.target.value)} onBlur={() => handleNoteUpdate(tx)} onKeyDown={(e) => { if (e.key === 'Enter') handleNoteUpdate(tx); }} maxLength="25"/>
                                 ) : isUpdatingNote ? <LoadingSpinner/> : (
-                                    <NotesCell onClick={() => handleNoteClick(tx)}>
+                                    <NotesCell onClick={() => handleNoteClick(tx)} style={{ justifyContent: 'flex-end', flexGrow: 1 }}>
                                         {tx.portal_notes ? <span className="notes-text">{tx.portal_notes}</span> : <span className="placeholder">Add note...</span>}
                                         <FaEdit className="edit-icon"/>
                                     </NotesCell>
