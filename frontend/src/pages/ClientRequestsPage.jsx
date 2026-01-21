@@ -199,13 +199,11 @@ const ClientRequestsPage = () => {
     };
 
     const handleAmountUpdate = async (id) => {
-        // Find the current amount from the correct 'allRequests' state
         const currentAmount = allRequests.find(r => r.id === id)?.amount || '';
         const newAmount = prompt("Enter the amount for this request:", formatAmount(currentAmount));
 
         if (newAmount !== null && newAmount.trim() !== "" && !isNaN(newAmount.replace(/,/g, ''))) {
             try {
-                // Parse the potentially formatted number before sending to API
                 await updateClientRequestAmount(id, parseFloat(newAmount.replace(/,/g, '')));
             } catch (error) {
                 alert('Failed to update amount.');
@@ -216,7 +214,6 @@ const ClientRequestsPage = () => {
     };
 
     const handleContentUpdate = async (id) => {
-        // Find the current content from the correct 'allRequests' state
         const currentContent = allRequests.find(r => r.id === id)?.content || '';
         const newContent = prompt("Enter the new information:", currentContent);
 
