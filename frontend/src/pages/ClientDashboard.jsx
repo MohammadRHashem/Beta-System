@@ -549,6 +549,7 @@ const ClientDashboard = () => {
                   transactions.map((tx) => {
                     const isCredit = tx.operation_direct === "in" || tx.operation_direct === "C";
                     const isConfirmed = tx.bridge_status === 'paid' || tx.bridge_status === 'paid_manual';
+                    const isUpdating = updatingIds.has(tx.id);
                     return (
                         <motion.tr key={tx.id}>
                             <td>{formatDateTime(tx.transaction_date)}</td>
