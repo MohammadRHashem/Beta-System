@@ -537,7 +537,7 @@ const ClientDashboard = () => {
                     <th>Counterparty</th>
                     <th>Amount (BRL)</th>
                     {clientData.username === 'xplus' && <th>Partner Actions</th>}
-                    <th>Client Confirmation</th> {/* <<< NEW COLUMN HEADER */}
+                    <th>Confirmation</th> {/* <<< NEW COLUMN HEADER */}
                 </tr>
               </thead>
               <tbody>
