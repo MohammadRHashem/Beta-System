@@ -29,36 +29,42 @@ portalApiClient.interceptors.request.use(config => {
     if (token) {
         config.headers.Authorization = `Bearer ${token}`;
     }
-
-    // === START: DIAGNOSTIC LOGGING ===
+    // Your diagnostic logging from the previous step is still useful here
     console.log('[PORTAL API REQUEST]', {
         method: config.method.toUpperCase(),
         url: config.baseURL + config.url,
         data: config.data,
         params: config.params,
     });
-    // === END: DIAGNOSTIC LOGGING ===
-
     return config;
 }, error => Promise.reject(error));
 
 portalApiClient.interceptors.response.use(
     response => response,
     error => {
-        // === START: DIAGNOSTIC LOGGING ===
+        // Your diagnostic logging from the previous step is still useful here
         console.error('[PORTAL API ERROR]', {
             message: error.message,
             url: error.config.url,
             status: error.response?.status,
             responseData: error.response?.data,
         });
-        // === END: DIAGNOSTIC LOGGING ===
 
+        // === THIS IS THE CRITICAL LOGIC THAT WAS MISSING ===
+        // If the error is a 401, and we are not already on the login page
         if (error.response?.status === 401 && !window.location.pathname.includes('/portal/login')) {
+            // 1. Log the action for clarity during debugging
+            console.warn('[PORTAL API] Received 401 Unauthorized. Forcing logout and redirecting to login.');
+            
+            // 2. Clear the invalid session data
             localStorage.removeItem('portalAuthToken');
             localStorage.removeItem('portalClient');
+            
+            // 3. Redirect to the portal login page
             window.location.href = '/portal/login'; 
         }
+        // =======================================================
+        
         return Promise.reject(error);
     }
 );
