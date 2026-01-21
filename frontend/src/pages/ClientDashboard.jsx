@@ -549,6 +549,7 @@ const ClientDashboard = () => {
                   transactions.map((tx) => {
                     const isCredit = tx.operation_direct === "in" || tx.operation_direct === "C";
                     const isConfirmed = tx.bridge_status === 'paid' || tx.bridge_status === 'paid_manual';
+                    const isConfirmedByPortal = tx.is_portal_confirmed;
                     const isUpdating = updatingIds.has(tx.id);
                     return (
                         <motion.tr key={tx.id}>
