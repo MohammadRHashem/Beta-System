@@ -24,18 +24,36 @@ apiClient.interceptors.response.use(
     }
 );
 
-// --- THIS IS THE FIX: A COMPLETE INTERCEPTOR FOR THE CLIENT PORTAL ---
 portalApiClient.interceptors.request.use(config => {
     const token = localStorage.getItem('portalAuthToken');
     if (token) {
         config.headers.Authorization = `Bearer ${token}`;
     }
+
+    // === START: DIAGNOSTIC LOGGING ===
+    console.log('[PORTAL API REQUEST]', {
+        method: config.method.toUpperCase(),
+        url: config.baseURL + config.url,
+        data: config.data,
+        params: config.params,
+    });
+    // === END: DIAGNOSTIC LOGGING ===
+
     return config;
 }, error => Promise.reject(error));
 
 portalApiClient.interceptors.response.use(
     response => response,
     error => {
+        // === START: DIAGNOSTIC LOGGING ===
+        console.error('[PORTAL API ERROR]', {
+            message: error.message,
+            url: error.config.url,
+            status: error.response?.status,
+            responseData: error.response?.data,
+        });
+        // === END: DIAGNOSTIC LOGGING ===
+
         if (error.response?.status === 401 && !window.location.pathname.includes('/portal/login')) {
             localStorage.removeItem('portalAuthToken');
             localStorage.removeItem('portalClient');

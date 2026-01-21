@@ -3,6 +3,7 @@ require('dotenv').config();
 const PORTAL_JWT_SECRET = process.env.PORTAL_JWT_SECRET;
 
 module.exports = (req, res, next) => {
+    console.log(`\n--- [PORTAL MIDDLEWARE] Request received for: ${req.method} ${req.originalUrl} ---`);
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
         return res.status(401).json({ message: 'No token provided, authorization denied.' });
@@ -15,6 +16,9 @@ module.exports = (req, res, next) => {
     }
 
     try {
+        console.log('[PORTAL MIDDLEWARE] SUCCESS: Token decoded successfully.');
+        console.log('[PORTAL MIDDLEWARE] Decoded Payload:', JSON.stringify(decoded, null, 2));
+        
         const decoded = jwt.verify(token, PORTAL_JWT_SECRET);
         
         // --- AGGRESSIVE DEBUGGING ---

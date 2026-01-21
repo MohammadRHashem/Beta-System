@@ -367,6 +367,7 @@ const ClientDashboard = () => {
 
     const handleConfirm = async (tx) => {
         if (updatingIds.has(tx.id)) return;
+        console.log('[HANDLE CONFIRM] Transaction object:', JSON.stringify(tx, null, 2));
         if (!window.confirm('Are you sure you want to confirm this transaction?')) return;
 
         setUpdatingIds(prev => new Set(prev).add(tx.id));
