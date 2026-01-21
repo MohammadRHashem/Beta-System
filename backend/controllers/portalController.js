@@ -324,6 +324,7 @@ exports.exportTransactions = async (req, res) => {
 };
 
 exports.updateTransactionNotes = async (req, res) => {
+    // === THE FIX: Read transactionId from the request body, not params ===
     const { transactionId, source, notes } = req.body;
     const { accountType, subaccountNumber, chavePix } = req.client;
 

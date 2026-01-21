@@ -10,7 +10,7 @@ router.get("/transactions", portalController.getTransactions);
 router.get("/dashboard-summary", portalController.getDashboardSummary);
 router.get("/export-excel", portalController.exportTransactions);
 router.post("/transactions/confirm", portalController.updateTransactionConfirmation);
-router.patch("/transactions/notes", portalController.updateTransactionNotes);
+router.post("/transactions/notes", portalController.updateTransactionNotes);
 
 
 module.exports = router;

@@ -274,7 +274,8 @@ export const updatePortalTransactionConfirmation = (id, source, confirmed, passc
 };
 
 export const updatePortalTransactionNotes = (id, source, notes) => {
-    return portalApiClient.patch(`/transactions/notes`, {
+    // Use POST and send all data in the body
+    return portalApiClient.post(`/transactions/notes`, {
         transactionId: id,
         source,
         notes
