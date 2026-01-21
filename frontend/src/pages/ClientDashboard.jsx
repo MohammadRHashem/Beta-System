@@ -356,6 +356,8 @@ const ClientDashboard = () => {
     const [isPasscodeModalOpen, setIsPasscodeModalOpen] = useState(false);
     const [transactionToUpdate, setTransactionToUpdate] = useState(null);
     const [passcodeError, setPasscodeError] = useState('');
+     const [editingNoteId, setEditingNoteId] = useState(null);
+     const [noteInputText, setNoteInputText] = useState('');
 
     const handleManualConfirm = async (correlationId) => {
         if (!correlationId) {
