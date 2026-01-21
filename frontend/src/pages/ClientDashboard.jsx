@@ -602,6 +602,7 @@ const ClientDashboard = () => {
                     const isConfirmed = tx.bridge_status === 'paid' || tx.bridge_status === 'paid_manual';
                     const isConfirmedByPortal = tx.is_portal_confirmed;
                     const isUpdating = updatingIds.has(tx.id);
+                    const isUpdatingConfirmation = updatingIds.has(tx.id);
                     const isEditingNote = editingNoteId === tx.id;
                     const isUpdatingNote = updatingIds.has(`note-${tx.id}`);
                     return (
