@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import styled, { keyframes } from 'styled-components';
 import { motion } from 'framer-motion';
-import { getPortalTransactions, getPortalDashboardSummary, triggerPartnerConfirmation, updatePortalTransactionConfirmation } from '../services/api'; 
+import { getPortalTransactions, getPortalDashboardSummary, triggerPartnerConfirmation, updatePortalTransactionConfirmation, updatePortalTransactionNotes } from '../services/api'; 
 import PasscodeModal from '../components/PasscodeModal'; // <<< IMPORT NEW COMPONENT
 import { FaSyncAlt, FaSearch, FaArrowUp, FaArrowDown, FaCheckCircle, FaSpinner, FaPaperPlane, FaEdit, FaUndo } from 'react-icons/fa';
 import Pagination from '../components/Pagination';
@@ -87,7 +87,6 @@ const NoteInput = styled.input`
 const MobileSection = styled.div`
     margin-top: 1rem;
     padding-top: 1rem;
-    border-top: 1px solid ${({ theme }) => theme.border};
     display: flex;
     flex-direction: column;
     gap: 0.75rem;
@@ -626,6 +625,19 @@ const ClientDashboard = () => {
                                     {isConfirmedByPortal ? 'Confirmed' : 'Pending'}
                                 </StatusText>
                             </td>
+                            {/* === END OF CORRECTED DESKTOP CONFIRMATION CELL === */}
+
+                            {/* === START OF CORRECTED DESKTOP NOTES CELL === */}
+                            <td>
+                                {isEditingNote ? (
+                                    <NoteInput autoFocus value={noteInputText} onChange={(e) => setNoteInputText(e.target.value)} onBlur={() => handleNoteUpdate(tx)} onKeyDown={(e) => { if (e.key === 'Enter') handleNoteUpdate(tx); }} maxLength="25" />
+                                ) : isUpdatingNote ? <LoadingSpinner/> : (
+                                    <NotesCell onClick={() => handleNoteClick(tx)}>
+                                        {tx.portal_notes ? ( <span className="notes-text">{tx.portal_notes}</span> ) : ( <span className="placeholder">Add note...</span> )}
+                                        <FaEdit className="edit-icon" />
+                                    </NotesCell>
+                                )}
+                            </td>
                             
                             {clientData.username === 'xplus' && (
                                 <td>
@@ -718,7 +730,7 @@ const ClientDashboard = () => {
                         <MobileSection>
                             <MobileRow>
                                 <span className='label'>Confirmation</span>
-                                <div style={{ display: 'flex', alignItems: 'center' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
                                     {isUpdatingConfirmation ? <LoadingSpinner/> : 
                                     isConfirmedByPortal ? (
                                         <ConfirmationButton className="undo" onClick={() => handleInitiateUnconfirm(tx)}><FaUndo/></ConfirmationButton>

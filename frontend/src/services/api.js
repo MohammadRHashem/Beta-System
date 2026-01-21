@@ -274,11 +274,11 @@ export const updatePortalTransactionConfirmation = (id, source, confirmed, passc
 };
 
 export const updatePortalTransactionNotes = (id, source, notes) => {
-    // Use POST and send all data in the body
+    // === THE FIX: Send the data with the key `op_comment` instead of `notes` ===
     return portalApiClient.post(`/transactions/notes`, {
         transactionId: id,
         source,
-        notes
+        op_comment: notes // Renamed field
     });
 };
 

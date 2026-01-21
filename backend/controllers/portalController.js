@@ -325,7 +325,7 @@ exports.exportTransactions = async (req, res) => {
 
 exports.updateTransactionNotes = async (req, res) => {
     // === THE FIX: Read transactionId from the request body, not params ===
-    const { transactionId, source, notes } = req.body;
+    const { transactionId, source, op_comment } = req.body;
     const { accountType, subaccountNumber, chavePix } = req.client;
 
     if (!transactionId || !source) {
@@ -333,7 +333,7 @@ exports.updateTransactionNotes = async (req, res) => {
     }
 
     // Sanitize and truncate notes
-    const finalNotes = (notes || '').trim().slice(0, 30);
+    const finalNotes = (op_comment || '').trim().slice(0, 30);
 
     let table, idColumn, ownershipColumn, ownershipValue;
 
