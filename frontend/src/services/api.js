@@ -239,6 +239,10 @@ export const exportTrkbit = async (params) => {
     triggerBrowserDownload(blob, 'trkbit_export.xlsx');
 };
 
+export const updatePortalTransactionConfirmation = (id, source, confirmed, passcode) => {
+    return portalApiClient.patch(`/transactions/${id}/confirm`, { source, confirmed, passcode });
+};
+
 export const triggerPartnerConfirmation = (correlation_id) => portalApiClient.post('/bridge/confirm-payment', { correlation_id });
 
 

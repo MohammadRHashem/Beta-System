@@ -1,5 +1,3 @@
-// backend/controllers/portalController.js
-
 const pool = require('../config/db');
 const bcrypt = require('bcryptjs');
 const ExcelJS = require('exceljs');
@@ -9,7 +7,12 @@ require('dotenv').config();
 const axios = require('axios');
 
 const PORTAL_JWT_SECRET = process.env.PORTAL_JWT_SECRET;
+const PORTAL_UNCONFIRM_PASSCODE = process.env.PORTAL_UNCONFIRM_PASSCODE || '1234';
 const PARTNER_USERNAME = 'xplus'; // Define the partner username as a constant
+
+if (PORTAL_UNCONFIRM_PASSCODE === '1234') {
+    console.warn('\x1b[33m%s\x1b[0m', '[SECURITY-WARN] Using default portal un-confirmation passcode. Please set PORTAL_UNCONFIRM_PASSCODE in your .env file.');
+}
 
 // Client Login Endpoint
 exports.login = async (req, res) => {
@@ -125,6 +128,7 @@ exports.getDashboardSummary = async (req, res) => {
 };
 
 exports.getTransactions = async (req, res) => {
+    // ... (code is modified below to include the new field)
     const { accountType, subaccountNumber, chavePix, username } = req.client;
     const { page = 1, limit = 50, search, date } = req.query;
 
@@ -133,38 +137,37 @@ exports.getTransactions = async (req, res) => {
         let transactions = [];
 
         if (accountType === 'cross') {
-            let query = `FROM trkbit_transactions WHERE tx_pix_key = ?`;
+            let query = `FROM trkbit_transactions tt WHERE tt.tx_pix_key = ?`; // Added alias
             const params = [chavePix];
             if (search) {
-                query += ` AND (tx_payer_name LIKE ? OR amount LIKE ? OR tx_id LIKE ?)`;
+                query += ` AND (tt.tx_payer_name LIKE ? OR tt.amount LIKE ? OR tt.tx_id LIKE ?)`;
                 const searchTerm = `%${search}%`;
                 params.push(searchTerm, searchTerm, searchTerm);
             }
-            if (date) { query += ' AND DATE(tx_date) = ?'; params.push(date); }
+            if (date) { query += ' AND DATE(tt.tx_date) = ?'; params.push(date); }
             
             const countQuery = `SELECT count(*) as total ${query}`;
             const [[{ total: queryTotal }]] = await pool.query(countQuery, params);
             total = queryTotal;
 
             if (total > 0) {
-                // === THE DEFINITIVE FIX FOR CROSS ACCOUNTS ===
-                // This query now correctly uses JSON_EXTRACT to get the payee name from the raw_data column.
                 const dataQuery = `
                     SELECT 
-                        uid as id, 
-                        tx_date as transaction_date, 
-                        amount, 
-                        tx_type as operation_direct,
+                        tt.uid as id, 
+                        tt.tx_date as transaction_date, 
+                        tt.amount, 
+                        tt.tx_type as operation_direct,
+                        tt.is_portal_confirmed, -- <<< NEW FIELD ADDED
                         CASE
-                            WHEN tx_type = 'C' THEN tx_payer_name
+                            WHEN tt.tx_type = 'C' THEN tt.tx_payer_name
                             ELSE 'CROSS INTERMEDIAÇÃO LTDA' 
                         END AS sender_name,
                         CASE
-                            WHEN tx_type = 'D' THEN JSON_UNQUOTE(JSON_EXTRACT(raw_data, '$.tx_payee_name'))
+                            WHEN tt.tx_type = 'D' THEN JSON_UNQUOTE(JSON_EXTRACT(tt.raw_data, '$.tx_payee_name'))
                             ELSE 'CROSS INTERMEDIAÇÃO LTDA'
                         END AS counterparty_name
                     ${query} 
-                    ORDER BY tx_date DESC 
+                    ORDER BY tt.tx_date DESC 
                     LIMIT ? OFFSET ?
                 `;
                 const finalParams = [...params, parseInt(limit), (page - 1) * limit];
@@ -174,21 +177,18 @@ exports.getTransactions = async (req, res) => {
         else { 
             let query = `FROM xpayz_transactions xt `;
             let params = [];
-            let selectFields = `xt.id, xt.transaction_date, xt.sender_name, xt.counterparty_name, xt.amount, xt.operation_direct `;
+            let selectFields = `xt.id, xt.transaction_date, xt.sender_name, xt.counterparty_name, xt.amount, xt.operation_direct, xt.is_portal_confirmed `; // <<< NEW FIELD ADDED
 
-            // --- Sub-Case 2a: Partner Account (xplus) ---
             if (username === PARTNER_USERNAME) {
                 query += `INNER JOIN bridge_transactions bt ON xt.id = bt.xpayz_transaction_id WHERE xt.subaccount_id = ?`;
                 params.push(subaccountNumber);
                 selectFields += `, bt.correlation_id, bt.status as bridge_status`;
             } 
-            // --- Sub-Case 2b: Regular XPayz Account ---
             else {
                 query += `WHERE xt.subaccount_id = ?`;
                 params.push(subaccountNumber);
             }
 
-            // Apply common filters
             if (search) {
                 query += ` AND (xt.sender_name LIKE ? OR xt.amount LIKE ?)`;
                 const searchTerm = `%${search}%`;
@@ -318,6 +318,57 @@ exports.exportTransactions = async (req, res) => {
     } catch (error) {
         console.error(`[PORTAL-EXPORT-ERROR] Failed to export for ${username}:`, error);
         res.status(500).json({ message: 'Failed to export transactions.' });
+    }
+};
+
+exports.updateTransactionConfirmation = async (req, res) => {
+    const { id: transactionId } = req.params;
+    const { source, confirmed, passcode } = req.body;
+    const { accountType, subaccountNumber, chavePix } = req.client;
+
+    if (!source || typeof confirmed !== 'boolean') {
+        return res.status(400).json({ message: 'Source and confirmation status are required.' });
+    }
+    
+    // Security check for un-confirming
+    if (confirmed === false) {
+        if (passcode !== PORTAL_UNCONFIRM_PASSCODE) {
+            return res.status(403).json({ message: 'Invalid passcode.' });
+        }
+    }
+
+    let table, idColumn, ownershipColumn, ownershipValue;
+
+    if (source === 'xpayz' && accountType === 'xpayz') {
+        table = 'xpayz_transactions';
+        idColumn = 'id';
+        ownershipColumn = 'subaccount_id';
+        ownershipValue = subaccountNumber;
+    } else if (source === 'trkbit' && accountType === 'cross') {
+        table = 'trkbit_transactions';
+        idColumn = 'uid'; // Trkbit uses 'uid' as the unique identifier
+        ownershipColumn = 'tx_pix_key';
+        ownershipValue = chavePix;
+    } else {
+        return res.status(400).json({ message: 'Invalid source or mismatched account type.' });
+    }
+
+    try {
+        const query = `
+            UPDATE ${table} 
+            SET is_portal_confirmed = ? 
+            WHERE ${idColumn} = ? AND ${ownershipColumn} = ?
+        `;
+        const [result] = await pool.query(query, [confirmed, transactionId, ownershipValue]);
+
+        if (result.affectedRows === 0) {
+            return res.status(404).json({ message: 'Transaction not found or you do not have permission to modify it.' });
+        }
+
+        res.json({ message: `Transaction successfully ${confirmed ? 'confirmed' : 'unconfirmed'}.` });
+    } catch (error) {
+        console.error(`[PORTAL-CONFIRM-ERROR] Failed to update transaction ${transactionId}:`, error);
+        res.status(500).json({ message: 'Failed to update transaction status.' });
     }
 };
 

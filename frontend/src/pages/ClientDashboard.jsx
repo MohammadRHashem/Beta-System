@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import styled, { keyframes } from 'styled-components';
 import { motion } from 'framer-motion';
 import { getPortalTransactions, getPortalDashboardSummary, triggerPartnerConfirmation } from '../services/api'; 
+import PasscodeModal from '../components/PasscodeModal'; // <<< IMPORT NEW COMPONENT
 import { FaSyncAlt, FaSearch, FaArrowUp, FaArrowDown, FaCheckCircle, FaPaperPlane } from 'react-icons/fa';
 import Pagination from '../components/Pagination';
 import { usePortal } from '../context/PortalContext';
@@ -17,6 +18,48 @@ const useDebounce = (value, delay) => {
     }, [value, delay]);
     return debouncedValue;
 };
+
+const spin = keyframes`
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+`;
+
+const ConfirmationButton = styled.button`
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    font-size: 1.4rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.5rem;
+    border-radius: 50%;
+    transition: background-color 0.2s;
+
+    &:disabled {
+        cursor: not-allowed;
+        opacity: 0.5;
+    }
+
+    &.confirm {
+        color: ${({ theme }) => theme.lightText};
+        &:hover:not(:disabled) {
+            background-color: #e6fff9;
+            color: ${({ theme }) => theme.success};
+        }
+    }
+    &.undo {
+        color: ${({ theme }) => theme.lightText};
+        &:hover:not(:disabled) {
+            background-color: #ffebe6;
+            color: ${({ theme }) => theme.error};
+        }
+    }
+`;
+
+const LoadingSpinner = styled(FaSpinner)`
+    animation: ${spin} 1s linear infinite;
+`;
 
 const PageContainer = styled(motion.div)``;
 const ControlsContainer = styled.div`
@@ -263,6 +306,11 @@ const ClientDashboard = () => {
     const debouncedSearch = useDebounce(filters.search, 500);
     const clientData = JSON.parse(localStorage.getItem('portalClient')) || {};
 
+    const [updatingIds, setUpdatingIds] = useState(new Set());
+    const [isPasscodeModalOpen, setIsPasscodeModalOpen] = useState(false);
+    const [transactionToUpdate, setTransactionToUpdate] = useState(null);
+    const [passcodeError, setPasscodeError] = useState('');
+
     const handleManualConfirm = async (correlationId) => {
         if (!correlationId) {
             alert('Error: This transaction is not linked to a partner order.');
@@ -314,6 +362,64 @@ const ClientDashboard = () => {
             setLoadingTable(false);
         }
     }, [pagination.page, pagination.limit, filters.date, debouncedSearch]);
+
+
+
+    const handleConfirm = async (tx) => {
+        if (updatingIds.has(tx.id)) return;
+        if (!window.confirm('Are you sure you want to confirm this transaction?')) return;
+
+        setUpdatingIds(prev => new Set(prev).add(tx.id));
+        try {
+            const source = tx.uid ? 'trkbit' : 'xpayz'; // Differentiate source based on available ID
+            await updatePortalTransactionConfirmation(tx.id, source, true);
+            setTransactions(prev => prev.map(t => t.id === tx.id ? { ...t, is_portal_confirmed: 1 } : t));
+        } catch (error) {
+            alert('Failed to confirm transaction. Please try again.');
+        } finally {
+            setUpdatingIds(prev => {
+                const newSet = new Set(prev);
+                newSet.delete(tx.id);
+                return newSet;
+            });
+        }
+    };
+
+    const handleInitiateUnconfirm = (tx) => {
+        if (updatingIds.has(tx.id)) return;
+        setTransactionToUpdate(tx);
+        setPasscodeError('');
+        setIsPasscodeModalOpen(true);
+    };
+
+    const handlePasscodeSubmit = async (passcode) => {
+        if (!transactionToUpdate) return;
+        
+        setUpdatingIds(prev => new Set(prev).add(transactionToUpdate.id));
+        try {
+            const source = transactionToUpdate.uid ? 'trkbit' : 'xpayz';
+            await updatePortalTransactionConfirmation(transactionToUpdate.id, source, false, passcode);
+            
+            setTransactions(prev => prev.map(t => t.id === transactionToUpdate.id ? { ...t, is_portal_confirmed: 0 } : t));
+            setIsPasscodeModalOpen(false);
+            setTransactionToUpdate(null);
+        } catch (error) {
+            if (error.response?.status === 403) {
+                setPasscodeError('Incorrect PIN');
+            } else {
+                alert('Failed to undo confirmation. Please try again.');
+                setIsPasscodeModalOpen(false);
+            }
+        } finally {
+            setUpdatingIds(prev => {
+                const newSet = new Set(prev);
+                newSet.delete(transactionToUpdate.id);
+                return newSet;
+            });
+        }
+    };
+
+
 
     const fetchSummaryData = useCallback(async () => {
         setLoadingSummary(true);
@@ -426,11 +532,12 @@ const ClientDashboard = () => {
             <Table>
               <thead>
                 <tr>
-                  <th>Date</th>
-                  <th>Type</th>
-                  <th>Counterparty</th>
-                  <th>Amount (BRL)</th>
-                  {clientData.username === 'xplus' && <th>Partner Actions</th>}
+                    <th>Date</th>
+                    <th>Type</th>
+                    <th>Counterparty</th>
+                    <th>Amount (BRL)</th>
+                    {clientData.username === 'xplus' && <th>Partner Actions</th>}
+                    <th>Client Confirmation</th> {/* <<< NEW COLUMN HEADER */}
                 </tr>
               </thead>
               <tbody>
@@ -464,6 +571,27 @@ const ClientDashboard = () => {
                                     )}
                                 </td>
                             )}
+                            <td style={{ textAlign: 'center' }}>
+                              {isUpdating ? (
+                                  <LoadingSpinner />
+                              ) : isConfirmedByPortal ? (
+                                  <ConfirmationButton
+                                      className="undo"
+                                      onClick={() => handleInitiateUnconfirm(tx)}
+                                      title="Undo Confirmation"
+                                  >
+                                      <FaUndo />
+                                  </ConfirmationButton>
+                              ) : (
+                                  <ConfirmationButton
+                                      className="confirm"
+                                      onClick={() => handleConfirm(tx)}
+                                      title="Confirm Transaction"
+                                  >
+                                      <FaCheckCircle />
+                                  </ConfirmationButton>
+                              )}
+                          </td>
                         </motion.tr>
                     );
                   })
@@ -511,6 +639,13 @@ const ClientDashboard = () => {
           </MobileListContainer>
           <Pagination pagination={pagination} setPagination={setPagination} />
         </Card>
+        <PasscodeModal 
+            isOpen={isPasscodeModalOpen}
+            onClose={() => setIsPasscodeModalOpen(false)}
+            onSubmit={handlePasscodeSubmit}
+            error={passcodeError}
+            clearError={() => setPasscodeError('')}
+        />
       </PageContainer>
     );
 };
