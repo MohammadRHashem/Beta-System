@@ -606,11 +606,11 @@ const ClientDashboard = () => {
                     const isEditingNote = editingNoteId === tx.id;
                     const isUpdatingNote = updatingIds.has(`note-${tx.id}`);
                     return (
-                        <motion.tr key={tx.id}>
+                        <tr key={tx.id}>
                             <td>{formatDateTime(tx.transaction_date)}</td>
-                            <TypeCell isCredit={isCredit}>{isCredit ? "IN" : "OUT"}</TypeCell>
+                            <td><TypeCell isCredit={isCredit}>{isCredit ? "IN" : "OUT"}</TypeCell></td>
                             <td>{isCredit ? (tx.sender_name || "Unknown") : (tx.counterparty_name || "Unknown")}</td>
-                            <AmountCell isCredit={isCredit}>{formatCurrency(tx.amount)}</AmountCell>
+                            <td><AmountCell isCredit={isCredit}>{formatCurrency(tx.amount)}</AmountCell></td>
                             <td style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
                                 {isUpdatingConfirmation ? ( <LoadingSpinner /> ) : 
                                 isConfirmedByPortal ? (
@@ -626,9 +626,6 @@ const ClientDashboard = () => {
                                     {isConfirmedByPortal ? 'Confirmed' : 'Pending'}
                                 </StatusText>
                             </td>
-                            {/* === END OF CORRECTED DESKTOP CONFIRMATION CELL === */}
-
-                            {/* === START OF CORRECTED DESKTOP NOTES CELL === */}
                             <td>
                                 {isEditingNote ? (
                                     <NoteInput autoFocus value={noteInputText} onChange={(e) => setNoteInputText(e.target.value)} onBlur={() => handleNoteUpdate(tx)} onKeyDown={(e) => { if (e.key === 'Enter') handleNoteUpdate(tx); }} maxLength="25" />
@@ -639,65 +636,7 @@ const ClientDashboard = () => {
                                     </NotesCell>
                                 )}
                             </td>
-                            
-                            {clientData.username === 'xplus' && (
-                                <td>
-                                    {isCredit && tx.correlation_id && (
-                                        isConfirmed ? (
-                                            <span style={{ color: '#10b981', display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: '600' }}>
-                                                <FaCheckCircle /> Confirmed
-                                            </span>
-                                        ) : (
-                                            <ActionButton onClick={() => handleManualConfirm(tx.correlation_id)}>
-                                                <FaPaperPlane /> Confirm
-                                            </ActionButton>
-                                        )
-                                    )}
-                                </td>
-                            )}
-                            <td style={{ textAlign: 'center' }}>
-                              {isUpdating ? (
-                                  <LoadingSpinner />
-                              ) : isConfirmedByPortal ? (
-                                  <ConfirmationButton
-                                      className="undo"
-                                      onClick={() => handleInitiateUnconfirm(tx)}
-                                      title="Undo Confirmation"
-                                  >
-                                      <FaUndo />
-                                  </ConfirmationButton>
-                              ) : (
-                                  <ConfirmationButton
-                                      className="confirm"
-                                      onClick={() => handleConfirm(tx)}
-                                      title="Confirm Transaction"
-                                  >
-                                      <FaCheckCircle />
-                                  </ConfirmationButton>
-                              )}
-                          </td>
-                          <td>
-                                {isEditingNote ? (
-                                    <NoteInput
-                                        autoFocus
-                                        value={noteInputText}
-                                        onChange={(e) => setNoteInputText(e.target.value)}
-                                        onBlur={() => handleNoteUpdate(tx)}
-                                        onKeyDown={(e) => { if (e.key === 'Enter') handleNoteUpdate(tx); }}
-                                        maxLength="25"
-                                    />
-                                ) : isUpdatingNote ? <LoadingSpinner/> : (
-                                    <NotesCell onClick={() => handleNoteClick(tx)}>
-                                        {tx.portal_notes ? (
-                                            <span className="notes-text">{tx.portal_notes}</span>
-                                        ) : (
-                                            <span className="placeholder">Add note...</span>
-                                        )}
-                                        <FaEdit className="edit-icon" />
-                                    </NotesCell>
-                                )}
-                            </td>
-                        </motion.tr>
+                        </tr>
                     );
                   })
                 )}
