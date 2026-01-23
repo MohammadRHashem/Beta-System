@@ -32,7 +32,7 @@ exports.login = async (req, res) => {
         return res.status(400).json({ message: 'Username and password are required.' });
     }
     try {
-        const [users] = await pool.query('SELECT * FROM users WHERE username = ?', [username]);
+        const [users] = await pool.query('SELECT * FROM old_users_backup WHERE username = ?', [username]);
         const user = users[0];
 
         if (!user || !(await bcrypt.compare(password, user.password_hash))) {
