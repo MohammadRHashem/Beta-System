@@ -3,7 +3,7 @@ import styled, { keyframes } from 'styled-components';
 import { motion } from 'framer-motion';
 import { getPortalTransactions, getPortalDashboardSummary, triggerPartnerConfirmation, updatePortalTransactionConfirmation, updatePortalTransactionNotes } from '../services/api'; 
 import PasscodeModal from '../components/PasscodeModal'; // <<< IMPORT NEW COMPONENT
-import { FaSyncAlt, FaSearch, FaArrowUp, FaArrowDown, FaCheckCircle, FaSpinner, FaPaperPlane, FaEdit, FaUndo } from 'react-icons/fa';
+import { FaSyncAlt, FaSearch, FaArrowUp, FaArrowDown, FaHourglassHalf, FaSpinner, FaPaperPlane, FaEdit, FaCheckDouble } from 'react-icons/fa';
 import Pagination from '../components/Pagination';
 import { usePortal } from '../context/PortalContext';
 import axios from 'axios';
@@ -26,7 +26,7 @@ const ConfirmationButton = styled.button`
     background: transparent;
     border: none;
     cursor: pointer;
-    font-size: 1.6rem; /* Bigger icon */
+    font-size: 1.8rem; /* Slightly bigger icon */
     display: flex;
     align-items: center;
     justify-content: center;
@@ -36,20 +36,29 @@ const ConfirmationButton = styled.button`
 
     &:disabled { cursor: not-allowed; opacity: 0.5; }
 
-    &.confirm {
+    /* Style for the "Pending" state (hourglass) */
+    &.pending {
         color: ${({ theme }) => theme.lightText};
-        &:hover:not(:disabled) { background-color: #e6fff9; color: #00C49A; }
+        &:hover:not(:disabled) { 
+            background-color: #e3f2fd; /* Light blue hover */
+            color: #0d47a1; 
+        }
     }
-    &.undo {
-        color: ${({ theme }) => theme.lightText};
-        &:hover:not(:disabled) { background-color: #ffebe6; color: #DE350B; }
+
+    /* Style for the "Confirmed" state (double check) */
+    &.confirmed {
+        color: ${({ theme }) => theme.success}; /* Green icon */
+        &:hover:not(:disabled) { 
+            background-color: #e6fff9; /* Light green hover */
+        }
     }
 `;
 
 const StatusText = styled.span`
     font-weight: 600;
-    font-size: 0.9rem;
-    margin-left: 0.5rem;
+    font-size: 1rem; /* Slightly bigger text */
+    width: 90px; /* Allocate space to prevent layout shifts */
+    text-align: left;
     color: ${({ confirmed, theme }) => confirmed ? theme.success : theme.lightText};
 `;
 
@@ -614,12 +623,12 @@ const ClientDashboard = () => {
                             <td style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
                                 {isUpdatingConfirmation ? ( <LoadingSpinner /> ) : 
                                 isConfirmedByPortal ? (
-                                    <ConfirmationButton className="undo" onClick={() => handleInitiateUnconfirm(tx)} title="Un-confirm">
-                                        <FaUndo />
+                                    <ConfirmationButton className="confirmed" onClick={() => handleInitiateUnconfirm(tx)} title="Un-confirm">
+                                        <FaCheckDouble />
                                     </ConfirmationButton>
                                 ) : (
-                                    <ConfirmationButton className="confirm" onClick={() => handleConfirm(tx)} title="Confirm Transaction">
-                                        <FaCheckCircle />
+                                    <ConfirmationButton className="pending" onClick={() => handleConfirm(tx)} title="Confirm Transaction">
+                                        <FaHourglassHalf />
                                     </ConfirmationButton>
                                 )}
                                 <StatusText confirmed={isConfirmedByPortal}>
@@ -673,9 +682,13 @@ const ClientDashboard = () => {
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
                                     {isUpdatingConfirmation ? <LoadingSpinner/> : 
                                     isConfirmedByPortal ? (
-                                        <ConfirmationButton className="undo" onClick={() => handleInitiateUnconfirm(tx)}><FaUndo/></ConfirmationButton>
+                                        <ConfirmationButton className="confirmed" onClick={() => handleInitiateUnconfirm(tx)}>
+                                            <FaCheckDouble/>
+                                        </ConfirmationButton>
                                     ) : (
-                                        <ConfirmationButton className="confirm" onClick={() => handleConfirm(tx)}><FaCheckCircle/></ConfirmationButton>
+                                        <ConfirmationButton className="pending" onClick={() => handleConfirm(tx)}>
+                                            <FaHourglassHalf/>
+                                        </ConfirmationButton>
                                     )}
                                     <StatusText confirmed={isConfirmedByPortal}>
                                         {isConfirmedByPortal ? 'Confirmed' : 'Pending'}
@@ -699,7 +712,7 @@ const ClientDashboard = () => {
                             <div style={{ marginTop: '0.75rem', paddingTop: '0.75rem', borderTop: '1px solid #eee' }}>
                                 {isConfirmed ? (
                                     <span style={{ color: '#10b981', display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: '600', fontSize: '0.9rem' }}>
-                                        <FaCheckCircle /> Partner Confirmed
+                                        <FaHourglassHalf /> Partner Confirmed
                                     </span>
                                 ) : (
                                     <ActionButton onClick={() => handleManualConfirm(tx.correlation_id)}>
