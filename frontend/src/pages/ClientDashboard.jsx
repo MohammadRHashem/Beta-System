@@ -329,8 +329,8 @@ const MobileCardHeader = styled.div`
   font-size: 1.2rem;
   font-weight: 700;
   font-family: "Courier New", Courier, monospace;
-  /* The color is now determined by the icon's color */
-  color: ${({ theme }) => theme.text}; 
+  /* RESTORED: The color is now determined by the isCredit prop */
+  color: ${({ isCredit, theme }) => (isCredit ? theme.success : theme.error)};
 `;
 const ArrowIcon = styled.span`
     display: flex;
@@ -676,7 +676,7 @@ const ClientDashboard = () => {
                 return (
                     <MobileCard key={tx.id} isCredit={isCredit} variants={itemVariants}>
                         <MobileCardHeader isCredit={isCredit}>
-                            <span>{isCredit ? "+" : "-"} {formatCurrency(tx.amount)}</span>
+                            <span>{isCredit ? '+' : '-'} {formatCurrency(tx.amount)}</span>
                             <ArrowIcon isCredit={isCredit}>
                                 {isCredit ? <FaArrowDown /> : <FaArrowUp />}
                             </ArrowIcon>
