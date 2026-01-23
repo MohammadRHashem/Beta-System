@@ -329,7 +329,15 @@ const MobileCardHeader = styled.div`
   font-size: 1.2rem;
   font-weight: 700;
   font-family: "Courier New", Courier, monospace;
-  color: ${({ isCredit, theme }) => (isCredit ? theme.success : theme.error)};
+  /* The color is now determined by the icon's color */
+  color: ${({ theme }) => theme.text}; 
+`;
+const ArrowIcon = styled.span`
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 1.1rem; /* Adjust size if needed */
+    color: ${({ isCredit, theme }) => (isCredit ? theme.success : theme.error)};
 `;
 const MobileCardBody = styled.div`
   font-size: 0.9rem;
@@ -669,7 +677,9 @@ const ClientDashboard = () => {
                     <MobileCard key={tx.id} isCredit={isCredit} variants={itemVariants}>
                         <MobileCardHeader isCredit={isCredit}>
                             <span>{isCredit ? "+" : "-"} {formatCurrency(tx.amount)}</span>
-                            <span>{isCredit ? <FaArrowUp /> : <FaArrowDown />}</span>
+                            <ArrowIcon isCredit={isCredit}>
+                                {isCredit ? <FaArrowDown /> : <FaArrowUp />}
+                            </ArrowIcon>
                         </MobileCardHeader>
                         <MobileCardBody>
                             <p><strong>{isCredit ? (tx.sender_name || "Unknown") : (tx.counterparty_name || "Unknown Receiver")}</strong></p>
