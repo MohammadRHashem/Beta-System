@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import styled, { css } from 'styled-components';
-import { viewInvoiceMedia, deleteInvoice } from '../services/api';
+import { viewInvoiceMedia } from '../services/api'; // Removed deleteInvoice, as it's handled by the parent
 import { FaEdit, FaTrashAlt, FaEye, FaLink, FaUnlink } from 'react-icons/fa';
 import { formatInTimeZone } from 'date-fns-tz';
 import Pagination from './Pagination';
@@ -92,7 +92,7 @@ const Td = styled.td`
     }
 `;
 
-const InvoiceTable = ({ invoices, loading, onEdit, onLink, pagination, setPagination }) => {
+const InvoiceTable = ({ invoices, loading, onEdit, onLink, onDelete, pagination, setPagination, hasPermission }) => {
 
     // This logic correctly creates a map of transaction IDs to their counts.
     const duplicateCounts = useMemo(() => {
@@ -150,6 +150,7 @@ const InvoiceTable = ({ invoices, loading, onEdit, onLink, pagination, setPagina
                     </Thead>
                     <tbody>
                         {invoices.map((inv) => {
+                            // ... (isDuplicate and needsReview logic is unchanged) ...
                             let isDuplicate = false;
                             if (inv.transaction_id && !inv.is_manual) {
                                 const compositeKey = `${inv.transaction_id}|${inv.amount}|${inv.sender_name}`;
@@ -157,7 +158,6 @@ const InvoiceTable = ({ invoices, loading, onEdit, onLink, pagination, setPagina
                                     isDuplicate = true;
                                 }
                             }
-
                             const needsReview = !inv.is_manual && (!inv.sender_name || !inv.recipient_name || !inv.amount || inv.amount === '0.00');
 
                             return (
@@ -175,7 +175,8 @@ const InvoiceTable = ({ invoices, loading, onEdit, onLink, pagination, setPagina
                                                 title={`Linked to: ${inv.linked_transaction_source} - ${inv.linked_transaction_id}`} 
                                             />
                                         ) : (
-                                            !inv.is_deleted && inv.message_id && (
+                                            // 2. WRAP THE LINK ICON IN A PERMISSION CHECK
+                                            hasPermission('invoice:link') && !inv.is_deleted && inv.message_id && (
                                                 <FaUnlink 
                                                     style={{ cursor: 'pointer', color: '#6B7C93', fontSize: '1.1rem' }} 
                                                     title="Link to a bank transaction"
@@ -185,9 +186,10 @@ const InvoiceTable = ({ invoices, loading, onEdit, onLink, pagination, setPagina
                                         )}
                                     </Td>
                                     <Td className="actions">
-                                        {inv.media_path && <FaEye onClick={() => handleViewMedia(inv.id)} />}
-                                        <FaEdit onClick={() => onEdit(inv)} />
-                                        <FaTrashAlt onClick={() => handleDelete(inv.id)} />
+                                        {inv.media_path && <FaEye onClick={() => handleViewMedia(inv.id)} title="View Media"/>}
+                                        {/* 3. WRAP EDIT AND DELETE ICONS IN PERMISSION CHECKS */}
+                                        {hasPermission('invoice:edit') && <FaEdit onClick={() => onEdit(inv)} title="Edit"/>}
+                                        {hasPermission('invoice:delete') && <FaTrashAlt onClick={() => onDelete(inv.id)} title="Delete"/>}
                                     </Td>
                                 </Tr>
                             );

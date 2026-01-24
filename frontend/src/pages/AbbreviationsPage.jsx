@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import styled from 'styled-components';
 import api from '../services/api';
 import Modal from '../components/Modal';
+import { usePermissions } from '../context/PermissionContext'; // 1. IMPORT PERMISSIONS HOOK
 import { FaEdit, FaTrash } from 'react-icons/fa';
 
 const PageContainer = styled.div`
@@ -52,6 +53,10 @@ const Button = styled.button`
     border-radius: 4px;
     cursor: pointer;
     font-weight: bold;
+    &:disabled {
+        background-color: #ccc;
+        cursor: not-allowed;
+    }
 `;
 
 const RulesTable = styled.table`
@@ -86,6 +91,9 @@ const Textarea = styled.textarea`
 `;
 
 const AbbreviationsPage = () => {
+    const { hasPermission } = usePermissions(); // 2. GET PERMISSION CHECKER
+    const canEdit = hasPermission('settings:edit_abbreviations'); // 3. DEFINE EDIT CAPABILITY
+
     const [abbreviations, setAbbreviations] = useState([]);
     const [trigger, setTrigger] = useState('');
     const [response, setResponse] = useState('');
@@ -157,29 +165,32 @@ const AbbreviationsPage = () => {
     return (
         <>
             <PageContainer>
-                <Card>
-                    <h3>Create New Abbreviation</h3>
-                    <Form onSubmit={handleSubmit}>
-                        <InputGroup>
-                            <Label>Trigger</Label>
-                            <Input 
-                                type="text" 
-                                placeholder="e.g., !hello"
-                                value={trigger}
-                                onChange={(e) => setTrigger(e.target.value)}
-                            />
-                        </InputGroup>
-                        <InputGroup>
-                            <Label>Full Response</Label>
-                            <Textarea
-                                placeholder="The full message to replace the trigger..."
-                                value={response}
-                                onChange={(e) => setResponse(e.target.value)}
-                            />
-                        </InputGroup>
-                        <Button type="submit">Add Abbreviation</Button>
-                    </Form>
-                </Card>
+                {/* 4. WRAP CREATION FORM IN PERMISSION CHECK */}
+                {canEdit && (
+                    <Card>
+                        <h3>Create New Abbreviation</h3>
+                        <Form onSubmit={handleSubmit}>
+                            <InputGroup>
+                                <Label>Trigger</Label>
+                                <Input 
+                                    type="text" 
+                                    placeholder="e.g., !hello"
+                                    value={trigger}
+                                    onChange={(e) => setTrigger(e.target.value)}
+                                />
+                            </InputGroup>
+                            <InputGroup>
+                                <Label>Full Response</Label>
+                                <Textarea
+                                    placeholder="The full message to replace the trigger..."
+                                    value={response}
+                                    onChange={(e) => setResponse(e.target.value)}
+                                />
+                            </InputGroup>
+                            <Button type="submit">Add Abbreviation</Button>
+                        </Form>
+                    </Card>
+                )}
 
                 <Card>
                     <h3>Existing Abbreviations</h3>
@@ -188,7 +199,7 @@ const AbbreviationsPage = () => {
                             <tr>
                                 <th>Trigger</th>
                                 <th>Response</th>
-                                <th>Actions</th>
+                                {canEdit && <th>Actions</th>}
                             </tr>
                         </thead>
                         <tbody>
@@ -196,10 +207,13 @@ const AbbreviationsPage = () => {
                                 <tr key={abbr.id}>
                                     <td>{abbr.trigger}</td>
                                     <td>{abbr.response}</td>
-                                    <td className="actions">
-                                        <FaEdit onClick={() => openEditModal(abbr)} />
-                                        <FaTrash onClick={() => handleDelete(abbr.id)} />
-                                    </td>
+                                    {/* 5. WRAP ACTIONS IN PERMISSION CHECK */}
+                                    {canEdit && (
+                                        <td className="actions">
+                                            <FaEdit onClick={() => openEditModal(abbr)} title="Edit"/>
+                                            <FaTrash onClick={() => handleDelete(abbr.id)} title="Delete"/>
+                                        </td>
+                                    )}
                                 </tr>
                             ))}
                         </tbody>
@@ -207,6 +221,7 @@ const AbbreviationsPage = () => {
                 </Card>
             </PageContainer>
 
+            {/* Modal remains the same, as it can only be opened by a user with edit permissions */}
             <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)}>
                 {editingAbbr && (
                     <form onSubmit={handleUpdate}>

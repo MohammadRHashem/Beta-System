@@ -16,14 +16,19 @@ const TemplateSaveContainer = styled.div` margin-top: 1rem; display: flex; gap: 
 const TemplateInput = styled.input` flex-grow: 1; padding: 0.75rem; border: 1px solid ${({ theme }) => theme.border}; border-radius: 4px; `;
 const SaveTemplateButton = styled.button` background-color: ${({ theme, disabled }) => disabled ? theme.lightText : theme.primary}; color: white; border: none; padding: 0.6rem 1rem; border-radius: 4px; cursor: ${({ disabled }) => disabled ? 'not-allowed' : 'pointer'}; font-weight: bold; `;
 
-const BroadcastForm = ({ selectedGroupIds, allGroups, message, setMessage, attachment, setAttachment, onTemplateSave, onBroadcastStart, isBroadcasting, onOpenAttachmentManager }) => {
+// 1. ACCEPT THE NEW PERMISSION PROPS
+const BroadcastForm = ({ 
+    selectedGroupIds, allGroups, message, setMessage, attachment, setAttachment, 
+    onTemplateSave, onBroadcastStart, isBroadcasting, onOpenAttachmentManager,
+    canSendBroadcast, canManageTemplates, canManageAttachments 
+}) => {
     const [templateName, setTemplateName] = useState('');
     const fileInputRef = useRef(null);
 
     const handleSubmit = async (e) => {
         e.preventDefault();
-        const hasContent = (message && !attachment) || attachment;
-        if (!hasContent || selectedGroupIds.length === 0 || isBroadcasting) return;
+        // Permission check added to guard clause
+        if (!canSendBroadcast || !canSend || selectedGroupIds.length === 0 || isBroadcasting) return;
 
         if (window.confirm(`You are about to send this content to ${selectedGroupIds.length} groups. Proceed?`)) {
             const groupObjects = allGroups.filter(g => selectedGroupIds.includes(g.id));
@@ -89,38 +94,50 @@ const BroadcastForm = ({ selectedGroupIds, allGroups, message, setMessage, attac
                             {getFileIcon(attachment.mimetype)}
                             <span>{attachment.original_filename}</span>
                         </FileInfo>
-                        <RemoveButton onClick={() => setAttachment(null)} />
+                        {/* Only allow removing attachment if user can manage them */}
+                        {canManageAttachments && <RemoveButton onClick={() => setAttachment(null)} />}
                     </AttachmentPreview>
                 )}
-
-                <AttachmentControls>
-                    <HiddenInput ref={fileInputRef} onChange={handleFileUpload} />
-                    <ControlButton type="button" onClick={() => fileInputRef.current.click()}><FaPaperclip/> Attach New</ControlButton>
-                    <ControlButton type="button" onClick={onOpenAttachmentManager}><FaFolderOpen/> Use Existing</ControlButton>
-                </AttachmentControls>
-
-                <TemplateSaveContainer>
-                    <TemplateInput
-                        type="text"
-                        placeholder="New template name..."
-                        value={templateName}
-                        onChange={(e) => setTemplateName(e.target.value)}
-                    />
-                    <SaveTemplateButton
-                        type="button"
-                        disabled={!templateName || (!message && !attachment)}
-                        onClick={handleSaveTemplate}
-                    >
-                        Save
-                    </SaveTemplateButton>
-                </TemplateSaveContainer>
                 
+                {/* 2. WRAP ATTACHMENT CONTROLS IN PERMISSION CHECK */}
+                {canManageAttachments && (
+                    <AttachmentControls>
+                        <HiddenInput ref={fileInputRef} onChange={handleFileUpload} />
+                        <ControlButton type="button" onClick={() => fileInputRef.current.click()}><FaPaperclip/> Attach New</ControlButton>
+                        <ControlButton type="button" onClick={onOpenAttachmentManager}><FaFolderOpen/> Use Existing</ControlButton>
+                    </AttachmentControls>
+                )}
+
+                {/* 3. WRAP TEMPLATE SAVE SECTION IN PERMISSION CHECK */}
+                {canManageTemplates && (
+                    <TemplateSaveContainer>
+                        <TemplateInput
+                            type="text"
+                            placeholder="New template name..."
+                            value={templateName}
+                            onChange={(e) => setTemplateName(e.target.value)}
+                        />
+                        <SaveTemplateButton
+                            type="button"
+                            disabled={!templateName || (!message && !attachment)}
+                            onClick={handleSaveTemplate}
+                        >
+                            Save
+                        </SaveTemplateButton>
+                    </TemplateSaveContainer>
+                )}
+                
+                {/* 4. UPDATE SEND BUTTON LOGIC */}
                 <SendButton
                     type="submit"
-                    disabled={!canSend || selectedGroupIds.length === 0 || isBroadcasting}
+                    disabled={!canSendBroadcast || !canSend || selectedGroupIds.length === 0 || isBroadcasting}
                     style={{ marginTop: '1rem' }}
                 >
-                    {isBroadcasting ? 'Broadcasting...' : `Send to ${selectedGroupIds.length} Groups`}
+                    {isBroadcasting 
+                        ? 'Broadcasting...' 
+                        : canSendBroadcast 
+                            ? `Send to ${selectedGroupIds.length} Groups` 
+                            : 'Permission Denied'}
                 </SendButton>
             </form>
         </FormContainer>

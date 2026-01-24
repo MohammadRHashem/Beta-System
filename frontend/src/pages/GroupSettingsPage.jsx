@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import styled from 'styled-components';
 import api from '../services/api';
+import { usePermissions } from '../context/PermissionContext'; // 1. IMPORT PERMISSIONS HOOK
 
 const PageContainer = styled.div`
     display: flex;
@@ -55,6 +56,11 @@ const SwitchInput = styled.input`
     &:checked + span:before {
         transform: translateX(22px);
     }
+    &:disabled + span {
+        cursor: not-allowed;
+        background-color: #e9ecef;
+        opacity: 0.7;
+    }
 `;
 
 const Slider = styled.span`
@@ -82,6 +88,9 @@ const Slider = styled.span`
 
 
 const GroupSettingsPage = () => {
+    const { hasPermission } = usePermissions(); // 2. GET PERMISSION CHECKER
+    const canEdit = hasPermission('settings:edit_rules'); // 3. DEFINE EDIT CAPABILITY
+
     const [settings, setSettings] = useState([]);
     const [searchTerm, setSearchTerm] = useState('');
 
@@ -153,6 +162,7 @@ const GroupSettingsPage = () => {
                                             type="checkbox" 
                                             checked={!!group.forwarding_enabled}
                                             onChange={() => handleToggle(group, 'forwarding_enabled', !!group.forwarding_enabled)}
+                                            disabled={!canEdit} // 4. DISABLE THE SWITCH IF NO PERMISSION
                                         />
                                         <Slider />
                                     </SwitchContainer>
@@ -163,6 +173,7 @@ const GroupSettingsPage = () => {
                                             type="checkbox"
                                             checked={!!group.archiving_enabled}
                                             onChange={() => handleToggle(group, 'archiving_enabled', !!group.archiving_enabled)}
+                                            disabled={!canEdit} // 4. DISABLE THE SWITCH IF NO PERMISSION
                                         />
                                         <Slider />
                                     </SwitchContainer>

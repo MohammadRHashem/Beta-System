@@ -100,7 +100,7 @@ const LastUpdated = styled.p`
     right: 1.5rem;
 `;
 
-const PositionCounterCard = ({ counter, onEdit, onDelete }) => {
+const PositionCounterCard = ({ counter, onEdit, onDelete, canManage }) => {
     const [selectedDate, setSelectedDate] = useState(format(new Date(), 'yyyy-MM-dd'));
     const [result, setResult] = useState(null);
     const [loading, setLoading] = useState(true);
@@ -152,11 +152,13 @@ const PositionCounterCard = ({ counter, onEdit, onDelete }) => {
         <Card>
             <Header>
                 <Title>{counter.name}</Title>
-                <Actions>
-                    {counter.type === 'remote' && <FaSyncAlt onClick={() => handleCalculate(true)} title="Refresh Now" style={{ cursor: 'pointer' }} />}
-                    <FaEdit onClick={() => onEdit(counter)} title="Edit Counter" />
-                    <FaTrash onClick={() => onDelete(counter)} title="Delete Counter" />
-                </Actions>
+                {canManage && (
+                    <Actions>
+                        {counter.type === 'remote' && <FaSyncAlt onClick={() => handleCalculate(true)} title="Refresh Now" />}
+                        <FaEdit onClick={() => onEdit(counter)} title="Edit Counter" />
+                        <FaTrash onClick={() => onDelete(counter)} title="Delete Counter" />
+                    </Actions>
+                )}
             </Header>
 
             <InputGroup>

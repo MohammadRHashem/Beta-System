@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import styled from 'styled-components';
 import api from '../services/api';
+import { usePermissions } from '../context/PermissionContext'; // 1. IMPORT PERMISSIONS HOOK
 import { FaTrash, FaArrowRight } from 'react-icons/fa';
 import ComboBox from '../components/ComboBox';
 
@@ -22,6 +23,9 @@ const Form = styled.form`
     grid-template-columns: 1fr auto 1fr auto;
     gap: 1.5rem;
     align-items: flex-end;
+    @media (max-width: 768px) {
+        grid-template-columns: 1fr;
+    }
 `;
 
 const InputGroup = styled.div`
@@ -46,6 +50,7 @@ const Button = styled.button`
     height: fit-content;
     &:disabled {
         opacity: 0.6;
+        cursor: not-allowed;
     }
 `;
 
@@ -74,9 +79,16 @@ const RulesTable = styled.table`
 const ArrowIcon = styled(FaArrowRight)`
     font-size: 1.5rem;
     color: ${({ theme }) => theme.lightText};
+    @media (max-width: 768px) {
+        transform: rotate(90deg);
+        margin: 0.5rem auto;
+    }
 `;
 
 const DirectForwardingPage = ({ allGroups }) => {
+    const { hasPermission } = usePermissions(); // 2. GET PERMISSION CHECKER
+    const canEdit = hasPermission('settings:edit_rules'); // 3. DEFINE EDIT CAPABILITY
+
     const [rules, setRules] = useState([]);
     const [sourceJid, setSourceJid] = useState('');
     const [destinationJid, setDestinationJid] = useState('');
@@ -128,32 +140,35 @@ const DirectForwardingPage = ({ allGroups }) => {
 
     return (
         <PageContainer>
-            <Card>
-                <h3>Create New Direct Group Forwarding Rule</h3>
-                <p>Media from a Source Group will be validated by AI. If it's a valid invoice, it will be sent to the Destination Group, overriding any keyword rules.</p>
-                <Form onSubmit={handleSubmit}>
-                    <InputGroup>
-                        <Label>From (Source Group)</Label>
-                        <ComboBox 
-                            options={allGroups}
-                            value={sourceJid}
-                            onChange={(e) => setSourceJid(e.target.value)}
-                            placeholder="Select a source group..."
-                        />
-                    </InputGroup>
-                    <ArrowIcon />
-                    <InputGroup>
-                        <Label>To (Destination Group)</Label>
-                        <ComboBox 
-                            options={allGroups}
-                            value={destinationJid}
-                            onChange={(e) => setDestinationJid(e.target.value)}
-                            placeholder="Select a destination group..."
-                        />
-                    </InputGroup>
-                    <Button type="submit" disabled={!sourceJid || !destinationJid}>Add Rule</Button>
-                </Form>
-            </Card>
+            {/* 4. WRAP THE ENTIRE CREATION CARD IN A PERMISSION CHECK */}
+            {canEdit && (
+                <Card>
+                    <h3>Create New Direct Group Forwarding Rule</h3>
+                    <p>Media from a Source Group will be validated by AI. If it's a valid invoice, it will be sent to the Destination Group, overriding any keyword rules.</p>
+                    <Form onSubmit={handleSubmit}>
+                        <InputGroup>
+                            <Label>From (Source Group)</Label>
+                            <ComboBox 
+                                options={allGroups}
+                                value={sourceJid}
+                                onChange={(e) => setSourceJid(e.target.value)}
+                                placeholder="Select a source group..."
+                            />
+                        </InputGroup>
+                        <ArrowIcon />
+                        <InputGroup>
+                            <Label>To (Destination Group)</Label>
+                            <ComboBox 
+                                options={allGroups}
+                                value={destinationJid}
+                                onChange={(e) => setDestinationJid(e.target.value)}
+                                placeholder="Select a destination group..."
+                            />
+                        </InputGroup>
+                        <Button type="submit" disabled={!sourceJid || !destinationJid}>Add Rule</Button>
+                    </Form>
+                </Card>
+            )}
 
             <Card>
                 <h3>Existing Direct Rules</h3>
@@ -163,20 +178,23 @@ const DirectForwardingPage = ({ allGroups }) => {
                             <tr>
                                 <th>Source Group</th>
                                 <th>Destination Group</th>
-                                <th className="actions">Action</th>
+                                {canEdit && <th className="actions">Action</th>}
                             </tr>
                         </thead>
                         <tbody>
                             {rules.length === 0 ? (
-                                <tr><td colSpan="3">No direct forwarding rules found.</td></tr>
+                                <tr><td colSpan={canEdit ? 3 : 2}>No direct forwarding rules found.</td></tr>
                             ) : (
                                 rules.map(rule => (
                                     <tr key={rule.id}>
                                         <td>{rule.source_group_name}</td>
                                         <td>{rule.destination_group_name}</td>
-                                        <td className="actions">
-                                            <FaTrash onClick={() => handleDelete(rule.id)} />
-                                        </td>
+                                        {/* 5. WRAP THE ACTION CELL IN A PERMISSION CHECK */}
+                                        {canEdit && (
+                                            <td className="actions">
+                                                <FaTrash onClick={() => handleDelete(rule.id)} title="Delete" />
+                                            </td>
+                                        )}
                                     </tr>
                                 ))
                             )}

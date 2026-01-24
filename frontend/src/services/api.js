@@ -24,12 +24,12 @@ apiClient.interceptors.response.use(
     }
 );
 
+// --- INTERCEPTOR FOR CLIENT PORTAL ---
 portalApiClient.interceptors.request.use(config => {
     const token = localStorage.getItem('portalAuthToken');
     if (token) {
         config.headers.Authorization = `Bearer ${token}`;
     }
-    // Your diagnostic logging from the previous step is still useful here
     console.log('[PORTAL API REQUEST]', {
         method: config.method.toUpperCase(),
         url: config.baseURL + config.url,
@@ -39,42 +39,53 @@ portalApiClient.interceptors.request.use(config => {
     return config;
 }, error => Promise.reject(error));
 
+
 portalApiClient.interceptors.response.use(
     response => response,
     error => {
-        // Your diagnostic logging from the previous step is still useful here
         console.error('[PORTAL API ERROR]', {
             message: error.message,
             url: error.config.url,
             status: error.response?.status,
             responseData: error.response?.data,
         });
-
-        // === THIS IS THE CRITICAL LOGIC THAT WAS MISSING ===
-        // If the error is a 401, and we are not already on the login page
         if (error.response?.status === 401 && !window.location.pathname.includes('/portal/login')) {
-            // 1. Log the action for clarity during debugging
             console.warn('[PORTAL API] Received 401 Unauthorized. Forcing logout and redirecting to login.');
-            
-            // 2. Clear the invalid session data
             localStorage.removeItem('portalAuthToken');
             localStorage.removeItem('portalClient');
-            
-            // 3. Redirect to the portal login page
             window.location.href = '/portal/login'; 
         }
-        // =======================================================
-        
         return Promise.reject(error);
     }
 );
-// --- END OF FIX ---
 
 
-// --- PORTAL API FUNCTIONS ---
+// =======================================================
+// === ALL PORTAL API FUNCTIONS ARE CONSOLIDATED HERE ===
+// =======================================================
 export const portalLogin = (credentials) => portalApiClient.post('/auth/login', credentials);
+export const portalValidateSession = () => portalApiClient.get('/auth/validate'); // THIS WAS MISSING
 export const getPortalTransactions = (params) => portalApiClient.get('/transactions', { params });
 export const getPortalDashboardSummary = (params) => portalApiClient.get('/dashboard-summary', { params });
+export const triggerPartnerConfirmation = (correlation_id) => portalApiClient.post('/bridge/confirm-payment', { correlation_id });
+
+export const updatePortalTransactionConfirmation = (id, source, confirmed, passcode) => {
+    return portalApiClient.post(`/transactions/confirm`, { 
+        transactionId: id, 
+        source, 
+        confirmed, 
+        passcode 
+    });
+};
+
+export const updatePortalTransactionNotes = (id, source, notes) => {
+    return portalApiClient.post(`/transactions/notes`, {
+        transactionId: id,
+        source,
+        op_comment: notes
+    });
+};
+
 export const exportPortalTransactions = async (params, format = 'excel') => {
     try {
         const response = await portalApiClient.get('/export-excel', {
@@ -85,7 +96,6 @@ export const exportPortalTransactions = async (params, format = 'excel') => {
         const clientData = JSON.parse(localStorage.getItem('portalClient')) || {};
         const clientName = clientData.username;
         const cleanFilename = `accountBalance_${clientName}`;
-        
         const extension = format === 'pdf' ? 'pdf' : 'xlsx';
         const filename = `${cleanFilename}.${extension}`;
         
@@ -97,29 +107,28 @@ export const exportPortalTransactions = async (params, format = 'excel') => {
         link.click();
         link.parentNode.removeChild(link);
         window.URL.revokeObjectURL(url);
-
     } catch (error) {
         console.error("Export failed:", error);
         throw error;
     }
 };
 
-// --- ADMIN API FUNCTIONS (Unchanged) ---
-// ... (all your other admin functions remain here) ...
-export const getBatches = () => apiClient.get('/batches');
-export const getGroupIdsForBatch = (batchId) => apiClient.get(`/batches/${batchId}`);
-export const createBatch = (data) => apiClient.post('/batches', data);
-export const updateBatch = (id, data) => apiClient.put(`/batches/${id}`, data);
-export const deleteBatch = (id) => apiClient.delete(`/batches/${id}`);
-export const getTemplates = () => apiClient.get('/templates');
-export const createTemplate = (data) => apiClient.post('/templates', data);
-export const updateTemplate = (id, data) => apiClient.put(`/templates/${id}`, data);
-export const deleteTemplate = (id) => apiClient.delete(`/templates/${id}`);
-export const toggleForwardingRule = (id, is_enabled) => apiClient.patch(`/settings/forwarding/${id}/toggle`, { is_enabled });
-export const toggleReplyRule = (id, reply_with_group_name) => apiClient.patch(`/settings/forwarding/${id}/toggle-reply`, { reply_with_group_name });
 
-export const triggerHardRefresh = (id) => apiClient.post(`/subaccounts/${id}/hard-refresh`);
 
+// ===============================================
+// === ALL ADMIN API FUNCTIONS START FROM HERE ===
+// ===============================================
+
+// ---- RBAC & User Management ----
+export const getAllUsers = () => apiClient.get('/admin/users');
+export const createUser = (data) => apiClient.post('/admin/users', data);
+export const updateUser = (id, data) => apiClient.put(`/admin/users/${id}`, data);
+export const getAllRoles = () => apiClient.get('/admin/roles');
+export const getRolePermissions = (id) => apiClient.get(`/admin/roles/${id}/permissions`);
+export const updateRolePermissions = (id, permissionIds) => apiClient.put(`/admin/roles/${id}/permissions`, { permissionIds });
+export const getAuditLogs = (params) => apiClient.get('/admin/audit-log', { params });
+
+// ---- Helper Functions for Downloads ----
 const downloadFile = async (url, params) => {
     const config = {
         params,
@@ -140,6 +149,7 @@ const downloadFile = async (url, params) => {
     const { data } = await apiClient.get(url, config);
     return data;
 };
+
 const triggerBrowserDownload = (blob, filename) => {
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -150,6 +160,29 @@ const triggerBrowserDownload = (blob, filename) => {
     a.remove();
     window.URL.revokeObjectURL(url);
 };
+
+// ---- Broadcaster ----
+export const getBatches = () => apiClient.get('/batches');
+export const getGroupIdsForBatch = (batchId) => apiClient.get(`/batches/${batchId}`);
+export const createBatch = (data) => apiClient.post('/batches', data);
+export const updateBatch = (id, data) => apiClient.put(`/batches/${id}`, data);
+export const deleteBatch = (id) => apiClient.delete(`/batches/${id}`);
+export const getTemplates = () => apiClient.get('/templates');
+export const createTemplate = (data) => apiClient.post('/templates', data);
+export const updateTemplate = (id, data) => apiClient.put(`/templates/${id}`, data);
+export const deleteTemplate = (id) => apiClient.delete(`/templates/${id}`);
+export const uploadBroadcastAttachment = (file) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    return apiClient.post('/broadcasts/upload', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+    });
+};
+export const getBroadcastUploads = () => apiClient.get('/broadcasts/uploads');
+export const deleteBroadcastUpload = (id) => apiClient.delete(`/broadcasts/uploads/${id}`);
+
+
+// ---- Invoices ----
 export const getInvoices = (params) => apiClient.get('/invoices', { params });
 export const getRecipientNames = () => apiClient.get('/invoices/recipients');
 export const createInvoice = (data) => apiClient.post('/invoices', data);
@@ -164,58 +197,19 @@ export const exportInvoices = async (params) => {
     const blob = await downloadFile('/invoices/export', params);
     triggerBrowserDownload(blob, 'invoices.xlsx');
 };
+
+
+// ---- Settings & Rules ----
+export const toggleForwardingRule = (id, is_enabled) => apiClient.patch(`/settings/forwarding/${id}/toggle`, { is_enabled });
+export const toggleReplyRule = (id, reply_with_group_name) => apiClient.patch(`/settings/forwarding/${id}/toggle-reply`, { reply_with_group_name });
 export const getDirectForwardingRules = () => apiClient.get('/direct-forwarding');
 export const createDirectForwardingRule = (data) => apiClient.post('/direct-forwarding', data);
 export const deleteDirectForwardingRule = (id) => apiClient.delete(`/direct-forwarding/${id}`);
-export const getPositionCounters = () => apiClient.get('/positions/counters');
-export const createPositionCounter = (data) => apiClient.post('/positions/counters', data);
-export const updatePositionCounter = (id, data) => apiClient.put(`/positions/counters/${id}`, data);
-export const deletePositionCounter = (id) => apiClient.delete(`/positions/counters/${id}`);
-export const calculateLocalPosition = (params) => apiClient.get('/position/local', { params });
-export const calculateRemotePosition = (id, params) => apiClient.get(`/position/remote/${id}`, { params });
-export const getSubaccounts = () => apiClient.get('/subaccounts');
-export const getSubCustomers = (params) => apiClient.get('/sub-customers', { params });
-export const getRecibosTransactions = (subaccountNumber) => apiClient.get(`/subaccounts/${subaccountNumber}/recibos`);
-export const reassignTransaction = (transactionId, targetSubaccountNumber) => apiClient.post('/subaccounts/reassign', { transactionId, targetSubaccountNumber });
-export const createSubaccount = (data) => apiClient.post('/subaccounts', data);
-export const updateSubaccount = (id, data) => apiClient.put(`/subaccounts/${id}`, data);
-export const deleteSubaccount = (id) => apiClient.delete(`/subaccounts/${id}`);
-export const getSubaccountCredentials = (id) => apiClient.get(`/subaccounts/${id}/credentials`);
-export const resetSubaccountPassword = (id, type) => apiClient.post(`/subaccounts/${id}/credentials/reset`, { type });
 export const getUsdtWallets = () => apiClient.get('/usdt-wallets');
 export const createUsdtWallet = (data) => apiClient.post('/usdt-wallets', data);
 export const updateUsdtWallet = (id, data) => apiClient.put(`/usdt-wallets/${id}`, data);
 export const deleteUsdtWallet = (id) => apiClient.delete(`/usdt-wallets/${id}`);
 export const toggleUsdtWallet = (id, is_enabled) => apiClient.patch(`/usdt-wallets/${id}/toggle`, { is_enabled });
-export const getScheduledBroadcasts = () => apiClient.get('/scheduled-broadcasts');
-export const createSchedule = (data) => apiClient.post('/scheduled-broadcasts', data);
-export const updateSchedule = (id, data) => apiClient.put(`/scheduled-broadcasts/${id}`, data);
-export const deleteSchedule = (id) => apiClient.delete(`/scheduled-broadcasts/${id}`);
-export const toggleSchedule = (id, is_active) => apiClient.patch(`/scheduled-broadcasts/${id}/toggle`, { is_active });
-export const triggerAlfaSync = () => apiClient.post('/alfa-trust/trigger-sync');
-export const getAlfaTransactions = (params) => apiClient.get('/alfa-trust/transactions', { params });
-
-
-
-export const getPendingManualInvoices = () => apiClient.get('/manual/pending');
-export const getManualCandidates = (amount) => apiClient.get('/manual/candidates', { params: { amount } });
-export const confirmManualInvoice = (data) => apiClient.post('/manual/confirm', data);
-export const rejectManualInvoice = (messageId) => apiClient.post('/manual/reject', { messageId });
-
-export const getCandidateInvoices = (amount) => apiClient.get('/manual/candidate-invoices', { params: { amount } });
-export const clearAllPendingInvoices = (messageIds) => apiClient.post('/manual/clear-all', { messageIds });
-
-
-export const getWalletRequests = () => apiClient.get('/client-requests'); // Reroute old function name
-export const completeWalletRequest = (id) => apiClient.patch(`/client-requests/${id}/complete`); // Reroute
-
-export const getClientRequests = () => apiClient.get('/client-requests');
-export const completeClientRequest = (id) => apiClient.patch(`/client-requests/${id}/complete`);
-export const updateClientRequestAmount = (id, amount) => apiClient.patch(`/client-requests/${id}/amount`, { amount });
-// --- NEW FUNCTION ---
-export const updateClientRequestContent = (id, content) => apiClient.patch(`/client-requests/${id}/content`, { content });
-export const restoreClientRequest = (id) => apiClient.patch(`/client-requests/${id}/restore`);
-
 export const getRequestTypes = () => apiClient.get('/request-types');
 export const createRequestType = (data) => apiClient.post('/request-types', data);
 export const updateRequestType = (id, data) => apiClient.put(`/request-types/${id}`, data);
@@ -224,6 +218,31 @@ export const updateRequestTypeOrder = (orderedIds) => apiClient.post('/request-t
 
 
 
+// ---- Subaccounts ----
+export const getSubaccounts = () => apiClient.get('/subaccounts');
+export const createSubaccount = (data) => apiClient.post('/subaccounts', data);
+export const updateSubaccount = (id, data) => apiClient.put(`/subaccounts/${id}`, data);
+export const deleteSubaccount = (id) => apiClient.delete(`/subaccounts/${id}`);
+export const getSubaccountCredentials = (id) => apiClient.get(`/subaccounts/${id}/credentials`);
+export const resetSubaccountPassword = (id, type) => apiClient.post(`/subaccounts/${id}/credentials/reset`, { type });
+export const triggerHardRefresh = (id) => apiClient.post(`/subaccounts/${id}/hard-refresh`);
+
+
+
+// ---- BI & Financial Tools ----
+export const getPositionCounters = () => apiClient.get('/positions/counters');
+export const createPositionCounter = (data) => apiClient.post('/positions/counters', data);
+export const updatePositionCounter = (id, data) => apiClient.put(`/positions/counters/${id}`, data);
+export const deletePositionCounter = (id) => apiClient.delete(`/positions/counters/${id}`);
+export const calculateLocalPosition = (params) => apiClient.get('/position/local', { params });
+export const calculateRemotePosition = (id, params) => apiClient.get(`/position/remote/${id}`, { params });
+export const getSubCustomers = (params) => apiClient.get('/sub-customers', { params });
+export const getRecibosTransactions = (subaccountNumber) => apiClient.get(`/subaccounts/${subaccountNumber}/recibos`);
+export const reassignTransaction = (transactionId, targetSubaccountNumber) => apiClient.post('/subaccounts/reassign', { transactionId, targetSubaccountNumber });
+
+
+// ---- External Statements ----
+export const getAlfaTransactions = (params) => apiClient.get('/alfa-trust/transactions', { params });
 export const exportAlfaExcel = async (params) => {
     const blob = await downloadFile('/alfa-trust/export-excel', params);
     triggerBrowserDownload(blob, 'alfa_trust_export.xlsx');
@@ -256,46 +275,42 @@ export const exportAlfaPdf = async (params) => {
         }
     }
 };
-
 export const getTrkbitTransactions = (params) => apiClient.get('/trkbit/transactions', { params });
 export const exportTrkbit = async (params) => {
     const blob = await downloadFile('/trkbit/export', params);
     triggerBrowserDownload(blob, 'trkbit_export.xlsx');
 };
 
-export const updatePortalTransactionConfirmation = (id, source, confirmed, passcode) => {
-    // THE CRITICAL "return" KEYWORD IS HERE.
-    return portalApiClient.post(`/transactions/confirm`, { 
-        transactionId: id, 
-        source, 
-        confirmed, 
-        passcode 
-    });
-};
+// ---- Manual Review ----
+export const getPendingManualInvoices = () => apiClient.get('/manual/pending');
+export const getManualCandidates = (amount) => apiClient.get('/manual/candidates', { params: { amount } });
+export const confirmManualInvoice = (data) => apiClient.post('/manual/confirm', data);
+export const rejectManualInvoice = (messageId) => apiClient.post('/manual/reject', { messageId });
+export const getCandidateInvoices = (amount) => apiClient.get('/manual/candidate-invoices', { params: { amount } });
+export const clearAllPendingInvoices = (messageIds) => apiClient.post('/manual/clear-all', { messageIds });
 
-export const updatePortalTransactionNotes = (id, source, notes) => {
-    // === THE FIX: Send the data with the key `op_comment` instead of `notes` ===
-    return portalApiClient.post(`/transactions/notes`, {
-        transactionId: id,
-        source,
-        op_comment: notes // Renamed field
-    });
-};
-
-export const triggerPartnerConfirmation = (correlation_id) => portalApiClient.post('/bridge/confirm-payment', { correlation_id });
+// ---- Maybe Unused ----
+export const triggerAlfaSync = () => apiClient.post('/alfa-trust/trigger-sync');
 
 
 
-export const uploadBroadcastAttachment = (file) => {
-    const formData = new FormData();
-    formData.append('file', file);
-    return apiClient.post('/broadcasts/upload', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' }
-    });
-};
+// ---- Client Requests ----
+export const getClientRequests = () => apiClient.get('/client-requests');
+export const completeClientRequest = (id) => apiClient.patch(`/client-requests/${id}/complete`);
+export const updateClientRequestAmount = (id, amount) => apiClient.patch(`/client-requests/${id}/amount`, { amount });
+export const updateClientRequestContent = (id, content) => apiClient.patch(`/client-requests/${id}/content`, { content });
+export const restoreClientRequest = (id) => apiClient.patch(`/client-requests/${id}/restore`);
 
-export const getBroadcastUploads = () => apiClient.get('/broadcasts/uploads');
 
-export const deleteBroadcastUpload = (id) => apiClient.delete(`/broadcasts/uploads/${id}`);
+// ---- Schedules ----
+export const getScheduledBroadcasts = () => apiClient.get('/scheduled-broadcasts');
+export const createSchedule = (data) => apiClient.post('/scheduled-broadcasts', data);
+export const updateSchedule = (id, data) => apiClient.put(`/scheduled-broadcasts/${id}`, data);
+export const deleteSchedule = (id) => apiClient.delete(`/scheduled-broadcasts/${id}`);
+export const toggleSchedule = (id, is_active) => apiClient.patch(`/scheduled-broadcasts/${id}/toggle`, { is_active });
+
+
+export const getWalletRequests = () => apiClient.get('/client-requests'); // Reroute old function name
+export const completeWalletRequest = (id) => apiClient.patch(`/client-requests/${id}/complete`); // Reroute
 
 export default apiClient;

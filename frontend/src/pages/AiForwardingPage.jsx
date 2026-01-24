@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import styled from 'styled-components';
 import api, { toggleForwardingRule, toggleReplyRule } from '../services/api';
 import Modal from '../components/Modal';
+import { usePermissions } from '../context/PermissionContext'; // 1. IMPORT PERMISSIONS HOOK
 import { FaEdit, FaTrash } from 'react-icons/fa';
 import ComboBox from '../components/ComboBox';
 
@@ -54,6 +55,10 @@ const Button = styled.button`
     cursor: pointer;
     font-weight: bold;
     height: fit-content;
+    &:disabled {
+        background-color: #ccc;
+        cursor: not-allowed;
+    }
 `;
 
 const RulesTable = styled.table`
@@ -98,6 +103,10 @@ const SwitchInput = styled.input`
     &:checked + span:before {
         transform: translateX(22px);
     }
+    &:disabled + span {
+        cursor: not-allowed;
+        background-color: #e9ecef;
+    }
 `;
 
 const Slider = styled.span`
@@ -124,6 +133,9 @@ const Slider = styled.span`
 `;
 
 const AiForwardingPage = ({ allGroups }) => {
+    const { hasPermission } = usePermissions(); // 2. GET PERMISSION CHECKER
+    const canEdit = hasPermission('settings:edit_rules'); // 3. DEFINE EDIT CAPABILITY
+
     const [rules, setRules] = useState([]);
     const [trigger, setTrigger] = useState('');
     const [destination, setDestination] = useState('');
@@ -190,9 +202,7 @@ const AiForwardingPage = ({ allGroups }) => {
                 destination_group_jid: editingRule.destination_group_jid,
                 reply_with_group_name: editingRule.reply_with_group_name 
             };
-
             await api.put(`/settings/forwarding/${editingRule.id}`, payload);
-            
             alert('Rule updated successfully!');
             setIsModalOpen(false);
             setEditingRule(null);
@@ -225,30 +235,33 @@ const AiForwardingPage = ({ allGroups }) => {
     return (
         <>
             <PageContainer>
-                <Card>
-                    <h3>Create New Forwarding Rule</h3>
-                    <Form onSubmit={handleSubmit}>
-                        <InputGroup>
-                            <Label>Trigger Keyword</Label>
-                            <Input 
-                                type="text" 
-                                placeholder="e.g., trkbit"
-                                value={trigger}
-                                onChange={(e) => setTrigger(e.target.value)}
-                            />
-                        </InputGroup>
-                        <InputGroup>
-                        <Label>Destination Group</Label>
-                            <ComboBox 
-                                options={allGroups}
-                                value={destination}
-                                onChange={(e) => setDestination(e.target.value)}
-                                placeholder="Search & select a group..."
-                            />
-                        </InputGroup>
-                        <Button type="submit">Add Rule</Button>
-                    </Form>
-                </Card>
+                {/* 4. WRAP CREATION FORM IN PERMISSION CHECK */}
+                {canEdit && (
+                    <Card>
+                        <h3>Create New Forwarding Rule</h3>
+                        <Form onSubmit={handleSubmit}>
+                            <InputGroup>
+                                <Label>Trigger Keyword</Label>
+                                <Input 
+                                    type="text" 
+                                    placeholder="e.g., trkbit"
+                                    value={trigger}
+                                    onChange={(e) => setTrigger(e.target.value)}
+                                />
+                            </InputGroup>
+                            <InputGroup>
+                            <Label>Destination Group</Label>
+                                <ComboBox 
+                                    options={allGroups}
+                                    value={destination}
+                                    onChange={(e) => setDestination(e.target.value)}
+                                    placeholder="Search & select a group..."
+                                />
+                            </InputGroup>
+                            <Button type="submit">Add Rule</Button>
+                        </Form>
+                    </Card>
+                )}
 
                 <Card>
                     <h3>Existing Rules</h3>
@@ -258,9 +271,8 @@ const AiForwardingPage = ({ allGroups }) => {
                                 <th>Enabled</th>
                                 <th>Trigger Keyword</th>
                                 <th>Destination Group</th>
-                                {/* Renamed header */}
-                                <th>Reply with Group Nb?</th>
-                                <th>Actions</th>
+                                <th>Reply with Group Name?</th>
+                                {canEdit && <th>Actions</th>}
                             </tr>
                         </thead>
                         <tbody>
@@ -272,6 +284,7 @@ const AiForwardingPage = ({ allGroups }) => {
                                                 type="checkbox" 
                                                 checked={!!rule.is_enabled}
                                                 onChange={() => handleToggleEnabled(rule)}
+                                                disabled={!canEdit} // 5. DISABLE INTERACTIVE ELEMENTS
                                             />
                                             <Slider />
                                         </SwitchContainer>
@@ -284,14 +297,18 @@ const AiForwardingPage = ({ allGroups }) => {
                                                 type="checkbox" 
                                                 checked={!!rule.reply_with_group_name}
                                                 onChange={() => handleToggleReply(rule)}
+                                                disabled={!canEdit} // 5. DISABLE INTERACTIVE ELEMENTS
                                             />
                                             <Slider />
                                         </SwitchContainer>
                                     </td>
-                                    <td className="actions">
-                                        <FaEdit onClick={() => openEditModal(rule)} />
-                                        <FaTrash onClick={() => handleDelete(rule.id)} />
-                                    </td>
+                                    {/* 6. WRAP ACTIONS IN PERMISSION CHECK */}
+                                    {canEdit && (
+                                        <td className="actions">
+                                            <FaEdit onClick={() => openEditModal(rule)} title="Edit"/>
+                                            <FaTrash onClick={() => handleDelete(rule.id)} title="Delete"/>
+                                        </td>
+                                    )}
                                 </tr>
                             ))}
                         </tbody>
@@ -299,6 +316,7 @@ const AiForwardingPage = ({ allGroups }) => {
                 </Card>
             </PageContainer>
 
+            {/* Modal is only opened by users with `canEdit`, so it's implicitly protected */}
             <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)}>
                 {editingRule && (
                     <form onSubmit={handleUpdate}>

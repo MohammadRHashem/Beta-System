@@ -31,7 +31,7 @@ const Card = styled.div`
 
 const FilterContainer = styled.div`
     display: grid;
-    grid-template-columns: 1fr 1fr 1fr; /* Added column for source */
+    grid-template-columns: 1fr 1fr 1fr;
     gap: 1.5rem;
     margin-bottom: 1.5rem;
     align-items: flex-end;
@@ -106,7 +106,7 @@ const SubCustomersPage = ({ allGroups }) => {
     const [loading, setLoading] = useState(false);
     const [searchName, setSearchName] = useState('');
     const [selectedGroupId, setSelectedGroupId] = useState('');
-    const [source, setSource] = useState('bot'); // Default source
+    const [source, setSource] = useState('bot');
     const [pagination, setPagination] = useState({ page: 1, limit: 20, totalPages: 1, totalRecords: 0 });
 
     const debouncedSearch = useDebounce(searchName, 500);
@@ -119,7 +119,7 @@ const SubCustomersPage = ({ allGroups }) => {
                 limit: pagination.limit,
                 searchName: debouncedSearch,
                 groupId: selectedGroupId,
-                source: source // Pass source to API
+                source: source
             };
             const { data: response } = await getSubCustomers(params);
             setData(response.data);
@@ -140,7 +140,6 @@ const SubCustomersPage = ({ allGroups }) => {
         fetchData();
     }, [fetchData]);
 
-    // Reset to page 1 when filters change
     useEffect(() => {
         setPagination(p => ({ ...p, page: 1 }));
     }, [debouncedSearch, selectedGroupId, source]);
@@ -177,7 +176,6 @@ const SubCustomersPage = ({ allGroups }) => {
                         />
                     </InputGroup>
                     
-                    {/* Disable Group Filter for Alfa as it is global */}
                     <InputGroup style={{ opacity: source === 'alfa' ? 0.5 : 1, pointerEvents: source === 'alfa' ? 'none' : 'auto' }}>
                         <Label>Filter by Main Customer (Group)</Label>
                         <ComboBox 

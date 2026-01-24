@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { getRequestTypes, createRequestType, updateRequestType, deleteRequestType } from '../services/api'; // <-- THIS LINE WAS MISSING
+import { getRequestTypes, createRequestType, updateRequestType, deleteRequestType } from '../services/api';
 import styled from 'styled-components';
 import Modal from '../components/Modal';
+import { usePermissions } from '../context/PermissionContext'; // 1. IMPORT PERMISSIONS HOOK
 import { FaEdit, FaTrash, FaPlus, FaCodeBranch } from 'react-icons/fa';
 
 const PageContainer = styled.div` display: flex; flex-direction: column; gap: 2rem; `;
@@ -30,13 +31,21 @@ const ColorPreview = styled.div`
 `;
 
 const RequestTypesPage = () => {
+    const { hasPermission } = usePermissions(); // 2. GET PERMISSION CHECKER
+    const canEdit = hasPermission('settings:edit_request_triggers'); // 3. DEFINE EDIT CAPABILITY
+
     const [types, setTypes] = useState([]);
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingType, setEditingType] = useState(null);
 
     const fetchTypes = async () => {
-        const { data } = await getRequestTypes();
-        setTypes(data);
+        try {
+            const { data } = await getRequestTypes();
+            setTypes(data);
+        } catch (error) {
+            console.error("Failed to fetch request types:", error);
+            alert("Failed to fetch request types.");
+        }
     };
 
     useEffect(() => {
@@ -65,8 +74,12 @@ const RequestTypesPage = () => {
 
     const handleDelete = async (id) => {
         if (window.confirm('Are you sure you want to delete this trigger?')) {
-            await deleteRequestType(id);
-            fetchTypes();
+            try {
+                await deleteRequestType(id);
+                fetchTypes();
+            } catch (error) {
+                alert('Failed to delete trigger.');
+            }
         }
     };
 
@@ -76,11 +89,25 @@ const RequestTypesPage = () => {
                 <Card>
                     <Header>
                         <h2 style={{display: 'flex', alignItems: 'center', gap: '0.5rem'}}><FaCodeBranch/> Client Request Triggers</h2>
-                        <Button onClick={() => openEditModal({ name: '', trigger_regex: '', acknowledgement_reaction: '🔔', color: '#E0E0E0', is_enabled: 1 })}><FaPlus /> New Trigger</Button>
+                        {/* 4. WRAP "NEW TRIGGER" BUTTON IN PERMISSION CHECK */}
+                        {canEdit && (
+                            <Button onClick={() => openEditModal({ name: '', trigger_regex: '', acknowledgement_reaction: '🔔', color: '#E0E0E0', is_enabled: 1 })}>
+                                <FaPlus /> New Trigger
+                            </Button>
+                        )}
                     </Header>
                     <p>Configure regular expressions to automatically capture specific client requests from chat messages.</p>
                     <RulesTable>
-                        <thead><tr><th>Enabled</th><th>Color</th><th>Name</th><th>Trigger Regex</th><th>Reaction</th><th>Actions</th></tr></thead>
+                        <thead>
+                            <tr>
+                                <th>Enabled</th>
+                                <th>Color</th>
+                                <th>Name</th>
+                                <th>Trigger Regex</th>
+                                <th>Reaction</th>
+                                {canEdit && <th>Actions</th>}
+                            </tr>
+                        </thead>
                         <tbody>
                             {types.map(type => (
                                 <tr key={type.id}>
@@ -89,10 +116,13 @@ const RequestTypesPage = () => {
                                     <td>{type.name}</td>
                                     <td><Code>{type.trigger_regex}</Code></td>
                                     <td>{type.acknowledgement_reaction}</td>
-                                    <td className="actions">
-                                        <FaEdit onClick={() => openEditModal(type)} />
-                                        <FaTrash onClick={() => handleDelete(type.id)} />
-                                    </td>
+                                    {/* 5. WRAP ACTIONS COLUMN IN PERMISSION CHECK */}
+                                    {canEdit && (
+                                        <td className="actions">
+                                            <FaEdit onClick={() => openEditModal(type)} title="Edit"/>
+                                            <FaTrash onClick={() => handleDelete(type.id)} title="Delete"/>
+                                        </td>
+                                    )}
                                 </tr>
                             ))}
                         </tbody>
@@ -100,6 +130,7 @@ const RequestTypesPage = () => {
                 </Card>
             </PageContainer>
             
+            {/* Modal is implicitly protected as it's only opened by users with `canEdit` */}
             <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)}>
                 {editingType && (
                     <Form onSubmit={handleSave}>

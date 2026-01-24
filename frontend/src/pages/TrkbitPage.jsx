@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import styled from 'styled-components';
 import { getTrkbitTransactions, exportTrkbit } from '../services/api';
+import { usePermissions } from '../context/PermissionContext'; // 1. IMPORT PERMISSIONS HOOK
 import { FaFileExcel, FaSearch, FaLink, FaUnlink } from 'react-icons/fa';
 import Pagination from '../components/Pagination';
 import LinkInvoiceModal from '../components/LinkInvoiceModal';
@@ -74,14 +75,6 @@ const Table = styled.table`
     th { background: #f9f9f9; }
 `;
 
-const ActionLink = styled(FaLink)`
-    cursor: pointer;
-    color: ${({ theme }) => theme.primary};
-    &:hover {
-        color: ${({ theme }) => theme.secondary};
-    }
-`;
-
 const ActionIcon = styled.span`
     cursor: pointer;
     font-size: 1.1rem;
@@ -92,6 +85,10 @@ const ActionIcon = styled.span`
 `;
 
 const TrkbitPage = () => {
+    const { hasPermission } = usePermissions(); // 2. GET PERMISSION CHECKER
+    const canExport = hasPermission('finance:view_bank_statements');
+    const canLink = hasPermission('invoice:link');
+
     const [transactions, setTransactions] = useState([]);
     const [loading, setLoading] = useState(false);
     const [filters, setFilters] = useState({ search: '', dateFrom: '', dateTo: '' });
@@ -127,18 +124,24 @@ const TrkbitPage = () => {
 
     const formatAdjustedDate = (dateString) => {
         if (!dateString) return 'N/A';
-        const date = new Date(dateString);
-        // Subtract 3 hours
-        date.setHours(date.getHours() - 3);
-        
-        // Format to readable string (Day/Month/Year Hour:Minute:Second)
-        return new Intl.DateTimeFormat('pt-BR', {
-            year: 'numeric', month: '2-digit', day: '2-digit',
-            hour: '2-digit', minute: '2-digit', second: '2-digit'
-        }).format(date);
+        try {
+            const date = new Date(dateString);
+            date.setHours(date.getHours() - 3);
+            return new Intl.DateTimeFormat('pt-BR', {
+                year: 'numeric', month: '2-digit', day: '2-digit',
+                hour: '2-digit', minute: '2-digit', second: '2-digit'
+            }).format(date);
+        } catch {
+            return dateString;
+        }
     };
 
     const openLinkModal = (tx) => {
+        // 3. CHECK PERMISSION BEFORE ALLOWING ACTION
+        if (!canLink) {
+            alert("You do not have permission to link invoices.");
+            return;
+        }
         setSelectedTransaction({ id: tx.uid, amount: tx.amount, source: 'Trkbit' });
         setIsLinkModalOpen(true);
     };
@@ -148,26 +151,29 @@ const TrkbitPage = () => {
             <PageContainer>
                 <Header>
                     <Title>Trkbit Transactions</Title>
-                    <Button onClick={handleExport}><FaFileExcel /> Export Excel</Button>
+                    {/* 4. WRAP EXPORT BUTTON IN PERMISSION CHECK */}
+                    {canExport && (
+                        <Button onClick={handleExport}><FaFileExcel /> Export Excel</Button>
+                    )}
                 </Header>
 
-            <FilterContainer>
-                <InputGroup>
-                    <label>Search</label>
-                    <Input type="text" value={filters.search} onChange={e => setFilters({...filters, search: e.target.value})} placeholder="Payer, ID..." />
-                </InputGroup>
-                <InputGroup>
-                    <label>Date From</label>
-                    <Input type="date" value={filters.dateFrom} onChange={e => setFilters({...filters, dateFrom: e.target.value})} />
-                </InputGroup>
-                <InputGroup>
-                    <label>Date To</label>
-                    <Input type="date" value={filters.dateTo} onChange={e => setFilters({...filters, dateTo: e.target.value})} />
-                </InputGroup>
-                <button onClick={fetchData} style={{padding: '0.6rem 1rem', background: '#0A2540', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer'}}>Search</button>
-            </FilterContainer>
+                <FilterContainer>
+                    <InputGroup>
+                        <label>Search</label>
+                        <Input type="text" value={filters.search} onChange={e => setFilters({...filters, search: e.target.value})} placeholder="Payer, ID..." />
+                    </InputGroup>
+                    <InputGroup>
+                        <label>Date From</label>
+                        <Input type="date" value={filters.dateFrom} onChange={e => setFilters({...filters, dateFrom: e.target.value})} />
+                    </InputGroup>
+                    <InputGroup>
+                        <label>Date To</label>
+                        <Input type="date" value={filters.dateTo} onChange={e => setFilters({...filters, dateTo: e.target.value})} />
+                    </InputGroup>
+                    <button onClick={fetchData} style={{padding: '0.6rem 1rem', background: '#0A2540', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer'}}>Search</button>
+                </FilterContainer>
 
-            <TableWrapper>
+                <TableWrapper>
                     <Table>
                         <thead>
                             <tr>
@@ -175,7 +181,7 @@ const TrkbitPage = () => {
                                 <th>Payer Name</th>
                                 <th>Amount</th>
                                 <th>Tx ID</th>
-                                <th>Link Status</th>
+                                {canLink && <th>Link Status</th>}
                             </tr>
                         </thead>
                         <tbody>
@@ -187,17 +193,20 @@ const TrkbitPage = () => {
                                         {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(tx.amount)}
                                     </td>
                                     <td>{tx.tx_id}</td>
-                                    <td style={{ textAlign: 'center' }}>
-                                        {tx.is_used || tx.linked_invoice_id ? (
-                                            <ActionIcon linked={true} title={`Linked to Invoice ID: ${tx.linked_invoice_message_id}`}>
-                                                <FaLink />
-                                            </ActionIcon>
-                                        ) : (
-                                            <ActionIcon linked={false} onClick={() => openLinkModal(tx)} title="Link to Invoice">
-                                                <FaUnlink />
-                                            </ActionIcon>
-                                        )}
-                                    </td>
+                                    {/* 5. WRAP LINK STATUS CELL IN PERMISSION CHECK */}
+                                    {canLink && (
+                                        <td style={{ textAlign: 'center' }}>
+                                            {tx.is_used || tx.linked_invoice_id ? (
+                                                <ActionIcon linked={true} title={`Linked to Invoice ID: ${tx.linked_invoice_message_id}`}>
+                                                    <FaLink />
+                                                </ActionIcon>
+                                            ) : (
+                                                <ActionIcon linked={false} onClick={() => openLinkModal(tx)} title="Link to Invoice">
+                                                    <FaUnlink />
+                                                </ActionIcon>
+                                            )}
+                                        </td>
+                                    )}
                                 </tr>
                             ))}
                         </tbody>
@@ -205,11 +214,14 @@ const TrkbitPage = () => {
                 </TableWrapper>
                 <Pagination pagination={pagination} setPagination={setPagination} />
             </PageContainer>
-            <LinkInvoiceModal 
-                isOpen={isLinkModalOpen}
-                onClose={() => { setIsLinkModalOpen(false); fetchData(); }}
-                transaction={selectedTransaction}
-            />
+            {/* Modal is implicitly protected */}
+            {canLink && (
+                <LinkInvoiceModal 
+                    isOpen={isLinkModalOpen}
+                    onClose={() => { setIsLinkModalOpen(false); fetchData(); }}
+                    transaction={selectedTransaction}
+                />
+            )}
         </>
     );
 };

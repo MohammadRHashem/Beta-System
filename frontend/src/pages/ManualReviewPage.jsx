@@ -9,6 +9,7 @@ import {
     clearAllPendingInvoices
 } from '../services/api';
 import { useSocket } from '../context/SocketContext';
+import { usePermissions } from '../context/PermissionContext'; // 1. IMPORT PERMISSIONS HOOK
 import Modal from '../components/Modal';
 import { FaCheck, FaTimes, FaBroom } from 'react-icons/fa';
 import { formatInTimeZone } from 'date-fns-tz';
@@ -27,7 +28,6 @@ const Header = styled.div`
     gap: 1rem;
 `;
 
-// --- MODIFIED: Renamed component for clarity and added new button ---
 const ActionButtonContainer = styled.div`
     display: flex;
     align-items: center;
@@ -71,7 +71,6 @@ const Table = styled.table`
     th { background: #f9f9f9; }
 `;
 
-// --- NEW: Styled component for selected rows ---
 const TableRow = styled.tr`
     background-color: ${({ isSelected }) => isSelected ? '#e3f2fd' : 'transparent'};
     transition: background-color 0.2s;
@@ -92,7 +91,6 @@ const ActionCellButton = styled.button`
     &.reject { background-color: #FFEBE6; color: #DE350B; &:hover { background-color: #ffded6; } }
 `;
 
-// --- NEW: Styled component for the single-row clear button ---
 const ClearRowButton = styled.button`
     background: transparent;
     border: none;
@@ -132,6 +130,11 @@ const formatSaoPauloDateTime = (dbDateString, formatString) => {
 };
 
 const ManualReviewPage = () => {
+    const { hasPermission } = usePermissions(); // 2. GET PERMISSION CHECKER
+    const canConfirm = hasPermission('manual_review:confirm');
+    const canReject = hasPermission('manual_review:reject');
+    const canClear = hasPermission('manual_review:clear');
+
     const socket = useSocket();
     const [invoices, setInvoices] = useState([]);
     const [loading, setLoading] = useState(false);
@@ -139,8 +142,6 @@ const ManualReviewPage = () => {
     const [selectedInvoice, setSelectedInvoice] = useState(null);
     const [candidates, setCandidates] = useState([]);
     const [loadingCandidates, setLoadingCandidates] = useState(false);
-    
-    // --- NEW: State for managing selections ---
     const [selectedRows, setSelectedRows] = useState(new Set());
 
     const fetchPending = async () => {
@@ -185,23 +186,15 @@ const ManualReviewPage = () => {
         const count = messageIdsToClear.length;
         if (count === 0) return;
         
-        const confirmText = isBulk
-            ? `Are you sure you want to CLEAR the ${count} selected invoices from this list?`
-            : `Are you sure you want to CLEAR this invoice from the list?`;
+        const confirmText = isBulk ? `Are you sure you want to CLEAR the ${count} selected invoices?` : `Are you sure you want to CLEAR this invoice?`;
         
-        if (!window.confirm(confirmText + "\nThis will NOT send a reply to the clients.")) {
-            return;
-        }
-
+        if (!window.confirm(confirmText + "\nThis will NOT send a reply to the clients.")) { return; }
         try {
             await clearAllPendingInvoices(messageIdsToClear);
-            // The socket event will trigger a refresh, but we can also do it manually
-            // fetchPending();
         } catch (e) {
             alert('An error occurred while trying to clear the item(s).');
         }
     };
-    // --- END: NEW HANDLER FUNCTIONS ---
 
     const handleReject = async (invoice) => {
         if (!window.confirm('Are you sure you want to REJECT this invoice? This will reply "no caiu" to the client.')) return;
@@ -245,7 +238,6 @@ const ManualReviewPage = () => {
         }
     };
     
-    // --- NEW: Memoized value for the "select all" checkbox state ---
     const areAllSelected = useMemo(() => {
         return invoices.length > 0 && selectedRows.size === invoices.length;
     }, [selectedRows, invoices]);
@@ -255,14 +247,17 @@ const ManualReviewPage = () => {
             <Header>
                 <h2>Manual Confirmation Center</h2>
                 <ActionButtonContainer>
-                    {/* --- MODIFIED: Clear Selected Button --- */}
-                    <HeaderButton onClick={() => handleClear(Array.from(selectedRows), true)} disabled={selectedRows.size === 0}>
-                        <FaBroom /> Clear Selected ({selectedRows.size})
-                    </HeaderButton>
-                    {/* --- MODIFIED: Clear All Button --- */}
-                    <HeaderButton danger onClick={() => handleClear(invoices.map(inv => inv.message_id), true)} disabled={invoices.length === 0}>
-                        <FaBroom /> Clear All ({invoices.length})
-                    </HeaderButton>
+                    {/* 3. WRAP HEADER BUTTONS IN PERMISSION CHECK */}
+                    {canClear && (
+                        <>
+                            <HeaderButton onClick={() => handleClear(Array.from(selectedRows), true)} disabled={selectedRows.size === 0}>
+                                <FaBroom /> Clear Selected ({selectedRows.size})
+                            </HeaderButton>
+                            <HeaderButton danger onClick={() => handleClear(invoices.map(inv => inv.message_id), true)} disabled={invoices.length === 0}>
+                                <FaBroom /> Clear All ({invoices.length})
+                            </HeaderButton>
+                        </>
+                    )}
                     <div style={{background: '#E3FCEF', color: '#006644', padding: '0.5rem 1rem', borderRadius: '20px', fontWeight: 'bold'}}>
                         {invoices.length} Pending
                     </div>
@@ -274,52 +269,58 @@ const ManualReviewPage = () => {
                     <Table>
                         <thead>
                             <tr>
-                                {/* --- MODIFIED: Select All Checkbox --- */}
-                                <th><Checkbox onChange={handleSelectAll} checked={areAllSelected} /></th>
+                                {canClear && <th><Checkbox onChange={handleSelectAll} checked={areAllSelected} /></th>}
                                 <th>Date</th>
                                 <th>Source Group</th>
                                 <th>Sender</th>
                                 <th>Recipient</th>
                                 <th>Amount</th>
                                 <th>Media</th>
-                                <th>Confirm/Reject</th>
-                                {/* --- MODIFIED: Actions Column --- */}
-                                <th>Actions</th>
+                                {(canConfirm || canReject) && <th>Confirm/Reject</th>}
+                                {canClear && <th>Actions</th>}
                             </tr>
                         </thead>
                         <tbody>
                             {invoices.length === 0 ? (<tr><td colSpan="9" style={{textAlign: 'center'}}>All caught up!</td></tr>) :
                             invoices.map(inv => (
                                 <tr key={inv.id} isSelected={selectedRows.has(inv.message_id)}>
-                                    {/* --- MODIFIED: Row Checkbox --- */}
-                                    <td>
-                                        <Checkbox 
-                                            checked={selectedRows.has(inv.message_id)} 
-                                            onChange={() => handleSelectRow(inv.message_id)} 
-                                        />
-                                    </td>
+                                    {canClear && (
+                                        <td>
+                                            <Checkbox 
+                                                checked={selectedRows.has(inv.message_id)} 
+                                                onChange={() => handleSelectRow(inv.message_id)} 
+                                            />
+                                        </td>
+                                    )}
                                     <td>{formatSaoPauloDateTime(inv.received_at, 'dd/MM HH:mm')}</td>
                                     <td>{inv.source_group_name}</td>
                                     <td>{inv.sender_name}</td>
                                     <td>{inv.recipient_name}</td>
                                     <td style={{fontWeight: 'bold'}}>{inv.amount}</td>
-                                    <td>
-                                        <MediaLink onClick={() => viewInvoiceMedia(inv.id)}>View Image</MediaLink>
-                                    </td>
-                                    <td>
-                                        <ActionCellButton className="confirm" onClick={() => openConfirmModal(inv)}>
-                                            <FaCheck /> Confirm
-                                        </ActionCellButton>
-                                        <ActionCellButton className="reject" onClick={() => handleReject(inv)}>
-                                            <FaTimes /> Reject
-                                        </ActionCellButton>
-                                    </td>
-                                    {/* --- MODIFIED: Single Row Clear Button --- */}
-                                    <td style={{textAlign: 'center'}}>
-                                        <ClearRowButton title="Clear this item" onClick={() => handleClear([inv.message_id], false)}>
-                                            <FaBroom />
-                                        </ClearRowButton>
-                                    </td>
+                                    <td><MediaLink onClick={() => viewInvoiceMedia(inv.id)}>View Image</MediaLink></td>
+                                    
+                                    {/* 4. WRAP ACTION BUTTONS IN PERMISSION CHECKS */}
+                                    {(canConfirm || canReject) && (
+                                        <td>
+                                            {canConfirm && (
+                                                <ActionCellButton className="confirm" onClick={() => openConfirmModal(inv)}>
+                                                    <FaCheck /> Confirm
+                                                </ActionCellButton>
+                                            )}
+                                            {canReject && (
+                                                <ActionCellButton className="reject" onClick={() => handleReject(inv)}>
+                                                    <FaTimes /> Reject
+                                                </ActionCellButton>
+                                            )}
+                                        </td>
+                                    )}
+                                    {canClear && (
+                                        <td style={{textAlign: 'center'}}>
+                                            <ClearRowButton title="Clear this item" onClick={() => handleClear([inv.message_id], false)}>
+                                                <FaBroom />
+                                            </ClearRowButton>
+                                        </td>
+                                    )}
                                 </tr>
                             ))}
                         </tbody>

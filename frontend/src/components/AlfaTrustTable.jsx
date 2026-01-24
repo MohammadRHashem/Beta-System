@@ -8,10 +8,9 @@ const TableWrapper = styled.div`
     border-radius: 8px;
     box-shadow: 0 2px 4px rgba(0,0,0,0.05);
     border: 1px solid ${({ theme }) => theme.border};
-    /* This is crucial: Make the wrapper a flex container that grows and allows scrolling */
     flex-grow: 1;
-    overflow-y: auto; /* Enable vertical scrolling ONLY on the table wrapper */
-    position: relative; /* Needed for the sticky header */
+    overflow-y: auto;
+    position: relative;
 `;
 
 const Table = styled.table`
@@ -76,7 +75,8 @@ const ActionIcon = styled.span`
     }
 `;
 
-const AlfaTrustTable = ({ transactions, loading, pagination, setPagination, onLinkClick }) => {
+// 1. UPDATE THE COMPONENT TO ACCEPT THE `canLinkInvoices` PROP
+const AlfaTrustTable = ({ transactions, loading, pagination, setPagination, onLinkClick, canLinkInvoices }) => {
     const formatDateTime = (isoString) => {
         if (!isoString) return 'N/A';
         try {
@@ -111,34 +111,23 @@ const AlfaTrustTable = ({ transactions, loading, pagination, setPagination, onLi
                     </Thead>
                     <tbody>
                         {transactions.map((tx) => {
-                            // === THE FIX: Robust counterparty name logic with fallback ===
                             let counterpartyName = 'N/A';
-                            let transactionId = tx.end_to_end_id || tx.transaction_id || 'N/A';
-
-                            if (tx.operation === 'C') { // Credit (IN)
+                            // ... (counterparty logic remains the same)
+                            if (tx.operation === 'C') {
                                 counterpartyName = tx.payer_name || tx.description || 'N/A';
-                            } else { // Debit (OUT)
+                            } else {
                                 let details = null;
                                 try {
-                                    // The backend sends raw_details as a JSON string, so we must parse it.
                                     if (tx.raw_details && typeof tx.raw_details === 'string') {
                                         details = JSON.parse(tx.raw_details);
                                     } else {
-                                        details = tx.raw_details; // It's already an object or null
+                                        details = tx.raw_details;
                                     }
                                 } catch (e) {
-                                    details = null; // Ensure details is null on JSON parsing error
+                                    details = null;
                                 }
-                                
-                                // For debits, try to get the recipient name first. 
-                                // If it doesn't exist (like in a fee), fall back to the top-level description.
-                                if (tx.operation === 'C') { // Credit (IN)
-                                counterpartyName = tx.payer_name || tx.description || 'N/A';
-                                } else { // Debit (OUT)
-                                    counterpartyName = details?.detalhes?.nomeRecebedor || tx.description || 'N/A';
-                                }
+                                counterpartyName = details?.detalhes?.nomeRecebedor || tx.description || 'N/A';
                             }
-                            // === END OF FIX ===
 
                             return (
                                 <Tr key={tx.id}>
@@ -150,7 +139,8 @@ const AlfaTrustTable = ({ transactions, loading, pagination, setPagination, onLi
                                         {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(tx.value)}
                                     </Td>
                                     <Td className="actions" style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
-                                        {tx.operation === 'C' && (
+                                        {/* 2. WRAP THE LINKING UI IN THE PERMISSION CHECK */}
+                                        {canLinkInvoices && tx.operation === 'C' && (
                                             tx.linked_invoice_id ? (
                                                 <ActionIcon linked={true} title={`Linked to Invoice ID: ${tx.linked_invoice_id}`}>
                                                     <FaLink />

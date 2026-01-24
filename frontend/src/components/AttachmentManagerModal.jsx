@@ -98,7 +98,8 @@ const Button = styled.button`
     }
 `;
 
-const AttachmentManagerModal = ({ isOpen, onClose, onSelect }) => {
+// 1. ACCEPT THE NEW PERMISSION PROP
+const AttachmentManagerModal = ({ isOpen, onClose, onSelect, canManageAttachments }) => {
     const [uploads, setUploads] = useState([]);
     const fileInputRef = useRef(null);
 
@@ -123,7 +124,7 @@ const AttachmentManagerModal = ({ isOpen, onClose, onSelect }) => {
             const { data: newUpload } = await uploadBroadcastAttachment(file);
             const updatedUploads = [newUpload, ...uploads];
             setUploads(updatedUploads);
-            onSelect(newUpload);
+            onSelect(newUpload); // Also select the newly uploaded file
         } catch (error) {
             alert('File upload failed.');
         }
@@ -151,16 +152,22 @@ const AttachmentManagerModal = ({ isOpen, onClose, onSelect }) => {
                             <FileName title={upload.original_filename}>{upload.original_filename}</FileName>
                             <Overlay className="overlay">
                                 <ActionButton color="#00C49A" textColor="#fff" onClick={(e) => { e.stopPropagation(); onSelect(upload); }}><FaCheckCircle/> Select</ActionButton>
-                                <ActionButton color="#DE350B" textColor="#fff" onClick={(e) => handleDelete(e, upload.id)}><FaTrash/> Delete</ActionButton>
+                                {/* 2. WRAP THE DELETE BUTTON IN PERMISSION CHECK */}
+                                {canManageAttachments && (
+                                    <ActionButton color="#DE350B" textColor="#fff" onClick={(e) => handleDelete(e, upload.id)}><FaTrash/> Delete</ActionButton>
+                                )}
                             </Overlay>
                         </FileCard>
                     );
                 })}
             </Gallery>
-            <UploadButtonContainer>
-                <HiddenInput ref={fileInputRef} onChange={handleFileSelect} />
-                <Button onClick={() => fileInputRef.current.click()}><FaUpload/> Upload & Select New File</Button>
-            </UploadButtonContainer>
+            {/* 3. WRAP THE UPLOAD SECTION IN PERMISSION CHECK */}
+            {canManageAttachments && (
+                <UploadButtonContainer>
+                    <HiddenInput ref={fileInputRef} onChange={handleFileSelect} />
+                    <Button onClick={() => fileInputRef.current.click()}><FaUpload/> Upload & Select New File</Button>
+                </UploadButtonContainer>
+            )}
         </Modal>
     );
 };

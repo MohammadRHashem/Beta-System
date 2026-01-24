@@ -8,6 +8,7 @@ import {
     toggleUsdtWallet 
 } from '../services/api';
 import Modal from '../components/Modal';
+import { usePermissions } from '../context/PermissionContext'; // 1. IMPORT PERMISSIONS HOOK
 import { FaPlus, FaEdit, FaTrash, FaExclamationTriangle } from 'react-icons/fa';
 
 const PageContainer = styled.div`
@@ -83,6 +84,11 @@ const SwitchInput = styled.input`
     &:checked + span:before {
         transform: translateX(22px);
     }
+    &:disabled + span {
+        cursor: not-allowed;
+        background-color: #e9ecef;
+        opacity: 0.7;
+    }
 `;
 
 const Slider = styled.span`
@@ -132,6 +138,9 @@ const Input = styled.input`
 `;
 
 const UsdtWalletsPage = () => {
+    const { hasPermission } = usePermissions(); // 2. GET PERMISSION CHECKER
+    const canEdit = hasPermission('settings:edit_usdt_wallets'); // 3. DEFINE EDIT CAPABILITY
+
     const [wallets, setWallets] = useState([]);
     const [loading, setLoading] = useState(true);
     const [isModalOpen, setIsModalOpen] = useState(false);
@@ -153,15 +162,8 @@ const UsdtWalletsPage = () => {
         fetchWallets();
     }, [fetchWallets]);
 
-    const handleOpenModal = (wallet = null) => {
-        setEditingWallet(wallet);
-        setIsModalOpen(true);
-    };
-    
-    const handleCloseModal = () => {
-        setEditingWallet(null);
-        setIsModalOpen(false);
-    };
+    const handleOpenModal = (wallet = null) => { setEditingWallet(wallet); setIsModalOpen(true); };
+    const handleCloseModal = () => { setEditingWallet(null); setIsModalOpen(false); };
 
     const handleSaveWallet = async (formData) => {
         try {
@@ -203,7 +205,10 @@ const UsdtWalletsPage = () => {
             <PageContainer>
                 <Header>
                     <h2>USDT Wallet Management</h2>
-                    <Button onClick={() => handleOpenModal(null)}><FaPlus /> Add Wallet</Button>
+                    {/* 4. WRAP "ADD WALLET" BUTTON IN PERMISSION CHECK */}
+                    {canEdit && (
+                        <Button onClick={() => handleOpenModal(null)}><FaPlus /> Add Wallet</Button>
+                    )}
                 </Header>
                 <Card>
                     <p>Add and manage the TRC-20 wallet addresses that the system should monitor for automated USDT confirmations.</p>
@@ -213,7 +218,7 @@ const UsdtWalletsPage = () => {
                                 <th>Enabled</th>
                                 <th>Wallet Name</th>
                                 <th>Wallet Address (TRC-20)</th>
-                                <th>Actions</th>
+                                {canEdit && <th>Actions</th>}
                             </tr>
                         </thead>
                         <tbody>
@@ -230,16 +235,20 @@ const UsdtWalletsPage = () => {
                                                     type="checkbox" 
                                                     checked={!!wallet.is_enabled}
                                                     onChange={() => handleToggle(wallet)}
+                                                    disabled={!canEdit} // 5. DISABLE INTERACTIVE ELEMENTS
                                                 />
                                                 <Slider />
                                             </SwitchContainer>
                                         </td>
                                         <td>{wallet.wallet_name}</td>
                                         <td>{wallet.wallet_address}</td>
-                                        <td className="actions">
-                                            <FaEdit onClick={() => handleOpenModal(wallet)} title="Edit Name"/>
-                                            <FaTrash onClick={() => handleDelete(wallet.id)} title="Delete"/>
-                                        </td>
+                                        {/* 6. WRAP ACTIONS COLUMN IN PERMISSION CHECK */}
+                                        {canEdit && (
+                                            <td className="actions">
+                                                <FaEdit onClick={() => handleOpenModal(wallet)} title="Edit Name"/>
+                                                <FaTrash onClick={() => handleDelete(wallet.id)} title="Delete"/>
+                                            </td>
+                                        )}
                                     </tr>
                                 ))
                             )}
@@ -247,12 +256,15 @@ const UsdtWalletsPage = () => {
                     </Table>
                 </Card>
             </PageContainer>
-            <WalletModal
-                isOpen={isModalOpen}
-                onClose={handleCloseModal}
-                onSave={handleSaveWallet}
-                wallet={editingWallet}
-            />
+            {/* Modal is implicitly protected */}
+            {canEdit && (
+                <WalletModal
+                    isOpen={isModalOpen}
+                    onClose={handleCloseModal}
+                    onSave={handleSaveWallet}
+                    wallet={editingWallet}
+                />
+            )}
         </>
     );
 };
@@ -293,7 +305,7 @@ const WalletModal = ({ isOpen, onClose, onSave, wallet }) => {
                         onChange={handleChange}
                         placeholder="T..."
                         required 
-                        disabled={!!wallet} // Prevent editing address after creation
+                        disabled={!!wallet}
                     />
                      {!!wallet && <small style={{color: '#6B7C93'}}>Wallet address cannot be changed after creation.</small>}
                 </InputGroup>

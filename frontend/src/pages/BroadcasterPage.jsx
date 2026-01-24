@@ -2,6 +2,8 @@ import React, { useState, useEffect, useCallback, useRef } from "react";
 import styled from "styled-components";
 import { io } from "socket.io-client";
 import api, { getBatches, getTemplates } from "../services/api";
+import { usePermissions } from '../context/PermissionContext'; // 1. IMPORT PERMISSIONS HOOK
+
 import BatchManager from "../components/BatchManager";
 import GroupSelector from "../components/GroupSelector";
 import BroadcastForm from "../components/BroadcastForm";
@@ -33,6 +35,8 @@ const RightPanel = styled.div`
 const API_URL = "https://platform.betaserver.dev:4433";
 
 const BroadcasterPage = ({ allGroups }) => {
+  const { hasPermission } = usePermissions(); // 2. GET PERMISSION CHECKER
+
   const [selectedGroups, setSelectedGroups] = useState(new Set());
   const [batches, setBatches] = useState([]);
   const [templates, setTemplates] = useState([]);
@@ -85,13 +89,26 @@ const BroadcasterPage = ({ allGroups }) => {
 
   const fetchBroadcasterData = useCallback(async () => {
     try {
-      const [batchesRes, templatesRes] = await Promise.all([getBatches(), getTemplates()]);
+      // Conditionally fetch data based on permissions
+      const promises = [];
+      if (hasPermission('broadcast:manage_batches')) {
+          promises.push(getBatches());
+      } else {
+          promises.push(Promise.resolve({ data: [] })); // Return empty array if no permission
+      }
+      if (hasPermission('broadcast:manage_templates')) {
+          promises.push(getTemplates());
+      } else {
+          promises.push(Promise.resolve({ data: [] })); // Return empty array if no permission
+      }
+
+      const [batchesRes, templatesRes] = await Promise.all(promises);
       setBatches(batchesRes.data || []);
       setTemplates(templatesRes.data || []);
     } catch (error) {
       console.error("Error fetching broadcaster data:", error);
     }
-  }, []);
+  }, [hasPermission]);
 
   useEffect(() => {
     fetchBroadcasterData();
@@ -167,12 +184,15 @@ const BroadcasterPage = ({ allGroups }) => {
     <>
       <MainContent>
         <LeftPanel>
-          <BatchManager
-            batches={batches}
-            onBatchSelect={handleBatchSelect}
-            onBatchEdit={handleBatchEdit}
-            onBatchesUpdate={handleDataUpdate}
-          />
+          {/* 3. WRAP BATCH MANAGEMENT IN PERMISSION CHECK */}
+          {hasPermission('broadcast:manage_batches') && (
+            <BatchManager
+                batches={batches}
+                onBatchSelect={handleBatchSelect}
+                onBatchEdit={handleBatchEdit}
+                onBatchesUpdate={handleDataUpdate}
+            />
+          )}
           <GroupSelector
             allGroups={allGroups}
             selectedGroups={selectedGroups}
@@ -182,14 +202,20 @@ const BroadcasterPage = ({ allGroups }) => {
             onBatchUpdate={handleDataUpdate}
             onSync={handleSyncGroups}
             isSyncing={isSyncing}
+            // Pass permission down to hide batch creation UI
+            canManageBatches={hasPermission('broadcast:manage_batches')}
+            canSyncGroups={hasPermission('admin:manage_roles')} // Example of a high-level permission
           />
         </LeftPanel>
         <RightPanel>
-          <TemplateManager
-            templates={templates}
-            onTemplateSelect={handleTemplateSelect}
-            onTemplatesUpdate={handleDataUpdate}
-          />
+          {/* 4. WRAP TEMPLATE MANAGEMENT IN PERMISSION CHECK */}
+          {hasPermission('broadcast:manage_templates') && (
+            <TemplateManager
+                templates={templates}
+                onTemplateSelect={handleTemplateSelect}
+                onTemplatesUpdate={handleDataUpdate}
+            />
+          )}
           <BroadcastForm
             selectedGroupIds={Array.from(selectedGroups)}
             allGroups={allGroups}
@@ -201,6 +227,10 @@ const BroadcasterPage = ({ allGroups }) => {
             onBroadcastStart={startBroadcast}
             isBroadcasting={isBroadcasting}
             onOpenAttachmentManager={() => setIsAttachmentModalOpen(true)}
+            // Pass permissions down to hide/disable buttons
+            canSendBroadcast={hasPermission('broadcast:send')}
+            canManageTemplates={hasPermission('broadcast:manage_templates')}
+            canManageAttachments={hasPermission('broadcast:manage_attachments')}
           />
         </RightPanel>
       </MainContent>

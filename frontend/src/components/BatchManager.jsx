@@ -58,13 +58,15 @@ const ActionsContainer = styled.div`
     padding-left: 1rem;
     
     svg {
+        cursor: pointer;
         &:hover {
             color: ${({ theme }) => theme.primary};
         }
     }
 `;
 
-const BatchManager = ({ batches, onBatchSelect, onBatchEdit, onBatchesUpdate }) => {
+// 1. ACCEPT THE NEW PERMISSION PROP
+const BatchManager = ({ batches, onBatchSelect, onBatchEdit, onBatchesUpdate, canManageBatches }) => {
     const [searchTerm, setSearchTerm] = useState('');
 
     const handleDelete = async (batchId, batchName) => {
@@ -100,14 +102,17 @@ const BatchManager = ({ batches, onBatchSelect, onBatchEdit, onBatchesUpdate }) 
                     <ItemName>-- Clear Selection --</ItemName>
                 </BatchItem>
                 {filteredBatches.map(batch => (
-                    <BatchItem key={batch.id}>
-                        <ItemName onClick={() => onBatchSelect(batch.id)} title={batch.name}>
+                    <BatchItem key={batch.id} onClick={() => onBatchSelect(batch.id)}>
+                        <ItemName title={batch.name}>
                             {batch.name}
                         </ItemName>
-                        <ActionsContainer>
-                            <FaEdit onClick={(e) => { e.stopPropagation(); onBatchEdit(batch); }} />
-                            <FaTrash onClick={(e) => { e.stopPropagation(); handleDelete(batch.id, batch.name); }} />
-                        </ActionsContainer>
+                        {/* 2. WRAP THE ACTIONS IN A PERMISSION CHECK */}
+                        {canManageBatches && (
+                            <ActionsContainer>
+                                <FaEdit onClick={(e) => { e.stopPropagation(); onBatchEdit(batch); }} title="Edit"/>
+                                <FaTrash onClick={(e) => { e.stopPropagation(); handleDelete(batch.id, batch.name); }} title="Delete"/>
+                            </ActionsContainer>
+                        )}
                     </BatchItem>
                 ))}
             </BatchList>
@@ -115,4 +120,4 @@ const BatchManager = ({ batches, onBatchSelect, onBatchEdit, onBatchesUpdate }) 
     );
 };
 
-export default BatchManager;    
+export default BatchManager;

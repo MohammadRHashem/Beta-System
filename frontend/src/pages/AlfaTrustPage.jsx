@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import styled from 'styled-components';
-import { getAlfaTransactions, exportAlfaPdf, triggerAlfaSync, exportAlfaExcel } from '../services/api';
+import { getAlfaTransactions, exportAlfaPdf, exportAlfaExcel } from '../services/api';
 import AlfaTrustFilter from '../components/AlfaTrustFilter';
 import AlfaTrustTable from '../components/AlfaTrustTable';
 import Modal from '../components/Modal';
+import { usePermissions } from '../context/PermissionContext'; // 1. IMPORT PERMISSIONS HOOK
 import { FaFilePdf, FaSyncAlt, FaFileExcel } from 'react-icons/fa';
 import { format, subDays } from 'date-fns';
 import { useSocket } from '../context/SocketContext';
@@ -87,6 +88,9 @@ const ExportForm = styled.div`
 
 
 const AlfaTrustPage = () => {
+    const { hasPermission } = usePermissions(); // 2. GET PERMISSION CHECKER
+    const canLinkInvoices = hasPermission('invoice:link');
+
     const socket = useSocket();
     const [transactions, setTransactions] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -99,15 +103,12 @@ const AlfaTrustPage = () => {
     const today = format(new Date(), 'yyyy-MM-dd');
     const [filters, setFilters] = useState({ search: '', dateFrom: today, dateTo: today, operation: '' });
     
-    // === NEW STATE FOR MODAL ===
     const [isLinkModalOpen, setIsLinkModalOpen] = useState(false);
     const [selectedTransaction, setSelectedTransaction] = useState(null);
-    // ===========================
-
+    
     const debouncedSearch = useDebounce(filters.search, 500);
 
     const fetchTransactions = useCallback(async (showLoading = true) => {
-        // <-- Updated validation -->
         if (!filters.dateFrom || !filters.dateTo) return;
         
         if (showLoading) setLoading(true);
@@ -137,9 +138,7 @@ const AlfaTrustPage = () => {
 
     useEffect(() => {
         if (socket) {
-            const handleUpdate = () => {
-                setHasNewData(true);
-            };
+            const handleUpdate = () => { setHasNewData(true); };
             socket.on('alfa-trust:updated', handleUpdate);
             return () => socket.off('alfa-trust:updated', handleUpdate);
         }
@@ -162,11 +161,7 @@ const AlfaTrustPage = () => {
      const handleExportExcel = async () => {
         setIsExporting(true);
         try {
-            // This part works automatically because `filters` now contains the date range
-            const exportParams = {
-                ...filters,
-                search: debouncedSearch,
-            };
+            const exportParams = { ...filters, search: debouncedSearch };
             await exportAlfaExcel(exportParams);
         } catch (error) {
             console.error("Failed to export Excel:", error);
@@ -179,6 +174,11 @@ const AlfaTrustPage = () => {
     const handleManualSync = async () => { window.alert("Manual sync is not available for Alfa Trust at this time."); return;};
 
     const openLinkModal = (tx) => {
+        // 3. CHECK PERMISSION BEFORE ALLOWING ACTION
+        if (!canLinkInvoices) {
+            alert("You do not have permission to link invoices.");
+            return;
+        }
         setSelectedTransaction({ id: tx.transaction_id, amount: tx.value, source: 'Alfa' });
         setIsLinkModalOpen(true);
     };
@@ -211,6 +211,8 @@ const AlfaTrustPage = () => {
                     pagination={pagination}
                     setPagination={setPagination}
                     onLinkClick={openLinkModal}
+                    // 4. PASS PERMISSION DOWN TO THE TABLE COMPONENT
+                    canLinkInvoices={canLinkInvoices}
                 />
             </PageContainer>
             
@@ -219,11 +221,13 @@ const AlfaTrustPage = () => {
                 onClose={() => setIsExportModalOpen(false)}
                 onExport={handleExportPdf}
             />
-            <LinkInvoiceModal
-                isOpen={isLinkModalOpen}
-                onClose={() => { setIsLinkModalOpen(false); fetchTransactions(false); }}
-                transaction={selectedTransaction}
-            />
+            {canLinkInvoices && (
+                <LinkInvoiceModal
+                    isOpen={isLinkModalOpen}
+                    onClose={() => { setIsLinkModalOpen(false); fetchTransactions(false); }}
+                    transaction={selectedTransaction}
+                />
+            )}
         </>
     );
 };

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import styled from 'styled-components';
 import api from '../services/api';
+import { usePermissions } from '../context/PermissionContext'; // 1. IMPORT PERMISSIONS HOOK
 
 const PageContainer = styled.div`
     max-width: 800px;
@@ -58,6 +59,10 @@ const RadioLabel = styled.label`
     gap: 0.5rem;
     font-weight: 500;
     cursor: pointer;
+    
+    input:disabled {
+        cursor: not-allowed;
+    }
 `;
 
 const SwitchInput = styled.input`
@@ -69,6 +74,11 @@ const SwitchInput = styled.input`
     }
     &:checked + span:before {
         transform: translateX(26px);
+    }
+    &:disabled + span {
+        cursor: not-allowed;
+        background-color: #e9ecef;
+        opacity: 0.7;
     }
 `;
 
@@ -96,10 +106,13 @@ const Slider = styled.span`
 `;
 
 const AutoConfirmationPage = () => {
+    const { hasPermission } = usePermissions(); // 2. GET PERMISSION CHECKER
+    const canEdit = hasPermission('settings:toggle_confirmations'); // 3. DEFINE EDIT CAPABILITY
+
     const [isAutoConfEnabled, setIsAutoConfEnabled] = useState(false);
-    const [isAlfaApiEnabled, setIsAlfaApiEnabled] = useState(false); // New state
+    const [isAlfaApiEnabled, setIsAlfaApiEnabled] = useState(false);
     const [trocaCoinMethod, setTrocaCoinMethod] = useState('telegram'); 
-    const [isTrkbitEnabled, setIsTrkbitEnabled] = useState(false); // <--- NEW STATE
+    const [isTrkbitEnabled, setIsTrkbitEnabled] = useState(false);
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
@@ -107,13 +120,13 @@ const AutoConfirmationPage = () => {
             try {
                 const [autoConfRes, alfaApiRes, trkbitRes, trocaCoinRes] = await Promise.all([
                     api.get('/settings/auto-confirmation'),
-                    api.get('/settings/alfa-api-confirmation'), // Fetch new setting status
-                    api.get('/settings/trkbit-confirmation'), // <--- NEW FETCH
+                    api.get('/settings/alfa-api-confirmation'),
+                    api.get('/settings/trkbit-confirmation'),
                     api.get('/settings/troca-coin-method')
                 ]);
                 setIsAutoConfEnabled(autoConfRes.data.isEnabled);
                 setIsAlfaApiEnabled(alfaApiRes.data.isEnabled);
-                setIsTrkbitEnabled(trkbitRes.data.isEnabled); // <--- NEW SET
+                setIsTrkbitEnabled(trkbitRes.data.isEnabled);
                 setTrocaCoinMethod(trocaCoinRes.data.method);
             } catch (error) {
                 console.error("Failed to fetch statuses:", error);
@@ -127,7 +140,7 @@ const AutoConfirmationPage = () => {
 
     const handleAutoConfToggle = async () => {
         const newStatus = !isAutoConfEnabled;
-        setIsAutoConfEnabled(newStatus);
+        setIsAutoConfEnabled(newStatus); // Optimistic update
         try {
             await api.post('/settings/auto-confirmation', { isEnabled: newStatus });
         } catch (error) {
@@ -161,15 +174,14 @@ const AutoConfirmationPage = () => {
     const handleTrocaCoinMethodChange = async (event) => {
         const newMethod = event.target.value;
         const oldMethod = trocaCoinMethod;
-        setTrocaCoinMethod(newMethod); // Optimistically update UI
+        setTrocaCoinMethod(newMethod);
         try {
             await api.post('/settings/troca-coin-method', { method: newMethod });
         } catch (error) {
             alert("Failed to update Troca Coin method. Reverting change.");
-            setTrocaCoinMethod(oldMethod); // Revert on failure
+            setTrocaCoinMethod(oldMethod);
         }
     };
-
 
     if (loading) {
         return <p>Loading settings...</p>;
@@ -190,6 +202,7 @@ const AutoConfirmationPage = () => {
                             type="checkbox" 
                             checked={isAutoConfEnabled}
                             onChange={handleAutoConfToggle}
+                            disabled={!canEdit} // 4. DISABLE INTERACTIVE ELEMENTS
                         />
                         <Slider />
                     </SwitchContainer>
@@ -207,6 +220,7 @@ const AutoConfirmationPage = () => {
                             type="checkbox" 
                             checked={isTrkbitEnabled}
                             onChange={handleTrkbitToggle}
+                            disabled={!canEdit} // 4. DISABLE INTERACTIVE ELEMENTS
                         />
                         <Slider />
                     </SwitchContainer>
@@ -224,6 +238,7 @@ const AutoConfirmationPage = () => {
                             type="checkbox" 
                             checked={isAlfaApiEnabled}
                             onChange={handleAlfaApiToggle}
+                            disabled={!canEdit} // 4. DISABLE INTERACTIVE ELEMENTS
                         />
                         <Slider />
                     </SwitchContainer>
@@ -240,6 +255,7 @@ const AutoConfirmationPage = () => {
                             value="telegram" 
                             checked={trocaCoinMethod === 'telegram'} 
                             onChange={handleTrocaCoinMethodChange}
+                            disabled={!canEdit} // 4. DISABLE INTERACTIVE ELEMENTS
                         />
                         Telegram Listener
                     </RadioLabel>
@@ -249,6 +265,7 @@ const AutoConfirmationPage = () => {
                             value="xpayz" 
                             checked={trocaCoinMethod === 'xpayz'} 
                             onChange={handleTrocaCoinMethodChange}
+                            disabled={!canEdit} // 4. DISABLE INTERACTIVE ELEMENTS
                         />
                         XPayz API
                     </RadioLabel>

@@ -51,7 +51,7 @@ const SearchInput = styled.input`
     padding: 0.75rem;
     border: 1px solid ${({ theme }) => theme.border};
     border-radius: 4px;
-    margin-bottom: 0.5rem; /* Reduced margin */
+    margin-bottom: 0.5rem;
 `;
 
 const GroupList = styled.ul`
@@ -123,7 +123,6 @@ const CancelButton = styled.button`
     }
 `;
 
-// === NEW: Select All Button ===
 const SelectAllButton = styled.button`
     width: 100%;
     padding: 0.5rem;
@@ -139,7 +138,8 @@ const SelectAllButton = styled.button`
     }
 `;
 
-const GroupSelector = ({ allGroups, selectedGroups, setSelectedGroups, onBatchUpdate, editingBatch, setEditingBatch, onSync, isSyncing }) => {
+// 1. ACCEPT PERMISSION PROPS
+const GroupSelector = ({ allGroups, selectedGroups, setSelectedGroups, onBatchUpdate, editingBatch, setEditingBatch, onSync, isSyncing, canManageBatches, canSyncGroups }) => {
     const [searchTerm, setSearchTerm] = useState('');
     const [batchName, setBatchName] = useState('');
     
@@ -193,7 +193,6 @@ const GroupSelector = ({ allGroups, selectedGroups, setSelectedGroups, onBatchUp
         setSelectedGroups(new Set());
     };
 
-    // --- SORTING AND FILTERING LOGIC ---
     const sortedAndFilteredGroups = useMemo(() => {
         const filtered = (allGroups || []).filter(g =>
             g.name && g.name.toLowerCase().includes(searchTerm.toLowerCase())
@@ -217,10 +216,8 @@ const GroupSelector = ({ allGroups, selectedGroups, setSelectedGroups, onBatchUp
         const newSelectedGroups = new Set(selectedGroups);
 
         if (areAllVisibleSelected) {
-            // Deselect all visible
             visibleGroupIds.forEach(id => newSelectedGroups.delete(id));
         } else {
-            // Select all visible
             visibleGroupIds.forEach(id => newSelectedGroups.add(id));
         }
         setSelectedGroups(newSelectedGroups);
@@ -231,10 +228,13 @@ const GroupSelector = ({ allGroups, selectedGroups, setSelectedGroups, onBatchUp
         <Container>
             <HeaderContainer>
                 <h3>Select Groups ({selectedGroups.size} selected)</h3>
-                <SyncButton onClick={onSync} disabled={isSyncing}>
-                    <FaSyncAlt className={isSyncing ? 'spin' : ''} />
-                    {isSyncing ? 'Syncing...' : 'Sync Groups'}
-                </SyncButton>
+                {/* 2. WRAP SYNC BUTTON IN PERMISSION CHECK */}
+                {canSyncGroups && (
+                    <SyncButton onClick={onSync} disabled={isSyncing}>
+                        <FaSyncAlt className={isSyncing ? 'spin' : ''} />
+                        {isSyncing ? 'Syncing...' : 'Sync Groups'}
+                    </SyncButton>
+                )}
             </HeaderContainer>
 
             <SearchInput
@@ -260,26 +260,29 @@ const GroupSelector = ({ allGroups, selectedGroups, setSelectedGroups, onBatchUp
                 ))}
             </GroupList>
 
-            <BatchCreationContainer>
-                <h4>{isEditMode ? `Editing: ${editingBatch.name}` : 'Create New Batch'}</h4>
-                <BatchInput
-                    type="text"
-                    placeholder="Batch name..."
-                    value={batchName}
-                    onChange={(e) => setBatchName(e.target.value)}
-                />
-                <SaveButton
-                    disabled={!batchName || selectedGroups.size === 0}
-                    onClick={handleSaveOrUpdateBatch}
-                >
-                    {isEditMode ? 'Update Batch' : `Save ${selectedGroups.size} Groups as Batch`}
-                </SaveButton>
-                {isEditMode && (
-                    <CancelButton onClick={cancelEdit}>
-                        Cancel Edit
-                    </CancelButton>
-                )}
-            </BatchCreationContainer>
+            {/* 3. WRAP ENTIRE BATCH CREATION SECTION IN PERMISSION CHECK */}
+            {canManageBatches && (
+                <BatchCreationContainer>
+                    <h4>{isEditMode ? `Editing: ${editingBatch.name}` : 'Create New Batch'}</h4>
+                    <BatchInput
+                        type="text"
+                        placeholder="Batch name..."
+                        value={batchName}
+                        onChange={(e) => setBatchName(e.target.value)}
+                    />
+                    <SaveButton
+                        disabled={!batchName || selectedGroups.size === 0}
+                        onClick={handleSaveOrUpdateBatch}
+                    >
+                        {isEditMode ? 'Update Batch' : `Save ${selectedGroups.size} Groups as Batch`}
+                    </SaveButton>
+                    {isEditMode && (
+                        <CancelButton onClick={cancelEdit}>
+                            Cancel Edit
+                        </CancelButton>
+                    )}
+                </BatchCreationContainer>
+            )}
         </Container>
     );
 };

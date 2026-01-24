@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import styled from 'styled-components';
 import { FaPlus, FaEdit, FaTrash, FaPaperclip, FaFolderOpen, FaTimesCircle, FaImage, FaFilePdf, FaFile } from 'react-icons/fa';
 import { format, parseISO } from 'date-fns';
+import { usePermissions } from '../context/PermissionContext'; // 1. IMPORT PERMISSIONS HOOK
 import {
     getScheduledBroadcasts, createSchedule, updateSchedule,
     deleteSchedule, toggleSchedule, getBatches, getTemplates,
@@ -16,7 +17,7 @@ const Card = styled.div` background: #fff; padding: 1.5rem 2rem; border-radius: 
 const Button = styled.button` background-color: ${({ theme, color }) => color === 'primary' ? theme.primary : theme.secondary}; color: white; border: none; padding: 0.75rem 1.5rem; border-radius: 4px; cursor: pointer; font-weight: bold; display: flex; align-items: center; gap: 0.5rem; `;
 const Table = styled.table` width: 100%; border-collapse: collapse; margin-top: 1.5rem; th, td { padding: 1rem; text-align: left; border-bottom: 1px solid ${({ theme }) => theme.border}; } th { background-color: ${({ theme }) => theme.background}; } td.actions { display: flex; gap: 1.5rem; font-size: 1.1rem; svg { cursor: pointer; color: ${({ theme }) => theme.lightText}; &:hover { color: ${({ theme }) => theme.primary}; } } } `;
 const SwitchContainer = styled.label` position: relative; display: inline-block; width: 50px; height: 28px; `;
-const SwitchInput = styled.input` opacity: 0; width: 0; height: 0; &:checked + span { background-color: ${({ theme }) => theme.secondary}; } &:checked + span:before { transform: translateX(22px); } `;
+const SwitchInput = styled.input` opacity: 0; width: 0; height: 0; &:checked + span { background-color: ${({ theme }) => theme.secondary}; } &:checked + span:before { transform: translateX(22px); } &:disabled + span { cursor: not-allowed; background-color: #e9ecef; opacity: 0.7; }`;
 const Slider = styled.span` position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #ccc; transition: .4s; border-radius: 34px; &:before { position: absolute; content: ""; height: 20px; width: 20px; left: 4px; bottom: 4px; background-color: white; transition: .4s; border-radius: 50%; } `;
 const ScheduleInfo = styled.div` font-size: 0.9rem; span { display: block; color: #6B7C93; font-size: 0.8rem; } `;
 const MessageContent = styled.td` max-width: 300px; .content-wrapper { display: flex; align-items: center; gap: 0.5rem; } .text { white-space: pre-wrap; word-break: break-word; } `;
@@ -40,6 +41,9 @@ const daysOfWeek = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const daysOfWeekFull = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
 const ScheduledBroadcastsPage = () => {
+    const { hasPermission } = usePermissions(); // 2. GET PERMISSION CHECKER
+    const canManage = hasPermission('broadcast:schedule'); // 3. DEFINE MANAGE CAPABILITY
+
     const [schedules, setSchedules] = useState([]);
     const [batches, setBatches] = useState([]);
     const [templates, setTemplates] = useState([]);
@@ -126,18 +130,31 @@ const ScheduledBroadcastsPage = () => {
             <PageContainer>
                 <Header>
                     <h2>Scheduled Broadcasts</h2>
-                    <Button onClick={() => handleOpenModal(null)}><FaPlus /> New Schedule</Button>
+                    {/* 4. WRAP "NEW SCHEDULE" BUTTON IN PERMISSION CHECK */}
+                    {canManage && (
+                        <Button onClick={() => handleOpenModal(null)}><FaPlus /> New Schedule</Button>
+                    )}
                 </Header>
                 <Card>
-                    <p>Automate your broadcasts...</p>
+                    <p>Automate your broadcasts by setting them to run at specific times or on a recurring basis.</p>
                     <Table>
-                        <thead><tr><th>Active</th><th>Batch Name</th><th>Schedule</th><th>Content</th><th>Actions</th></tr></thead>
+                        <thead><tr><th>Active</th><th>Batch Name</th><th>Schedule</th><th>Content</th>{canManage && <th>Actions</th>}</tr></thead>
                         <tbody>
                             {loading ? ( <tr><td colSpan="5">Loading...</td></tr> ) 
                             : schedules.length === 0 ? ( <tr><td colSpan="5">No schedules created.</td></tr> ) 
                             : ( schedules.map(s => (
                                     <tr key={s.id}>
-                                        <td><SwitchContainer><SwitchInput type="checkbox" checked={!!s.is_active} onChange={() => handleToggle(s)} /><Slider /></SwitchContainer></td>
+                                        <td>
+                                            <SwitchContainer>
+                                                <SwitchInput 
+                                                    type="checkbox" 
+                                                    checked={!!s.is_active} 
+                                                    onChange={() => handleToggle(s)} 
+                                                    disabled={!canManage} // 5. DISABLE INTERACTIVE ELEMENTS
+                                                />
+                                                <Slider />
+                                            </SwitchContainer>
+                                        </td>
                                         <td>{s.batch_name}</td>
                                         <td><ScheduleInfo>{formatSchedule(s)}<span>Timezone: {s.timezone}</span></ScheduleInfo></td>
                                         <MessageContent>
@@ -146,10 +163,13 @@ const ScheduledBroadcastsPage = () => {
                                                 <span className='text'>{s.message}</span>
                                             </div>
                                         </MessageContent>
-                                        <td className="actions">
-                                            <FaEdit onClick={() => handleOpenModal(s)} />
-                                            <FaTrash onClick={() => handleDelete(s.id)} />
-                                        </td>
+                                        {/* 6. WRAP ACTIONS COLUMN IN PERMISSION CHECK */}
+                                        {canManage && (
+                                            <td className="actions">
+                                                <FaEdit onClick={() => handleOpenModal(s)} title="Edit"/>
+                                                <FaTrash onClick={() => handleDelete(s.id)} title="Delete"/>
+                                            </td>
+                                        )}
                                     </tr>
                                 ))
                             )}
@@ -157,14 +177,17 @@ const ScheduledBroadcastsPage = () => {
                     </Table>
                 </Card>
             </PageContainer>
-            <ScheduleModal 
-                isOpen={isModalOpen} 
-                onClose={handleCloseModal} 
-                onSave={handleSave} 
-                schedule={editingSchedule} 
-                batches={batches}
-                templates={templates}
-            />
+            {/* Modal is implicitly protected */}
+            {canManage && (
+                <ScheduleModal 
+                    isOpen={isModalOpen} 
+                    onClose={handleCloseModal} 
+                    onSave={handleSave} 
+                    schedule={editingSchedule} 
+                    batches={batches}
+                    templates={templates}
+                />
+            )}
         </>
     );
 };

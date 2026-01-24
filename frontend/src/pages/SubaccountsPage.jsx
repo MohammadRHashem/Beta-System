@@ -1,15 +1,10 @@
 import React, { useState, useEffect, useCallback } from "react";
 import styled from "styled-components";
+import { usePermissions } from '../context/PermissionContext'; // 1. IMPORT PERMISSIONS HOOK
 import {
-  getSubaccounts,
-  createSubaccount,
-  updateSubaccount,
-  deleteSubaccount,
-  getSubaccountCredentials,
-  resetSubaccountPassword,
-  getRecibosTransactions,
-  reassignTransaction,
-  triggerHardRefresh
+  getSubaccounts, createSubaccount, updateSubaccount, deleteSubaccount,
+  getSubaccountCredentials, resetSubaccountPassword, getRecibosTransactions,
+  reassignTransaction, triggerHardRefresh
 } from "../services/api";
 import Modal from "../components/Modal";
 import { FaPlus, FaEdit, FaTrash, FaKey, FaExchangeAlt, FaMagic, FaHistory } from "react-icons/fa";
@@ -127,10 +122,14 @@ const Input = styled.input`
 `;
 
 const SubaccountsPage = ({ allGroups }) => {
+  const { hasPermission } = usePermissions(); // 2. GET PERMISSION CHECKER
+  const canManageSubaccounts = hasPermission('subaccount:manage');
+  const canManageCredentials = hasPermission('subaccount:manage_credentials');
+  const canReassign = hasPermission('subaccount:reassign_transactions');
+
   const [subaccounts, setSubaccounts] = useState([]);
   const [loading, setLoading] = useState(true);
   
-  // Modals State
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingSubaccount, setEditingSubaccount] = useState(null);
   const [isCredsModalOpen, setIsCredsModalOpen] = useState(false);
@@ -257,12 +256,17 @@ const SubaccountsPage = ({ allGroups }) => {
         <Header>
           <h2>Subaccount Management</h2>
           <div style={{display: 'flex', gap: '1rem'}}>
-            <Button onClick={() => setIsRecibosModalOpen(true)} style={{backgroundColor: '#0A2540'}}>
-                <FaExchangeAlt /> Manage Recibos
-            </Button>
-            <Button onClick={() => handleOpenModal(null)}>
-                <FaPlus /> Add Subaccount
-            </Button>
+            {/* 3. WRAP BUTTONS IN PERMISSION CHECKS */}
+            {canReassign && (
+                <Button onClick={() => setIsRecibosModalOpen(true)} style={{backgroundColor: '#0A2540'}}>
+                    <FaExchangeAlt /> Manage Recibos
+                </Button>
+            )}
+            {canManageSubaccounts && (
+                <Button onClick={() => handleOpenModal(null)}>
+                    <FaPlus /> Add Subaccount
+                </Button>
+            )}
           </div>
         </Header>
         <Card>
@@ -274,7 +278,8 @@ const SubaccountsPage = ({ allGroups }) => {
                 <th>Type</th>
                 <th>Identifier (Number/PIX)</th>
                 <th>Assigned Group</th>
-                <th>Actions</th>
+                {/* Conditionally render actions header */}
+                {(canManageSubaccounts || canManageCredentials) && <th>Actions</th>}
               </tr>
             </thead>
             <tbody>
@@ -283,27 +288,37 @@ const SubaccountsPage = ({ allGroups }) => {
               ) : subaccounts.map((acc) => (
                   <tr key={acc.id}>
                     <td>{acc.name}</td>
-                    <td>
-                        <span style={{ fontWeight: 'bold', color: acc.account_type === 'cross' ? '#217346' : '#7b1fa2' }}>
-                            {acc.account_type.toUpperCase()}
-                        </span>
-                    </td>
+                    <td><span style={{ fontWeight: 'bold', color: acc.account_type === 'cross' ? '#217346' : '#7b1fa2' }}>{acc.account_type.toUpperCase()}</span></td>
                     <td>{acc.account_type === 'cross' ? acc.chave_pix : acc.subaccount_number}</td>
                     <td>{acc.assigned_group_name || <span style={{ color: "#999" }}>None</span>}</td>
-                    <td className="actions">
-                      <FaKey onClick={() => handleCredentials(acc)} title="Manage Credentials" />
-                      {acc.account_type === 'xpayz' && (
-                        <FaHistory onClick={() => handleHardRefresh(acc)} title="Hard Refresh History" />
-                      )}
-                      <FaEdit onClick={() => handleOpenModal(acc)} title="Edit" />
-                      <FaTrash onClick={() => handleDelete(acc.id)} title="Delete" />
-                    </td>
+                    {/* 4. WRAP ACTION ICONS IN PERMISSION CHECKS */}
+                    {(canManageSubaccounts || canManageCredentials) && (
+                        <td className="actions">
+                          {canManageCredentials && <FaKey onClick={() => handleCredentials(acc)} title="Manage Credentials" />}
+                          {canManageSubaccounts && acc.account_type === 'xpayz' && (
+                            <FaHistory onClick={() => handleHardRefresh(acc)} title="Hard Refresh History" />
+                          )}
+                          {canManageSubaccounts && <FaEdit onClick={() => handleOpenModal(acc)} title="Edit" />}
+                          {canManageSubaccounts && <FaTrash onClick={() => handleDelete(acc.id)} title="Delete" />}
+                        </td>
+                    )}
                   </tr>
               ))}
             </tbody>
           </Table>
         </Card>
       </PageContainer>
+
+      {/* Modals are implicitly protected as they can only be opened by users with correct permissions */}
+      {canManageSubaccounts && (
+        <SubaccountModal isOpen={isModalOpen} onClose={handleCloseModals} onSave={fetchSubaccounts} subaccount={editingSubaccount} allGroups={allGroups} />
+      )}
+      {canManageCredentials && (
+        <CredentialsModal isOpen={isCredsModalOpen} onClose={handleCloseModals} credentials={currentCreds} onReset={handleResetPassword} loading={credsLoading} />
+      )}
+      {canReassign && (
+        <RecibosModal isOpen={isRecibosModalOpen} onClose={handleCloseModals} subaccounts={subaccounts} loading={recibosLoading} transactions={recibosTransactions} onSelectAccount={(id) => { setRecibosAccountId(id); fetchRecibosData(id); }} selectedAccountId={recibosAccountId} onReassign={handleReassign} />
+      )}
 
       <SubaccountModal
         isOpen={isModalOpen}

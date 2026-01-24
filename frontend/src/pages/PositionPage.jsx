@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import styled from 'styled-components';
 import { getPositionCounters, createPositionCounter, updatePositionCounter, deletePositionCounter } from '../services/api';
+import { usePermissions } from '../context/PermissionContext'; // 1. IMPORT PERMISSIONS HOOK
 import PositionCounterCard from '../components/PositionCounterCard';
 import PositionCounterModal from '../components/PositionCounterModal';
 import { FaPlus } from 'react-icons/fa';
@@ -40,6 +41,9 @@ const CountersGrid = styled.div`
 `;
 
 const PositionPage = () => {
+    const { hasPermission } = usePermissions(); // 2. GET PERMISSION CHECKER
+    const canManage = hasPermission('finance:manage_counters'); // 3. DEFINE EDIT CAPABILITY
+
     const [counters, setCounters] = useState([]);
     const [loading, setLoading] = useState(true);
     const [isModalOpen, setIsModalOpen] = useState(false);
@@ -101,9 +105,12 @@ const PositionPage = () => {
             <PageContainer>
                 <Header>
                     <Title>Position Dashboard</Title>
-                    <Button onClick={() => handleOpenModal()}>
-                        <FaPlus /> Create New Counter
-                    </Button>
+                    {/* 4. WRAP "CREATE" BUTTON IN PERMISSION CHECK */}
+                    {canManage && (
+                        <Button onClick={() => handleOpenModal()}>
+                            <FaPlus /> Create New Counter
+                        </Button>
+                    )}
                 </Header>
 
                 {loading ? <p>Loading counters...</p> : (
@@ -115,15 +122,20 @@ const PositionPage = () => {
                                     counter={counter}
                                     onEdit={handleOpenModal}
                                     onDelete={handleDeleteCounter}
+                                    // 5. PASS PERMISSION DOWN TO THE CARD COMPONENT
+                                    canManage={canManage}
                                 />
                             ))}
                         </CountersGrid>
                     ) : (
-                        <p>No position counters created yet. Click "Create New Counter" to get started.</p>
+                        canManage ? 
+                        <p>No position counters created yet. Click "Create New Counter" to get started.</p> :
+                        <p>No position counters have been configured.</p>
                     )
                 )}
             </PageContainer>
-
+            
+            {/* Modal is implicitly protected as it's only opened by users with `canManage` */}
             <PositionCounterModal
                 isOpen={isModalOpen}
                 onClose={handleCloseModal}

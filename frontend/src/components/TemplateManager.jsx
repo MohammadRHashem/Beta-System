@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import styled from 'styled-components';
 import { FaPaste, FaEdit, FaTrash, FaPaperclip, FaFolderOpen, FaTimesCircle, FaImage, FaFilePdf, FaFile } from 'react-icons/fa';
 import Modal from './Modal';
-import AttachmentManagerModal from './AttachmentManagerModal'; // Import the attachment manager
+import AttachmentManagerModal from './AttachmentManagerModal';
 import { updateTemplate, deleteTemplate } from '../services/api';
 
 const Container = styled.div` background: #fff; padding: 1.5rem; border: 1px solid ${({ theme }) => theme.border}; border-radius: 8px; `;
@@ -24,7 +24,8 @@ const RemoveButton = styled(FaTimesCircle)` cursor: pointer; color: #999; &:hove
 const AttachmentControls = styled.div` display: flex; gap: 1rem; `;
 const ControlButton = styled.button` display: flex; align-items: center; gap: 0.5rem; padding: 0.6rem 1rem; border: 1px solid ${({ theme }) => theme.border}; background: #fff; border-radius: 4px; font-weight: 600; cursor: pointer; &:hover { background: #f9f9f9; } `;
 
-const TemplateManager = ({ templates, onTemplateSelect, onTemplatesUpdate }) => {
+// 1. ACCEPT THE NEW PERMISSION PROP
+const TemplateManager = ({ templates, onTemplateSelect, onTemplatesUpdate, canManageTemplates }) => {
     const [isEditModalOpen, setIsEditModalOpen] = useState(false);
     const [isAttachmentModalOpen, setIsAttachmentModalOpen] = useState(false);
     const [editingTemplate, setEditingTemplate] = useState(null);
@@ -95,62 +96,70 @@ const TemplateManager = ({ templates, onTemplateSelect, onTemplatesUpdate }) => 
                 <SearchInput type="text" placeholder="Search templates..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
                 <TemplateList>
                     {filteredTemplates.map(template => (
-                        <TemplateItem key={template.id}>
-                            <ItemName onClick={() => onTemplateSelect(template)} title={template.name}>
+                        <TemplateItem key={template.id} onClick={() => onTemplateSelect(template)}>
+                            <ItemName title={template.name}>
                                 {template.name}
                             </ItemName>
-                            <ActionsContainer>
-                                <FaEdit onClick={(e) => { e.stopPropagation(); handleEditClick(template); }} />
-                                <FaTrash onClick={(e) => { e.stopPropagation(); handleDelete(template.id, template.name); }} />
-                            </ActionsContainer>
+                            {/* 2. WRAP ACTIONS IN PERMISSION CHECK */}
+                            {canManageTemplates && (
+                                <ActionsContainer>
+                                    <FaEdit onClick={(e) => { e.stopPropagation(); handleEditClick(template); }} title="Edit"/>
+                                    <FaTrash onClick={(e) => { e.stopPropagation(); handleDelete(template.id, template.name); }} title="Delete"/>
+                                </ActionsContainer>
+                            )}
                         </TemplateItem>
                     ))}
                 </TemplateList>
             </Container>
+            
+            {/* Modal is implicitly protected */}
+            {canManageTemplates && (
+                <>
+                    <Modal isOpen={isEditModalOpen} onClose={() => setIsEditModalOpen(false)} maxWidth="600px">
+                        {editingTemplate && (
+                            <ModalForm>
+                                <h2>Edit Template</h2>
+                                <InputGroup>
+                                    <Label>Template Name</Label>
+                                    <Input type="text" value={editingTemplate.name} onChange={(e) => setEditingTemplate({ ...editingTemplate, name: e.target.value })} />
+                                </InputGroup>
+                                <InputGroup>
+                                    <Label>Message / Caption</Label>
+                                    <Textarea value={editingTemplate.text || ''} onChange={(e) => setEditingTemplate({ ...editingTemplate, text: e.target.value })} />
+                                </InputGroup>
 
-            <Modal isOpen={isEditModalOpen} onClose={() => setIsEditModalOpen(false)} maxWidth="600px">
-                {editingTemplate && (
-                    <ModalForm>
-                        <h2>Edit Template</h2>
-                        <InputGroup>
-                            <Label>Template Name</Label>
-                            <Input type="text" value={editingTemplate.name} onChange={(e) => setEditingTemplate({ ...editingTemplate, name: e.target.value })} />
-                        </InputGroup>
-                        <InputGroup>
-                            <Label>Message / Caption</Label>
-                            <Textarea value={editingTemplate.text || ''} onChange={(e) => setEditingTemplate({ ...editingTemplate, text: e.target.value })} />
-                        </InputGroup>
+                                <InputGroup>
+                                    <Label>Attachment</Label>
+                                    {editingTemplate.attachment ? (
+                                        <AttachmentPreview>
+                                            <FileInfo>
+                                                {getFileIcon(editingTemplate.attachment.mimetype)}
+                                                <span>{editingTemplate.attachment.original_filename}</span>
+                                            </FileInfo>
+                                            <RemoveButton onClick={() => setEditingTemplate({ ...editingTemplate, attachment: null })} />
+                                        </AttachmentPreview>
+                                    ) : (
+                                        <p>No attachment linked.</p>
+                                    )}
+                                    <AttachmentControls>
+                                        <ControlButton type="button" onClick={() => setIsAttachmentModalOpen(true)}>
+                                            {editingTemplate.attachment ? <><FaEdit/> Change</> : <><FaPaperclip/> Add</>} Attachment
+                                        </ControlButton>
+                                    </AttachmentControls>
+                                </InputGroup>
+                                
+                                <SaveButton type="button" onClick={handleSaveChanges}>Save Changes</SaveButton>
+                            </ModalForm>
+                        )}
+                    </Modal>
 
-                        <InputGroup>
-                            <Label>Attachment</Label>
-                            {editingTemplate.attachment ? (
-                                <AttachmentPreview>
-                                    <FileInfo>
-                                        {getFileIcon(editingTemplate.attachment.mimetype)}
-                                        <span>{editingTemplate.attachment.original_filename}</span>
-                                    </FileInfo>
-                                    <RemoveButton onClick={() => setEditingTemplate({ ...editingTemplate, attachment: null })} />
-                                </AttachmentPreview>
-                            ) : (
-                                <p>No attachment linked.</p>
-                            )}
-                            <AttachmentControls>
-                                <ControlButton type="button" onClick={() => setIsAttachmentModalOpen(true)}>
-                                    {editingTemplate.attachment ? <><FaEdit/> Change</> : <><FaPaperclip/> Add</>} Attachment
-                                </ControlButton>
-                            </AttachmentControls>
-                        </InputGroup>
-                        
-                        <SaveButton type="button" onClick={handleSaveChanges}>Save Changes</SaveButton>
-                    </ModalForm>
-                )}
-            </Modal>
-
-            <AttachmentManagerModal
-                isOpen={isAttachmentModalOpen}
-                onClose={() => setIsAttachmentModalOpen(false)}
-                onSelect={handleSelectAttachment}
-            />
+                    <AttachmentManagerModal
+                        isOpen={isAttachmentModalOpen}
+                        onClose={() => setIsAttachmentModalOpen(false)}
+                        onSelect={handleSelectAttachment}
+                    />
+                </>
+            )}
         </>
     );
 };

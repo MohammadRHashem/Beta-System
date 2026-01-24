@@ -1,10 +1,12 @@
 import React, { useState, useEffect, useCallback } from "react";
 import styled from "styled-components";
 import { useAuth } from "../context/AuthContext";
+import { usePermissions } from '../context/PermissionContext'; // 1. IMPORT PERMISSIONS HOOK
 import {
   getInvoices,
   getRecipientNames,
   exportInvoices,
+  deleteInvoice // Import delete function for table
 } from "../services/api";
 import { FaPlus, FaFileExcel, FaSyncAlt } from "react-icons/fa";
 import InvoiceFilter from "../components/InvoiceFilter";
@@ -13,7 +15,7 @@ import InvoiceModal from "../components/InvoiceModal";
 import LinkTransactionModal from "../components/LinkTransactionModal";
 import { useSocket } from "../context/SocketContext";
 
-// Debounce hook to prevent excessive API calls while typing
+// Debounce hook
 const useDebounce = (value, delay) => {
   const [debouncedValue, setDebouncedValue] = useState(value);
   useEffect(() => {
@@ -89,6 +91,7 @@ const RefreshBanner = styled.div`
 `;
 
 const InvoicesPage = ({ allGroups }) => {
+  const { hasPermission } = usePermissions(); // 2. GET PERMISSION CHECKER
   const socket = useSocket();
   const [invoices, setInvoices] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -102,15 +105,8 @@ const InvoicesPage = ({ allGroups }) => {
     totalRecords: 0,
   });
   const [filters, setFilters] = useState({
-    search: "",
-    dateFrom: "",
-    dateTo: "",
-    timeFrom: "",
-    timeTo: "",
-    sourceGroups: [],
-    recipientNames: [],
-    reviewStatus: "",
-    status: "",
+    search: "", dateFrom: "", dateTo: "", timeFrom: "", timeTo: "",
+    sourceGroups: [], recipientNames: [], reviewStatus: "", status: "",
   });
   const { isAuthenticated } = useAuth();
   const [isInvoiceModalOpen, setIsInvoiceModalOpen] = useState(false);
@@ -124,26 +120,11 @@ const InvoicesPage = ({ allGroups }) => {
     setLoading(true);
     setHasNewInvoices(false);
     try {
-      const params = {
-        ...filters,
-        search: debouncedSearch,
-        page: pagination.page,
-        limit: pagination.limit,
-      };
-      Object.keys(params).forEach(
-        (key) =>
-          (!params[key] ||
-            (Array.isArray(params[key]) && params[key].length === 0)) &&
-          delete params[key]
-      );
-
+      const params = { ...filters, search: debouncedSearch, page: pagination.page, limit: pagination.limit };
+      Object.keys(params).forEach(key => (!params[key] || (Array.isArray(params[key]) && params[key].length === 0)) && delete params[key]);
       const { data } = await getInvoices(params);
       setInvoices(data.invoices || []);
-      setPagination((prev) => ({
-        ...prev,
-        totalPages: data.totalPages,
-        totalRecords: data.totalRecords,
-      }));
+      setPagination((prev) => ({ ...prev, totalPages: data.totalPages, totalRecords: data.totalRecords }));
     } catch (error) {
       console.error("Failed to fetch invoices:", error);
       setInvoices([]);
@@ -155,19 +136,10 @@ const InvoicesPage = ({ allGroups }) => {
   useEffect(() => {
     if (isAuthenticated) {
       fetchInvoices();
-    }
-  }, [fetchInvoices, isAuthenticated]);
-
-  useEffect(() => {
-    if (isAuthenticated) {
-      fetchInvoices();
-    }
-  }, [fetchInvoices, isAuthenticated]);
-  useEffect(() => {
-    if (isAuthenticated) {
       getRecipientNames().then((res) => setRecipientNames(res.data));
     }
-  }, [isAuthenticated]);
+  }, [isAuthenticated, fetchInvoices]);
+
   useEffect(() => {
     if (socket) {
       socket.on("invoices:updated", () => setHasNewInvoices(true));
@@ -183,10 +155,7 @@ const InvoicesPage = ({ allGroups }) => {
   const handleExport = async () => {
     setIsExporting(true);
     try {
-      const exportParams = {
-        ...filters,
-        search: debouncedSearch,
-      };
+      const exportParams = { ...filters, search: debouncedSearch };
       await exportInvoices(exportParams);
     } catch (error) {
       console.error("Failed to export invoices:", error);
@@ -197,19 +166,36 @@ const InvoicesPage = ({ allGroups }) => {
   };
 
   const openEditModal = (invoice) => {
+    // Permission check before opening
+    if (!hasPermission('invoice:edit') && invoice !== null) return;
+    if (!hasPermission('invoice:create') && invoice === null) return;
     setEditingInvoice(invoice);
     setIsInvoiceModalOpen(true);
   };
 
   const openLinkModal = (invoice) => {
+    if (!hasPermission('invoice:link')) return;
     setLinkingInvoice(invoice);
     setIsLinkModalOpen(true);
+  };
+  
+  // 3. ADD DELETE HANDLER (was missing from table logic)
+  const handleDelete = async (id) => {
+      if (window.confirm('Are you sure you want to PERMANENTLY delete this invoice? This action cannot be undone.')) {
+          try {
+              await deleteInvoice(id);
+              fetchInvoices(); // Refresh list after deleting
+          } catch (error) {
+              alert('Failed to delete invoice.');
+          }
+      }
   };
 
   const handleSaveAndRefresh = () => {
     closeAllModals();
     fetchInvoices();
   };
+
   const closeAllModals = () => {
     setIsInvoiceModalOpen(false);
     setEditingInvoice(null);
@@ -223,12 +209,17 @@ const InvoicesPage = ({ allGroups }) => {
         <Header>
           <Title>Invoices</Title>
           <Actions>
-            <Button onClick={handleExport} disabled={isExporting}>
-              <FaFileExcel /> {isExporting ? "Exporting..." : "Export"}
-            </Button>
-            <Button primary onClick={() => openEditModal(null)}>
-              <FaPlus /> Add Entry
-            </Button>
+            {/* 4. WRAP BUTTONS IN PERMISSION CHECKS */}
+            {hasPermission('invoice:export') && (
+              <Button onClick={handleExport} disabled={isExporting}>
+                <FaFileExcel /> {isExporting ? "Exporting..." : "Export"}
+              </Button>
+            )}
+            {hasPermission('invoice:create') && (
+              <Button primary onClick={() => openEditModal(null)}>
+                <FaPlus /> Add Entry
+              </Button>
+            )}
           </Actions>
         </Header>
 
@@ -238,25 +229,26 @@ const InvoicesPage = ({ allGroups }) => {
           </RefreshBanner>
         )}
 
-        {/* === THIS IS THE CORRECTED LINE === */}
         <InvoiceFilter
           filters={filters}
           onFilterChange={handleFilterChange}
           allGroups={allGroups}
           recipientNames={recipientNames}
         />
-        {/* ================================ */}
 
         <InvoiceTable
           invoices={invoices}
           loading={loading}
           onEdit={openEditModal}
           onLink={openLinkModal}
+          onDelete={handleDelete} // Pass delete handler
           pagination={pagination}
           setPagination={setPagination}
+          hasPermission={hasPermission} // Pass the permission checker function down
         />
       </PageContainer>
-
+      
+      {/* Modals are implicitly protected since buttons that open them are checked */}
       <InvoiceModal
         isOpen={isInvoiceModalOpen}
         onClose={closeAllModals}

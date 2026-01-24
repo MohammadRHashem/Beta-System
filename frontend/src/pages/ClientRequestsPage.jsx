@@ -2,9 +2,10 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import styled from 'styled-components';
 import { getClientRequests, completeClientRequest, updateClientRequestAmount, updateClientRequestContent, getRequestTypes, updateRequestTypeOrder, restoreClientRequest } from '../services/api';
 import { useSocket } from '../context/SocketContext';
+import { usePermissions } from '../context/PermissionContext'; // 1. IMPORT PERMISSIONS HOOK
 import { FaClipboardList, FaCheck, FaDollarSign, FaEdit, FaSort, FaSortUp, FaSortDown, FaHistory, FaCog, FaArrowUp, FaArrowDown } from 'react-icons/fa';
 import { formatInTimeZone } from 'date-fns-tz';
-import Modal from '../components/Modal'; // Ensure Modal is imported
+import Modal from '../components/Modal';
 
 // --- STYLED COMPONENTS ---
 const PageContainer = styled.div` display: flex; flex-direction: column; gap: 1.5rem; `;
@@ -18,66 +19,13 @@ const Button = styled.button` border: none; padding: 0.5rem 1rem; border-radius:
 const EditableCell = styled.div` display: flex; align-items: center; gap: 0.75rem; font-weight: bold; color: ${({ theme }) => theme.primary}; svg { cursor: pointer; color: #999; flex-shrink: 0; &:hover { color: #333; } }`;
 const ContentCell = styled.td` font-family: 'Courier New', Courier, monospace; font-weight: 500; word-break: break-all; ${EditableCell} > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 300px; }`;
 const AmountButton = styled.button` background: transparent; border: 1px dashed #ccc; color: #666; cursor: pointer; padding: 0.3rem 0.8rem; border-radius: 4px; display: flex; align-items: center; gap: 0.5rem; &:hover { background: #f0f0f0; border-color: #999; } `;
-
-const TabContainer = styled.div`
-    border-bottom: 2px solid ${({ theme }) => theme.border};
-    margin-bottom: 1.5rem;
-    display: flex;
-    flex-wrap: wrap;
-`;
-const Tab = styled.button`
-    padding: 0.75rem 1.25rem;
-    border: none;
-    background: transparent;
-    cursor: pointer;
-    font-weight: 600;
-    font-size: 1rem;
-    color: ${({ theme, active }) => active ? theme.primary : theme.lightText};
-    border-bottom: 3px solid ${({ theme, active }) => active ? theme.secondary : 'transparent'};
-    margin-bottom: -2px;
-    transition: all 0.2s ease-in-out;
-`;
-
-const ConfigButton = styled.button`
-    background: transparent;
-    border: none;
-    color: ${({ theme }) => theme.lightText};
-    cursor: pointer;
-    font-size: 1.2rem;
-    &:hover { color: ${({ theme }) => theme.primary}; }
-`;
-
+const TabContainer = styled.div` border-bottom: 2px solid ${({ theme }) => theme.border}; margin-bottom: 1.5rem; display: flex; flex-wrap: wrap; `;
+const Tab = styled.button` padding: 0.75rem 1.25rem; border: none; background: transparent; cursor: pointer; font-weight: 600; font-size: 1rem; color: ${({ theme, active }) => active ? theme.primary : theme.lightText}; border-bottom: 3px solid ${({ theme, active }) => active ? theme.secondary : 'transparent'}; margin-bottom: -2px; transition: all 0.2s ease-in-out; `;
+const ConfigButton = styled.button` background: transparent; border: none; color: ${({ theme }) => theme.lightText}; cursor: pointer; font-size: 1.2rem; &:hover { color: ${({ theme }) => theme.primary}; } `;
 const ModalList = styled.ul` list-style: none; margin: 1rem 0; padding: 0; `;
-const ModalListItem = styled.li`
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 0.75rem;
-    border: 1px solid ${({ theme }) => theme.border};
-    border-radius: 4px;
-    margin-bottom: 0.5rem;
-    background: #f9f9f9;
-`;
-const ArrowButton = styled.button`
-    background: transparent;
-    border: none;
-    font-size: 1.2rem;
-    cursor: pointer;
-    color: ${({ theme }) => theme.text};
-    &:disabled { color: #ccc; cursor: not-allowed; }
-`;
-
-const SaveOrderButton = styled.button`
-    background-color: ${({ theme }) => theme.primary};
-    color: white;
-    border: none;
-    padding: 0.75rem 1.5rem;
-    border-radius: 4px;
-    cursor: pointer;
-    font-weight: bold;
-    display: block;
-    margin-left: auto;
-`;
+const ModalListItem = styled.li` display: flex; justify-content: space-between; align-items: center; padding: 0.75rem; border: 1px solid ${({ theme }) => theme.border}; border-radius: 4px; margin-bottom: 0.5rem; background: #f9f9f9; `;
+const ArrowButton = styled.button` background: transparent; border: none; font-size: 1.2rem; cursor: pointer; color: ${({ theme }) => theme.text}; &:disabled { color: #ccc; cursor: not-allowed; } `;
+const SaveOrderButton = styled.button` background-color: ${({ theme }) => theme.primary}; color: white; border: none; padding: 0.75rem 1.5rem; border-radius: 4px; cursor: pointer; font-weight: bold; display: block; margin-left: auto; `;
 
 const SAO_PAULO_TIMEZONE = 'America/Sao_Paulo';
 
@@ -105,6 +53,9 @@ const formatSaoPauloDateTime = (dbDateString, formatString) => {
 
 
 const ClientRequestsPage = () => {
+    const { hasPermission } = usePermissions(); // 2. GET PERMISSION CHECKER
+    const canEditSettings = hasPermission('settings:edit_request_triggers'); // 3. DEFINE EDIT CAPABILITY
+
     const [allRequests, setAllRequests] = useState([]);
     const [requestTypes, setRequestTypes] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -119,7 +70,7 @@ const ClientRequestsPage = () => {
         try {
             const [requestsRes, typesRes] = await Promise.all([getClientRequests(), getRequestTypes()]);
             setAllRequests(requestsRes.data);
-            setRequestTypes(typesRes.data); // This will now be pre-sorted by the backend
+            setRequestTypes(typesRes.data);
         } catch (error) {
             alert("Could not load page data.");
         } finally {
@@ -254,7 +205,8 @@ const ClientRequestsPage = () => {
                             <Tab active={activeView === 'pending'} onClick={() => setActiveView('pending')}>Pending</Tab>
                             <Tab active={activeView === 'completed'} onClick={() => setActiveView('completed')}>Completed</Tab>
                         </TabContainer>
-                        {activeView === 'pending' && (
+                        {/* 4. WRAP CONFIG BUTTON IN PERMISSION CHECK */}
+                        {activeView === 'pending' && canEditSettings && (
                             <ConfigButton onClick={() => setIsConfigModalOpen(true)} title="Configure Tab Order">
                                 <FaCog />
                             </ConfigButton>
@@ -287,55 +239,56 @@ const ClientRequestsPage = () => {
                         </tr>
                     </thead>
                     <tbody>
-                        {loading ? (
-                            <tr><td colSpan="7">Loading...</td></tr>
-                        ) : filteredAndSortedRequests.length === 0 ? (
-                            <tr><td colSpan="7" style={{ textAlign: 'center', padding: '2rem' }}>No requests found for this view.</td></tr>
-                        ) : (
-                            filteredAndSortedRequests.map(req => (
-                                <TableRow key={req.id} highlightColor={req.type_color}>
-                                    <td>{formatSaoPauloDateTime(req.received_at, 'dd/MM/yyyy HH:mm')}</td>
-                                    <td>{req.source_group_name}</td>
-                                    <td>{req.request_type}</td>
-                                    <ContentCell>
-                                        <EditableCell>
-                                            <span title={req.content}>{req.content}</span>
-                                            <FaEdit onClick={() => handleContentUpdate(req.id)} />
-                                        </EditableCell>
-                                    </ContentCell>
-                                    <td>
-                                        {req.amount ? (
-                                            <EditableCell>{formatAmount(req.amount)}<FaEdit onClick={() => handleAmountUpdate(req.id)} /></EditableCell>
-                                        ) : (
-                                            activeView === 'pending' && <AmountButton onClick={() => handleAmountUpdate(req.id)}><FaDollarSign /> Add</AmountButton>
-                                        )}
-                                    </td>
-                                    {activeView === 'completed' && (
+                            {loading ? (
+                                <tr><td colSpan="7">Loading...</td></tr>
+                            ) : filteredAndSortedRequests.length === 0 ? (
+                                <tr><td colSpan="7" style={{ textAlign: 'center', padding: '2rem' }}>No requests found for this view.</td></tr>
+                            ) : (
+                                filteredAndSortedRequests.map(req => (
+                                    <TableRow key={req.id} highlightColor={req.type_color}>
+                                        <td>{formatSaoPauloDateTime(req.received_at, 'dd/MM/yyyy HH:mm')}</td>
+                                        <td>{req.source_group_name}</td>
+                                        <td>{req.request_type}</td>
+                                        <ContentCell>
+                                            <EditableCell>
+                                                <span title={req.content}>{req.content}</span>
+                                                <FaEdit onClick={() => handleContentUpdate(req.id)} />
+                                            </EditableCell>
+                                        </ContentCell>
                                         <td>
-                                            {formatSaoPauloDateTime(req.completed_at, 'dd/MM HH:mm')}
-                                            <br />
-                                            <small>by {req.completed_by || 'N/A'}</small>
+                                            {req.amount ? (
+                                                <EditableCell>{formatAmount(req.amount)}<FaEdit onClick={() => handleAmountUpdate(req.id)} /></EditableCell>
+                                            ) : (
+                                                activeView === 'pending' && <AmountButton onClick={() => handleAmountUpdate(req.id)}><FaDollarSign /> Add</AmountButton>
+                                            )}
                                         </td>
-                                    )}
-                                    <td>
-                                        {activeView === 'pending' ? (
-                                            <Button className="complete" onClick={() => handleComplete(req.id)}>
-                                                <FaCheck /> Mark as Done
-                                            </Button>
-                                        ) : (
-                                            <Button className="restore" onClick={() => handleRestore(req.id)}>
-                                                <FaHistory /> Restore
-                                            </Button>
+                                        {activeView === 'completed' && (
+                                            <td>
+                                                {formatSaoPauloDateTime(req.completed_at, 'dd/MM HH:mm')}
+                                                <br />
+                                                <small>by {req.completed_by || 'N/A'}</small>
+                                            </td>
                                         )}
-                                    </td>
-                                </TableRow>
-                            ))
-                        )}
-                    </tbody>
-                </Table>
+                                        <td>
+                                            {activeView === 'pending' ? (
+                                                <Button className="complete" onClick={() => handleComplete(req.id)}>
+                                                    <FaCheck /> Mark as Done
+                                                </Button>
+                                            ) : (
+                                                <Button className="restore" onClick={() => handleRestore(req.id)}>
+                                                    <FaHistory /> Restore
+                                                </Button>
+                                            )}
+                                        </td>
+                                    </TableRow>
+                                ))
+                            )}
+                        </tbody>
+                    </Table>
                 </Card>
             </PageContainer>
-
+            
+            {/* Modal is implicitly protected as it's only opened by users who can see the ConfigButton */}
             <Modal isOpen={isConfigModalOpen} onClose={() => setIsConfigModalOpen(false)}>
                 <h2>Arrange Tab Order</h2>
                 <p>Click the arrows to reorder how the request type tabs appear.</p>

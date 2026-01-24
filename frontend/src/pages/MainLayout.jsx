@@ -1,31 +1,51 @@
 import React, { useState, useEffect, useCallback } from "react";
 import styled from "styled-components";
 import { Routes, Route, useLocation, Navigate } from "react-router-dom";
-import { io } from "socket.io-client";
 import api from "../services/api";
 import { useAuth } from "../context/AuthContext";
+import { usePermissions } from '../context/PermissionContext';
 
+// --- Component Imports ---
 import Sidebar from "../components/Sidebar";
 import StatusIndicator from "../components/StatusIndicator";
+
+// --- Page Imports ---
 import BroadcasterPage from "./BroadcasterPage";
-import AiForwardingPage from "./AiForwardingPage";
-import GroupSettingsPage from "./GroupSettingsPage";
-import ChavePixPage from "./ChavePixPage";
-import AbbreviationsPage from "./AbbreviationsPage";
 import InvoicesPage from "./InvoicesPage";
-import PositionPage from "./PositionPage"; // Add this import
+import SubaccountsPage from "./SubaccountsPage";
+import ManualReviewPage from "./ManualReviewPage";
+import ScheduledBroadcastsPage from "./ScheduledBroadcastsPage";
+import SubCustomersPage from "./SubCustomersPage";
+import UsdtWalletsPage from "./UsdtWalletsPage";
+import PositionPage from "./PositionPage";
+import ClientRequestsPage from "./ClientRequestsPage";
+import RequestTypesPage from "./RequestTypesPage";
+import TrkbitPage from "./TrkbitPage";
+import AlfaTrustPage from "./AlfaTrustPage";
+import AiForwardingPage from "./AiForwardingPage";
 import AutoConfirmationPage from "./AutoConfirmationPage";
 import DirectForwardingPage from "./DirectForwardingPage";
-import AlfaTrustPage from "./AlfaTrustPage";
-import SubaccountsPage from "./SubaccountsPage";
-import ScheduledBroadcastsPage from "./ScheduledBroadcastsPage";
-import UsdtWalletsPage from "./UsdtWalletsPage";
-import SubCustomersPage from "./SubCustomersPage";
-import TrkbitPage from "./TrkbitPage";
-import ManualReviewPage from "./ManualReviewPage";
-import WalletRequestsPage from "./ClientRequestsPage"; // Will be renamed soon
-import RequestTypesPage from "./RequestTypesPage"; // New Page
+import AbbreviationsPage from "./AbbreviationsPage";
+import GroupSettingsPage from "./GroupSettingsPage";
+// --- NEW Admin Page Imports ---
+import UsersPage from "./UsersPage";
+import RolesPage from "./RolesPage";
+import AuditLogPage from "./AuditLogPage";
 
+
+// === HELPER COMPONENT FOR ROUTE PROTECTION ===
+const ProtectedPage = ({ permission, children }) => {
+    const { hasPermission } = usePermissions();
+    if (!hasPermission(permission)) {
+        // If a user tries to access a page they don't have permission for,
+        // redirect them to a safe default page (e.g., invoices).
+        return <Navigate to="/invoices" replace />;
+    }
+    return children;
+};
+
+
+// --- Styled Components ---
 const AppLayout = styled.div`
   display: flex;
   height: 100vh;
@@ -78,8 +98,8 @@ const QRContainer = styled.div`
   }
 `;
 
-const API_URL = "https://platform.betaserver.dev:4433";
 
+// --- Main Layout Component ---
 const MainLayout = () => {
   const [status, setStatus] = useState("disconnected");
   const [qrCode, setQrCode] = useState(null);
@@ -87,9 +107,10 @@ const MainLayout = () => {
 
   const location = useLocation();
   const { logout } = useAuth();
-  const pageName = location.pathname.replace("/", "").replace(/-/g, " ") || "invoices";
+  const { hasPermission } = usePermissions(); // Get permission checker for the default route
 
-  // === REMOVED ALL socket useRef and useEffect logic from here ===
+  // Dynamically generate the page name from the URL path
+  const pageName = location.pathname.replace("/", "").replace(/-/g, " ") || "invoices";
 
   const fetchAllGroupsForConfig = useCallback(async () => {
     try {
@@ -127,6 +148,14 @@ const MainLayout = () => {
     logout();
   };
 
+  // Determine the user's default landing page based on their permissions
+  const getDefaultRoute = () => {
+    if (hasPermission('invoice:view')) return '/invoices';
+    if (hasPermission('manual_review:view')) return '/manual-review';
+    if (hasPermission('broadcast:send')) return '/broadcaster';
+    return '/'; // Fallback to a blank page if no permissions
+  };
+
   return (
     <AppLayout>
       <Sidebar />
@@ -143,46 +172,44 @@ const MainLayout = () => {
             </QRContainer>
           ) : (
             <Routes>
-              <Route path="/scheduled-broadcasts" element={<ScheduledBroadcastsPage />} />
-              <Route
-                path="/subaccounts"
-                element={<SubaccountsPage allGroups={allGroups} />}
-              />
-              <Route path="/sub-customers" element={<SubCustomersPage allGroups={allGroups} />} />
-              <Route
-                path="/usdt-wallets"
-                element={<UsdtWalletsPage />}
-              />
-              <Route path="/position" element={<PositionPage />} />
+              {/* === CORE OPERATIONAL ROUTES === */}
+              <Route path="/invoices" element={<ProtectedPage permission="invoice:view"><InvoicesPage allGroups={allGroups} /></ProtectedPage>} />
+              <Route path="/manual-review" element={<ProtectedPage permission="manual_review:view"><ManualReviewPage allGroups={allGroups} /></ProtectedPage>} />
+              <Route path="/client-requests" element={<ClientRequestsPage />} />
 
-              {/* The socket prop is no longer passed to the child components */}
-              <Route
-                path="/invoices"
-                element={
-                  <InvoicesPage allGroups={allGroups} />
-                }
-              />
-              <Route path="/client-requests" element={<WalletRequestsPage />} />
-              <Route path="/request-types" element={<RequestTypesPage />} />
-              {/* ... (rest of the routes) ... */}
+              {/* === BROADCASTING ROUTES === */}
+              <Route path="/broadcaster" element={<ProtectedPage permission="broadcast:send"><BroadcasterPage allGroups={allGroups} /></ProtectedPage>} />
+              <Route path="/scheduled-broadcasts" element={<ProtectedPage permission="broadcast:schedule"><ScheduledBroadcastsPage /></ProtectedPage>} />
+              
+              {/* === SUBACCOUNT & CLIENT ROUTES === */}
+              <Route path="/subaccounts" element={<ProtectedPage permission="subaccount:view"><SubaccountsPage allGroups={allGroups} /></ProtectedPage>} />
+              
+              {/* === FINANCIAL & BI ROUTES === */}
+              <Route path="/position" element={<ProtectedPage permission="finance:view_dashboards"><PositionPage /></ProtectedPage>} />
+              <Route path="/sub-customers" element={<ProtectedPage permission="finance:view_dashboards"><SubCustomersPage allGroups={allGroups} /></ProtectedPage>} />
+              <Route path="/trkbit" element={<ProtectedPage permission="finance:view_bank_statements"><TrkbitPage /></ProtectedPage>} />
+              <Route path="/alfa-trust" element={<ProtectedPage permission="finance:view_bank_statements"><AlfaTrustPage /></ProtectedPage>} />
+              
+              {/* === SETTINGS & RULES ROUTES === */}
+              <Route path="/ai-forwarding" element={<ProtectedPage permission="settings:view"><AiForwardingPage allGroups={allGroups} /></ProtectedPage>} />
+              <Route path="/direct-forwarding" element={<ProtectedPage permission="settings:view"><DirectForwardingPage allGroups={allGroups} /></ProtectedPage>} />
+              <Route path="/auto-confirmation" element={<ProtectedPage permission="settings:view"><AutoConfirmationPage /></ProtectedPage>} />
+              <Route path="/abbreviations" element={<ProtectedPage permission="settings:view"><AbbreviationsPage /></ProtectedPage>} />
+              <Route path="/group-settings" element={<ProtectedPage permission="settings:edit_rules"><GroupSettingsPage /></ProtectedPage>} />
+              <Route path="/request-types" element={<ProtectedPage permission="settings:edit_request_triggers"><RequestTypesPage /></ProtectedPage>} />
+              <Route path="/usdt-wallets" element={<ProtectedPage permission="settings:edit_usdt_wallets"><UsdtWalletsPage /></ProtectedPage>} />
+
+              {/* === NEW ADMIN ROUTES === */}
+              <Route path="/users" element={<ProtectedPage permission="admin:view_users"><UsersPage /></ProtectedPage>} />
+              <Route path="/roles" element={<ProtectedPage permission="admin:view_roles"><RolesPage /></ProtectedPage>} />
+              <Route path="/audit-log" element={<ProtectedPage permission="admin:view_audit_log"><AuditLogPage /></ProtectedPage>} />
+
+              {/* === LEGACY & REDIRECTS === */}
               <Route path="/wallet-requests" element={<Navigate to="/client-requests" replace />} />
-              <Route path="/trkbit" element={<TrkbitPage />} />
-              <Route path="/alfa-trust" element={<AlfaTrustPage />} />
-              <Route
-                path="/broadcaster"
-                element={<BroadcasterPage allGroups={allGroups} />}
-              />
-              <Route path="/abbreviations" element={<AbbreviationsPage />} />
-              <Route
-                path="/ai-forwarding"
-                element={<AiForwardingPage allGroups={allGroups} />}
-              />
-              <Route path="/auto-confirmation" element={<AutoConfirmationPage />} />
-              <Route path="/direct-forwarding" element={<DirectForwardingPage allGroups={allGroups} />} />
-              <Route path="/chave-pix" element={<ChavePixPage />} />
-              <Route path="/group-settings" element={<GroupSettingsPage />} />
-              <Route path="/manual-review" element={<ManualReviewPage allGroups={allGroups} />} />
-              <Route path="*" element={<Navigate to="/invoices" replace />} />
+              <Route path="/chave-pix" element={<Navigate to="/subaccounts" replace />} />
+              
+              {/* Default route redirects to user's permitted landing page */}
+              <Route path="*" element={<Navigate to={getDefaultRoute()} replace />} />
             </Routes>
           )}
         </PageContent>
