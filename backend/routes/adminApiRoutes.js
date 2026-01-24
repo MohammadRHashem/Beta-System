@@ -31,7 +31,10 @@ router.get('/admin/users', checkPermission('admin:view_users'), userAdminControl
 router.post('/admin/users', checkPermission('admin:manage_users'), userAdminController.createUser);
 router.put('/admin/users/:id', checkPermission('admin:manage_users'), userAdminController.updateUser);
 
+// === ROLE MANAGEMENT ROUTES (UPDATED) ===
 router.get('/admin/roles', checkPermission('admin:view_roles'), userAdminController.getAllRoles);
+router.post('/admin/roles', checkPermission('admin:manage_roles'), userAdminController.createRole); // NEW
+router.put('/admin/roles/:id', checkPermission('admin:manage_roles'), userAdminController.updateRole); // NEW
 router.get('/admin/roles/:id/permissions', checkPermission('admin:view_roles'), userAdminController.getRolePermissions);
 router.put('/admin/roles/:id/permissions', checkPermission('admin:manage_roles'), userAdminController.updateRolePermissions);
 

@@ -137,6 +137,56 @@ exports.updateRolePermissions = async (req, res) => {
     }
 };
 
+exports.createRole = async (req, res) => {
+    const { name, description } = req.body;
+    if (!name) {
+        return res.status(400).json({ message: 'Role name is required.' });
+    }
+    try {
+        const [result] = await pool.query(
+            'INSERT INTO rbac_roles (name, description) VALUES (?, ?)',
+            [name, description || null]
+        );
+        await logAction(req, 'admin:manage_roles', 'Role', result.insertId, { created_role: name });
+        res.status(201).json({ id: result.insertId, name, description });
+    } catch (error) {
+        if (error.code === 'ER_DUP_ENTRY') {
+            return res.status(409).json({ message: 'A role with this name already exists.' });
+        }
+        console.error('Failed to create role:', error);
+        res.status(500).json({ message: 'Server error.' });
+    }
+};
+
+exports.updateRole = async (req, res) => {
+    const { id } = req.params;
+    const { name, description } = req.body;
+    if (!name) {
+        return res.status(400).json({ message: 'Role name is required.' });
+    }
+    // Prevent editing of the Administrator role
+    if (id == 1) {
+        return res.status(403).json({ message: 'The Administrator role cannot be modified.' });
+    }
+    try {
+        const [result] = await pool.query(
+            'UPDATE rbac_roles SET name = ?, description = ? WHERE id = ?',
+            [name, description || null, id]
+        );
+        if (result.affectedRows === 0) {
+            return res.status(404).json({ message: 'Role not found.' });
+        }
+        await logAction(req, 'admin:manage_roles', 'Role', id, { updated_fields: { name, description } });
+        res.json({ message: 'Role updated successfully.' });
+    } catch (error) {
+        if (error.code === 'ER_DUP_ENTRY') {
+            return res.status(409).json({ message: 'A role with this name already exists.' });
+        }
+        console.error('Failed to update role:', error);
+        res.status(500).json({ message: 'Server error.' });
+    }
+};
+
 // ==== AUDIT LOG ====
 
 exports.getAuditLogs = async (req, res) => {

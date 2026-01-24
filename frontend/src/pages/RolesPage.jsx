@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import styled from 'styled-components';
-import { getAllRoles, getRolePermissions, updateRolePermissions } from '../services/api';
-import { usePermissions } from '../context/PermissionContext'; // 1. IMPORT PERMISSIONS HOOK
-import { FaShieldAlt } from 'react-icons/fa';
+import { getAllRoles, getRolePermissions, updateRolePermissions, createRole, updateRole } from '../services/api';
+import { usePermissions } from '../context/PermissionContext';
+import { FaShieldAlt, FaPlus, FaEdit } from 'react-icons/fa';
+import Modal from '../components/Modal';
 
 // Styled Components
 const PageContainer = styled.div`
@@ -137,11 +138,39 @@ const Checkbox = styled.input.attrs({ type: 'checkbox' })`
     }
 `;
 
+// NEW STYLED COMPONENTS FOR MODAL AND ROLE ACTIONS
+const RoleListHeader = styled.div`
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+    h3 { margin: 0; }
+`;
+
+const AddRoleButton = styled.button`
+    background: none;
+    border: none;
+    color: ${({ theme }) => theme.secondary};
+    font-size: 1.5rem;
+    cursor: pointer;
+    &:hover { color: #00a885; }
+`;
+
+const RoleActions = styled.div`
+    margin-left: auto;
+    padding-left: 1rem;
+    svg {
+        cursor: pointer;
+        color: ${({ theme }) => theme.lightText};
+        &:hover { color: ${({ theme }) => theme.primary}; }
+    }
+`;
+
 
 // --- Component Logic ---
 const RolesPage = () => {
-    const { hasPermission } = usePermissions(); // 2. GET PERMISSION CHECKER
-    const canManage = hasPermission('admin:manage_roles'); // 3. DEFINE MANAGE CAPABILITY
+    const { hasPermission } = usePermissions();
+    const canManage = hasPermission('admin:manage_roles');
 
     const [roles, setRoles] = useState([]);
     const [selectedRole, setSelectedRole] = useState(null);
@@ -149,26 +178,32 @@ const RolesPage = () => {
     const [loadingRoles, setLoadingRoles] = useState(true);
     const [loadingPermissions, setLoadingPermissions] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
+    
+    // NEW STATE FOR ROLE MANAGEMENT MODAL
+    const [isRoleModalOpen, setIsRoleModalOpen] = useState(false);
+    const [editingRole, setEditingRole] = useState(null);
+    const [roleFormData, setRoleFormData] = useState({ name: '', description: '' });
 
     const fetchRoles = useCallback(async () => {
         setLoadingRoles(true);
         try {
             const { data } = await getAllRoles();
             setRoles(data);
-            if (data.length > 0) {
+            if (!selectedRole && data.length > 0) {
                 setSelectedRole(data[0]);
+            } else if (selectedRole) {
+                // Reselect the role to refresh its name if it was edited
+                setSelectedRole(data.find(r => r.id === selectedRole.id) || data[0]);
             }
         } catch (error) {
             alert('Failed to fetch roles.');
         } finally {
             setLoadingRoles(false);
         }
-    }, []);
+    }, [selectedRole]);
 
-    useEffect(() => {
-        fetchRoles();
-    }, [fetchRoles]);
-
+    useEffect(() => { fetchRoles(); }, []); // Only run once on mount
+    
     useEffect(() => {
         if (selectedRole) {
             setLoadingPermissions(true);
@@ -178,6 +213,33 @@ const RolesPage = () => {
                 .finally(() => setLoadingPermissions(false));
         }
     }, [selectedRole]);
+
+    // --- NEW HANDLERS FOR ROLE CRUD ---
+    const handleOpenRoleModal = (role = null) => {
+        setEditingRole(role);
+        setRoleFormData(role ? { name: role.name, description: role.description } : { name: '', description: '' });
+        setIsRoleModalOpen(true);
+    };
+
+    const handleRoleFormChange = (e) => {
+        setRoleFormData({...roleFormData, [e.target.name]: e.target.value });
+    };
+
+    const handleSaveRole = async (e) => {
+        e.preventDefault();
+        try {
+            if (editingRole) {
+                await updateRole(editingRole.id, roleFormData);
+            } else {
+                await createRole(roleFormData);
+            }
+            setIsRoleModalOpen(false);
+            fetchRoles(); // Refresh the roles list
+        } catch (error) {
+            alert(error.response?.data?.message || 'Failed to save role.');
+        }
+    };
+
 
     const handlePermissionChange = (permissionId) => {
         setPermissions(prev =>
@@ -212,26 +274,39 @@ const RolesPage = () => {
     const isRoleImmutable = selectedRole?.name === 'Administrator';
 
     return (
-        <PageContainer>
-            <Title><FaShieldAlt /> Roles & Permissions</Title>
-            <MainLayout>
-                <Card>
-                    <h3>Roles</h3>
-                    {loadingRoles ? <p>Loading roles...</p> : (
-                        <RoleList>
-                            {roles.map(role => (
-                                <RoleListItem
-                                    key={role.id}
-                                    className={selectedRole?.id === role.id ? 'active' : ''}
-                                    onClick={() => setSelectedRole(role)}
-                                >
-                                    {role.name}
-                                </RoleListItem>
-                            ))}
-                        </RoleList>
-                    )}
-                </Card>
-                <PermissionsPanel>
+        <>
+            <PageContainer>
+                <Title><FaShieldAlt /> Roles & Permissions</Title>
+                <MainLayout>
+                    <Card>
+                        <RoleListHeader>
+                            <h3>Roles</h3>
+                            {canManage && (
+                                <AddRoleButton onClick={() => handleOpenRoleModal(null)} title="Add New Role">
+                                    <FaPlus />
+                                </AddRoleButton>
+                            )}
+                        </RoleListHeader>
+                        {loadingRoles ? <p>Loading roles...</p> : (
+                            <RoleList>
+                                {roles.map(role => (
+                                    <RoleListItem
+                                        key={role.id}
+                                        className={selectedRole?.id === role.id ? 'active' : ''}
+                                        onClick={() => setSelectedRole(role)}
+                                    >
+                                        {role.name}
+                                        {canManage && role.name !== 'Administrator' && (
+                                            <RoleActions>
+                                                <FaEdit onClick={(e) => { e.stopPropagation(); handleOpenRoleModal(role); }} />
+                                            </RoleActions>
+                                        )}
+                                    </RoleListItem>
+                                ))}
+                            </RoleList>
+                        )}
+                    </Card>
+                    <PermissionsPanel>
                     <Card>
                         {selectedRole ? (
                             <>
@@ -274,6 +349,23 @@ const RolesPage = () => {
                 </PermissionsPanel>
             </MainLayout>
         </PageContainer>
+
+            {/* NEW MODAL FOR CREATING/EDITING ROLES */}
+            <Modal isOpen={isRoleModalOpen} onClose={() => setIsRoleModalOpen(false)}>
+                <ModalForm onSubmit={handleSaveRole}>
+                    <h2>{editingRole ? 'Edit Role' : 'Create New Role'}</h2>
+                    <InputGroup>
+                        <Label>Role Name</Label>
+                        <Input name="name" value={roleFormData.name} onChange={handleRoleFormChange} required />
+                    </InputGroup>
+                    <InputGroup>
+                        <Label>Description (Optional)</Label>
+                        <Input name="description" value={roleFormData.description} onChange={handleRoleFormChange} />
+                    </InputGroup>
+                    <Button type="submit" style={{ alignSelf: 'flex-end' }}>Save Role</Button>
+                </ModalForm>
+            </Modal>
+        </>
     );
 };
 
