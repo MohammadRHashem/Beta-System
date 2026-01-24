@@ -1,7 +1,7 @@
 import React from "react";
 import { NavLink } from "react-router-dom";
 import styled from "styled-components";
-import { FaWhatsapp, FaBullhorn, FaRobot, FaCog, FaKey, FaKeyboard, FaFileInvoiceDollar, FaChartLine, FaCheckCircle, FaRoute, FaUniversity, FaUsers, FaBitcoin, FaCalendarAlt, FaUserFriends, FaCheckDouble, FaClipboardList, FaCodeBranch } from "react-icons/fa";
+import { FaWhatsapp, FaBullhorn, FaRobot, FaCog, FaKey, FaKeyboard, FaFileInvoiceDollar, FaChartLine, FaCheckCircle, FaRoute, FaUniversity, FaUsers, FaBitcoin, FaCalendarAlt, FaUserFriends, FaCheckDouble, FaClipboardList, FaCodeBranch, FaShieldAlt } from "react-icons/fa";
 import { usePermissions } from '../context/PermissionContext';
 
 const SidebarContainer = styled.nav`
