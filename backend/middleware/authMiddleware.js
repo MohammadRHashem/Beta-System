@@ -1,3 +1,4 @@
+// backend/middleware/authMiddleware.js
 const jwt = require('jsonwebtoken');
 const pool = require('../config/db');
 require('dotenv').config();
@@ -11,27 +12,40 @@ module.exports = async (req, res, next) => {
 
     const token = authHeader.split(' ')[1];
     try {
+        // First, just verify the token is valid and get the user ID
         const decoded = jwt.verify(token, JWT_SECRET);
+
+        // === START OF THE NEW LOGIC ===
+        // Now, fetch the user's current role and permissions from the DB on every request.
+        // This ensures that if an admin changes a user's role, it takes effect immediately.
         
-        // Hydrate request with full user permissions
-        const [[user]] = await pool.query('SELECT r.name as role FROM users u JOIN roles r ON u.role_id = r.id WHERE u.id = ? AND u.is_active = 1', [decoded.id]);
+        const [[user]] = await pool.query(
+            `SELECT u.id, u.username, r.name as role 
+             FROM users u 
+             LEFT JOIN rbac_roles r ON u.role_id = r.id 
+             WHERE u.id = ? AND u.is_active = 1`, 
+            [decoded.id]
+        );
+
         if (!user) {
             return res.status(401).json({ message: 'User not found or is inactive.' });
         }
 
         const [permissions] = await pool.query(
-            `SELECT p.action FROM permissions p 
-             JOIN role_permissions rp ON p.id = rp.permission_id 
+            `SELECT p.action FROM rbac_permissions p 
+             JOIN rbac_role_permissions rp ON p.id = rp.permission_id 
              WHERE rp.role_id = (SELECT role_id FROM users WHERE id = ?)`,
             [decoded.id]
         );
-
+        
+        // Attach the full user object with permissions to the request
         req.user = {
-            id: decoded.id,
-            username: decoded.username,
+            id: user.id,
+            username: user.username,
             role: user.role,
             permissions: permissions.map(p => p.action)
         };
+        // === END OF THE NEW LOGIC ===
         
         next();
     } catch (error) {
