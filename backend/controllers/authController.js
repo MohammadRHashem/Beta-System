@@ -40,8 +40,7 @@ exports.login = async (req, res) => {
         return res.status(400).json({ message: 'Username and password are required.' });
     }
     try {
-        // === START OF THE NEW LOGIC ===
-        // Fetch user from the new `users` table
+        // Fetch user from the new `users` table, INCLUDING token_version
         const [users] = await pool.query('SELECT * FROM users WHERE username = ?', [username]);
         const user = users[0];
 
@@ -49,8 +48,7 @@ exports.login = async (req, res) => {
             return res.status(401).json({ message: 'Invalid credentials or account is inactive.' });
         }
 
-        // Fetch the user's role and permissions to embed in the token
-        const [[roleData]] = await pool.query('SELECT name FROM roles WHERE id = ?', [user.role_id]);
+        const [[roleData]] = await pool.query('SELECT name FROM rbac_roles WHERE id = ?', [user.role_id]);
         const userRole = roleData ? roleData.name : null;
 
         const [permissions] = await pool.query(
@@ -64,16 +62,17 @@ exports.login = async (req, res) => {
         await pool.query('UPDATE users SET last_login = NOW() WHERE id = ?', [user.id]);
         
         // Create the NEW, enriched JWT payload
+        // === THE FIX: Add token_version to the JWT payload ===
         const tokenPayload = { 
             id: user.id, 
             username: user.username,
             role: userRole,
-            permissions: permissions.map(p => p.action)
+            permissions: permissions.map(p => p.action),
+            token_version: user.token_version // Add this line
         };
 
         const token = jwt.sign(tokenPayload, JWT_SECRET, { expiresIn: '8h' });
         
-        // Log the login event
         await logAction({ user: { id: user.id, username: user.username } }, 'auth:login');
         
         res.json({ token, user: { id: user.id, username: user.username } });

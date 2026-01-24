@@ -46,14 +46,21 @@ exports.updateUser = async (req, res) => {
     const { id } = req.params;
     const { role_id, is_active, password } = req.body;
 
-    // Build query dynamically
     let fields = [];
     let params = [];
-    if (role_id) { fields.push('role_id = ?'); params.push(role_id); }
+    
+    // === THE FIX: If the role changes, also increment the token_version ===
+    if (role_id) { 
+        fields.push('role_id = ?'); 
+        fields.push('token_version = token_version + 1'); // Increment the version
+        params.push(role_id); 
+    }
+    
     if (is_active !== undefined) { fields.push('is_active = ?'); params.push(is_active); }
     if (password) {
         const hashedPassword = await bcrypt.hash(password, 10);
         fields.push('password_hash = ?');
+        fields.push('token_version = token_version + 1'); // Also force re-login on password change
         params.push(hashedPassword);
     }
 
@@ -62,7 +69,7 @@ exports.updateUser = async (req, res) => {
     }
 
     params.push(id);
-    params.push(req.user.id); // Ensure user cannot edit themselves
+    params.push(req.user.id);
 
     try {
         const query = `UPDATE users SET ${fields.join(', ')} WHERE id = ? AND id != ?`;
@@ -107,27 +114,28 @@ exports.getRolePermissions = async (req, res) => {
 };
 
 exports.updateRolePermissions = async (req, res) => {
-    const { id } = req.params;
-    const { permissionIds } = req.body; // Expects an array of numbers
-    if (!Array.isArray(permissionIds)) {
-        return res.status(400).json({ message: 'permissionIds must be an array.' });
-    }
-
+    const { id: roleId } = req.params;
+    const { permissionIds } = req.body;
+    
     const connection = await pool.getConnection();
     try {
         await connection.beginTransaction();
-        // Clear existing permissions for this role
-        await connection.query('DELETE FROM role_permissions WHERE role_id = ?', [id]);
+        await connection.query('DELETE FROM rbac_role_permissions WHERE role_id = ?', [roleId]);
         
-        // Insert new ones if any are provided
         if (permissionIds.length > 0) {
-            const values = permissionIds.map(pid => [id, pid]);
-            await connection.query('INSERT INTO role_permissions (role_id, permission_id) VALUES ?', [values]);
+            const values = permissionIds.map(pid => [roleId, pid]);
+            await connection.query('INSERT INTO rbac_role_permissions (role_id, permission_id) VALUES ?', [values]);
         }
         
+        // === THE FIX: Invalidate tokens for all users with this role ===
+        await connection.query(
+            'UPDATE users SET token_version = token_version + 1 WHERE role_id = ?',
+            [roleId]
+        );
+        
         await connection.commit();
-        await logAction(req, 'admin:manage_roles', 'Role', id, { new_permission_count: permissionIds.length });
-        res.json({ message: 'Role permissions updated successfully.' });
+        await logAction(req, 'admin:manage_roles', 'Role', roleId, { new_permission_count: permissionIds.length });
+        res.json({ message: 'Role permissions updated. Affected users will need to log in again.' });
     } catch (error) {
         await connection.rollback();
         console.error('Failed to update role permissions:', error);

@@ -7,48 +7,37 @@ const JWT_SECRET = process.env.JWT_SECRET;
 module.exports = async (req, res, next) => {
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
-        return res.status(401).json({ message: 'No token provided, authorization denied.' });
+        return res.status(401).json({ message: 'No token provided.' });
     }
 
     const token = authHeader.split(' ')[1];
     try {
         const decoded = jwt.verify(token, JWT_SECRET);
         
-        // Fetch the user's current role and status from the database.
+        // === THE FIX: Version Check ===
+        // Fetch only the essential data for the check. This is very fast.
         const [[user]] = await pool.query(
-            // === FIX 1: Use `roles` table ===
-            `SELECT u.id, u.username, u.role_id, r.name as role 
-             FROM users u 
-             LEFT JOIN roles r ON u.role_id = r.id 
-             WHERE u.id = ? AND u.is_active = 1`, 
+            'SELECT token_version, is_active FROM users WHERE id = ?', 
             [decoded.id]
         );
 
-        if (!user) {
-            return res.status(401).json({ message: 'User not found or is inactive.' });
+        // If user doesn't exist, is inactive, or token version is stale, reject the token.
+        if (!user || !user.is_active || user.token_version !== decoded.token_version) {
+            return res.status(401).json({ message: 'Session is invalid. Please log in again.' });
         }
 
-        // Fetch the current permissions for that user's role.
-        const [permissions] = await pool.query(
-            // === FIX 2: Use `permissions` and `role_permissions` tables ===
-            `SELECT p.action FROM permissions p 
-             JOIN role_permissions rp ON p.id = rp.permission_id 
-             WHERE rp.role_id = ?`,
-            [user.role_id] // Use the role_id we just fetched
-        );
-        
-        // Build the fresh user object and attach it to the request.
+        // The token is valid and fresh. We can now trust its contents.
+        // This avoids extra DB calls for permissions on every request.
         req.user = {
-            id: user.id,
-            username: user.username,
-            role: user.role,
-            permissions: permissions.map(p => p.action)
+            id: decoded.id,
+            username: decoded.username,
+            role: decoded.role,
+            permissions: decoded.permissions
         };
         
         next();
     } catch (error) {
-        // This will catch expired tokens or DB errors.
-        console.error('[AUTH MIDDLEWARE ERROR]', error); // Added for better debugging
+        console.error('[AUTH MIDDLEWARE ERROR]', error);
         res.status(401).json({ message: 'Token is not valid or has expired.' });
     }
 };
