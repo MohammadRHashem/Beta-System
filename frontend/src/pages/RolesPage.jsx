@@ -166,6 +166,12 @@ const RoleActions = styled.div`
     }
 `;
 
+const ModalForm = styled.form`
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+`;
+
 
 // --- Component Logic ---
 const RolesPage = () => {
