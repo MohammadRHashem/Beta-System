@@ -144,7 +144,7 @@ exports.createRole = async (req, res) => {
     }
     try {
         const [result] = await pool.query(
-            'INSERT INTO rbac_roles (name, description) VALUES (?, ?)',
+            'INSERT INTO roles (name, description) VALUES (?, ?)',
             [name, description || null]
         );
         await logAction(req, 'admin:manage_roles', 'Role', result.insertId, { created_role: name });
@@ -170,7 +170,7 @@ exports.updateRole = async (req, res) => {
     }
     try {
         const [result] = await pool.query(
-            'UPDATE rbac_roles SET name = ?, description = ? WHERE id = ?',
+            'UPDATE roles SET name = ?, description = ? WHERE id = ?',
             [name, description || null, id]
         );
         if (result.affectedRows === 0) {
