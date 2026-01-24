@@ -50,12 +50,12 @@ exports.login = async (req, res) => {
         }
 
         // Fetch the user's role and permissions to embed in the token
-        const [[roleData]] = await pool.query('SELECT name FROM rbac_roles WHERE id = ?', [user.role_id]);
+        const [[roleData]] = await pool.query('SELECT name FROM roles WHERE id = ?', [user.role_id]);
         const userRole = roleData ? roleData.name : null;
 
         const [permissions] = await pool.query(
-            `SELECT p.action FROM rbac_permissions p
-             JOIN rbac_role_permissions rp ON p.id = rp.permission_id
+            `SELECT p.action FROM permissions p
+             JOIN role_permissions rp ON p.id = rp.permission_id
              WHERE rp.role_id = ?`,
             [user.role_id]
         );

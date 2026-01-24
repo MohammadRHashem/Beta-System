@@ -22,7 +22,7 @@ module.exports = async (req, res, next) => {
         const [[user]] = await pool.query(
             `SELECT u.id, u.username, r.name as role 
              FROM users u 
-             LEFT JOIN rbac_roles r ON u.role_id = r.id 
+             LEFT JOIN roles r ON u.role_id = r.id 
              WHERE u.id = ? AND u.is_active = 1`, 
             [decoded.id]
         );
@@ -32,8 +32,8 @@ module.exports = async (req, res, next) => {
         }
 
         const [permissions] = await pool.query(
-            `SELECT p.action FROM rbac_permissions p 
-             JOIN rbac_role_permissions rp ON p.id = rp.permission_id 
+            `SELECT p.action FROM permissions p 
+             JOIN role_permissions rp ON p.id = rp.permission_id 
              WHERE rp.role_id = (SELECT role_id FROM users WHERE id = ?)`,
             [decoded.id]
         );
