@@ -172,6 +172,40 @@ const ModalForm = styled.form`
   gap: 1.5rem;
 `;
 
+const InputGroup = styled.div`
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+
+    label {
+        font-weight: 500;
+        font-size: 0.85rem;
+    }
+
+    input, select {
+        padding: 0.75rem;
+        border: 1px solid ${({ theme }) => theme.border};
+        border-radius: 4px;
+        font-size: 0.9rem;
+        width: 100%;
+        background: #fff;
+    }
+`;
+
+const Label = styled.label`
+    font-weight: 500;
+    font-size: 0.9rem;
+`;
+
+const Input = styled.input`
+    width: 100%;
+    padding: 0.75rem;
+    border: none;
+    border-radius: 4px;
+    font-size: 1rem;
+    outline: none;
+`;
+
 
 // --- Component Logic ---
 const RolesPage = () => {
