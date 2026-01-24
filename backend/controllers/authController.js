@@ -48,7 +48,7 @@ exports.login = async (req, res) => {
             return res.status(401).json({ message: 'Invalid credentials or account is inactive.' });
         }
 
-        const [[roleData]] = await pool.query('SELECT name FROM rbac_roles WHERE id = ?', [user.role_id]);
+        const [[roleData]] = await pool.query('SELECT name FROM roles WHERE id = ?', [user.role_id]);
         const userRole = roleData ? roleData.name : null;
 
         const [permissions] = await pool.query(

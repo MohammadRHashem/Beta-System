@@ -120,11 +120,11 @@ exports.updateRolePermissions = async (req, res) => {
     const connection = await pool.getConnection();
     try {
         await connection.beginTransaction();
-        await connection.query('DELETE FROM rbac_role_permissions WHERE role_id = ?', [roleId]);
+        await connection.query('DELETE FROM role_permissions WHERE role_id = ?', [roleId]);
         
         if (permissionIds.length > 0) {
             const values = permissionIds.map(pid => [roleId, pid]);
-            await connection.query('INSERT INTO rbac_role_permissions (role_id, permission_id) VALUES ?', [values]);
+            await connection.query('INSERT INTO role_permissions (role_id, permission_id) VALUES ?', [values]);
         }
         
         // === THE FIX: Invalidate tokens for all users with this role ===
