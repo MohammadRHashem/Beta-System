@@ -179,7 +179,7 @@ const MainLayout = () => {
 
               {/* === BROADCASTING ROUTES === */}
               <Route path="/broadcaster" element={<ProtectedPage permission="broadcast:send"><BroadcasterPage allGroups={allGroups} /></ProtectedPage>} />
-              <Route path="/scheduled-broadcasts" element={<ProtectedPage permission={['broadcast:schedules:view', 'broadcast:schedule']}><ScheduledBroadcastsPage /></ProtectedPage>} />
+              <Route path="/scheduled-broadcasts" element={<ProtectedPage permission="broadcast:schedules:view"><ScheduledBroadcastsPage /></ProtectedPage>} />
               
               {/* === SUBACCOUNT & CLIENT ROUTES === */}
               <Route path="/subaccounts" element={<ProtectedPage permission="subaccount:view"><SubaccountsPage allGroups={allGroups} /></ProtectedPage>} />
@@ -197,7 +197,7 @@ const MainLayout = () => {
               <Route path="/abbreviations" element={<ProtectedPage permission="settings:view"><AbbreviationsPage /></ProtectedPage>} />
               <Route path="/group-settings" element={<ProtectedPage permission="settings:edit_rules"><GroupSettingsPage /></ProtectedPage>} />
               <Route path="/request-types" element={<ProtectedPage permission="settings:edit_request_triggers"><RequestTypesPage /></ProtectedPage>} />
-              <Route path="/usdt-wallets" element={<ProtectedPage permission={['usdt_wallets:view', 'settings:edit_usdt_wallets']}><UsdtWalletsPage /></ProtectedPage>} />
+              <Route path="/usdt-wallets" element={<ProtectedPage permission="usdt_wallets:view"><UsdtWalletsPage /></ProtectedPage>} />
 
               {/* === NEW ADMIN ROUTES === */}
               <Route path="/users" element={<ProtectedPage permission="admin:view_users"><UsersPage /></ProtectedPage>} />

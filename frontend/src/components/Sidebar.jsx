@@ -69,10 +69,10 @@ const Sidebar = () => {
         {hasPermission('broadcast:send') && <NavItem to="/broadcaster"><FaBullhorn /><span>Broadcaster</span></NavItem>}
         {hasPermission('subaccount:view') && <NavItem to="/subaccounts"><FaUsers /><span>Subaccounts</span></NavItem>}
         {hasPermission('finance:view_dashboards') && <NavItem to="/sub-customers"><FaUserFriends /><span>Sub Customers</span></NavItem>}
-        {hasPermission(['usdt_wallets:view', 'settings:edit_usdt_wallets']) && <NavItem to="/usdt-wallets"><FaBitcoin /><span>USDT Wallets</span></NavItem>}
+        {hasPermission('usdt_wallets:view') && <NavItem to="/usdt-wallets"><FaBitcoin /><span>USDT Wallets</span></NavItem>}
         {hasPermission('client_requests:view') && <NavItem to="/client-requests"><FaClipboardList /><span>Client Requests</span></NavItem>}
         {hasPermission('settings:edit_request_triggers') && <NavItem to="/request-types"><FaCodeBranch /><span>Request Triggers</span></NavItem>}
-        {hasPermission(['broadcast:schedules:view', 'broadcast:schedule']) && <NavItem to="/scheduled-broadcasts"><FaCalendarAlt /><span>Schedules</span></NavItem>}
+        {hasPermission('broadcast:schedules:view') && <NavItem to="/scheduled-broadcasts"><FaCalendarAlt /><span>Schedules</span></NavItem>}
         
         {hasPermission('settings:view') && (
             <>

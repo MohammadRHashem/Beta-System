@@ -36,17 +36,17 @@ const API_URL = "https://platform.betaserver.dev:4433";
 
 const BroadcasterPage = ({ allGroups }) => {
   const { hasPermission } = usePermissions(); // 2. GET PERMISSION CHECKER
-  const canViewBatches = hasPermission(['broadcast:batches:view', 'broadcast:manage_batches']);
-  const canCreateBatches = hasPermission(['broadcast:batches:create', 'broadcast:manage_batches']);
-  const canUpdateBatches = hasPermission(['broadcast:batches:update', 'broadcast:manage_batches']);
-  const canDeleteBatches = hasPermission(['broadcast:batches:delete', 'broadcast:manage_batches']);
-  const canViewTemplates = hasPermission(['broadcast:templates:view', 'broadcast:manage_templates']);
-  const canCreateTemplates = hasPermission(['broadcast:templates:create', 'broadcast:manage_templates']);
-  const canUpdateTemplates = hasPermission(['broadcast:templates:update', 'broadcast:manage_templates']);
-  const canDeleteTemplates = hasPermission(['broadcast:templates:delete', 'broadcast:manage_templates']);
-  const canViewAttachments = hasPermission(['broadcast:uploads:view', 'broadcast:manage_attachments']);
-  const canCreateAttachments = hasPermission(['broadcast:uploads:create', 'broadcast:manage_attachments']);
-  const canDeleteAttachments = hasPermission(['broadcast:uploads:delete', 'broadcast:manage_attachments']);
+  const canViewBatches = hasPermission('broadcast:batches:view');
+  const canCreateBatches = hasPermission('broadcast:batches:create');
+  const canUpdateBatches = hasPermission('broadcast:batches:update');
+  const canDeleteBatches = hasPermission('broadcast:batches:delete');
+  const canViewTemplates = hasPermission('broadcast:templates:view');
+  const canCreateTemplates = hasPermission('broadcast:templates:create');
+  const canUpdateTemplates = hasPermission('broadcast:templates:update');
+  const canDeleteTemplates = hasPermission('broadcast:templates:delete');
+  const canViewAttachments = hasPermission('broadcast:uploads:view');
+  const canCreateAttachments = hasPermission('broadcast:uploads:create');
+  const canDeleteAttachments = hasPermission('broadcast:uploads:delete');
 
   const [selectedGroups, setSelectedGroups] = useState(new Set());
   const [batches, setBatches] = useState([]);

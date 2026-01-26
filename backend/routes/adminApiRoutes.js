@@ -51,29 +51,29 @@ router.post('/broadcast', checkPermission('broadcast:send'), whatsappController.
 
 
 // --- Batches ---
-router.get('/batches', checkPermission(['broadcast:batches:view', 'broadcast:manage_batches']), batchController.getAllBatches);
-router.post('/batches', checkPermission(['broadcast:batches:create', 'broadcast:manage_batches']), batchController.createBatch);
-router.get('/batches/:id', checkPermission(['broadcast:batches:view', 'broadcast:manage_batches']), batchController.getGroupIdsByBatch);
-router.put('/batches/:id', checkPermission(['broadcast:batches:update', 'broadcast:manage_batches']), batchController.updateBatch);
-router.delete('/batches/:id', checkPermission(['broadcast:batches:delete', 'broadcast:manage_batches']), batchController.deleteBatch);
+router.get('/batches', checkPermission('broadcast:batches:view'), batchController.getAllBatches);
+router.post('/batches', checkPermission('broadcast:batches:create'), batchController.createBatch);
+router.get('/batches/:id', checkPermission('broadcast:batches:view'), batchController.getGroupIdsByBatch);
+router.put('/batches/:id', checkPermission('broadcast:batches:update'), batchController.updateBatch);
+router.delete('/batches/:id', checkPermission('broadcast:batches:delete'), batchController.deleteBatch);
 
 
 // --- Templates ---
-router.get('/templates', checkPermission(['broadcast:templates:view', 'broadcast:manage_templates']), templateController.getAllTemplates);
-router.post('/templates', checkPermission(['broadcast:templates:create', 'broadcast:manage_templates']), templateController.createTemplate);
-router.put('/templates/:id', checkPermission(['broadcast:templates:update', 'broadcast:manage_templates']), templateController.updateTemplate);
-router.delete('/templates/:id', checkPermission(['broadcast:templates:delete', 'broadcast:manage_templates']), templateController.deleteTemplate);
+router.get('/templates', checkPermission('broadcast:templates:view'), templateController.getAllTemplates);
+router.post('/templates', checkPermission('broadcast:templates:create'), templateController.createTemplate);
+router.put('/templates/:id', checkPermission('broadcast:templates:update'), templateController.updateTemplate);
+router.delete('/templates/:id', checkPermission('broadcast:templates:delete'), templateController.deleteTemplate);
 
 
 // --- Broadcast Uploads ---
-router.get('/broadcasts/uploads', checkPermission(['broadcast:uploads:view', 'broadcast:manage_attachments']), broadcastUploadController.getAllUploads);
-router.post('/broadcasts/upload', checkPermission(['broadcast:uploads:create', 'broadcast:manage_attachments']), (req, res, next) => {
+router.get('/broadcasts/uploads', checkPermission('broadcast:uploads:view'), broadcastUploadController.getAllUploads);
+router.post('/broadcasts/upload', checkPermission('broadcast:uploads:create'), (req, res, next) => {
     req.broadcastUpload.single('file')(req, res, (err) => {
         if (err) { return res.status(400).json({ message: 'File upload failed.', error: err.message }); }
         next();
     });
 }, broadcastUploadController.handleUpload);
-router.delete('/broadcasts/uploads/:id', checkPermission(['broadcast:uploads:delete', 'broadcast:manage_attachments']), broadcastUploadController.deleteUpload);
+router.delete('/broadcasts/uploads/:id', checkPermission('broadcast:uploads:delete'), broadcastUploadController.deleteUpload);
 
 
 // --- Invoices ---

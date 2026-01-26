@@ -42,15 +42,15 @@ const daysOfWeekFull = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", 
 
 const ScheduledBroadcastsPage = () => {
     const { hasPermission } = usePermissions(); // 2. GET PERMISSION CHECKER
-    const canView = hasPermission(['broadcast:schedules:view', 'broadcast:schedule']);
-    const canCreate = hasPermission(['broadcast:schedules:create', 'broadcast:schedule']);
-    const canUpdate = hasPermission(['broadcast:schedules:update', 'broadcast:schedule']);
-    const canDelete = hasPermission(['broadcast:schedules:delete', 'broadcast:schedule']);
-    const canViewBatches = hasPermission(['broadcast:batches:view', 'broadcast:manage_batches']);
-    const canViewTemplates = hasPermission(['broadcast:templates:view', 'broadcast:manage_templates']);
-    const canViewUploads = hasPermission(['broadcast:uploads:view', 'broadcast:manage_attachments']);
-    const canCreateUploads = hasPermission(['broadcast:uploads:create', 'broadcast:manage_attachments']);
-    const canDeleteUploads = hasPermission(['broadcast:uploads:delete', 'broadcast:manage_attachments']);
+    const canView = hasPermission('broadcast:schedules:view');
+    const canCreate = hasPermission('broadcast:schedules:create');
+    const canUpdate = hasPermission('broadcast:schedules:update');
+    const canDelete = hasPermission('broadcast:schedules:delete');
+    const canViewBatches = hasPermission('broadcast:batches:view');
+    const canViewTemplates = hasPermission('broadcast:templates:view');
+    const canViewUploads = hasPermission('broadcast:uploads:view');
+    const canCreateUploads = hasPermission('broadcast:uploads:create');
+    const canDeleteUploads = hasPermission('broadcast:uploads:delete');
 
     const [schedules, setSchedules] = useState([]);
     const [batches, setBatches] = useState([]);

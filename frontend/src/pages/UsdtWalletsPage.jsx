@@ -139,11 +139,11 @@ const Input = styled.input`
 
 const UsdtWalletsPage = () => {
     const { hasPermission } = usePermissions(); // 2. GET PERMISSION CHECKER
-    const canView = hasPermission(['usdt_wallets:view', 'settings:edit_usdt_wallets']);
-    const canCreate = hasPermission(['usdt_wallets:create', 'settings:edit_usdt_wallets']);
-    const canUpdate = hasPermission(['usdt_wallets:update', 'settings:edit_usdt_wallets']);
-    const canDelete = hasPermission(['usdt_wallets:delete', 'settings:edit_usdt_wallets']);
-    const canToggle = hasPermission(['usdt_wallets:toggle', 'settings:edit_usdt_wallets']);
+    const canView = hasPermission('usdt_wallets:view');
+    const canCreate = hasPermission('usdt_wallets:create');
+    const canUpdate = hasPermission('usdt_wallets:update');
+    const canDelete = hasPermission('usdt_wallets:delete');
+    const canToggle = hasPermission('usdt_wallets:toggle');
 
     const [wallets, setWallets] = useState([]);
     const [loading, setLoading] = useState(true);
