@@ -1,14 +1,12 @@
 const pool = require('../config/db');
 const whatsappService = require('../services/whatsappService');
 
-// GET all request types for the logged-in user (MODIFIED)
+// GET all request types (permission-gated)
 exports.getAll = async (req, res) => {
-    const userId = req.user.id;
     try {
         // MODIFIED: Select new sort_order column and order by it
         const [types] = await pool.query(
-            'SELECT id, name, trigger_regex, acknowledgement_reaction, color, is_enabled, sort_order FROM request_types WHERE user_id = ? ORDER BY sort_order ASC, name ASC',
-            [userId]
+            'SELECT id, name, trigger_regex, acknowledgement_reaction, color, is_enabled, sort_order FROM request_types ORDER BY sort_order ASC, name ASC'
         );
         res.json(types);
     } catch (error) {
@@ -19,7 +17,6 @@ exports.getAll = async (req, res) => {
 // --- NEW FUNCTION ---
 // POST /api/request-types/update-order - Updates the sort order of all types
 exports.updateOrder = async (req, res) => {
-    const userId = req.user.id;
     const orderedIds = req.body; // Expects an array of IDs: [3, 1, 2]
 
     if (!Array.isArray(orderedIds)) {
@@ -41,12 +38,11 @@ exports.updateOrder = async (req, res) => {
         
         caseStatement += 'END';
         params.push(orderedIds); // For the IN clause
-        params.push(userId); // For security
 
         const query = `
             UPDATE request_types 
             SET sort_order = ${caseStatement}
-            WHERE id IN (?) AND user_id = ?
+            WHERE id IN (?)
         `;
 
         await connection.query(query, params);
@@ -85,7 +81,6 @@ exports.create = async (req, res) => {
 
 // PUT (update) an existing request type
 exports.update = async (req, res) => {
-    const userId = req.user.id;
     const { id } = req.params;
     // UPDATED: Get color from body
     const { name, trigger_regex, acknowledgement_reaction, is_enabled, color } = req.body;
@@ -93,8 +88,8 @@ exports.update = async (req, res) => {
     try {
         // UPDATED: Update color in DB
         await pool.query(
-            'UPDATE request_types SET name = ?, trigger_regex = ?, acknowledgement_reaction = ?, is_enabled = ?, color = ? WHERE id = ? AND user_id = ?',
-            [name, trigger_regex, acknowledgement_reaction, is_enabled, color || '#E0E0E0', id, userId]
+            'UPDATE request_types SET name = ?, trigger_regex = ?, acknowledgement_reaction = ?, is_enabled = ?, color = ? WHERE id = ?',
+            [name, trigger_regex, acknowledgement_reaction, is_enabled, color || '#E0E0E0', id]
         );
         whatsappService.refreshRequestTypeCache();
         res.json({ message: 'Request type updated.' });
@@ -105,12 +100,11 @@ exports.update = async (req, res) => {
 
 // DELETE a request type
 exports.delete = async (req, res) => {
-    const userId = req.user.id;
     const { id } = req.params;
     try {
         await pool.query(
-            'DELETE FROM request_types WHERE id = ? AND user_id = ?',
-            [id, userId]
+            'DELETE FROM request_types WHERE id = ?',
+            [id]
         );
         whatsappService.refreshRequestTypeCache();
         res.status(204).send();

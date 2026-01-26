@@ -1,7 +1,6 @@
 const pool = require('../config/db');
 
 exports.getAllTemplates = async (req, res) => {
-    const userId = req.user.id;
     try {
         const query = `
             SELECT 
@@ -9,10 +8,9 @@ exports.getAllTemplates = async (req, res) => {
                 bu.original_filename, bu.stored_filename, bu.mimetype, bu.filepath
             FROM message_templates mt
             LEFT JOIN broadcast_uploads bu ON mt.upload_id = bu.id
-            WHERE mt.user_id = ? 
             ORDER BY mt.name
         `;
-        const [templates] = await pool.query(query, [userId]);
+        const [templates] = await pool.query(query);
         
         const formattedTemplates = templates.map(t => ({
             id: t.id,
@@ -54,7 +52,6 @@ exports.createTemplate = async (req, res) => {
 };
 
 exports.updateTemplate = async (req, res) => {
-    const userId = req.user.id;
     const { id } = req.params;
     const { name, text, upload_id } = req.body;
 
@@ -63,8 +60,8 @@ exports.updateTemplate = async (req, res) => {
     }
     try {
         await pool.query(
-            'UPDATE message_templates SET name = ?, text = ?, upload_id = ? WHERE id = ? AND user_id = ?',
-            [name, text || '', upload_id || null, id, userId]
+            'UPDATE message_templates SET name = ?, text = ?, upload_id = ? WHERE id = ?',
+            [name, text || '', upload_id || null, id]
         );
         res.status(200).json({ message: 'Template updated successfully.' });
     } catch (error) {
@@ -74,12 +71,11 @@ exports.updateTemplate = async (req, res) => {
 };
 
 exports.deleteTemplate = async (req, res) => {
-    const userId = req.user.id;
     const { id } = req.params;
     try {
         await pool.query(
-            'DELETE FROM message_templates WHERE id = ? AND user_id = ?',
-            [id, userId]
+            'DELETE FROM message_templates WHERE id = ?',
+            [id]
         );
         res.status(204).send();
     } catch (error) {

@@ -1,7 +1,6 @@
 const pool = require('../config/db');
 
 exports.getAllSchedules = async (req, res) => {
-    const userId = req.user.id;
     try {
         const query = `
             SELECT 
@@ -15,10 +14,9 @@ exports.getAllSchedules = async (req, res) => {
             FROM scheduled_broadcasts sb
             JOIN group_batches gb ON sb.batch_id = gb.id
             LEFT JOIN broadcast_uploads bu ON sb.upload_id = bu.id
-            WHERE sb.user_id = ?
             ORDER BY sb.created_at DESC
         `;
-        const [schedules] = await pool.query(query, [userId]);
+        const [schedules] = await pool.query(query);
         
         // Format for consistency with templates
         const formattedSchedules = schedules.map(s => ({
@@ -69,7 +67,6 @@ exports.createSchedule = async (req, res) => {
 };
 
 exports.updateSchedule = async (req, res) => {
-    const userId = req.user.id;
     const { id } = req.params;
     const {
         batch_id, message, upload_id, schedule_type, scheduled_at_time,
@@ -81,17 +78,17 @@ exports.updateSchedule = async (req, res) => {
             `UPDATE scheduled_broadcasts SET 
                 batch_id = ?, message = ?, upload_id = ?, schedule_type = ?, scheduled_at_time = ?,
                 scheduled_at_date = ?, scheduled_days_of_week = ?, timezone = ?
-             WHERE id = ? AND user_id = ?`,
+             WHERE id = ?`,
             [
                 batch_id, message || '', upload_id || null, schedule_type, scheduled_at_time,
                 scheduled_at_date || null,
                 schedule_type === 'WEEKLY' ? JSON.stringify(scheduled_days_of_week) : null,
                 timezone || 'America/Sao_Paulo',
-                id, userId
+                id
             ]
         );
         if (result.affectedRows === 0) {
-            return res.status(404).json({ message: 'Schedule not found or permission denied.' });
+            return res.status(404).json({ message: 'Schedule not found.' });
         }
         res.json({ message: 'Schedule updated successfully.' });
     } catch (error) {
@@ -101,7 +98,6 @@ exports.updateSchedule = async (req, res) => {
 };
 
 exports.toggleSchedule = async (req, res) => {
-    const userId = req.user.id;
     const { id } = req.params;
     const { is_active } = req.body;
     
@@ -111,11 +107,11 @@ exports.toggleSchedule = async (req, res) => {
 
     try {
         const [result] = await pool.query(
-            'UPDATE scheduled_broadcasts SET is_active = ? WHERE id = ? AND user_id = ?',
-            [is_active, id, userId]
+            'UPDATE scheduled_broadcasts SET is_active = ? WHERE id = ?',
+            [is_active, id]
         );
         if (result.affectedRows === 0) {
-            return res.status(404).json({ message: 'Schedule not found or permission denied.' });
+            return res.status(404).json({ message: 'Schedule not found.' });
         }
         res.json({ message: 'Schedule status updated.' });
     } catch (error) {
@@ -125,15 +121,14 @@ exports.toggleSchedule = async (req, res) => {
 };
 
 exports.deleteSchedule = async (req, res) => {
-    const userId = req.user.id;
     const { id } = req.params;
     try {
         const [result] = await pool.query(
-            'DELETE FROM scheduled_broadcasts WHERE id = ? AND user_id = ?',
-            [id, userId]
+            'DELETE FROM scheduled_broadcasts WHERE id = ?',
+            [id]
         );
         if (result.affectedRows === 0) {
-            return res.status(404).json({ message: 'Schedule not found or permission denied.' });
+            return res.status(404).json({ message: 'Schedule not found.' });
         }
         res.status(204).send();
     } catch (error) {

@@ -1,7 +1,9 @@
 const express = require('express');
 const router = express.Router();
 const scheduledBroadcastController = require('../controllers/scheduledBroadcastController');
+const checkPermission = require('../middleware/permissionMiddleware');
 
+router.use(checkPermission('broadcast:schedule'));
 router.get('/', scheduledBroadcastController.getAllSchedules);
 router.post('/', scheduledBroadcastController.createSchedule);
 router.put('/:id', scheduledBroadcastController.updateSchedule);

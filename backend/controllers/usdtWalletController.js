@@ -1,12 +1,10 @@
 const pool = require('../config/db');
 
-// GET all wallets for the logged-in user
+// GET all wallets (permission-gated)
 exports.getAllWallets = async (req, res) => {
-    const userId = req.user.id;
     try {
         const [wallets] = await pool.query(
-            'SELECT id, wallet_name, wallet_address, is_enabled FROM usdt_wallets WHERE user_id = ? ORDER BY wallet_name ASC',
-            [userId]
+            'SELECT id, wallet_name, wallet_address, is_enabled FROM usdt_wallets ORDER BY wallet_name ASC'
         );
         res.json(wallets);
     } catch (error) {
@@ -44,7 +42,6 @@ exports.createWallet = async (req, res) => {
 
 // PUT (update) an existing wallet's name
 exports.updateWallet = async (req, res) => {
-    const userId = req.user.id;
     const { id } = req.params;
     const { wallet_name } = req.body;
     if (!wallet_name) {
@@ -52,11 +49,11 @@ exports.updateWallet = async (req, res) => {
     }
     try {
         const [result] = await pool.query(
-            'UPDATE usdt_wallets SET wallet_name = ? WHERE id = ? AND user_id = ?',
-            [wallet_name, id, userId]
+            'UPDATE usdt_wallets SET wallet_name = ? WHERE id = ?',
+            [wallet_name, id]
         );
         if (result.affectedRows === 0) {
-            return res.status(404).json({ message: 'Wallet not found or permission denied.' });
+            return res.status(404).json({ message: 'Wallet not found.' });
         }
         res.json({ message: 'Wallet updated successfully.' });
     } catch (error) {
@@ -67,15 +64,14 @@ exports.updateWallet = async (req, res) => {
 
 // DELETE a wallet
 exports.deleteWallet = async (req, res) => {
-    const userId = req.user.id;
     const { id } = req.params;
     try {
         const [result] = await pool.query(
-            'DELETE FROM usdt_wallets WHERE id = ? AND user_id = ?',
-            [id, userId]
+            'DELETE FROM usdt_wallets WHERE id = ?',
+            [id]
         );
         if (result.affectedRows === 0) {
-            return res.status(404).json({ message: 'Wallet not found or permission denied.' });
+            return res.status(404).json({ message: 'Wallet not found.' });
         }
         res.status(204).send();
     } catch (error) {
@@ -86,7 +82,6 @@ exports.deleteWallet = async (req, res) => {
 
 // PATCH to toggle the is_enabled status of a wallet
 exports.toggleWallet = async (req, res) => {
-    const userId = req.user.id;
     const { id } = req.params;
     const { is_enabled } = req.body;
 
@@ -96,11 +91,11 @@ exports.toggleWallet = async (req, res) => {
 
     try {
         const [result] = await pool.query(
-            'UPDATE usdt_wallets SET is_enabled = ? WHERE id = ? AND user_id = ?',
-            [is_enabled, id, userId]
+            'UPDATE usdt_wallets SET is_enabled = ? WHERE id = ?',
+            [is_enabled, id]
         );
         if (result.affectedRows === 0) {
-            return res.status(404).json({ message: 'Wallet not found or permission denied.' });
+            return res.status(404).json({ message: 'Wallet not found.' });
         }
         res.json({ message: `Wallet successfully ${is_enabled ? 'enabled' : 'disabled'}.` });
     } catch (error) {

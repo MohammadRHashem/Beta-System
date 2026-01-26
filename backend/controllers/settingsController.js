@@ -2,10 +2,9 @@ const pool = require('../config/db');
 const whatsappService = require('../services/whatsappService');
 
 exports.getForwardingRules = async (req, res) => {
-    const userId = req.user.id;
     try {
         // Select the new column
-        const [rules] = await pool.query('SELECT * FROM forwarding_rules WHERE user_id = ? ORDER BY trigger_keyword ASC', [userId]);
+        const [rules] = await pool.query('SELECT * FROM forwarding_rules ORDER BY trigger_keyword ASC');
         res.json(rules);
     } catch (error) {
         console.error('[ERROR] Failed to fetch forwarding rules:', error);
@@ -30,7 +29,6 @@ exports.createForwardingRule = async (req, res) => {
 };
 
 exports.updateForwardingRule = async (req, res) => {
-    const userId = req.user.id;
     const { id } = req.params;
     // Accept new parameter
     const { trigger_keyword, destination_group_jid, reply_with_group_name } = req.body;
@@ -57,13 +55,13 @@ exports.updateForwardingRule = async (req, res) => {
 
         // Step 2: Update the rule including the new boolean toggle
         const [result] = await connection.query(
-            'UPDATE forwarding_rules SET trigger_keyword = ?, destination_group_jid = ?, destination_group_name = ?, reply_with_group_name = ? WHERE id = ? AND user_id = ?',
-            [trigger_keyword, destination_group_jid, correct_destination_group_name, reply_with_group_name || 0, id, userId]
+            'UPDATE forwarding_rules SET trigger_keyword = ?, destination_group_jid = ?, destination_group_name = ?, reply_with_group_name = ? WHERE id = ?',
+            [trigger_keyword, destination_group_jid, correct_destination_group_name, reply_with_group_name || 0, id]
         );
 
         if (result.affectedRows === 0) {
             await connection.rollback();
-            return res.status(404).json({ message: 'Rule not found or you do not have permission to edit it.' });
+            return res.status(404).json({ message: 'Rule not found.' });
         }
         
         await connection.commit();
@@ -81,7 +79,6 @@ exports.updateForwardingRule = async (req, res) => {
 };
 
 exports.toggleForwardingRuleReply = async (req, res) => {
-    const userId = req.user.id;
     const { id } = req.params;
     const { reply_with_group_name } = req.body;
 
@@ -91,11 +88,11 @@ exports.toggleForwardingRuleReply = async (req, res) => {
 
     try {
         const [result] = await pool.query(
-            'UPDATE forwarding_rules SET reply_with_group_name = ? WHERE id = ? AND user_id = ?',
-            [reply_with_group_name, id, userId]
+            'UPDATE forwarding_rules SET reply_with_group_name = ? WHERE id = ?',
+            [reply_with_group_name, id]
         );
         if (result.affectedRows === 0) {
-            return res.status(404).json({ message: 'Rule not found or permission denied.' });
+            return res.status(404).json({ message: 'Rule not found.' });
         }
         res.json({ message: `Reply setting successfully updated.` });
     } catch (error) {
@@ -105,7 +102,6 @@ exports.toggleForwardingRuleReply = async (req, res) => {
 };
 
 exports.toggleForwardingRule = async (req, res) => {
-    const userId = req.user.id;
     const { id } = req.params;
     const { is_enabled } = req.body;
 
@@ -115,11 +111,11 @@ exports.toggleForwardingRule = async (req, res) => {
 
     try {
         const [result] = await pool.query(
-            'UPDATE forwarding_rules SET is_enabled = ? WHERE id = ? AND user_id = ?',
-            [is_enabled, id, userId]
+            'UPDATE forwarding_rules SET is_enabled = ? WHERE id = ?',
+            [is_enabled, id]
         );
         if (result.affectedRows === 0) {
-            return res.status(404).json({ message: 'Rule not found or permission denied.' });
+            return res.status(404).json({ message: 'Rule not found.' });
         }
         res.json({ message: `Rule successfully ${is_enabled ? 'enabled' : 'disabled'}.` });
     } catch (error) {
@@ -129,15 +125,14 @@ exports.toggleForwardingRule = async (req, res) => {
 };
 
 exports.deleteForwardingRule = async (req, res) => {
-    const userId = req.user.id;
     const { id } = req.params;
     try {
         const [result] = await pool.query(
-            'DELETE FROM forwarding_rules WHERE id = ? AND user_id = ?',
-            [id, userId]
+            'DELETE FROM forwarding_rules WHERE id = ?',
+            [id]
         );
         if (result.affectedRows === 0) {
-            return res.status(404).json({ message: 'Rule not found or you do not have permission to delete it.' });
+            return res.status(404).json({ message: 'Rule not found.' });
         }
         res.status(204).send();
     } catch (error) {

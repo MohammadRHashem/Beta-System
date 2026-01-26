@@ -3,14 +3,12 @@ const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
 const { syncSingleSubaccount } = require('../xpayzSyncService');
 
-// GET all subaccounts for the logged-in user
+// GET all subaccounts (permission-gated)
 exports.getAll = async (req, res) => {
-    const userId = req.user.id;
     try {
         const [subaccounts] = await pool.query(
             // --- MODIFIED: Select account_type ---
-            'SELECT id, name, account_type, subaccount_number, chave_pix, assigned_group_name FROM subaccounts WHERE user_id = ? ORDER BY name ASC',
-            [userId]
+            'SELECT id, name, account_type, subaccount_number, chave_pix, assigned_group_name FROM subaccounts ORDER BY name ASC'
         );
         res.json(subaccounts);
     } catch (error) {
@@ -73,7 +71,6 @@ exports.create = async (req, res) => {
 
 // PUT (update) an existing subaccount
 exports.update = async (req, res) => {
-    const userId = req.user.id;
     const { id } = req.params;
     const { name, account_type, subaccount_number, chave_pix, assigned_group_jid } = req.body;
 
@@ -100,13 +97,13 @@ exports.update = async (req, res) => {
         }
 
         const [result] = await connection.query(
-            'UPDATE subaccounts SET name = ?, account_type = ?, subaccount_number = ?, chave_pix = ?, assigned_group_jid = ?, assigned_group_name = ? WHERE id = ? AND user_id = ?',
-            [name, account_type, subaccount_number || null, chave_pix || null, assigned_group_jid || null, groupName, id, userId]
+            'UPDATE subaccounts SET name = ?, account_type = ?, subaccount_number = ?, chave_pix = ?, assigned_group_jid = ?, assigned_group_name = ? WHERE id = ?',
+            [name, account_type, subaccount_number || null, chave_pix || null, assigned_group_jid || null, groupName, id]
         );
 
         if (result.affectedRows === 0) {
             await connection.rollback();
-            return res.status(404).json({ message: 'Subaccount not found or you do not have permission to edit it.' });
+            return res.status(404).json({ message: 'Subaccount not found.' });
         }
 
         await connection.commit();
@@ -130,15 +127,14 @@ exports.update = async (req, res) => {
 
 // DELETE a subaccount
 exports.delete = async (req, res) => {
-    const userId = req.user.id;
     const { id } = req.params;
     try {
         const [result] = await pool.query(
-            'DELETE FROM subaccounts WHERE id = ? AND user_id = ?',
-            [id, userId]
+            'DELETE FROM subaccounts WHERE id = ?',
+            [id]
         );
         if (result.affectedRows === 0) {
-            return res.status(404).json({ message: 'Subaccount not found or you do not have permission to delete it.' });
+            return res.status(404).json({ message: 'Subaccount not found.' });
         }
         res.status(204).send();
     } catch (error) {
@@ -149,13 +145,12 @@ exports.delete = async (req, res) => {
 
 
 exports.getCredentials = async (req, res) => {
-    const userId = req.user.id;
     const { id: subaccountId } = req.params;
 
     try {
         const [[subaccount]] = await pool.query(
-            'SELECT name, assigned_group_name FROM subaccounts WHERE id = ? AND user_id = ?', 
-            [subaccountId, userId]
+            'SELECT name, assigned_group_name FROM subaccounts WHERE id = ?', 
+            [subaccountId]
         );
 
         if (!subaccount) {
@@ -235,14 +230,13 @@ exports.getCredentials = async (req, res) => {
 };
 
 exports.triggerHardRefresh = async (req, res) => {
-    const userId = req.user.id;
     const { id: subaccountId } = req.params;
 
     try {
         // Find the subaccount to get its platform-specific number
         const [[subaccount]] = await pool.query(
-            'SELECT subaccount_number, account_type FROM subaccounts WHERE id = ? AND user_id = ?',
-            [subaccountId, userId]
+            'SELECT subaccount_number, account_type FROM subaccounts WHERE id = ?',
+            [subaccountId]
         );
 
         if (!subaccount) {
@@ -266,7 +260,6 @@ exports.triggerHardRefresh = async (req, res) => {
 };
 
 exports.resetPassword = async (req, res) => {
-    const userId = req.user.id;
     const { id: subaccountId } = req.params;
     const { type } = req.body; // 'master' or 'view_only'
 
@@ -275,7 +268,7 @@ exports.resetPassword = async (req, res) => {
     }
 
     try {
-        const [[subaccount]] = await pool.query('SELECT id FROM subaccounts WHERE id = ? AND user_id = ?', [subaccountId, userId]);
+        const [[subaccount]] = await pool.query('SELECT id FROM subaccounts WHERE id = ?', [subaccountId]);
         if (!subaccount) return res.status(404).json({ message: 'Subaccount not found.' });
         
         const newPassword = crypto.randomBytes(4).toString('hex');

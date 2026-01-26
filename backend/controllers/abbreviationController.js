@@ -1,13 +1,11 @@
 const pool = require('../config/db');
 const whatsappService = require('../services/whatsappService');
 
-// GET all abbreviations for the logged-in user
+// GET all abbreviations (permission-gated)
 exports.getAll = async (req, res) => {
-    const userId = req.user.id;
     try {
         const [abbreviations] = await pool.query(
-            'SELECT * FROM abbreviations WHERE user_id = ? ORDER BY `trigger` ASC',
-            [userId]
+            'SELECT * FROM abbreviations ORDER BY `trigger` ASC'
         );
         res.json(abbreviations);
     } catch (error) {
@@ -41,7 +39,6 @@ exports.create = async (req, res) => {
 
 // PUT (update) an existing abbreviation
 exports.update = async (req, res) => {
-    const userId = req.user.id;
     const { id } = req.params;
     const { trigger, response } = req.body;
     if (!trigger || !response) {
@@ -49,11 +46,11 @@ exports.update = async (req, res) => {
     }
     try {
         const [result] = await pool.query(
-            'UPDATE abbreviations SET `trigger` = ?, response = ? WHERE id = ? AND user_id = ?',
-            [trigger, response, id, userId]
+            'UPDATE abbreviations SET `trigger` = ?, response = ? WHERE id = ?',
+            [trigger, response, id]
         );
         if (result.affectedRows === 0) {
-            return res.status(404).json({ message: 'Abbreviation not found or you do not have permission to edit it.' });
+            return res.status(404).json({ message: 'Abbreviation not found.' });
         }
         res.json({ message: 'Abbreviation updated successfully.' });
         whatsappService.refreshAbbreviationCache();
@@ -69,15 +66,14 @@ exports.update = async (req, res) => {
 
 // DELETE an abbreviation
 exports.delete = async (req, res) => {
-    const userId = req.user.id;
     const { id } = req.params;
     try {
         const [result] = await pool.query(
-            'DELETE FROM abbreviations WHERE id = ? AND user_id = ?',
-            [id, userId]
+            'DELETE FROM abbreviations WHERE id = ?',
+            [id]
         );
         if (result.affectedRows === 0) {
-            return res.status(404).json({ message: 'Abbreviation not found or you do not have permission to delete it.' });
+            return res.status(404).json({ message: 'Abbreviation not found.' });
         }
         res.status(204).send();
         whatsappService.refreshAbbreviationCache();

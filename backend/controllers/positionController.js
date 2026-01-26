@@ -3,13 +3,11 @@ const alfaBalanceService = require('../services/alfaBalanceService');
 
 // --- CRUD for Position Counters ---
 
-// GET all counters for the logged-in user
+// GET all counters (permission-gated)
 exports.getAllCounters = async (req, res) => {
-    const userId = req.user.id;
     try {
         const [counters] = await pool.query(
-            'SELECT * FROM position_counters WHERE user_id = ? ORDER BY name ASC',
-            [userId]
+            'SELECT * FROM position_counters ORDER BY name ASC'
         );
         res.json(counters);
     } catch (error) {
@@ -49,7 +47,6 @@ exports.createCounter = async (req, res) => {
 
 // PUT (update) an existing counter
 exports.updateCounter = async (req, res) => {
-    const userId = req.user.id;
     const { id } = req.params;
     const { name, keyword } = req.body;
     if (!name || !keyword) {
@@ -57,11 +54,11 @@ exports.updateCounter = async (req, res) => {
     }
     try {
         const [result] = await pool.query(
-            'UPDATE position_counters SET name = ?, keyword = ?, type = ?, sub_type = ? WHERE id = ? AND user_id = ?',
-            [name, keyword || null, type, sub_type || null, id, userId]
+            'UPDATE position_counters SET name = ?, keyword = ?, type = ?, sub_type = ? WHERE id = ?',
+            [name, keyword || null, type, sub_type || null, id]
         );
         if (result.affectedRows === 0) {
-            return res.status(404).json({ message: 'Counter not found or you do not have permission to edit it.' });
+            return res.status(404).json({ message: 'Counter not found.' });
         }
         res.json({ message: 'Counter updated successfully.' });
     } catch (error) {
@@ -75,15 +72,14 @@ exports.updateCounter = async (req, res) => {
 
 // DELETE a counter
 exports.deleteCounter = async (req, res) => {
-    const userId = req.user.id;
     const { id } = req.params;
     try {
         const [result] = await pool.query(
-            'DELETE FROM position_counters WHERE id = ? AND user_id = ?',
-            [id, userId]
+            'DELETE FROM position_counters WHERE id = ?',
+            [id]
         );
         if (result.affectedRows === 0) {
-            return res.status(404).json({ message: 'Counter not found or you do not have permission to delete it.' });
+            return res.status(404).json({ message: 'Counter not found.' });
         }
         res.status(204).send();
     } catch (error) {
@@ -151,14 +147,13 @@ exports.calculateLocalPosition = async (req, res) => {
 };
 
 exports.calculateRemotePosition = async (req, res) => {
-    const userId = req.user.id;
     const { id } = req.params;
     const { date } = req.query; // YYYY-MM-DD
 
     try {
         const [[counter]] = await pool.query(
-            'SELECT type, sub_type FROM position_counters WHERE id = ? AND user_id = ?',
-            [id, userId]
+            'SELECT type, sub_type FROM position_counters WHERE id = ?',
+            [id]
         );
 
         if (!counter || counter.type !== 'remote') {

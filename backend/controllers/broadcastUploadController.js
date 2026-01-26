@@ -1,13 +1,11 @@
 const pool = require('../config/db');
 const fs = require('fs/promises');
 
-// GET all uploads for the logged-in user
+// GET all uploads (permission-gated)
 exports.getAllUploads = async (req, res) => {
-    const userId = req.user.id;
     try {
         const [uploads] = await pool.query(
-            'SELECT id, original_filename, stored_filename, mimetype, filepath, created_at FROM broadcast_uploads WHERE user_id = ? ORDER BY created_at DESC',
-            [userId]
+            'SELECT id, original_filename, stored_filename, mimetype, filepath, created_at FROM broadcast_uploads ORDER BY created_at DESC'
         );
         res.json(uploads);
     } catch (error) {
@@ -48,17 +46,16 @@ exports.handleUpload = async (req, res) => {
 
 // DELETE an upload
 exports.deleteUpload = async (req, res) => {
-    const userId = req.user.id;
     const { id } = req.params;
 
     try {
         const [[upload]] = await pool.query(
-            'SELECT id, filepath FROM broadcast_uploads WHERE id = ? AND user_id = ?',
-            [id, userId]
+            'SELECT id, filepath FROM broadcast_uploads WHERE id = ?',
+            [id]
         );
 
         if (!upload) {
-            return res.status(404).json({ message: 'File not found or permission denied.' });
+            return res.status(404).json({ message: 'File not found.' });
         }
 
         // Delete file from filesystem first
