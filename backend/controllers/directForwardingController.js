@@ -1,12 +1,10 @@
 const pool = require('../config/db');
 
-// GET all direct forwarding rules for the logged-in user
+// GET all direct forwarding rules (permission-gated)
 exports.getAllRules = async (req, res) => {
-    const userId = req.user.id;
     try {
         const [rules] = await pool.query(
-            'SELECT * FROM direct_forwarding_rules WHERE user_id = ? ORDER BY source_group_name ASC',
-            [userId]
+            'SELECT * FROM direct_forwarding_rules ORDER BY source_group_name ASC'
         );
         res.json(rules);
     } catch (error) {
@@ -60,12 +58,11 @@ exports.createRule = async (req, res) => {
 
 // DELETE a direct forwarding rule
 exports.deleteRule = async (req, res) => {
-    const userId = req.user.id;
     const { id } = req.params;
     try {
         const [result] = await pool.query(
-            'DELETE FROM direct_forwarding_rules WHERE id = ? AND user_id = ?',
-            [id, userId]
+            'DELETE FROM direct_forwarding_rules WHERE id = ?',
+            [id]
         );
         if (result.affectedRows === 0) {
             return res.status(404).json({ message: 'Rule not found or you do not have permission to delete it.' });

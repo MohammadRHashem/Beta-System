@@ -1,12 +1,10 @@
 const pool = require('../config/db');
 
-// --- GET ALL BATCHES (User-Specific) ---
+// --- GET ALL BATCHES (Permission-Gated) ---
 exports.getAllBatches = async (req, res) => {
-    const userId = req.user.id; // Get user ID
     try {
         const [batches] = await pool.query(
-            'SELECT id, name FROM group_batches WHERE user_id = ? ORDER BY name',
-            [userId]
+            'SELECT id, name FROM group_batches ORDER BY name'
         );
         res.json(batches);
     } catch (error) {
@@ -28,7 +26,7 @@ exports.getGroupIdsByBatch = async (req, res) => {
     }
 };
 
-// --- CREATE BATCH (User-Specific) ---
+// --- CREATE BATCH ---
 exports.createBatch = async (req, res) => {
     const userId = req.user.id; // Get user ID
     const { name, groupIds } = req.body;
@@ -59,9 +57,8 @@ exports.createBatch = async (req, res) => {
     }
 };
 
-// --- UPDATE BATCH (User-Specific) ---
+// --- UPDATE BATCH ---
 exports.updateBatch = async (req, res) => {
-    const userId = req.user.id; // Get user ID
     const { id } = req.params;
     const { name, groupIds } = req.body;
 
@@ -73,14 +70,13 @@ exports.updateBatch = async (req, res) => {
     try {
         await connection.beginTransaction();
         
-        // Security check: Make sure this user owns the batch they are trying to edit
-        const [batchCheck] = await connection.query('SELECT id FROM group_batches WHERE id = ? AND user_id = ?', [id, userId]);
+        const [batchCheck] = await connection.query('SELECT id FROM group_batches WHERE id = ?', [id]);
         if (batchCheck.length === 0) {
             await connection.rollback();
-            return res.status(403).json({ message: 'Forbidden: You do not own this batch.' });
+            return res.status(404).json({ message: 'Batch not found.' });
         }
 
-        await connection.query('UPDATE group_batches SET name = ? WHERE id = ? AND user_id = ?', [name, id, userId]);
+        await connection.query('UPDATE group_batches SET name = ? WHERE id = ?', [name, id]);
         await connection.query('DELETE FROM batch_group_link WHERE batch_id = ?', [id]);
 
         if (groupIds.length > 0) {
@@ -99,13 +95,11 @@ exports.updateBatch = async (req, res) => {
     }
 };
 
-// --- DELETE BATCH (User-Specific) ---
+// --- DELETE BATCH ---
 exports.deleteBatch = async (req, res) => {
-    const userId = req.user.id; // Get user ID
     const { id } = req.params;
     try {
-        // Security: Ensure a user can only delete their own batches
-        await pool.query('DELETE FROM group_batches WHERE id = ? AND user_id = ?', [id, userId]);
+        await pool.query('DELETE FROM group_batches WHERE id = ?', [id]);
         res.status(204).send();
     } catch (error) {
         console.error('Error deleting batch:', error);
