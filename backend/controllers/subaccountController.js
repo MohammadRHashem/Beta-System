@@ -8,6 +8,32 @@ require('dotenv').config();
 
 const PORTAL_JWT_SECRET = process.env.PORTAL_JWT_SECRET;
 
+const normalizeDateTime = (value) => {
+    if (!value || typeof value !== 'string') return null;
+    let trimmed = value.trim();
+    if (!trimmed) return null;
+    if (trimmed.includes('T')) trimmed = trimmed.replace('T', ' ');
+    if (trimmed.endsWith('Z')) trimmed = trimmed.slice(0, -1);
+    if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/.test(trimmed)) {
+        trimmed += ':00';
+    }
+    if (!/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(trimmed)) {
+        return null;
+    }
+    return trimmed;
+};
+
+const generateUuid = () => {
+    if (crypto.randomUUID) {
+        return crypto.randomUUID();
+    }
+    const bytes = crypto.randomBytes(16);
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    const hex = bytes.toString('hex');
+    return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+};
+
 // GET all subaccounts (permission-gated)
 exports.getAll = async (req, res) => {
     try {
@@ -299,6 +325,105 @@ exports.resetPassword = async (req, res) => {
     } catch (error) {
         console.error('[ERROR] Failed to reset client password:', error);
         res.status(500).json({ message: 'Failed to reset password.' });
+    }
+};
+
+// === NEW: Admin debit entry for Cross subaccounts ===
+exports.createCrossDebit = async (req, res) => {
+    const { id: subaccountId } = req.params;
+    const { amount, tx_date, description } = req.body;
+
+    const normalizedDate = normalizeDateTime(tx_date);
+    const numericAmount = parseFloat(amount);
+    const note = (description || 'USD BETA OUT / C').trim() || 'USD BETA OUT / C';
+
+    if (!normalizedDate) {
+        return res.status(400).json({ message: 'Valid date/time is required.' });
+    }
+    if (!Number.isFinite(numericAmount) || numericAmount <= 0) {
+        return res.status(400).json({ message: 'Amount must be greater than zero.' });
+    }
+
+    try {
+        const [[subaccount]] = await pool.query(
+            'SELECT id, name, account_type, chave_pix FROM subaccounts WHERE id = ?',
+            [subaccountId]
+        );
+
+        if (!subaccount) {
+            return res.status(404).json({ message: 'Subaccount not found.' });
+        }
+        if (subaccount.account_type !== 'cross') {
+            return res.status(400).json({ message: 'Debits can only be added to Cross subaccounts.' });
+        }
+        if (!subaccount.chave_pix) {
+            return res.status(400).json({ message: 'Cross subaccount is missing a PIX key.' });
+        }
+
+        const uid = generateUuid();
+        const txId = generateUuid();
+
+        const insertQuery = `
+            INSERT INTO trkbit_transactions (
+                uid, tx_id, e2e_id, tx_date, amount, tx_pix_key, tx_type,
+                tx_payer_name, tx_payer_id, raw_data, is_used
+            ) VALUES (
+                ?, ?, NULL, ?, ?, ?, 'D',
+                ?, 'SYSTEM_ARCHIVE',
+                JSON_OBJECT(
+                    'ag', '0001',
+                    'uid', ?,
+                    'tx_id', ?,
+                    'amount', ?,
+                    'e2e_id', NULL,
+                    'account', '5602362',
+                    'tx_date', DATE_FORMAT(?, '%Y-%m-%d %H:%i:%s'),
+                    'tx_type', 'D',
+                    'tx_status', 'done',
+                    'created_at', UNIX_TIMESTAMP(?) * 1000,
+                    'tx_pix_key', ?,
+                    'tx_payee_id', '52006135000168',
+                    'tx_payer_id', '000000001',
+                    'tx_payee_name', ?,
+                    'tx_payer_name', ?
+                ),
+                1
+            )
+        `;
+
+        const params = [
+            uid,
+            txId,
+            normalizedDate,
+            numericAmount,
+            subaccount.chave_pix,
+            note,
+            uid,
+            txId,
+            numericAmount,
+            normalizedDate,
+            normalizedDate,
+            subaccount.chave_pix,
+            note,
+            note
+        ];
+
+        await pool.query(insertQuery, params);
+
+        await logAction(req, 'subaccount:debit_cross', 'Subaccount', subaccount.id, {
+            subaccount_name: subaccount.name,
+            amount: numericAmount,
+            tx_date: normalizedDate,
+            tx_pix_key: subaccount.chave_pix,
+            description: note,
+            uid,
+            tx_id: txId
+        });
+
+        res.status(201).json({ message: 'Cross debit created successfully.' });
+    } catch (error) {
+        console.error('[DEBIT-CROSS] Failed to create debit:', error);
+        res.status(500).json({ message: 'Failed to create debit.' });
     }
 };
 

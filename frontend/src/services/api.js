@@ -239,6 +239,7 @@ export const getSubaccountCredentials = (id) => apiClient.get(`/subaccounts/${id
 export const resetSubaccountPassword = (id, type) => apiClient.post(`/subaccounts/${id}/credentials/reset`, { type });
 export const triggerHardRefresh = (id) => apiClient.post(`/subaccounts/${id}/hard-refresh`);
 export const createPortalAccessSession = (id) => apiClient.post(`/subaccounts/${id}/portal-access`);
+export const createCrossDebit = (id, data) => apiClient.post(`/subaccounts/${id}/cross-debit`, data);
 
 
 

@@ -4,10 +4,10 @@ import { usePermissions } from '../context/PermissionContext'; // 1. IMPORT PERM
 import {
   getSubaccounts, createSubaccount, updateSubaccount, deleteSubaccount,
   getSubaccountCredentials, resetSubaccountPassword, getRecibosTransactions,
-  reassignTransaction, triggerHardRefresh, createPortalAccessSession
+  reassignTransaction, triggerHardRefresh, createPortalAccessSession, createCrossDebit
 } from "../services/api";
 import Modal from "../components/Modal";
-import { FaPlus, FaEdit, FaTrash, FaKey, FaExchangeAlt, FaMagic, FaHistory, FaExternalLinkAlt } from "react-icons/fa";
+import { FaPlus, FaEdit, FaTrash, FaKey, FaExchangeAlt, FaMagic, FaHistory, FaExternalLinkAlt, FaMinusCircle } from "react-icons/fa";
 import ComboBox from "../components/ComboBox";
 import Select from 'react-select';
 
@@ -127,6 +127,7 @@ const SubaccountsPage = ({ allGroups }) => {
   const canManageCredentials = hasPermission('subaccount:manage_credentials');
   const canReassign = hasPermission('subaccount:reassign_transactions');
   const canPortalAccess = hasPermission('client_portal:access');
+  const canCrossDebit = hasPermission('subaccount:debit_cross');
 
   const [subaccounts, setSubaccounts] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -140,6 +141,9 @@ const SubaccountsPage = ({ allGroups }) => {
   const [recibosAccountId, setRecibosAccountId] = useState(null);
   const [recibosTransactions, setRecibosTransactions] = useState([]);
   const [recibosLoading, setRecibosLoading] = useState(false);
+  const [isDebitModalOpen, setIsDebitModalOpen] = useState(false);
+  const [debitSubaccount, setDebitSubaccount] = useState(null);
+  const [debitForm, setDebitForm] = useState({ amount: '', tx_date: '', description: 'USD BETA OUT / C' });
 
   const handleHardRefresh = async (subaccount) => {
     if (window.confirm(`This will perform a full historical re-sync for "${subaccount.name}" to find and add any missing transactions. This is a safe, non-destructive operation that will not break existing links. Continue?`)) {
@@ -179,6 +183,8 @@ const SubaccountsPage = ({ allGroups }) => {
     setIsCredsModalOpen(false);
     setCurrentCreds(null);
     setIsRecibosModalOpen(false);
+    setIsDebitModalOpen(false);
+    setDebitSubaccount(null);
   };
 
   const handleDelete = async (id) => {
@@ -283,6 +289,48 @@ const SubaccountsPage = ({ allGroups }) => {
     }
   };
 
+  const formatLocalDateTime = (date) => {
+    const pad = (value) => `${value}`.padStart(2, '0');
+    const year = date.getFullYear();
+    const month = pad(date.getMonth() + 1);
+    const day = pad(date.getDate());
+    const hours = pad(date.getHours());
+    const minutes = pad(date.getMinutes());
+    return `${year}-${month}-${day}T${hours}:${minutes}`;
+  };
+
+  const handleOpenDebitModal = (subaccount) => {
+    setDebitSubaccount(subaccount);
+    setDebitForm({
+      amount: '',
+      tx_date: formatLocalDateTime(new Date()),
+      description: 'USD BETA OUT / C'
+    });
+    setIsDebitModalOpen(true);
+  };
+
+  const handleDebitSubmit = async (e) => {
+    e.preventDefault();
+    if (!debitSubaccount) return;
+
+    const trimmedDate = (debitForm.tx_date || '').trim();
+    const formattedDate = trimmedDate.includes('T')
+      ? `${trimmedDate.replace('T', ' ')}:00`.replace(':00:00', ':00')
+      : trimmedDate;
+
+    try {
+      await createCrossDebit(debitSubaccount.id, {
+        amount: debitForm.amount,
+        tx_date: formattedDate,
+        description: debitForm.description
+      });
+      alert('Debit added successfully.');
+      handleCloseModals();
+    } catch (error) {
+      alert(error.response?.data?.message || 'Failed to add debit.');
+    }
+  };
+
   return (
     <>
       <PageContainer>
@@ -312,7 +360,7 @@ const SubaccountsPage = ({ allGroups }) => {
                 <th>Identifier (Number/PIX)</th>
                 <th>Assigned Group</th>
                 {/* Conditionally render actions header */}
-                {(canManageSubaccounts || canManageCredentials || canPortalAccess) && <th>Actions</th>}
+                {(canManageSubaccounts || canManageCredentials || canPortalAccess || canCrossDebit) && <th>Actions</th>}
               </tr>
             </thead>
             <tbody>
@@ -325,10 +373,13 @@ const SubaccountsPage = ({ allGroups }) => {
                     <td>{acc.account_type === 'cross' ? acc.chave_pix : acc.subaccount_number}</td>
                     <td>{acc.assigned_group_name || <span style={{ color: "#999" }}>None</span>}</td>
                     {/* 4. WRAP ACTION ICONS IN PERMISSION CHECKS */}
-                    {(canManageSubaccounts || canManageCredentials || canPortalAccess) && (
+                    {(canManageSubaccounts || canManageCredentials || canPortalAccess || canCrossDebit) && (
                         <td className="actions">
                           {canManageCredentials && <FaKey onClick={() => handleCredentials(acc)} title="Manage Credentials" />}
                           {canPortalAccess && <FaExternalLinkAlt onClick={() => handleOpenPortal(acc)} title="Open Client Portal (Full Access)" />}
+                          {canCrossDebit && acc.account_type === 'cross' && (
+                            <FaMinusCircle onClick={() => handleOpenDebitModal(acc)} title="Add Cross Debit" />
+                          )}
                           {canManageSubaccounts && acc.account_type === 'xpayz' && (
                             <FaHistory onClick={() => handleHardRefresh(acc)} title="Hard Refresh History" />
                           )}
@@ -352,6 +403,16 @@ const SubaccountsPage = ({ allGroups }) => {
       )}
       {canReassign && (
         <RecibosModal isOpen={isRecibosModalOpen} onClose={handleCloseModals} subaccounts={subaccounts} loading={recibosLoading} transactions={recibosTransactions} onSelectAccount={(id) => { setRecibosAccountId(id); fetchRecibosData(id); }} selectedAccountId={recibosAccountId} onReassign={handleReassign} />
+      )}
+      {canCrossDebit && (
+        <CrossDebitModal
+          isOpen={isDebitModalOpen}
+          onClose={handleCloseModals}
+          subaccount={debitSubaccount}
+          form={debitForm}
+          setForm={setDebitForm}
+          onSubmit={handleDebitSubmit}
+        />
       )}
 
       <SubaccountModal
@@ -606,6 +667,60 @@ const RecibosRow = ({ tx, subOptions, onReassign }) => {
             </td>
         </tr>
     );
+};
+
+const CrossDebitModal = ({ isOpen, onClose, subaccount, form, setForm, onSubmit }) => {
+  if (!isOpen || !subaccount) return null;
+
+  return (
+    <Modal isOpen={isOpen} onClose={onClose} maxWidth="520px">
+      <h2>Add Debit (Cross)</h2>
+      <p style={{ marginTop: 0, color: '#6b7c93' }}>
+        This will create a debit entry for <strong>{subaccount.name}</strong>.
+      </p>
+      <ModalForm onSubmit={onSubmit}>
+        <InputGroup>
+          <Label>PIX Key</Label>
+          <Input value={subaccount.chave_pix || ''} readOnly />
+        </InputGroup>
+        <InputGroup>
+          <Label>Amount (BRL)</Label>
+          <Input
+            type="number"
+            min="0.01"
+            step="0.01"
+            value={form.amount}
+            onChange={(e) => setForm((prev) => ({ ...prev, amount: e.target.value }))}
+            placeholder="e.g., 134000.00"
+            required
+          />
+        </InputGroup>
+        <InputGroup>
+          <Label>Date & Time</Label>
+          <Input
+            type="datetime-local"
+            value={form.tx_date}
+            onChange={(e) => setForm((prev) => ({ ...prev, tx_date: e.target.value }))}
+            required
+          />
+        </InputGroup>
+        <InputGroup>
+          <Label>Description</Label>
+          <Input
+            value={form.description}
+            onChange={(e) => setForm((prev) => ({ ...prev, description: e.target.value }))}
+            placeholder="USD BETA OUT / C"
+          />
+        </InputGroup>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
+          <Button type="button" onClick={onClose} style={{ backgroundColor: '#6b7c93' }}>
+            Cancel
+          </Button>
+          <Button type="submit">Create Debit</Button>
+        </div>
+      </ModalForm>
+    </Modal>
+  );
 };
 
 
