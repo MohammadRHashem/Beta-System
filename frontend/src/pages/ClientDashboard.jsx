@@ -792,14 +792,6 @@ const ClientDashboard = () => {
               <h3>All-Time Balance (BRL)</h3>
               <p>{loadingSummary ? "..." : formatCurrency(summary.allTimeBalance)}</p>
             </VolumeCard>
-            <VolumeCard color="success">
-              <h3># Transactions (IN)</h3>
-              <p>{loadingSummary ? "..." : formatNumber(summary.dailyCountIn)}</p>
-            </VolumeCard>
-            <VolumeCard color="error">
-              <h3># Transactions (OUT)</h3>
-              <p>{loadingSummary ? "..." : formatNumber(summary.dailyCountOut)}</p>
-            </VolumeCard>
           </VolumeContainer>
         </ControlsContainer>
 
