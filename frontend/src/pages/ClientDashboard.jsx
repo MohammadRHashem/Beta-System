@@ -1,12 +1,13 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import styled, { keyframes } from 'styled-components';
 import { motion } from 'framer-motion';
-import { getPortalTransactions, getPortalDashboardSummary, triggerPartnerConfirmation, updatePortalTransactionConfirmation, updatePortalTransactionNotes } from '../services/api'; 
+import { getPortalTransactions, getPortalDashboardSummary, triggerPartnerConfirmation, updatePortalTransactionConfirmation, updatePortalTransactionNotes, createPortalCrossDebit } from '../services/api'; 
 import PasscodeModal from '../components/PasscodeModal'; // <<< IMPORT NEW COMPONENT
-import { FaSyncAlt, FaSearch, FaArrowUp, FaArrowDown, FaHourglassHalf, FaSpinner, FaPaperPlane, FaEdit, FaCheckDouble } from 'react-icons/fa';
+import { FaSyncAlt, FaSearch, FaArrowUp, FaArrowDown, FaHourglassHalf, FaSpinner, FaPaperPlane, FaEdit, FaCheckDouble, FaMinusCircle } from 'react-icons/fa';
 import Pagination from '../components/Pagination';
 import { usePortal } from '../context/PortalContext';
 import axios from 'axios';
+import Modal from '../components/Modal';
 
 const useDebounce = (value, delay) => {
     const [debouncedValue, setDebouncedValue] = useState(value);
@@ -15,6 +16,14 @@ const useDebounce = (value, delay) => {
         return () => clearTimeout(handler);
     }, [value, delay]);
     return debouncedValue;
+};
+
+const parseJwt = (token) => {
+    try {
+        return JSON.parse(atob(token.split(".")[1]));
+    } catch (error) {
+        return null;
+    }
 };
 
 const spin = keyframes`
@@ -148,6 +157,21 @@ const Input = styled.input`
     box-shadow: 0 0 0 3px rgba(0, 196, 154, 0.2);
   }
 `;
+const SelectInput = styled.select`
+  padding: 0.75rem;
+  border: 1px solid ${({ theme }) => theme.border};
+  border-radius: 8px;
+  font-size: 1rem;
+  min-width: 180px;
+  background: #fff;
+  color: ${({ theme }) => theme.text};
+  transition: all 0.2s;
+  &:focus {
+    outline: none;
+    border-color: ${({ theme }) => theme.secondary};
+    box-shadow: 0 0 0 3px rgba(0, 196, 154, 0.2);
+  }
+`;
 const InputGroup = styled.div`
   position: relative;
   display: flex;
@@ -181,6 +205,35 @@ const RefreshButton = styled.button`
   &:hover {
     transform: translateY(-2px);
   }
+`;
+
+const ModalForm = styled.form`
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+`;
+
+const FormGroup = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+`;
+
+const FormLabel = styled.label`
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: ${({ theme }) => theme.text};
+`;
+
+const ModalInput = styled(Input)`
+  min-width: 0;
+  width: 100%;
+`;
+
+const ModalActions = styled.div`
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.75rem;
 `;
 
 const ActionButton = styled.button`
@@ -366,11 +419,20 @@ const ClientDashboard = () => {
     const { filters, setFilters } = usePortal();
     const [pagination, setPagination] = useState({ page: 1, limit: 20, totalPages: 1, totalRecords: 0 });
     const debouncedSearch = useDebounce(filters.search, 500);
-    const isImpersonating = sessionStorage.getItem('portalImpersonation') === 'true';
+    const portalToken = sessionStorage.getItem('portalAuthToken') || localStorage.getItem('portalAuthToken');
+    const tokenPayload = portalToken ? parseJwt(portalToken) : null;
+    const sessionImpersonating = sessionStorage.getItem('portalImpersonation') === 'true';
+    const isImpersonating = tokenPayload?.impersonation === true || sessionImpersonating;
+    const portalAccountType = tokenPayload?.accountType;
+    const portalPixKey = tokenPayload?.chavePix;
+    const canCreateDebit = isImpersonating && portalAccountType === 'cross';
     const storedClient =
         sessionStorage.getItem('portalClient') ||
         localStorage.getItem('portalClient');
     const clientData = storedClient ? JSON.parse(storedClient) : {};
+
+    const [isDebitModalOpen, setIsDebitModalOpen] = useState(false);
+    const [debitForm, setDebitForm] = useState({ amount: '', tx_date: '', description: 'USD BETA OUT / C' });
 
     const [updatingIds, setUpdatingIds] = useState(new Set());
     const [isPasscodeModalOpen, setIsPasscodeModalOpen] = useState(false);
@@ -419,6 +481,46 @@ const ClientDashboard = () => {
         }
     };
 
+    const formatLocalDateTime = (date) => {
+        const pad = (value) => `${value}`.padStart(2, '0');
+        const year = date.getFullYear();
+        const month = pad(date.getMonth() + 1);
+        const day = pad(date.getDate());
+        const hours = pad(date.getHours());
+        const minutes = pad(date.getMinutes());
+        return `${year}-${month}-${day}T${hours}:${minutes}`;
+    };
+
+    const handleOpenDebitModal = () => {
+        setDebitForm({
+            amount: '',
+            tx_date: formatLocalDateTime(new Date()),
+            description: 'USD BETA OUT / C'
+        });
+        setIsDebitModalOpen(true);
+    };
+
+    const handleDebitSubmit = async (e) => {
+        e.preventDefault();
+        const trimmedDate = (debitForm.tx_date || '').trim();
+        const formattedDate = trimmedDate.includes('T')
+            ? `${trimmedDate.replace('T', ' ')}:00`.replace(':00:00', ':00')
+            : trimmedDate;
+        try {
+            await createPortalCrossDebit({
+                amount: debitForm.amount,
+                tx_date: formattedDate,
+                description: debitForm.description
+            });
+            alert('Debit created successfully.');
+            setIsDebitModalOpen(false);
+            fetchTableData();
+            fetchSummaryData();
+        } catch (error) {
+            alert(error.response?.data?.message || 'Failed to create debit.');
+        }
+    };
+
     const fetchTableData = useCallback(async () => {
         setLoadingTable(true);
         try {
@@ -426,6 +528,7 @@ const ClientDashboard = () => {
             if (isImpersonating) {
                 if (filters.dateFrom) params.dateFrom = filters.dateFrom;
                 if (filters.dateTo) params.dateTo = filters.dateTo;
+                if (filters.direction) params.direction = filters.direction;
             } else if (filters.date) {
                 params.date = filters.date;
             }
@@ -437,7 +540,7 @@ const ClientDashboard = () => {
         } finally {
             setLoadingTable(false);
         }
-    }, [pagination.page, pagination.limit, filters.date, filters.dateFrom, filters.dateTo, debouncedSearch, isImpersonating]);
+    }, [pagination.page, pagination.limit, filters.date, filters.dateFrom, filters.dateTo, filters.direction, debouncedSearch, isImpersonating]);
 
 
 
@@ -540,7 +643,7 @@ const ClientDashboard = () => {
 
     useEffect(() => {
         setPagination(p => ({ ...p, page: 1 }));
-    }, [debouncedSearch, filters.date, filters.dateFrom, filters.dateTo]);
+    }, [debouncedSearch, filters.date, filters.dateFrom, filters.dateTo, filters.direction]);
 
     useEffect(() => {
         if (isImpersonating) {
@@ -552,7 +655,7 @@ const ClientDashboard = () => {
         if (filters.date) {
             fetchTableData();
         }
-    }, [fetchTableData, filters.date, filters.dateFrom, filters.dateTo, isImpersonating]);
+    }, [fetchTableData, filters.date, filters.dateFrom, filters.dateTo, filters.direction, isImpersonating]);
 
     useEffect(() => {
         if (isImpersonating) {
@@ -612,6 +715,16 @@ const ClientDashboard = () => {
                     onChange={handleFilterChange}
                     aria-label="Date to"
                   />
+                  <SelectInput
+                    name="direction"
+                    value={filters.direction || ""}
+                    onChange={handleFilterChange}
+                    aria-label="Transaction direction"
+                  >
+                    <option value="">All</option>
+                    <option value="in">IN</option>
+                    <option value="out">OUT</option>
+                  </SelectInput>
                 </>
               ) : (
                 <DateInput
@@ -623,6 +736,11 @@ const ClientDashboard = () => {
               <RefreshButton onClick={() => { fetchTableData(); fetchSummaryData(); }}>
                 <FaSyncAlt /> Refresh
               </RefreshButton>
+              {canCreateDebit && (
+                <ActionButton onClick={handleOpenDebitModal}>
+                  <FaMinusCircle /> Add Debit
+                </ActionButton>
+              )}
             </FilterContainer>
           </TopControls>
 
@@ -798,6 +916,55 @@ const ClientDashboard = () => {
           </MobileListContainer>
           <Pagination pagination={pagination} setPagination={setPagination} />
         </Card>
+        <Modal isOpen={isDebitModalOpen} onClose={() => setIsDebitModalOpen(false)} maxWidth="520px">
+          <h2>Add Debit (Cross)</h2>
+          <p style={{ marginTop: 0, color: '#6b7c93' }}>
+            This creates a debit entry for the current Cross account.
+          </p>
+          <ModalForm onSubmit={handleDebitSubmit}>
+            <FormGroup>
+              <FormLabel>PIX Key</FormLabel>
+              <ModalInput value={portalPixKey || ''} readOnly />
+            </FormGroup>
+            <FormGroup>
+              <FormLabel>Amount (BRL)</FormLabel>
+              <ModalInput
+                type="number"
+                min="0.01"
+                step="0.01"
+                value={debitForm.amount}
+                onChange={(e) => setDebitForm(prev => ({ ...prev, amount: e.target.value }))}
+                placeholder="e.g., 134000.00"
+                required
+              />
+            </FormGroup>
+            <FormGroup>
+              <FormLabel>Date & Time</FormLabel>
+              <ModalInput
+                type="datetime-local"
+                value={debitForm.tx_date}
+                onChange={(e) => setDebitForm(prev => ({ ...prev, tx_date: e.target.value }))}
+                required
+              />
+            </FormGroup>
+            <FormGroup>
+              <FormLabel>Description</FormLabel>
+              <ModalInput
+                value={debitForm.description}
+                onChange={(e) => setDebitForm(prev => ({ ...prev, description: e.target.value }))}
+                placeholder="USD BETA OUT / C"
+              />
+            </FormGroup>
+            <ModalActions>
+              <RefreshButton type="button" onClick={() => setIsDebitModalOpen(false)}>
+                Cancel
+              </RefreshButton>
+              <RefreshButton type="submit">
+                Create Debit
+              </RefreshButton>
+            </ModalActions>
+          </ModalForm>
+        </Modal>
         <PasscodeModal 
             isOpen={isPasscodeModalOpen}
             onClose={() => setIsPasscodeModalOpen(false)}

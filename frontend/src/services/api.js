@@ -73,6 +73,7 @@ export const portalValidateSession = () => portalApiClient.get('/auth/validate')
 export const getPortalTransactions = (params) => portalApiClient.get('/transactions', { params });
 export const getPortalDashboardSummary = (params) => portalApiClient.get('/dashboard-summary', { params });
 export const triggerPartnerConfirmation = (correlation_id) => portalApiClient.post('/bridge/confirm-payment', { correlation_id });
+export const createPortalCrossDebit = (data) => portalApiClient.post('/transactions/debit', data);
 
 export const updatePortalTransactionConfirmation = (id, source, confirmed, passcode) => {
     return portalApiClient.post(`/transactions/confirm`, { 
@@ -93,8 +94,12 @@ export const updatePortalTransactionNotes = (id, source, notes) => {
 
 export const exportPortalTransactions = async (params, format = 'excel') => {
     try {
+        const exportParams = { ...params, format };
+        if (!exportParams.direction) {
+            delete exportParams.direction;
+        }
         const response = await portalApiClient.get('/export-excel', {
-            params: { ...params, format },
+            params: exportParams,
             responseType: 'blob',
         });
         

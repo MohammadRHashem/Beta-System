@@ -6,7 +6,7 @@ export const usePortal = () => useContext(PortalContext);
 
 export const PortalProvider = ({ children }) => {
     // This context will hold the state of the filters from the dashboard
-    const [filters, setFilters] = useState({ search: '', date: '', dateFrom: '', dateTo: '' });
+    const [filters, setFilters] = useState({ search: '', date: '', dateFrom: '', dateTo: '', direction: '' });
 
     const value = {
         filters,

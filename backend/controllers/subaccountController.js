@@ -489,6 +489,8 @@ exports.createPortalAccessSession = async (req, res) => {
             groupName: subaccount.assigned_group_name,
             accessLevel: 'full',
             impersonation: true,
+            adminUserId: req.user?.id,
+            adminUsername: req.user?.username,
             accountType: subaccount.account_type,
             chavePix: subaccount.chave_pix
         };

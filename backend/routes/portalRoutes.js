@@ -11,6 +11,7 @@ router.get("/dashboard-summary", portalController.getDashboardSummary);
 router.get("/export-excel", portalController.exportTransactions);
 router.post("/transactions/confirm", portalController.updateTransactionConfirmation);
 router.post("/transactions/notes", portalController.updateTransactionNotes);
+router.post("/transactions/debit", portalController.createCrossDebit);
 
 
 module.exports = router;

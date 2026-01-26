@@ -245,7 +245,10 @@ const LayoutContent = () => {
       localStorage.getItem("portalClient");
     const clientData = storedClient ? JSON.parse(storedClient) : null;
     if (clientData) setClientInfo(clientData);
-    setIsImpersonating(sessionStorage.getItem("portalImpersonation") === "true");
+    const token = getPortalToken();
+    const decoded = token ? parseJwt(token) : null;
+    const sessionImpersonating = sessionStorage.getItem("portalImpersonation") === "true";
+    setIsImpersonating(decoded?.impersonation === true || sessionImpersonating);
   }, []);
 
   const handleExport = async (format) => {

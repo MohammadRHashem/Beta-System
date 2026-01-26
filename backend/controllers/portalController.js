@@ -2,6 +2,7 @@ const pool = require('../config/db');
 const bcrypt = require('bcryptjs');
 const ExcelJS = require('exceljs');
 const PDFDocument = require('pdfkit');
+const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
 require('dotenv').config();
 const axios = require('axios');
@@ -18,6 +19,46 @@ const buildRangeParams = (dateFrom, dateTo) => {
         start: `${dateFrom} 00:00:00`,
         end: `${dateTo} 23:59:59`
     };
+};
+
+const normalizeDateTime = (value) => {
+    if (!value || typeof value !== 'string') return null;
+    let trimmed = value.trim();
+    if (!trimmed) return null;
+    if (trimmed.includes('T')) trimmed = trimmed.replace('T', ' ');
+    if (trimmed.endsWith('Z')) trimmed = trimmed.slice(0, -1);
+    if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/.test(trimmed)) {
+        trimmed += ':00';
+    }
+    if (!/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(trimmed)) {
+        return null;
+    }
+    return trimmed;
+};
+
+const generateUuid = () => {
+    if (crypto.randomUUID) {
+        return crypto.randomUUID();
+    }
+    const bytes = crypto.randomBytes(16);
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    const hex = bytes.toString('hex');
+    return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+};
+
+const logImpersonationAction = async (client, action, targetType, targetId, details) => {
+    const adminUserId = client?.adminUserId;
+    const adminUsername = client?.adminUsername;
+    if (!adminUserId || !adminUsername) return;
+    try {
+        await pool.query(
+            'INSERT INTO audit_log (user_id, username, action, target_type, target_id, details) VALUES (?, ?, ?, ?, ?, ?)',
+            [adminUserId, adminUsername, action, targetType, targetId, JSON.stringify(details)]
+        );
+    } catch (error) {
+        console.error('[PORTAL-AUDIT] Failed to log impersonation action:', error);
+    }
 };
 
 if (PORTAL_UNCONFIRM_PASSCODE === '1234') {
@@ -164,9 +205,10 @@ exports.getDashboardSummary = async (req, res) => {
 
 exports.getTransactions = async (req, res) => {
     const { accountType, subaccountNumber, chavePix, username, impersonation } = req.client;
-    const { page = 1, limit = 50, search, date, dateFrom, dateTo } = req.query;
+    const { page = 1, limit = 50, search, date, dateFrom, dateTo, direction } = req.query;
     const canUseRange = impersonation === true && dateFrom && dateTo;
     const range = canUseRange ? buildRangeParams(dateFrom, dateTo) : null;
+    const normalizedDirection = impersonation === true && (direction === 'in' || direction === 'out') ? direction : null;
 
     if (canUseRange && !range) {
         return res.status(400).json({ message: 'Invalid date range.' });
@@ -190,6 +232,10 @@ exports.getTransactions = async (req, res) => {
             } else if (date) {
                 query += ' AND DATE(tt.tx_date) = ?';
                 params.push(date);
+            }
+            if (normalizedDirection) {
+                query += ' AND tt.tx_type = ?';
+                params.push(normalizedDirection === 'in' ? 'C' : 'D');
             }
             
             const countQuery = `SELECT count(*) as total ${query}`;
@@ -250,6 +296,10 @@ exports.getTransactions = async (req, res) => {
                 query += ' AND DATE(xt.transaction_date) = ?';
                 params.push(date);
             }
+            if (normalizedDirection) {
+                query += ' AND xt.operation_direct = ?';
+                params.push(normalizedDirection);
+            }
 
             const countQuery = `SELECT count(xt.id) as total ${query}`;
             const [[{ total: queryTotal }]] = await pool.query(countQuery, params);
@@ -276,9 +326,10 @@ exports.getTransactions = async (req, res) => {
 
 exports.exportTransactions = async (req, res) => {
     const { accountType, subaccountNumber, chavePix, username, impersonation } = req.client;
-    const { search, date, dateFrom, dateTo, format = 'excel' } = req.query;
+    const { search, date, dateFrom, dateTo, direction, format = 'excel' } = req.query;
     const canUseRange = impersonation === true && dateFrom && dateTo;
     const range = canUseRange ? buildRangeParams(dateFrom, dateTo) : null;
+    const normalizedDirection = impersonation === true && (direction === 'in' || direction === 'out') ? direction : null;
 
     if (canUseRange && !range) {
         return res.status(400).json({ message: 'Invalid date range.' });
@@ -312,6 +363,10 @@ exports.exportTransactions = async (req, res) => {
                 query += ' AND DATE(tx_date) = ?';
                 params.push(date);
             }
+            if (normalizedDirection) {
+                query += ' AND tx_type = ?';
+                params.push(normalizedDirection === 'in' ? 'C' : 'D');
+            }
             query += ' ORDER BY tx_date DESC';
             [transactions] = await pool.query(query, params);
 
@@ -332,6 +387,10 @@ exports.exportTransactions = async (req, res) => {
             } else if (date) {
                 query += ' AND DATE(transaction_date) = ?';
                 params.push(date);
+            }
+            if (normalizedDirection) {
+                query += ' AND operation_direct = ?';
+                params.push(normalizedDirection);
             }
             query += ' ORDER BY transaction_date DESC';
             [transactions] = await pool.query(query, params);
@@ -621,5 +680,96 @@ exports.triggerPartnerConfirmation = async (req, res) => {
         res.status(status).json({ message });
     } finally {
         connection.release();
+    }
+};
+
+exports.createCrossDebit = async (req, res) => {
+    const { impersonation, accountType, chavePix, subaccountId } = req.client;
+    const { amount, tx_date, description } = req.body;
+
+    if (impersonation !== true) {
+        return res.status(403).json({ message: 'Impersonation access required.' });
+    }
+    if (accountType !== 'cross') {
+        return res.status(400).json({ message: 'Debits can only be created for Cross accounts.' });
+    }
+    if (!chavePix) {
+        return res.status(400).json({ message: 'Cross account is missing a PIX key.' });
+    }
+
+    const normalizedDate = normalizeDateTime(tx_date);
+    const numericAmount = parseFloat(amount);
+    const note = (description || 'USD BETA OUT / C').trim() || 'USD BETA OUT / C';
+
+    if (!normalizedDate) {
+        return res.status(400).json({ message: 'Valid date/time is required.' });
+    }
+    if (!Number.isFinite(numericAmount) || numericAmount <= 0) {
+        return res.status(400).json({ message: 'Amount must be greater than zero.' });
+    }
+
+    try {
+        const uid = generateUuid();
+        const txId = generateUuid();
+
+        const insertQuery = `
+            INSERT INTO trkbit_transactions (
+                uid, tx_id, e2e_id, tx_date, amount, tx_pix_key, tx_type,
+                tx_payer_name, tx_payer_id, raw_data, is_used
+            ) VALUES (
+                ?, ?, NULL, ?, ?, ?, 'D',
+                ?, 'SYSTEM_ARCHIVE',
+                JSON_OBJECT(
+                    'ag', '0001',
+                    'uid', ?,
+                    'tx_id', ?,
+                    'amount', ?,
+                    'e2e_id', NULL,
+                    'account', '5602362',
+                    'tx_date', DATE_FORMAT(?, '%Y-%m-%d %H:%i:%s'),
+                    'tx_type', 'D',
+                    'tx_status', 'done',
+                    'created_at', UNIX_TIMESTAMP(?) * 1000,
+                    'tx_pix_key', ?,
+                    'tx_payee_id', '52006135000168',
+                    'tx_payer_id', '000000001',
+                    'tx_payee_name', ?,
+                    'tx_payer_name', ?
+                ),
+                1
+            )
+        `;
+
+        const params = [
+            uid,
+            txId,
+            normalizedDate,
+            numericAmount,
+            chavePix,
+            note,
+            uid,
+            txId,
+            numericAmount,
+            normalizedDate,
+            normalizedDate,
+            chavePix,
+            note,
+            note
+        ];
+
+        await pool.query(insertQuery, params);
+        await logImpersonationAction(req.client, 'subaccount:debit_cross', 'Subaccount', subaccountId, {
+            amount: numericAmount,
+            tx_date: normalizedDate,
+            tx_pix_key: chavePix,
+            description: note,
+            uid,
+            tx_id: txId
+        });
+
+        res.status(201).json({ message: 'Debit created successfully.' });
+    } catch (error) {
+        console.error('[PORTAL-DEBIT] Failed to create debit:', error);
+        res.status(500).json({ message: 'Failed to create debit.' });
     }
 };
