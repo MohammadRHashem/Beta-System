@@ -256,10 +256,18 @@ const SubaccountsPage = ({ allGroups }) => {
       return;
     }
 
-    const portalWindow = window.open('about:blank', '_blank', 'noopener,noreferrer');
+    const portalWindow = window.open('about:blank', '_blank');
     if (!portalWindow) {
       alert('Pop-up blocked. Please allow pop-ups for this site.');
       return;
+    }
+
+    try {
+      portalWindow.opener = null;
+      portalWindow.document.title = 'Opening client portal...';
+      portalWindow.document.body.innerHTML = '<p style="font-family: sans-serif; padding: 24px;">Opening client portal...</p>';
+    } catch (error) {
+      // Ignore cross-origin or write access issues.
     }
 
     try {
