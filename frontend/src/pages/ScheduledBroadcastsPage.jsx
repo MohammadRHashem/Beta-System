@@ -205,13 +205,14 @@ const ScheduledBroadcastsPage = () => {
                     templates={templates}
                     canViewAttachments={canViewUploads}
                     canUploadAttachments={canCreateUploads}
+                    canDeleteAttachments={canDeleteUploads}
                 />
             )}
         </>
     );
 };
 
-const ScheduleModal = ({ isOpen, onClose, onSave, schedule, batches, templates, canViewAttachments, canUploadAttachments }) => {
+const ScheduleModal = ({ isOpen, onClose, onSave, schedule, batches, templates, canViewAttachments, canUploadAttachments, canDeleteAttachments }) => {
     const [formData, setFormData] = useState({ batch_id: '', message: '', schedule_type: 'ONCE', scheduled_at_time: '09:00', scheduled_at_date: format(new Date(), 'yyyy-MM-dd'), scheduled_days_of_week: [], timezone: 'America/Sao_Paulo' });
     const [attachment, setAttachment] = useState(null);
     const [isAttachmentModalOpen, setIsAttachmentModalOpen] = useState(false);
@@ -363,9 +364,9 @@ const ScheduleModal = ({ isOpen, onClose, onSave, schedule, batches, templates, 
                     isOpen={isAttachmentModalOpen} 
                     onClose={() => setIsAttachmentModalOpen(false)} 
                     onSelect={handleSelectAttachment}
-                    canViewAttachments={canViewUploads}
-                    canUploadAttachments={canCreateUploads}
-                    canDeleteAttachments={canDeleteUploads}
+                    canViewAttachments={canViewAttachments}
+                    canUploadAttachments={canUploadAttachments}
+                    canDeleteAttachments={canDeleteAttachments}
                 />
             </>
         );
