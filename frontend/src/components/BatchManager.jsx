@@ -107,12 +107,12 @@ const BatchManager = ({ batches, onBatchSelect, onBatchEdit, onBatchesUpdate, ca
                             {batch.name}
                         </ItemName>
                         {/* 2. WRAP THE ACTIONS IN A PERMISSION CHECK */}
-                        {canManageBatches && (
+                        {/* {canManageBatches && ( */}
                             <ActionsContainer>
                                 <FaEdit onClick={(e) => { e.stopPropagation(); onBatchEdit(batch); }} title="Edit"/>
                                 <FaTrash onClick={(e) => { e.stopPropagation(); handleDelete(batch.id, batch.name); }} title="Delete"/>
                             </ActionsContainer>
-                        )}
+                        {/* )} */}
                     </BatchItem>
                 ))}
             </BatchList>
