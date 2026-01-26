@@ -10,6 +10,16 @@ const PORTAL_JWT_SECRET = process.env.PORTAL_JWT_SECRET;
 const PORTAL_UNCONFIRM_PASSCODE = process.env.PORTAL_UNCONFIRM_PASSCODE || '1234';
 const PARTNER_USERNAME = 'xplus'; // Define the partner username as a constant
 
+const isValidDate = (value) => /^\d{4}-\d{2}-\d{2}$/.test(value || '');
+
+const buildRangeParams = (dateFrom, dateTo) => {
+    if (!isValidDate(dateFrom) || !isValidDate(dateTo)) return null;
+    return {
+        start: `${dateFrom} 00:00:00`,
+        end: `${dateTo} 23:59:59`
+    };
+};
+
 if (PORTAL_UNCONFIRM_PASSCODE === '1234') {
     console.warn('\x1b[33m%s\x1b[0m', '[SECURITY-WARN] Using default portal un-confirmation passcode. Please set PORTAL_UNCONFIRM_PASSCODE in your .env file.');
 }
@@ -51,6 +61,7 @@ exports.login = async (req, res) => {
             subaccountNumber: subaccount.subaccount_number, // This is the XPayz Platform ID
             groupName: subaccount.assigned_group_name,
             accessLevel: accessLevel,
+            impersonation: false,
             accountType: subaccount.account_type,
             chavePix: subaccount.chave_pix
         };
@@ -74,10 +85,16 @@ exports.login = async (req, res) => {
 
 exports.getDashboardSummary = async (req, res) => {
     // CORRECTED: Use subaccountNumber for xpayz, chavePix for cross
-    const { accountType, subaccountNumber, chavePix } = req.client;
-    const { date } = req.query;
+    const { accountType, subaccountNumber, chavePix, impersonation } = req.client;
+    const { date, dateFrom, dateTo } = req.query;
+    const canUseRange = impersonation === true && dateFrom && dateTo;
+    const range = canUseRange ? buildRangeParams(dateFrom, dateTo) : null;
 
-    if (!date) {
+    if (canUseRange && !range) {
+        return res.status(400).json({ message: 'Invalid date range.' });
+    }
+
+    if (!date && !range) {
         return res.json({ 
             dailyTotalIn: 0, dailyTotalOut: 0, allTimeBalance: 0,
             dailyCountIn: 0, dailyCountOut: 0, dailyCountTotal: 0 
@@ -89,8 +106,17 @@ exports.getDashboardSummary = async (req, res) => {
 
         if (accountType === 'cross') {
             // This logic is correct
-            const dailySummaryQuery = `SELECT SUM(CASE WHEN tx_type = 'C' THEN amount ELSE 0 END) as dailyTotalIn, SUM(CASE WHEN tx_type = 'D' THEN amount ELSE 0 END) as dailyTotalOut, COUNT(CASE WHEN tx_type = 'C' THEN 1 END) as dailyCountIn, COUNT(CASE WHEN tx_type = 'D' THEN 1 END) as dailyCountOut, COUNT(*) as dailyCountTotal FROM trkbit_transactions WHERE tx_pix_key = ? AND DATE(tx_date) = ?;`;
-            [[dailySummary]] = await pool.query(dailySummaryQuery, [chavePix, date]);
+            let dailySummaryQuery = `SELECT SUM(CASE WHEN tx_type = 'C' THEN amount ELSE 0 END) as dailyTotalIn, SUM(CASE WHEN tx_type = 'D' THEN amount ELSE 0 END) as dailyTotalOut, COUNT(CASE WHEN tx_type = 'C' THEN 1 END) as dailyCountIn, COUNT(CASE WHEN tx_type = 'D' THEN 1 END) as dailyCountOut, COUNT(*) as dailyCountTotal FROM trkbit_transactions WHERE tx_pix_key = ?`;
+            const summaryParams = [chavePix];
+            if (range) {
+                dailySummaryQuery += ' AND tx_date BETWEEN ? AND ?';
+                summaryParams.push(range.start, range.end);
+            } else {
+                dailySummaryQuery += ' AND DATE(tx_date) = ?';
+                summaryParams.push(date);
+            }
+            dailySummaryQuery += ';';
+            [[dailySummary]] = await pool.query(dailySummaryQuery, summaryParams);
             const allTimeBalanceQuery = `
                 SELECT SUM(CASE 
                                 WHEN tx_type = 'C' THEN amount 
@@ -103,9 +129,18 @@ exports.getDashboardSummary = async (req, res) => {
             [[balance]] = await pool.query(allTimeBalanceQuery, [chavePix]);
             
         } else { // 'xpayz'
-            const dailySummaryQuery = `SELECT SUM(CASE WHEN operation_direct = 'in' THEN amount ELSE 0 END) as dailyTotalIn, SUM(CASE WHEN operation_direct = 'out' THEN amount ELSE 0 END) as dailyTotalOut, COUNT(CASE WHEN operation_direct = 'in' THEN 1 END) as dailyCountIn, COUNT(CASE WHEN operation_direct = 'out' THEN 1 END) as dailyCountOut, COUNT(*) as dailyCountTotal FROM xpayz_transactions WHERE subaccount_id = ? AND DATE(transaction_date) = ?;`;
+            let dailySummaryQuery = `SELECT SUM(CASE WHEN operation_direct = 'in' THEN amount ELSE 0 END) as dailyTotalIn, SUM(CASE WHEN operation_direct = 'out' THEN amount ELSE 0 END) as dailyTotalOut, COUNT(CASE WHEN operation_direct = 'in' THEN 1 END) as dailyCountIn, COUNT(CASE WHEN operation_direct = 'out' THEN 1 END) as dailyCountOut, COUNT(*) as dailyCountTotal FROM xpayz_transactions WHERE subaccount_id = ?`;
+            const summaryParams = [subaccountNumber];
+            if (range) {
+                dailySummaryQuery += ' AND transaction_date BETWEEN ? AND ?';
+                summaryParams.push(range.start, range.end);
+            } else {
+                dailySummaryQuery += ' AND DATE(transaction_date) = ?';
+                summaryParams.push(date);
+            }
+            dailySummaryQuery += ';';
             // DEFINITIVE FIX: Use subaccountNumber (the XPayz ID)
-            [[dailySummary]] = await pool.query(dailySummaryQuery, [subaccountNumber, date]);
+            [[dailySummary]] = await pool.query(dailySummaryQuery, summaryParams);
 
             const allTimeBalanceQuery = `SELECT (SUM(CASE WHEN operation_direct = 'in' THEN amount ELSE 0 END) - SUM(CASE WHEN operation_direct = 'out' THEN amount ELSE 0 END)) as allTimeBalance FROM xpayz_transactions WHERE subaccount_id = ?;`;
             // DEFINITIVE FIX: Use subaccountNumber (the XPayz ID)
@@ -128,8 +163,14 @@ exports.getDashboardSummary = async (req, res) => {
 };
 
 exports.getTransactions = async (req, res) => {
-    const { accountType, subaccountNumber, chavePix, username } = req.client;
-    const { page = 1, limit = 50, search, date } = req.query;
+    const { accountType, subaccountNumber, chavePix, username, impersonation } = req.client;
+    const { page = 1, limit = 50, search, date, dateFrom, dateTo } = req.query;
+    const canUseRange = impersonation === true && dateFrom && dateTo;
+    const range = canUseRange ? buildRangeParams(dateFrom, dateTo) : null;
+
+    if (canUseRange && !range) {
+        return res.status(400).json({ message: 'Invalid date range.' });
+    }
 
     try {
         let total = 0;
@@ -143,7 +184,13 @@ exports.getTransactions = async (req, res) => {
                 const searchTerm = `%${search}%`;
                 params.push(searchTerm, searchTerm, searchTerm);
             }
-            if (date) { query += ' AND DATE(tt.tx_date) = ?'; params.push(date); }
+            if (range) {
+                query += ' AND tt.tx_date BETWEEN ? AND ?';
+                params.push(range.start, range.end);
+            } else if (date) {
+                query += ' AND DATE(tt.tx_date) = ?';
+                params.push(date);
+            }
             
             const countQuery = `SELECT count(*) as total ${query}`;
             const [[{ total: queryTotal }]] = await pool.query(countQuery, params);
@@ -196,7 +243,10 @@ exports.getTransactions = async (req, res) => {
                 const searchTerm = `%${search}%`;
                 params.push(searchTerm, searchTerm);
             }
-            if (date) {
+            if (range) {
+                query += ' AND xt.transaction_date BETWEEN ? AND ?';
+                params.push(range.start, range.end);
+            } else if (date) {
                 query += ' AND DATE(xt.transaction_date) = ?';
                 params.push(date);
             }
@@ -225,8 +275,14 @@ exports.getTransactions = async (req, res) => {
 };
 
 exports.exportTransactions = async (req, res) => {
-    const { accountType, subaccountNumber, chavePix, username } = req.client;
-    const { search, date, format = 'excel' } = req.query;
+    const { accountType, subaccountNumber, chavePix, username, impersonation } = req.client;
+    const { search, date, dateFrom, dateTo, format = 'excel' } = req.query;
+    const canUseRange = impersonation === true && dateFrom && dateTo;
+    const range = canUseRange ? buildRangeParams(dateFrom, dateTo) : null;
+
+    if (canUseRange && !range) {
+        return res.status(400).json({ message: 'Invalid date range.' });
+    }
 
     try {
         let transactions = [];
@@ -249,7 +305,10 @@ exports.exportTransactions = async (req, res) => {
                 query += ` AND (tx_payer_name LIKE ? OR amount LIKE ?)`;
                 params.push(`%${search}%`, `%${search}%`);
             }
-            if (date) {
+            if (range) {
+                query += ' AND tx_date BETWEEN ? AND ?';
+                params.push(range.start, range.end);
+            } else if (date) {
                 query += ' AND DATE(tx_date) = ?';
                 params.push(date);
             }
@@ -267,7 +326,10 @@ exports.exportTransactions = async (req, res) => {
                 query += ` AND (sender_name LIKE ? OR amount LIKE ?)`;
                 params.push(`%${search}%`, `%${search}%`);
             }
-            if (date) {
+            if (range) {
+                query += ' AND transaction_date BETWEEN ? AND ?';
+                params.push(range.start, range.end);
+            } else if (date) {
                 query += ' AND DATE(transaction_date) = ?';
                 params.push(date);
             }
@@ -275,7 +337,8 @@ exports.exportTransactions = async (req, res) => {
             [transactions] = await pool.query(query, params);
         }
 
-        const filename = `statement_${username}_${date || 'all_time'}`;
+        const filenameDate = range ? `${dateFrom}_to_${dateTo}` : (date || 'all_time');
+        const filename = `statement_${username}_${filenameDate}`;
 
         if (format === 'pdf') {
             const doc = new PDFDocument({ margin: 50, size: 'A4' });

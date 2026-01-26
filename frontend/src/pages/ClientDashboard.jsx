@@ -366,6 +366,7 @@ const ClientDashboard = () => {
     const { filters, setFilters } = usePortal();
     const [pagination, setPagination] = useState({ page: 1, limit: 20, totalPages: 1, totalRecords: 0 });
     const debouncedSearch = useDebounce(filters.search, 500);
+    const isImpersonating = sessionStorage.getItem('portalImpersonation') === 'true';
     const storedClient =
         sessionStorage.getItem('portalClient') ||
         localStorage.getItem('portalClient');
@@ -388,7 +389,9 @@ const ClientDashboard = () => {
         }
         try {
             // === THE DEFINITIVE FIX: DIRECT API CALL ===
-            const token = localStorage.getItem('portalAuthToken');
+            const token =
+                sessionStorage.getItem('portalAuthToken') ||
+                localStorage.getItem('portalAuthToken');
             if (!token) {
                 alert('Authentication error: No portal token found. Please log out and log back in.');
                 return;
@@ -419,7 +422,13 @@ const ClientDashboard = () => {
     const fetchTableData = useCallback(async () => {
         setLoadingTable(true);
         try {
-            const params = { search: debouncedSearch, date: filters.date, page: pagination.page, limit: pagination.limit };
+            const params = { search: debouncedSearch, page: pagination.page, limit: pagination.limit };
+            if (isImpersonating) {
+                if (filters.dateFrom) params.dateFrom = filters.dateFrom;
+                if (filters.dateTo) params.dateTo = filters.dateTo;
+            } else if (filters.date) {
+                params.date = filters.date;
+            }
             const { data } = await getPortalTransactions(params);
             setTransactions(data.transactions || []);
             setPagination(prev => ({ ...prev, totalPages: data.totalPages, totalRecords: data.totalRecords, currentPage: data.currentPage }));
@@ -428,7 +437,7 @@ const ClientDashboard = () => {
         } finally {
             setLoadingTable(false);
         }
-    }, [pagination.page, pagination.limit, filters.date, debouncedSearch]);
+    }, [pagination.page, pagination.limit, filters.date, filters.dateFrom, filters.dateTo, debouncedSearch, isImpersonating]);
 
 
 
@@ -494,37 +503,68 @@ const ClientDashboard = () => {
     const fetchSummaryData = useCallback(async () => {
         setLoadingSummary(true);
         try {
-            const { data } = await getPortalDashboardSummary({ date: filters.date });
+            const params = {};
+            if (isImpersonating) {
+                if (filters.dateFrom) params.dateFrom = filters.dateFrom;
+                if (filters.dateTo) params.dateTo = filters.dateTo;
+            } else if (filters.date) {
+                params.date = filters.date;
+            }
+            const { data } = await getPortalDashboardSummary(params);
             setSummary(data);
         } catch (error) {
             console.error("Failed to fetch summary:", error);
         } finally {
             setLoadingSummary(false);
         }
-    }, [filters.date]);
+    }, [filters.date, filters.dateFrom, filters.dateTo, isImpersonating]);
 
     useEffect(() => {
-        if (!filters.date) {
-            const today = new Date().toISOString().split('T')[0];
-            setFilters(prev => ({ ...prev, date: today }));
-        }
-    }, [filters.date, setFilters]);
+        const today = new Date().toISOString().split('T')[0];
+        setFilters(prev => {
+            if (isImpersonating) {
+                const next = { ...prev };
+                if (!next.dateFrom) next.dateFrom = today;
+                if (!next.dateTo) next.dateTo = today;
+                if (next.dateFrom === prev.dateFrom && next.dateTo === prev.dateTo) {
+                    return prev;
+                }
+                return next;
+            }
+            if (!prev.date) {
+                return { ...prev, date: today };
+            }
+            return prev;
+        });
+    }, [isImpersonating, setFilters]);
 
     useEffect(() => {
         setPagination(p => ({ ...p, page: 1 }));
-    }, [debouncedSearch, filters.date]);
+    }, [debouncedSearch, filters.date, filters.dateFrom, filters.dateTo]);
 
     useEffect(() => {
+        if (isImpersonating) {
+            if (filters.dateFrom && filters.dateTo) {
+                fetchTableData();
+            }
+            return;
+        }
         if (filters.date) {
             fetchTableData();
         }
-    }, [fetchTableData]);
+    }, [fetchTableData, filters.date, filters.dateFrom, filters.dateTo, isImpersonating]);
 
     useEffect(() => {
+        if (isImpersonating) {
+            if (filters.dateFrom && filters.dateTo) {
+                fetchSummaryData();
+            }
+            return;
+        }
         if (filters.date) {
             fetchSummaryData();
         }
-    }, [fetchSummaryData]);
+    }, [fetchSummaryData, filters.date, filters.dateFrom, filters.dateTo, isImpersonating]);
 
     const handleFilterChange = (e) => {
         setFilters(prevFilters => ({ ...prevFilters, [e.target.name]: e.target.value }));
@@ -558,11 +598,28 @@ const ClientDashboard = () => {
                   placeholder="Search by name, amount..."
                 />
               </InputGroup>
-              <DateInput
-                name="date"
-                value={filters.date || ""}
-                onChange={handleFilterChange}
-              />
+              {isImpersonating ? (
+                <>
+                  <DateInput
+                    name="dateFrom"
+                    value={filters.dateFrom || ""}
+                    onChange={handleFilterChange}
+                    aria-label="Date from"
+                  />
+                  <DateInput
+                    name="dateTo"
+                    value={filters.dateTo || ""}
+                    onChange={handleFilterChange}
+                    aria-label="Date to"
+                  />
+                </>
+              ) : (
+                <DateInput
+                  name="date"
+                  value={filters.date || ""}
+                  onChange={handleFilterChange}
+                />
+              )}
               <RefreshButton onClick={() => { fetchTableData(); fetchSummaryData(); }}>
                 <FaSyncAlt /> Refresh
               </RefreshButton>
