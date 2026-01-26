@@ -6,13 +6,39 @@ const { logAction } = require('../services/auditService');
 
 exports.getAllUsers = async (req, res) => {
     try {
-        const [users] = await pool.query(
-            `SELECT u.id, u.username, u.is_active, u.last_login, r.name as role_name 
-             FROM users u 
-             LEFT JOIN roles r ON u.role_id = r.id 
-             ORDER BY u.username`
+        const [rows] = await pool.query(
+            `SELECT 
+                u.id, u.username, u.is_active, u.last_login, 
+                r.id as role_id, r.name as role_name
+             FROM users u
+             LEFT JOIN user_roles ur ON u.id = ur.user_id
+             LEFT JOIN roles r ON r.id = COALESCE(ur.role_id, u.role_id)
+             ORDER BY u.username, r.name`
         );
-        res.json(users);
+
+        const usersById = new Map();
+        rows.forEach(row => {
+            if (!usersById.has(row.id)) {
+                usersById.set(row.id, {
+                    id: row.id,
+                    username: row.username,
+                    is_active: row.is_active,
+                    last_login: row.last_login,
+                    role_ids: [],
+                    role_names: []
+                });
+            }
+
+            if (row.role_id) {
+                const user = usersById.get(row.id);
+                if (!user.role_ids.includes(row.role_id)) {
+                    user.role_ids.push(row.role_id);
+                    user.role_names.push(row.role_name);
+                }
+            }
+        });
+
+        res.json(Array.from(usersById.values()));
     } catch (error) {
         console.error('Failed to get users:', error);
         res.status(500).json({ message: 'Server error.' });
@@ -20,68 +46,128 @@ exports.getAllUsers = async (req, res) => {
 };
 
 exports.createUser = async (req, res) => {
-    const { username, password, role_id } = req.body;
-    if (!username || !password || !role_id) {
-        return res.status(400).json({ message: 'Username, password, and role are required.' });
+    const { username, password, role_ids } = req.body;
+    if (!username || !password || !Array.isArray(role_ids) || role_ids.length === 0) {
+        return res.status(400).json({ message: 'Username, password, and at least one role are required.' });
     }
+
+    const normalizedRoleIds = Array.from(new Set(role_ids.map(id => parseInt(id, 10)).filter(Number.isInteger)));
+    if (normalizedRoleIds.length === 0) {
+        return res.status(400).json({ message: 'At least one valid role is required.' });
+    }
+
+    const connection = await pool.getConnection();
     try {
+        await connection.beginTransaction();
         const hashedPassword = await bcrypt.hash(password, 10);
-        const [result] = await pool.query(
+        const [result] = await connection.query(
             'INSERT INTO users (username, password_hash, role_id) VALUES (?, ?, ?)',
-            [username, hashedPassword, role_id]
+            [username, hashedPassword, normalizedRoleIds[0] || null]
         );
-        
-        await logAction(req, 'admin:manage_users', 'User', result.insertId, { created_user: username, role_id });
+
+        const values = normalizedRoleIds.map(roleId => [result.insertId, roleId]);
+        await connection.query('INSERT INTO user_roles (user_id, role_id) VALUES ?', [values]);
+
+        await connection.commit();
+        await logAction(req, 'admin:manage_users', 'User', result.insertId, { created_user: username, role_ids: normalizedRoleIds });
         res.status(201).json({ id: result.insertId, username });
     } catch (error) {
+        await connection.rollback();
         if (error.code === 'ER_DUP_ENTRY') {
             return res.status(409).json({ message: 'Username already exists.' });
         }
         console.error('Failed to create user:', error);
         res.status(500).json({ message: 'Server error.' });
+    } finally {
+        connection.release();
     }
 };
 
 exports.updateUser = async (req, res) => {
     const { id } = req.params;
-    const { role_id, is_active, password } = req.body;
+    const { role_ids, role_id, is_active, password } = req.body;
 
-    let fields = [];
-    let params = [];
-    
-    // === THE FIX: If the role changes, also increment the token_version ===
-    if (role_id) { 
-        fields.push('role_id = ?'); 
-        fields.push('token_version = token_version + 1'); // Increment the version
-        params.push(role_id); 
-    }
-    
-    if (is_active !== undefined) { fields.push('is_active = ?'); params.push(is_active); }
-    if (password) {
-        const hashedPassword = await bcrypt.hash(password, 10);
-        fields.push('password_hash = ?');
-        fields.push('token_version = token_version + 1'); // Also force re-login on password change
-        params.push(hashedPassword);
+    let normalizedRoleIds = null;
+    if (Array.isArray(role_ids)) {
+        normalizedRoleIds = Array.from(new Set(role_ids.map(rid => parseInt(rid, 10)).filter(Number.isInteger)));
+        if (role_ids.length > 0 && normalizedRoleIds.length === 0) {
+            return res.status(400).json({ message: 'At least one valid role is required.' });
+        }
+    } else if (role_id !== undefined) {
+        const singleRoleId = parseInt(role_id, 10);
+        if (!Number.isInteger(singleRoleId)) {
+            return res.status(400).json({ message: 'Invalid role provided.' });
+        }
+        normalizedRoleIds = [singleRoleId];
     }
 
-    if (fields.length === 0) {
-        return res.status(400).json({ message: 'No fields to update.' });
-    }
-
-    params.push(id);
-    params.push(req.user.id);
-
+    const connection = await pool.getConnection();
     try {
-        const query = `UPDATE users SET ${fields.join(', ')} WHERE id = ? AND id != ?`;
-        const [result] = await pool.query(query, params);
-        if (result.affectedRows === 0) {
+        await connection.beginTransaction();
+
+        const [[target]] = await connection.query(
+            'SELECT id FROM users WHERE id = ? AND id != ?',
+            [id, req.user.id]
+        );
+        if (!target) {
+            await connection.rollback();
             return res.status(404).json({ message: 'User not found or you cannot edit your own account.' });
         }
+
+        let fields = [];
+        let params = [];
+        let shouldBumpToken = false;
+
+        if (normalizedRoleIds !== null) {
+            fields.push('role_id = ?');
+            params.push(normalizedRoleIds[0] || null);
+            shouldBumpToken = true;
+        }
+
+        if (is_active !== undefined) {
+            fields.push('is_active = ?');
+            params.push(is_active);
+        }
+
+        if (password) {
+            const hashedPassword = await bcrypt.hash(password, 10);
+            fields.push('password_hash = ?');
+            params.push(hashedPassword);
+            shouldBumpToken = true;
+        }
+
+        if (shouldBumpToken) {
+            fields.push('token_version = token_version + 1');
+        }
+
+        if (fields.length === 0 && normalizedRoleIds === null) {
+            await connection.rollback();
+            return res.status(400).json({ message: 'No fields to update.' });
+        }
+
+        if (fields.length > 0) {
+            params.push(id);
+            const query = `UPDATE users SET ${fields.join(', ')} WHERE id = ?`;
+            await connection.query(query, params);
+        }
+
+        if (normalizedRoleIds !== null) {
+            await connection.query('DELETE FROM user_roles WHERE user_id = ?', [id]);
+            if (normalizedRoleIds.length > 0) {
+                const values = normalizedRoleIds.map(roleId => [id, roleId]);
+                await connection.query('INSERT INTO user_roles (user_id, role_id) VALUES ?', [values]);
+            }
+        }
+
+        await connection.commit();
         await logAction(req, 'admin:manage_users', 'User', id, { updated_fields: req.body });
         res.json({ message: 'User updated successfully.' });
     } catch (error) {
+        await connection.rollback();
         console.error('Failed to update user:', error);
         res.status(500).json({ message: 'Server error.' });
+    } finally {
+        connection.release();
     }
 };
 
@@ -129,8 +215,11 @@ exports.updateRolePermissions = async (req, res) => {
         
         // === THE FIX: Invalidate tokens for all users with this role ===
         await connection.query(
-            'UPDATE users SET token_version = token_version + 1 WHERE role_id = ?',
-            [roleId]
+            `UPDATE users 
+             SET token_version = token_version + 1 
+             WHERE id IN (SELECT user_id FROM user_roles WHERE role_id = ?)
+                OR role_id = ?`,
+            [roleId, roleId]
         );
         
         await connection.commit();

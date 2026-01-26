@@ -1,9 +1,12 @@
 const checkPermission = (requiredPermission) => {
     return (req, res, next) => {
         const userPermissions = req.user?.permissions || [];
+        const roles = Array.isArray(req.user?.roles)
+            ? req.user.roles
+            : (req.user?.role ? [req.user.role] : []);
 
         // Universal access for "Administrator" role to prevent lockouts
-        if (req.user?.role === 'Administrator' || userPermissions.includes(requiredPermission)) {
+        if (roles.includes('Administrator') || userPermissions.includes(requiredPermission)) {
             return next();
         }
 

@@ -28,11 +28,16 @@ module.exports = async (req, res, next) => {
 
         // The token is valid and fresh. We can now trust its contents.
         // This avoids extra DB calls for permissions on every request.
+        const roles = Array.isArray(decoded.roles)
+            ? decoded.roles
+            : (decoded.role ? [decoded.role] : []);
+
         req.user = {
             id: decoded.id,
             username: decoded.username,
-            role: decoded.role,
-            permissions: decoded.permissions
+            roles,
+            role: roles[0] || decoded.role || null,
+            permissions: decoded.permissions || []
         };
         
         next();

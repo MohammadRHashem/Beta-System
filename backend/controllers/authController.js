@@ -48,15 +48,32 @@ exports.login = async (req, res) => {
             return res.status(401).json({ message: 'Invalid credentials or account is inactive.' });
         }
 
-        const [[roleData]] = await pool.query('SELECT name FROM roles WHERE id = ?', [user.role_id]);
-        const userRole = roleData ? roleData.name : null;
-
-        const [permissions] = await pool.query(
-            `SELECT p.action FROM permissions p
-             JOIN role_permissions rp ON p.id = rp.permission_id
-             WHERE rp.role_id = ?`,
-            [user.role_id]
+        let [roleRows] = await pool.query(
+            `SELECT r.id, r.name
+             FROM user_roles ur
+             JOIN roles r ON r.id = ur.role_id
+             WHERE ur.user_id = ?`,
+            [user.id]
         );
+
+        if (roleRows.length === 0 && user.role_id) {
+            const [[roleFallback]] = await pool.query('SELECT id, name FROM roles WHERE id = ?', [user.role_id]);
+            roleRows = roleFallback ? [roleFallback] : [];
+        }
+
+        const roleIds = roleRows.map(r => r.id);
+        const roleNames = roleRows.map(r => r.name);
+
+        let permissions = [];
+        if (roleIds.length > 0) {
+            const [permissionRows] = await pool.query(
+                `SELECT DISTINCT p.action FROM permissions p
+                 JOIN role_permissions rp ON p.id = rp.permission_id
+                 WHERE rp.role_id IN (?)`,
+                [roleIds]
+            );
+            permissions = permissionRows.map(p => p.action);
+        }
 
         // Update the last_login timestamp
         await pool.query('UPDATE users SET last_login = NOW() WHERE id = ?', [user.id]);
@@ -66,9 +83,11 @@ exports.login = async (req, res) => {
         const tokenPayload = { 
             id: user.id, 
             username: user.username,
-            role: userRole,
-            permissions: permissions.map(p => p.action),
-            token_version: user.token_version // Add this line
+            roles: roleNames,
+            role: roleNames[0] || null,
+            role_ids: roleIds,
+            permissions,
+            token_version: user.token_version
         };
 
         const token = jwt.sign(tokenPayload, JWT_SECRET, { expiresIn: '8h' });

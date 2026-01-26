@@ -173,18 +173,19 @@ const UsersPage = () => {
     const handleOpenModal = (user = null) => {
         setEditingUser(user);
         if (user) {
-            const userRole = roles.find(r => r.name === user.role_name);
+            const selectedRoleIds = (user.role_ids || []).map(id => String(id));
             setFormData({
                 username: user.username,
                 password: '',
-                role_id: userRole ? userRole.id : '',
+                role_ids: selectedRoleIds,
                 is_active: user.is_active,
             });
         } else {
+            const defaultRoleId = roles[0]?.id ? String(roles[0].id) : '';
             setFormData({
                 username: '',
                 password: '',
-                role_id: roles[0]?.id || '',
+                role_ids: defaultRoleId ? [defaultRoleId] : [],
                 is_active: true,
             });
         }
@@ -198,7 +199,12 @@ const UsersPage = () => {
     };
 
     const handleChange = (e) => {
-        const { name, value, type, checked } = e.target;
+        const { name, value, type, checked, selectedOptions } = e.target;
+        if (name === 'role_ids') {
+            const selectedValues = Array.from(selectedOptions).map(option => option.value);
+            setFormData(prev => ({ ...prev, role_ids: selectedValues }));
+            return;
+        }
         setFormData(prev => ({ ...prev, [name]: type === 'checkbox' ? checked : value }));
     };
 
@@ -206,11 +212,16 @@ const UsersPage = () => {
         e.preventDefault();
         try {
             if (editingUser) {
-                const payload = { role_id: formData.role_id, is_active: formData.is_active };
+                const payload = { role_ids: (formData.role_ids || []).map(id => parseInt(id, 10)).filter(Number.isInteger), is_active: formData.is_active };
                 if (formData.password) { payload.password = formData.password; }
                 await updateUser(editingUser.id, payload);
             } else {
-                await createUser(formData);
+                const payload = {
+                    username: formData.username,
+                    password: formData.password,
+                    role_ids: (formData.role_ids || []).map(id => parseInt(id, 10)).filter(Number.isInteger)
+                };
+                await createUser(payload);
             }
             fetchData();
             handleCloseModal();
@@ -245,7 +256,7 @@ const UsersPage = () => {
                         <thead>
                             <tr>
                                 <th>Username</th>
-                                <th>Role</th>
+                                <th>Roles</th>
                                 <th>Status</th>
                                 <th>Last Login</th>
                                 {canManage && <th>Actions</th>}
@@ -258,7 +269,7 @@ const UsersPage = () => {
                                 users.map(user => (
                                     <tr key={user.id}>
                                         <td>{user.username}</td>
-                                        <td>{user.role_name || <span style={{color: '#aaa'}}>None</span>}</td>
+                                        <td>{user.role_names?.length ? user.role_names.join(', ') : <span style={{color: '#aaa'}}>None</span>}</td>
                                         <td><StatusBadge active={user.is_active}>{user.is_active ? 'Active' : 'Inactive'}</StatusBadge></td>
                                         <td>{formatTimestamp(user.last_login)}</td>
                                         {/* 5. WRAP ACTIONS COLUMN IN PERMISSION CHECK */}
@@ -303,8 +314,15 @@ const UsersPage = () => {
                         />
                     </InputGroup>
                     <InputGroup>
-                        <Label htmlFor="role_id">Role</Label>
-                        <Select id="role_id" name="role_id" value={formData.role_id || ''} onChange={handleChange} required>
+                        <Label htmlFor="role_ids">Roles</Label>
+                        <Select
+                            id="role_ids"
+                            name="role_ids"
+                            multiple
+                            value={formData.role_ids || []}
+                            onChange={handleChange}
+                            required
+                        >
                             {roles.map(role => (
                                 <option key={role.id} value={role.id}>{role.name}</option>
                             ))}

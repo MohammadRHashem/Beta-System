@@ -29,7 +29,10 @@ export const PermissionProvider = ({ children }) => {
         if (token) {
             try {
                 const decoded = jwtDecode(token);
-                if (decoded.role === 'Administrator') return true;
+                const roles = Array.isArray(decoded.roles)
+                    ? decoded.roles
+                    : (decoded.role ? [decoded.role] : []);
+                if (roles.includes('Administrator')) return true;
             } catch (e) { /* ignore */ }
         }
         return permissions.includes(requiredPermission);
