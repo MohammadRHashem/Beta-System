@@ -26,6 +26,8 @@ const ModalList = styled.ul` list-style: none; margin: 1rem 0; padding: 0; `;
 const ModalListItem = styled.li` display: flex; justify-content: space-between; align-items: center; padding: 0.75rem; border: 1px solid ${({ theme }) => theme.border}; border-radius: 4px; margin-bottom: 0.5rem; background: #f9f9f9; `;
 const ArrowButton = styled.button` background: transparent; border: none; font-size: 1.2rem; cursor: pointer; color: ${({ theme }) => theme.text}; &:disabled { color: #ccc; cursor: not-allowed; } `;
 const SaveOrderButton = styled.button` background-color: ${({ theme }) => theme.primary}; color: white; border: none; padding: 0.75rem 1.5rem; border-radius: 4px; cursor: pointer; font-weight: bold; display: block; margin-left: auto; `;
+const SearchRow = styled.div` display: flex; justify-content: flex-end; align-items: center; gap: 1rem; margin-top: 1rem; flex-wrap: wrap; `;
+const SearchInput = styled.input` padding: 0.65rem 0.9rem; border: 1px solid ${({ theme }) => theme.border}; border-radius: 6px; font-size: 0.95rem; min-width: 260px; `;
 
 const SAO_PAULO_TIMEZONE = 'America/Sao_Paulo';
 
@@ -67,6 +69,7 @@ const ClientRequestsPage = () => {
     const [activeView, setActiveView] = useState('pending');
     const [activeTypeTab, setActiveTypeTab] = useState('All');
     const [isConfigModalOpen, setIsConfigModalOpen] = useState(false);
+    const [searchTerm, setSearchTerm] = useState('');
     const socket = useSocket();
 
     const fetchData = useCallback(async () => {
@@ -96,6 +99,21 @@ const ClientRequestsPage = () => {
         if (activeTypeTab !== 'All') {
             items = items.filter(req => req.request_type === activeTypeTab);
         }
+        if (searchTerm.trim()) {
+            const query = searchTerm.trim().toLowerCase();
+            items = items.filter(req => {
+                const values = [
+                    req.source_group_name,
+                    req.request_type,
+                    req.content,
+                    req.amount,
+                    req.completed_by,
+                    req.received_at,
+                    req.completed_at
+                ];
+                return values.some(val => (val || '').toString().toLowerCase().includes(query));
+            });
+        }
         if (sortConfig.key) {
             items.sort((a, b) => {
                 const aValue = a[sortConfig.key]; const bValue = b[sortConfig.key];
@@ -107,7 +125,7 @@ const ClientRequestsPage = () => {
             });
         }
         return items;
-    }, [allRequests, activeView, activeTypeTab, sortConfig]);
+    }, [allRequests, activeView, activeTypeTab, sortConfig, searchTerm]);
 
     const columnCount = activeView === 'completed' ? 7 : 6;
 
@@ -141,6 +159,10 @@ const ClientRequestsPage = () => {
         if (sortConfig.direction === 'asc') return <FaSortUp />;
         return <FaSortDown />;
     };
+
+    useEffect(() => {
+        setSearchTerm('');
+    }, [activeView, activeTypeTab]);
 
     const handleComplete = async (id) => {
         if (!canComplete) return;
@@ -233,6 +255,13 @@ const ClientRequestsPage = () => {
                             </Tab>
                         ))}
                     </TabContainer>
+                    <SearchRow>
+                        <SearchInput
+                            placeholder={`Search ${activeView === 'completed' ? 'completed' : 'pending'}...`}
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                        />
+                    </SearchRow>
                     
                     <Table>
                     <thead>
