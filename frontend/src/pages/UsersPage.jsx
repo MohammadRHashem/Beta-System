@@ -102,12 +102,27 @@ const Input = styled.input`
     font-size: 1rem;
 `;
 
-const Select = styled.select`
-    padding: 0.75rem;
+const RoleGrid = styled.div`
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+`;
+
+const RoleChipLabel = styled.label`
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.4rem 0.75rem;
+    border-radius: 999px;
     border: 1px solid ${({ theme }) => theme.border};
-    border-radius: 4px;
-    font-size: 1rem;
-    background: #fff;
+    background: ${({ theme }) => theme.background};
+    cursor: pointer;
+    font-weight: 500;
+`;
+
+const RoleCheckbox = styled.input`
+    width: 16px;
+    height: 16px;
 `;
 
 const SwitchContainer = styled.div`
@@ -199,17 +214,28 @@ const UsersPage = () => {
     };
 
     const handleChange = (e) => {
-        const { name, value, type, checked, selectedOptions } = e.target;
-        if (name === 'role_ids') {
-            const selectedValues = Array.from(selectedOptions).map(option => option.value);
-            setFormData(prev => ({ ...prev, role_ids: selectedValues }));
-            return;
-        }
+        const { name, value, type, checked } = e.target;
         setFormData(prev => ({ ...prev, [name]: type === 'checkbox' ? checked : value }));
+    };
+
+    const toggleRole = (roleId) => {
+        setFormData(prev => {
+            const current = new Set(prev.role_ids || []);
+            if (current.has(roleId)) {
+                current.delete(roleId);
+            } else {
+                current.add(roleId);
+            }
+            return { ...prev, role_ids: Array.from(current) };
+        });
     };
 
     const handleSubmit = async (e) => {
         e.preventDefault();
+        if (!formData.role_ids || formData.role_ids.length === 0) {
+            alert('Please select at least one role.');
+            return;
+        }
         try {
             if (editingUser) {
                 const payload = { role_ids: (formData.role_ids || []).map(id => parseInt(id, 10)).filter(Number.isInteger), is_active: formData.is_active };
@@ -314,19 +340,23 @@ const UsersPage = () => {
                         />
                     </InputGroup>
                     <InputGroup>
-                        <Label htmlFor="role_ids">Roles</Label>
-                        <Select
-                            id="role_ids"
-                            name="role_ids"
-                            multiple
-                            value={formData.role_ids || []}
-                            onChange={handleChange}
-                            required
-                        >
-                            {roles.map(role => (
-                                <option key={role.id} value={role.id}>{role.name}</option>
-                            ))}
-                        </Select>
+                        <Label>Roles</Label>
+                        <RoleGrid>
+                            {roles.map(role => {
+                                const roleId = String(role.id);
+                                const checked = (formData.role_ids || []).includes(roleId);
+                                return (
+                                    <RoleChipLabel key={role.id}>
+                                        <RoleCheckbox
+                                            type="checkbox"
+                                            checked={checked}
+                                            onChange={() => toggleRole(roleId)}
+                                        />
+                                        {role.name}
+                                    </RoleChipLabel>
+                                );
+                            })}
+                        </RoleGrid>
                     </InputGroup>
                     {editingUser && (
                         <InputGroup>
