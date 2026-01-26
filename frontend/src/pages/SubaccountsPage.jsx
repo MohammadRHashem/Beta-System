@@ -4,10 +4,10 @@ import { usePermissions } from '../context/PermissionContext'; // 1. IMPORT PERM
 import {
   getSubaccounts, createSubaccount, updateSubaccount, deleteSubaccount,
   getSubaccountCredentials, resetSubaccountPassword, getRecibosTransactions,
-  reassignTransaction, triggerHardRefresh
+  reassignTransaction, triggerHardRefresh, createPortalAccessSession
 } from "../services/api";
 import Modal from "../components/Modal";
-import { FaPlus, FaEdit, FaTrash, FaKey, FaExchangeAlt, FaMagic, FaHistory } from "react-icons/fa";
+import { FaPlus, FaEdit, FaTrash, FaKey, FaExchangeAlt, FaMagic, FaHistory, FaExternalLinkAlt } from "react-icons/fa";
 import ComboBox from "../components/ComboBox";
 import Select from 'react-select';
 
@@ -126,6 +126,7 @@ const SubaccountsPage = ({ allGroups }) => {
   const canManageSubaccounts = hasPermission('subaccount:manage');
   const canManageCredentials = hasPermission('subaccount:manage_credentials');
   const canReassign = hasPermission('subaccount:reassign_transactions');
+  const canPortalAccess = hasPermission('client_portal:access');
 
   const [subaccounts, setSubaccounts] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -250,6 +251,30 @@ const SubaccountsPage = ({ allGroups }) => {
       }
   };
 
+  const handleOpenPortal = async (subaccount) => {
+    if (!window.confirm(`Open the client portal for "${subaccount.name}" in FULL access? This opens a new tab.`)) {
+      return;
+    }
+
+    const portalWindow = window.open('about:blank', '_blank', 'noopener,noreferrer');
+    if (!portalWindow) {
+      alert('Pop-up blocked. Please allow pop-ups for this site.');
+      return;
+    }
+
+    try {
+      const { data } = await createPortalAccessSession(subaccount.id);
+      const params = new URLSearchParams();
+      params.set('token', data.token);
+      params.set('client', JSON.stringify(data.client));
+      portalWindow.location.href = `${window.location.origin}/portal/impersonate#${params.toString()}`;
+      portalWindow.focus();
+    } catch (error) {
+      portalWindow.close();
+      alert(error.response?.data?.message || 'Failed to open client portal.');
+    }
+  };
+
   return (
     <>
       <PageContainer>
@@ -279,7 +304,7 @@ const SubaccountsPage = ({ allGroups }) => {
                 <th>Identifier (Number/PIX)</th>
                 <th>Assigned Group</th>
                 {/* Conditionally render actions header */}
-                {(canManageSubaccounts || canManageCredentials) && <th>Actions</th>}
+                {(canManageSubaccounts || canManageCredentials || canPortalAccess) && <th>Actions</th>}
               </tr>
             </thead>
             <tbody>
@@ -292,9 +317,10 @@ const SubaccountsPage = ({ allGroups }) => {
                     <td>{acc.account_type === 'cross' ? acc.chave_pix : acc.subaccount_number}</td>
                     <td>{acc.assigned_group_name || <span style={{ color: "#999" }}>None</span>}</td>
                     {/* 4. WRAP ACTION ICONS IN PERMISSION CHECKS */}
-                    {(canManageSubaccounts || canManageCredentials) && (
+                    {(canManageSubaccounts || canManageCredentials || canPortalAccess) && (
                         <td className="actions">
                           {canManageCredentials && <FaKey onClick={() => handleCredentials(acc)} title="Manage Credentials" />}
+                          {canPortalAccess && <FaExternalLinkAlt onClick={() => handleOpenPortal(acc)} title="Open Client Portal (Full Access)" />}
                           {canManageSubaccounts && acc.account_type === 'xpayz' && (
                             <FaHistory onClick={() => handleHardRefresh(acc)} title="Hard Refresh History" />
                           )}

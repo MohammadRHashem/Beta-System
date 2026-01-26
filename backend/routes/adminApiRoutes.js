@@ -103,6 +103,7 @@ router.delete('/subaccounts/:id', checkPermission('subaccount:manage'), subaccou
 router.get('/subaccounts/:id/credentials', checkPermission('subaccount:manage_credentials'), subaccountController.getCredentials);
 router.post('/subaccounts/:id/credentials/reset', checkPermission('subaccount:manage_credentials'), subaccountController.resetPassword);
 router.post('/subaccounts/:id/hard-refresh', checkPermission('subaccount:manage'), subaccountController.triggerHardRefresh);
+router.post('/subaccounts/:id/portal-access', checkPermission('client_portal:access'), subaccountController.createPortalAccessSession);
 router.get('/subaccounts/:subaccountId/recibos', checkPermission('subaccount:reassign_transactions'), subaccountController.getRecibosTransactions);
 router.post('/subaccounts/reassign', checkPermission('subaccount:reassign_transactions'), subaccountController.reassignTransaction);
 

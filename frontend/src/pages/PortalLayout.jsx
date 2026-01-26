@@ -158,6 +158,27 @@ const FormatButton = styled.button`
   }
 `;
 
+const ImpersonationBanner = styled.div`
+  background: #0a2540;
+  color: #fff;
+  padding: 0.6rem 1.5rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-weight: 600;
+  font-size: 0.9rem;
+`;
+
+const ImpersonationButton = styled.button`
+  background: #fff;
+  color: #0a2540;
+  border: none;
+  padding: 0.4rem 0.8rem;
+  border-radius: 6px;
+  font-weight: 700;
+  cursor: pointer;
+`;
+
 // Helper to parse JWT without a library
 const parseJwt = (token) => {
   try {
@@ -172,18 +193,35 @@ const LayoutContent = () => {
   const [clientInfo, setClientInfo] = useState({});
   const [isMobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
+  const [isImpersonating, setIsImpersonating] = useState(false);
   const { filters } = usePortal();
 
+  const getPortalToken = () =>
+    sessionStorage.getItem("portalAuthToken") ||
+    localStorage.getItem("portalAuthToken");
+
   const handleLogout = () => {
+    if (sessionStorage.getItem("portalImpersonation") === "true") {
+      sessionStorage.removeItem("portalAuthToken");
+      sessionStorage.removeItem("portalClient");
+      sessionStorage.removeItem("portalImpersonation");
+      setIsImpersonating(false);
+      navigate("/portal/login");
+      return;
+    }
+
     localStorage.removeItem("portalAuthToken");
     localStorage.removeItem("portalClient");
+    sessionStorage.removeItem("portalAuthToken");
+    sessionStorage.removeItem("portalClient");
+    sessionStorage.removeItem("portalImpersonation");
     navigate("/portal/login");
   };
 
   // --- THIS IS THE FIX: Proactive session checker ---
   useEffect(() => {
     const interval = setInterval(() => {
-      const token = localStorage.getItem("portalAuthToken");
+      const token = getPortalToken();
       if (!token) {
         handleLogout();
         return;
@@ -202,8 +240,12 @@ const LayoutContent = () => {
   // --- END OF FIX ---
 
   useEffect(() => {
-    const clientData = JSON.parse(localStorage.getItem("portalClient"));
+    const storedClient =
+      sessionStorage.getItem("portalClient") ||
+      localStorage.getItem("portalClient");
+    const clientData = storedClient ? JSON.parse(storedClient) : null;
     if (clientData) setClientInfo(clientData);
+    setIsImpersonating(sessionStorage.getItem("portalImpersonation") === "true");
   }, []);
 
   const handleExport = async (format) => {
@@ -243,6 +285,14 @@ const LayoutContent = () => {
           {isMobileMenuOpen ? <FaTimes /> : <FaBars />}
         </MobileMenuButton>
       </Header>
+      {isImpersonating && (
+        <ImpersonationBanner>
+          <span>Impersonating client portal (full access)</span>
+          <ImpersonationButton onClick={handleLogout}>
+            Exit
+          </ImpersonationButton>
+        </ImpersonationBanner>
+      )}
       <AnimatePresence>
         {isMobileMenuOpen && (
           <MobileNav

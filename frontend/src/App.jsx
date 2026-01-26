@@ -12,6 +12,7 @@ import ClientLoginPage from './pages/ClientLoginPage';
 import PortalLayout from './pages/PortalLayout';
 import ClientDashboard from './pages/ClientDashboard';
 import ClientViewOnlyDashboard from './pages/ClientViewOnlyDashboard'; // Import
+import PortalImpersonate from './pages/PortalImpersonate';
 
 const LoadingContainer = styled.div`
     width: 100vw;
@@ -45,6 +46,7 @@ const App = () => {
 
             {/* === CLIENT PORTAL ROUTES === */}
             <Route path="/portal/login" element={<ClientLoginPage />} />
+            <Route path="/portal/impersonate" element={<PortalImpersonate />} />
             <Route 
                 path="/portal/*" 
                 element={

@@ -366,7 +366,10 @@ const ClientDashboard = () => {
     const { filters, setFilters } = usePortal();
     const [pagination, setPagination] = useState({ page: 1, limit: 20, totalPages: 1, totalRecords: 0 });
     const debouncedSearch = useDebounce(filters.search, 500);
-    const clientData = JSON.parse(localStorage.getItem('portalClient')) || {};
+    const storedClient =
+        sessionStorage.getItem('portalClient') ||
+        localStorage.getItem('portalClient');
+    const clientData = storedClient ? JSON.parse(storedClient) : {};
 
     const [updatingIds, setUpdatingIds] = useState(new Set());
     const [isPasscodeModalOpen, setIsPasscodeModalOpen] = useState(false);

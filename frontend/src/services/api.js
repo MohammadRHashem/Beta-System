@@ -3,6 +3,8 @@ import axios from 'axios';
 const apiClient = axios.create({ baseURL: 'https://platform.betaserver.dev:4433/api' });
 const portalApiClient = axios.create({ baseURL: 'https://platform.betaserver.dev:4433/api/portal' });
 
+const getPortalToken = () => sessionStorage.getItem('portalAuthToken') || localStorage.getItem('portalAuthToken');
+
 // --- INTERCEPTOR FOR ADMIN PANEL ---
 apiClient.interceptors.request.use(config => {
     const token = localStorage.getItem('authToken');
@@ -26,7 +28,7 @@ apiClient.interceptors.response.use(
 
 // --- INTERCEPTOR FOR CLIENT PORTAL ---
 portalApiClient.interceptors.request.use(config => {
-    const token = localStorage.getItem('portalAuthToken');
+    const token = getPortalToken();
     if (token) {
         config.headers.Authorization = `Bearer ${token}`;
     }
@@ -53,6 +55,9 @@ portalApiClient.interceptors.response.use(
             console.warn('[PORTAL API] Received 401 Unauthorized. Forcing logout and redirecting to login.');
             localStorage.removeItem('portalAuthToken');
             localStorage.removeItem('portalClient');
+            sessionStorage.removeItem('portalAuthToken');
+            sessionStorage.removeItem('portalClient');
+            sessionStorage.removeItem('portalImpersonation');
             window.location.href = '/portal/login'; 
         }
         return Promise.reject(error);
@@ -93,7 +98,10 @@ export const exportPortalTransactions = async (params, format = 'excel') => {
             responseType: 'blob',
         });
         
-        const clientData = JSON.parse(localStorage.getItem('portalClient')) || {};
+        const storedClient =
+            sessionStorage.getItem('portalClient') ||
+            localStorage.getItem('portalClient');
+        const clientData = storedClient ? JSON.parse(storedClient) : {};
         const clientName = clientData.username;
         const cleanFilename = `accountBalance_${clientName}`;
         const extension = format === 'pdf' ? 'pdf' : 'xlsx';
@@ -230,6 +238,7 @@ export const deleteSubaccount = (id) => apiClient.delete(`/subaccounts/${id}`);
 export const getSubaccountCredentials = (id) => apiClient.get(`/subaccounts/${id}/credentials`);
 export const resetSubaccountPassword = (id, type) => apiClient.post(`/subaccounts/${id}/credentials/reset`, { type });
 export const triggerHardRefresh = (id) => apiClient.post(`/subaccounts/${id}/hard-refresh`);
+export const createPortalAccessSession = (id) => apiClient.post(`/subaccounts/${id}/portal-access`);
 
 
 

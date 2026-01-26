@@ -1,7 +1,12 @@
 const pool = require('../config/db');
 const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
+const jwt = require('jsonwebtoken');
 const { syncSingleSubaccount } = require('../xpayzSyncService');
+const { logAction } = require('../services/auditService');
+require('dotenv').config();
+
+const PORTAL_JWT_SECRET = process.env.PORTAL_JWT_SECRET;
 
 // GET all subaccounts (permission-gated)
 exports.getAll = async (req, res) => {
@@ -294,6 +299,95 @@ exports.resetPassword = async (req, res) => {
     } catch (error) {
         console.error('[ERROR] Failed to reset client password:', error);
         res.status(500).json({ message: 'Failed to reset password.' });
+    }
+};
+
+// === NEW: Admin portal access token for a subaccount ===
+exports.createPortalAccessSession = async (req, res) => {
+    const { id: subaccountId } = req.params;
+
+    if (!PORTAL_JWT_SECRET) {
+        console.error('[PORTAL-ACCESS] Missing PORTAL_JWT_SECRET.');
+        return res.status(500).json({ message: 'Portal configuration error.' });
+    }
+
+    try {
+        const [[subaccount]] = await pool.query(
+            'SELECT id, name, account_type, subaccount_number, chave_pix, assigned_group_name FROM subaccounts WHERE id = ?',
+            [subaccountId]
+        );
+
+        if (!subaccount) {
+            return res.status(404).json({ message: 'Subaccount not found.' });
+        }
+
+        let [[client]] = await pool.query(
+            'SELECT id, username FROM clients WHERE subaccount_id = ?',
+            [subaccountId]
+        );
+
+        if (!client) {
+            const rawBase = (subaccount.assigned_group_name || subaccount.name || `client${subaccountId}`).trim();
+            const baseToken = rawBase.split(' ')[0] || rawBase;
+            const normalized = baseToken.toLowerCase().replace(/[^a-z0-9]/g, '');
+            const baseUsername = normalized || `client${subaccountId}`;
+
+            const randomPassword = crypto.randomBytes(16).toString('hex');
+            const passwordHash = await bcrypt.hash(randomPassword, 10);
+
+            let username = baseUsername;
+            try {
+                const [insertResult] = await pool.query(
+                    'INSERT INTO clients (subaccount_id, username, password_hash) VALUES (?, ?, ?)',
+                    [subaccountId, username, passwordHash]
+                );
+                client = { id: insertResult.insertId, username };
+            } catch (insertError) {
+                if (insertError.code === 'ER_DUP_ENTRY') {
+                    username = `${baseUsername}${subaccountId}`;
+                    const [insertResult] = await pool.query(
+                        'INSERT INTO clients (subaccount_id, username, password_hash) VALUES (?, ?, ?)',
+                        [subaccountId, username, passwordHash]
+                    );
+                    client = { id: insertResult.insertId, username };
+                } else {
+                    throw insertError;
+                }
+            }
+        }
+
+        const tokenPayload = {
+            id: client.id,
+            username: client.username,
+            subaccountId: subaccount.id,
+            subaccountNumber: subaccount.subaccount_number,
+            groupName: subaccount.assigned_group_name,
+            accessLevel: 'full',
+            accountType: subaccount.account_type,
+            chavePix: subaccount.chave_pix
+        };
+
+        const token = jwt.sign(tokenPayload, PORTAL_JWT_SECRET, { expiresIn: '8h' });
+
+        await logAction(req, 'client_portal:access', 'Subaccount', subaccount.id, {
+            client_id: client.id,
+            client_username: client.username,
+            accessLevel: 'full'
+        });
+
+        res.json({
+            token,
+            accessLevel: 'full',
+            impersonation: true,
+            client: {
+                username: client.username,
+                name: subaccount.name,
+                groupName: subaccount.assigned_group_name
+            }
+        });
+    } catch (error) {
+        console.error('[PORTAL-ACCESS] Failed to create portal session:', error);
+        res.status(500).json({ message: 'Failed to create portal session.' });
     }
 };
 
