@@ -175,11 +175,11 @@ const MainLayout = () => {
               {/* === CORE OPERATIONAL ROUTES === */}
               <Route path="/invoices" element={<ProtectedPage permission="invoice:view"><InvoicesPage allGroups={allGroups} /></ProtectedPage>} />
               <Route path="/manual-review" element={<ProtectedPage permission="manual_review:view"><ManualReviewPage allGroups={allGroups} /></ProtectedPage>} />
-              <Route path="/client-requests" element={<ClientRequestsPage />} />
+              <Route path="/client-requests" element={<ProtectedPage permission="client_requests:view"><ClientRequestsPage /></ProtectedPage>} />
 
               {/* === BROADCASTING ROUTES === */}
               <Route path="/broadcaster" element={<ProtectedPage permission="broadcast:send"><BroadcasterPage allGroups={allGroups} /></ProtectedPage>} />
-              <Route path="/scheduled-broadcasts" element={<ProtectedPage permission="broadcast:schedule"><ScheduledBroadcastsPage /></ProtectedPage>} />
+              <Route path="/scheduled-broadcasts" element={<ProtectedPage permission={['broadcast:schedules:view', 'broadcast:schedule']}><ScheduledBroadcastsPage /></ProtectedPage>} />
               
               {/* === SUBACCOUNT & CLIENT ROUTES === */}
               <Route path="/subaccounts" element={<ProtectedPage permission="subaccount:view"><SubaccountsPage allGroups={allGroups} /></ProtectedPage>} />
@@ -197,7 +197,7 @@ const MainLayout = () => {
               <Route path="/abbreviations" element={<ProtectedPage permission="settings:view"><AbbreviationsPage /></ProtectedPage>} />
               <Route path="/group-settings" element={<ProtectedPage permission="settings:edit_rules"><GroupSettingsPage /></ProtectedPage>} />
               <Route path="/request-types" element={<ProtectedPage permission="settings:edit_request_triggers"><RequestTypesPage /></ProtectedPage>} />
-              <Route path="/usdt-wallets" element={<ProtectedPage permission="settings:edit_usdt_wallets"><UsdtWalletsPage /></ProtectedPage>} />
+              <Route path="/usdt-wallets" element={<ProtectedPage permission={['usdt_wallets:view', 'settings:edit_usdt_wallets']}><UsdtWalletsPage /></ProtectedPage>} />
 
               {/* === NEW ADMIN ROUTES === */}
               <Route path="/users" element={<ProtectedPage permission="admin:view_users"><UsersPage /></ProtectedPage>} />

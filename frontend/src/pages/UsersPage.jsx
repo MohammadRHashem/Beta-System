@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import styled from 'styled-components';
-import { getAllUsers, getAllRoles, createUser, updateUser } from '../services/api';
+import { getAllUsers, getAllRoles, createUser, updateUser, deleteUser } from '../services/api';
 import Modal from '../components/Modal';
 import { usePermissions } from '../context/PermissionContext'; // 1. IMPORT PERMISSIONS HOOK
-import { FaPlus, FaUsers, FaEdit } from 'react-icons/fa';
+import { FaPlus, FaUsers, FaEdit, FaTrash } from 'react-icons/fa';
 import { format } from 'date-fns';
 
 // Styled Components
@@ -238,7 +238,13 @@ const UsersPage = () => {
         }
         try {
             if (editingUser) {
-                const payload = { role_ids: (formData.role_ids || []).map(id => parseInt(id, 10)).filter(Number.isInteger), is_active: formData.is_active };
+                const payload = { 
+                    role_ids: (formData.role_ids || []).map(id => parseInt(id, 10)).filter(Number.isInteger),
+                    is_active: formData.is_active
+                };
+                if (formData.username && formData.username !== editingUser.username) {
+                    payload.username = formData.username;
+                }
                 if (formData.password) { payload.password = formData.password; }
                 await updateUser(editingUser.id, payload);
             } else {
@@ -253,6 +259,17 @@ const UsersPage = () => {
             handleCloseModal();
         } catch (error) {
             alert(error.response?.data?.message || 'Failed to save user.');
+        }
+    };
+
+    const handleDelete = async (user) => {
+        if (window.confirm(`Delete user "${user.username}"? This cannot be undone.`)) {
+            try {
+                await deleteUser(user.id);
+                fetchData();
+            } catch (error) {
+                alert(error.response?.data?.message || 'Failed to delete user.');
+            }
         }
     };
 
@@ -302,6 +319,7 @@ const UsersPage = () => {
                                         {canManage && (
                                             <td className="actions">
                                                 <FaEdit onClick={() => handleOpenModal(user)} title="Edit User" />
+                                                <FaTrash onClick={() => handleDelete(user)} title="Delete User" />
                                             </td>
                                         )}
                                     </tr>
@@ -324,7 +342,6 @@ const UsersPage = () => {
                             value={formData.username || ''} 
                             onChange={handleChange} 
                             required 
-                            disabled={!!editingUser}
                         />
                     </InputGroup>
                     <InputGroup>

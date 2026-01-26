@@ -30,11 +30,13 @@ const broadcastUploadController = require('../controllers/broadcastUploadControl
 router.get('/admin/users', checkPermission('admin:view_users'), userAdminController.getAllUsers);
 router.post('/admin/users', checkPermission('admin:manage_users'), userAdminController.createUser);
 router.put('/admin/users/:id', checkPermission('admin:manage_users'), userAdminController.updateUser);
+router.delete('/admin/users/:id', checkPermission('admin:manage_users'), userAdminController.deleteUser);
 
 // === ROLE MANAGEMENT ROUTES (UPDATED) ===
 router.get('/admin/roles', checkPermission('admin:view_roles'), userAdminController.getAllRoles);
 router.post('/admin/roles', checkPermission('admin:manage_roles'), userAdminController.createRole); // NEW
 router.put('/admin/roles/:id', checkPermission('admin:manage_roles'), userAdminController.updateRole); // NEW
+router.delete('/admin/roles/:id', checkPermission('admin:manage_roles'), userAdminController.deleteRole);
 router.get('/admin/roles/:id/permissions', checkPermission('admin:view_roles'), userAdminController.getRolePermissions);
 router.put('/admin/roles/:id/permissions', checkPermission('admin:manage_roles'), userAdminController.updateRolePermissions);
 
@@ -49,29 +51,29 @@ router.post('/broadcast', checkPermission('broadcast:send'), whatsappController.
 
 
 // --- Batches ---
-router.get('/batches', checkPermission('broadcast:manage_batches'), batchController.getAllBatches);
-router.post('/batches', checkPermission('broadcast:manage_batches'), batchController.createBatch);
-router.get('/batches/:id', checkPermission('broadcast:manage_batches'), batchController.getGroupIdsByBatch);
-router.put('/batches/:id', checkPermission('broadcast:manage_batches'), batchController.updateBatch);
-router.delete('/batches/:id', checkPermission('broadcast:manage_batches'), batchController.deleteBatch);
+router.get('/batches', checkPermission(['broadcast:batches:view', 'broadcast:manage_batches']), batchController.getAllBatches);
+router.post('/batches', checkPermission(['broadcast:batches:create', 'broadcast:manage_batches']), batchController.createBatch);
+router.get('/batches/:id', checkPermission(['broadcast:batches:view', 'broadcast:manage_batches']), batchController.getGroupIdsByBatch);
+router.put('/batches/:id', checkPermission(['broadcast:batches:update', 'broadcast:manage_batches']), batchController.updateBatch);
+router.delete('/batches/:id', checkPermission(['broadcast:batches:delete', 'broadcast:manage_batches']), batchController.deleteBatch);
 
 
 // --- Templates ---
-router.get('/templates', checkPermission('broadcast:manage_templates'), templateController.getAllTemplates);
-router.post('/templates', checkPermission('broadcast:manage_templates'), templateController.createTemplate);
-router.put('/templates/:id', checkPermission('broadcast:manage_templates'), templateController.updateTemplate);
-router.delete('/templates/:id', checkPermission('broadcast:manage_templates'), templateController.deleteTemplate);
+router.get('/templates', checkPermission(['broadcast:templates:view', 'broadcast:manage_templates']), templateController.getAllTemplates);
+router.post('/templates', checkPermission(['broadcast:templates:create', 'broadcast:manage_templates']), templateController.createTemplate);
+router.put('/templates/:id', checkPermission(['broadcast:templates:update', 'broadcast:manage_templates']), templateController.updateTemplate);
+router.delete('/templates/:id', checkPermission(['broadcast:templates:delete', 'broadcast:manage_templates']), templateController.deleteTemplate);
 
 
 // --- Broadcast Uploads ---
-router.get('/broadcasts/uploads', checkPermission('broadcast:manage_attachments'), broadcastUploadController.getAllUploads);
-router.post('/broadcasts/upload', checkPermission('broadcast:manage_attachments'), (req, res, next) => {
+router.get('/broadcasts/uploads', checkPermission(['broadcast:uploads:view', 'broadcast:manage_attachments']), broadcastUploadController.getAllUploads);
+router.post('/broadcasts/upload', checkPermission(['broadcast:uploads:create', 'broadcast:manage_attachments']), (req, res, next) => {
     req.broadcastUpload.single('file')(req, res, (err) => {
         if (err) { return res.status(400).json({ message: 'File upload failed.', error: err.message }); }
         next();
     });
 }, broadcastUploadController.handleUpload);
-router.delete('/broadcasts/uploads/:id', checkPermission('broadcast:manage_attachments'), broadcastUploadController.deleteUpload);
+router.delete('/broadcasts/uploads/:id', checkPermission(['broadcast:uploads:delete', 'broadcast:manage_attachments']), broadcastUploadController.deleteUpload);
 
 
 // --- Invoices ---
@@ -122,11 +124,11 @@ router.get('/trkbit/export', checkPermission('finance:view_bank_statements'), tr
 
 
 // --- Client Requests ---
-router.get('/client-requests', clientRequestController.getAllRequests); // Viewable by default
-router.patch('/client-requests/:id/complete', clientRequestController.completeRequest);
-router.patch('/client-requests/:id/amount', clientRequestController.updateRequestAmount);
-router.patch('/client-requests/:id/restore', clientRequestController.restoreRequest);
-router.patch('/client-requests/:id/content', clientRequestController.updateRequestContent);
+router.get('/client-requests', checkPermission('client_requests:view'), clientRequestController.getAllRequests);
+router.patch('/client-requests/:id/complete', checkPermission('client_requests:complete'), clientRequestController.completeRequest);
+router.patch('/client-requests/:id/amount', checkPermission('client_requests:edit_amount'), clientRequestController.updateRequestAmount);
+router.patch('/client-requests/:id/restore', checkPermission('client_requests:restore'), clientRequestController.restoreRequest);
+router.patch('/client-requests/:id/content', checkPermission('client_requests:edit_content'), clientRequestController.updateRequestContent);
 
 
 // --- Settings & Rules (Most require settings:edit_rules) ---
@@ -145,7 +147,7 @@ router.get('/abbreviations', checkPermission('settings:view'), abbreviationContr
 router.post('/abbreviations', checkPermission('settings:edit_abbreviations'), abbreviationController.create);
 router.put('/abbreviations/:id', checkPermission('settings:edit_abbreviations'), abbreviationController.update);
 router.delete('/abbreviations/:id', checkPermission('settings:edit_abbreviations'), abbreviationController.delete);
-router.get('/request-types', checkPermission('settings:view'), requestTypesController.getAll);
+router.get('/request-types', checkPermission(['settings:view', 'client_requests:view']), requestTypesController.getAll);
 router.post('/request-types', checkPermission('settings:edit_request_triggers'), requestTypesController.create);
 router.put('/request-types/:id', checkPermission('settings:edit_request_triggers'), requestTypesController.update);
 router.post('/request-types/update-order', checkPermission('settings:edit_request_triggers'), requestTypesController.updateOrder);

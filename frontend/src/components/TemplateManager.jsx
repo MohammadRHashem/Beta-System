@@ -25,7 +25,7 @@ const AttachmentControls = styled.div` display: flex; gap: 1rem; `;
 const ControlButton = styled.button` display: flex; align-items: center; gap: 0.5rem; padding: 0.6rem 1rem; border: 1px solid ${({ theme }) => theme.border}; background: #fff; border-radius: 4px; font-weight: 600; cursor: pointer; &:hover { background: #f9f9f9; } `;
 
 // 1. ACCEPT THE NEW PERMISSION PROP
-const TemplateManager = ({ templates, onTemplateSelect, onTemplatesUpdate, canManageTemplates }) => {
+const TemplateManager = ({ templates, onTemplateSelect, onTemplatesUpdate, canEditTemplate, canDeleteTemplate, canViewAttachments, canUploadAttachments, canDeleteAttachments }) => {
     const [isEditModalOpen, setIsEditModalOpen] = useState(false);
     const [isAttachmentModalOpen, setIsAttachmentModalOpen] = useState(false);
     const [editingTemplate, setEditingTemplate] = useState(null);
@@ -101,10 +101,10 @@ const TemplateManager = ({ templates, onTemplateSelect, onTemplatesUpdate, canMa
                                 {template.name}
                             </ItemName>
                             {/* 2. WRAP ACTIONS IN PERMISSION CHECK */}
-                            {canManageTemplates && (
+                            {(canEditTemplate || canDeleteTemplate) && (
                                 <ActionsContainer>
-                                    <FaEdit onClick={(e) => { e.stopPropagation(); handleEditClick(template); }} title="Edit"/>
-                                    <FaTrash onClick={(e) => { e.stopPropagation(); handleDelete(template.id, template.name); }} title="Delete"/>
+                                    {canEditTemplate && <FaEdit onClick={(e) => { e.stopPropagation(); handleEditClick(template); }} title="Edit"/>}
+                                    {canDeleteTemplate && <FaTrash onClick={(e) => { e.stopPropagation(); handleDelete(template.id, template.name); }} title="Delete"/>}
                                 </ActionsContainer>
                             )}
                         </TemplateItem>
@@ -113,7 +113,7 @@ const TemplateManager = ({ templates, onTemplateSelect, onTemplatesUpdate, canMa
             </Container>
             
             {/* Modal is implicitly protected */}
-            {canManageTemplates && (
+            {canEditTemplate && (
                 <>
                     <Modal isOpen={isEditModalOpen} onClose={() => setIsEditModalOpen(false)} maxWidth="600px">
                         {editingTemplate && (
@@ -141,11 +141,13 @@ const TemplateManager = ({ templates, onTemplateSelect, onTemplatesUpdate, canMa
                                     ) : (
                                         <p>No attachment linked.</p>
                                     )}
-                                    <AttachmentControls>
-                                        <ControlButton type="button" onClick={() => setIsAttachmentModalOpen(true)}>
-                                            {editingTemplate.attachment ? <><FaEdit/> Change</> : <><FaPaperclip/> Add</>} Attachment
-                                        </ControlButton>
-                                    </AttachmentControls>
+                                    {(canViewAttachments || canUploadAttachments) && (
+                                        <AttachmentControls>
+                                            <ControlButton type="button" onClick={() => setIsAttachmentModalOpen(true)}>
+                                                {editingTemplate.attachment ? <><FaEdit/> Change</> : <><FaPaperclip/> Add</>} Attachment
+                                            </ControlButton>
+                                        </AttachmentControls>
+                                    )}
                                 </InputGroup>
                                 
                                 <SaveButton type="button" onClick={handleSaveChanges}>Save Changes</SaveButton>
@@ -157,6 +159,9 @@ const TemplateManager = ({ templates, onTemplateSelect, onTemplatesUpdate, canMa
                         isOpen={isAttachmentModalOpen}
                         onClose={() => setIsAttachmentModalOpen(false)}
                         onSelect={handleSelectAttachment}
+                        canViewAttachments={canViewAttachments}
+                        canUploadAttachments={canUploadAttachments}
+                        canDeleteAttachments={canDeleteAttachments}
                     />
                 </>
             )}

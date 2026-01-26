@@ -20,7 +20,7 @@ const SaveTemplateButton = styled.button` background-color: ${({ theme, disabled
 const BroadcastForm = ({ 
     selectedGroupIds, allGroups, message, setMessage, attachment, setAttachment, 
     onTemplateSave, onBroadcastStart, isBroadcasting, onOpenAttachmentManager,
-    canSendBroadcast, canManageTemplates, canManageAttachments 
+    canSendBroadcast, canCreateTemplates, canUploadAttachments, canViewAttachments 
 }) => {
     const [templateName, setTemplateName] = useState('');
     const fileInputRef = useRef(null);
@@ -37,6 +37,7 @@ const BroadcastForm = ({
     };
 
     const handleFileUpload = async (e) => {
+        if (!canUploadAttachments) return;
         const file = e.target.files[0];
         if (!file) return;
         try {
@@ -94,22 +95,25 @@ const BroadcastForm = ({
                             {getFileIcon(attachment.mimetype)}
                             <span>{attachment.original_filename}</span>
                         </FileInfo>
-                        {/* Only allow removing attachment if user can manage them */}
-                        {canManageAttachments && <RemoveButton onClick={() => setAttachment(null)} />}
+                        {(canUploadAttachments || canViewAttachments) && <RemoveButton onClick={() => setAttachment(null)} />}
                     </AttachmentPreview>
                 )}
                 
                 {/* 2. WRAP ATTACHMENT CONTROLS IN PERMISSION CHECK */}
-                {canManageAttachments && (
+                {(canUploadAttachments || canViewAttachments) && (
                     <AttachmentControls>
                         <HiddenInput ref={fileInputRef} onChange={handleFileUpload} />
-                        <ControlButton type="button" onClick={() => fileInputRef.current.click()}><FaPaperclip/> Attach New</ControlButton>
-                        <ControlButton type="button" onClick={onOpenAttachmentManager}><FaFolderOpen/> Use Existing</ControlButton>
+                        {canUploadAttachments && (
+                            <ControlButton type="button" onClick={() => fileInputRef.current.click()}><FaPaperclip/> Attach New</ControlButton>
+                        )}
+                        {canViewAttachments && (
+                            <ControlButton type="button" onClick={onOpenAttachmentManager}><FaFolderOpen/> Use Existing</ControlButton>
+                        )}
                     </AttachmentControls>
                 )}
 
                 {/* 3. WRAP TEMPLATE SAVE SECTION IN PERMISSION CHECK */}
-                {canManageTemplates && (
+                {canCreateTemplates && (
                     <TemplateSaveContainer>
                         <TemplateInput
                             type="text"

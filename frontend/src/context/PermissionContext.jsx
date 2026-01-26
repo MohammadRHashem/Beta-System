@@ -23,7 +23,10 @@ export const PermissionProvider = ({ children }) => {
     }, [isAuthenticated]);
 
     const hasPermission = (requiredPermission) => {
-        if (!requiredPermission) return true; // No permission required
+        const requiredPermissions = Array.isArray(requiredPermission)
+            ? requiredPermission
+            : [requiredPermission];
+        if (!requiredPermission || requiredPermissions.length === 0) return true; // No permission required
         // 'Administrator' role from token bypasses frontend checks
         const token = localStorage.getItem('authToken');
         if (token) {
@@ -35,7 +38,7 @@ export const PermissionProvider = ({ children }) => {
                 if (roles.includes('Administrator')) return true;
             } catch (e) { /* ignore */ }
         }
-        return permissions.includes(requiredPermission);
+        return requiredPermissions.some((perm) => permissions.includes(perm));
     };
 
     const value = { permissions, hasPermission };

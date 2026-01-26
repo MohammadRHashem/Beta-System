@@ -139,7 +139,7 @@ const SelectAllButton = styled.button`
 `;
 
 // 1. ACCEPT PERMISSION PROPS
-const GroupSelector = ({ allGroups, selectedGroups, setSelectedGroups, onBatchUpdate, editingBatch, setEditingBatch, onSync, isSyncing, canManageBatches, canSyncGroups }) => {
+const GroupSelector = ({ allGroups, selectedGroups, setSelectedGroups, onBatchUpdate, editingBatch, setEditingBatch, onSync, isSyncing, canCreateBatch, canEditBatch, canSyncGroups }) => {
     const [searchTerm, setSearchTerm] = useState('');
     const [batchName, setBatchName] = useState('');
     
@@ -164,6 +164,14 @@ const GroupSelector = ({ allGroups, selectedGroups, setSelectedGroups, onBatchUp
     };
 
     const handleSaveOrUpdateBatch = async () => {
+        if (isEditMode && !canEditBatch) {
+            alert('You do not have permission to edit batches.');
+            return;
+        }
+        if (!isEditMode && !canCreateBatch) {
+            alert('You do not have permission to create batches.');
+            return;
+        }
         if (!batchName || selectedGroups.size === 0) {
             alert('Please enter a batch name and select at least one group.');
             return;
@@ -261,7 +269,7 @@ const GroupSelector = ({ allGroups, selectedGroups, setSelectedGroups, onBatchUp
             </GroupList>
 
             {/* 3. WRAP ENTIRE BATCH CREATION SECTION IN PERMISSION CHECK */}
-            {canManageBatches && (
+            {(canCreateBatch || canEditBatch) && (
                 <BatchCreationContainer>
                     <h4>{isEditMode ? `Editing: ${editingBatch.name}` : 'Create New Batch'}</h4>
                     <BatchInput
@@ -271,7 +279,11 @@ const GroupSelector = ({ allGroups, selectedGroups, setSelectedGroups, onBatchUp
                         onChange={(e) => setBatchName(e.target.value)}
                     />
                     <SaveButton
-                        disabled={!batchName || selectedGroups.size === 0}
+                        disabled={
+                            !batchName ||
+                            selectedGroups.size === 0 ||
+                            (isEditMode ? !canEditBatch : !canCreateBatch)
+                        }
                         onClick={handleSaveOrUpdateBatch}
                     >
                         {isEditMode ? 'Update Batch' : `Save ${selectedGroups.size} Groups as Batch`}

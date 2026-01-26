@@ -55,6 +55,10 @@ const formatSaoPauloDateTime = (dbDateString, formatString) => {
 const ClientRequestsPage = () => {
     const { hasPermission } = usePermissions(); // 2. GET PERMISSION CHECKER
     const canEditSettings = hasPermission('settings:edit_request_triggers'); // 3. DEFINE EDIT CAPABILITY
+    const canComplete = hasPermission('client_requests:complete');
+    const canEditAmount = hasPermission('client_requests:edit_amount');
+    const canEditContent = hasPermission('client_requests:edit_content');
+    const canRestore = hasPermission('client_requests:restore');
 
     const [allRequests, setAllRequests] = useState([]);
     const [requestTypes, setRequestTypes] = useState([]);
@@ -137,12 +141,14 @@ const ClientRequestsPage = () => {
     };
 
     const handleComplete = async (id) => {
+        if (!canComplete) return;
         try { await completeClientRequest(id); } 
         catch (error) { alert('Failed to mark as complete.'); }
     };
     
     // --- NEW: Restore Handler ---
     const handleRestore = async (id) => {
+        if (!canRestore) return;
         if (window.confirm("Are you sure you want to restore this request? It will reappear in the pending queue.")) {
             try { await restoreClientRequest(id); } 
             catch (error) { alert('Failed to restore request.'); }
@@ -150,6 +156,7 @@ const ClientRequestsPage = () => {
     };
 
     const handleAmountUpdate = async (id) => {
+        if (!canEditAmount) return;
         const currentAmount = allRequests.find(r => r.id === id)?.amount || '';
         const newAmount = prompt("Enter the amount for this request:", formatAmount(currentAmount));
 
@@ -165,6 +172,7 @@ const ClientRequestsPage = () => {
     };
 
     const handleContentUpdate = async (id) => {
+        if (!canEditContent) return;
         const currentContent = allRequests.find(r => r.id === id)?.content || '';
         const newContent = prompt("Enter the new information:", currentContent);
 
@@ -252,14 +260,17 @@ const ClientRequestsPage = () => {
                                         <ContentCell>
                                             <EditableCell>
                                                 <span title={req.content}>{req.content}</span>
-                                                <FaEdit onClick={() => handleContentUpdate(req.id)} />
+                                                {canEditContent && <FaEdit onClick={() => handleContentUpdate(req.id)} />}
                                             </EditableCell>
                                         </ContentCell>
                                         <td>
                                             {req.amount ? (
-                                                <EditableCell>{formatAmount(req.amount)}<FaEdit onClick={() => handleAmountUpdate(req.id)} /></EditableCell>
+                                                <EditableCell>
+                                                    {formatAmount(req.amount)}
+                                                    {canEditAmount && <FaEdit onClick={() => handleAmountUpdate(req.id)} />}
+                                                </EditableCell>
                                             ) : (
-                                                activeView === 'pending' && <AmountButton onClick={() => handleAmountUpdate(req.id)}><FaDollarSign /> Add</AmountButton>
+                                                activeView === 'pending' && canEditAmount && <AmountButton onClick={() => handleAmountUpdate(req.id)}><FaDollarSign /> Add</AmountButton>
                                             )}
                                         </td>
                                         {activeView === 'completed' && (
@@ -271,13 +282,21 @@ const ClientRequestsPage = () => {
                                         )}
                                         <td>
                                             {activeView === 'pending' ? (
-                                                <Button className="complete" onClick={() => handleComplete(req.id)}>
-                                                    <FaCheck /> Mark as Done
-                                                </Button>
+                                                canComplete ? (
+                                                    <Button className="complete" onClick={() => handleComplete(req.id)}>
+                                                        <FaCheck /> Mark as Done
+                                                    </Button>
+                                                ) : (
+                                                    <span>-</span>
+                                                )
                                             ) : (
-                                                <Button className="restore" onClick={() => handleRestore(req.id)}>
-                                                    <FaHistory /> Restore
-                                                </Button>
+                                                canRestore ? (
+                                                    <Button className="restore" onClick={() => handleRestore(req.id)}>
+                                                        <FaHistory /> Restore
+                                                    </Button>
+                                                ) : (
+                                                    <span>-</span>
+                                                )
                                             )}
                                         </td>
                                     </TableRow>

@@ -139,7 +139,11 @@ const Input = styled.input`
 
 const UsdtWalletsPage = () => {
     const { hasPermission } = usePermissions(); // 2. GET PERMISSION CHECKER
-    const canEdit = hasPermission('settings:edit_usdt_wallets'); // 3. DEFINE EDIT CAPABILITY
+    const canView = hasPermission(['usdt_wallets:view', 'settings:edit_usdt_wallets']);
+    const canCreate = hasPermission(['usdt_wallets:create', 'settings:edit_usdt_wallets']);
+    const canUpdate = hasPermission(['usdt_wallets:update', 'settings:edit_usdt_wallets']);
+    const canDelete = hasPermission(['usdt_wallets:delete', 'settings:edit_usdt_wallets']);
+    const canToggle = hasPermission(['usdt_wallets:toggle', 'settings:edit_usdt_wallets']);
 
     const [wallets, setWallets] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -148,6 +152,11 @@ const UsdtWalletsPage = () => {
 
     const fetchWallets = useCallback(async () => {
         setLoading(true);
+        if (!canView) {
+            setWallets([]);
+            setLoading(false);
+            return;
+        }
         try {
             const { data } = await getUsdtWallets();
             setWallets(data);
@@ -156,7 +165,7 @@ const UsdtWalletsPage = () => {
         } finally {
             setLoading(false);
         }
-    }, []);
+    }, [canView]);
 
     useEffect(() => {
         fetchWallets();
@@ -168,8 +177,10 @@ const UsdtWalletsPage = () => {
     const handleSaveWallet = async (formData) => {
         try {
             if (editingWallet) {
+                if (!canUpdate) return;
                 await updateUsdtWallet(editingWallet.id, { wallet_name: formData.wallet_name });
             } else {
+                if (!canCreate) return;
                 await createUsdtWallet(formData);
             }
             fetchWallets();
@@ -180,6 +191,7 @@ const UsdtWalletsPage = () => {
     };
 
     const handleDelete = async (id) => {
+        if (!canDelete) return;
         if (window.confirm("Are you sure you want to delete this wallet?")) {
             try {
                 await deleteUsdtWallet(id);
@@ -191,6 +203,7 @@ const UsdtWalletsPage = () => {
     };
     
     const handleToggle = async (wallet) => {
+        if (!canToggle) return;
         const newEnabledState = !wallet.is_enabled;
         try {
             await toggleUsdtWallet(wallet.id, newEnabledState);
@@ -206,7 +219,7 @@ const UsdtWalletsPage = () => {
                 <Header>
                     <h2>USDT Wallet Management</h2>
                     {/* 4. WRAP "ADD WALLET" BUTTON IN PERMISSION CHECK */}
-                    {canEdit && (
+                    {canCreate && (
                         <Button onClick={() => handleOpenModal(null)}><FaPlus /> Add Wallet</Button>
                     )}
                 </Header>
@@ -218,7 +231,7 @@ const UsdtWalletsPage = () => {
                                 <th>Enabled</th>
                                 <th>Wallet Name</th>
                                 <th>Wallet Address (TRC-20)</th>
-                                {canEdit && <th>Actions</th>}
+                                {(canUpdate || canDelete) && <th>Actions</th>}
                             </tr>
                         </thead>
                         <tbody>
@@ -235,7 +248,7 @@ const UsdtWalletsPage = () => {
                                                     type="checkbox" 
                                                     checked={!!wallet.is_enabled}
                                                     onChange={() => handleToggle(wallet)}
-                                                    disabled={!canEdit} // 5. DISABLE INTERACTIVE ELEMENTS
+                                                    disabled={!canToggle} // 5. DISABLE INTERACTIVE ELEMENTS
                                                 />
                                                 <Slider />
                                             </SwitchContainer>
@@ -243,10 +256,10 @@ const UsdtWalletsPage = () => {
                                         <td>{wallet.wallet_name}</td>
                                         <td>{wallet.wallet_address}</td>
                                         {/* 6. WRAP ACTIONS COLUMN IN PERMISSION CHECK */}
-                                        {canEdit && (
+                                        {(canUpdate || canDelete) && (
                                             <td className="actions">
-                                                <FaEdit onClick={() => handleOpenModal(wallet)} title="Edit Name"/>
-                                                <FaTrash onClick={() => handleDelete(wallet.id)} title="Delete"/>
+                                                {canUpdate && <FaEdit onClick={() => handleOpenModal(wallet)} title="Edit Name"/>}
+                                                {canDelete && <FaTrash onClick={() => handleDelete(wallet.id)} title="Delete"/>}
                                             </td>
                                         )}
                                     </tr>
@@ -257,7 +270,7 @@ const UsdtWalletsPage = () => {
                 </Card>
             </PageContainer>
             {/* Modal is implicitly protected */}
-            {canEdit && (
+            {(canCreate || canUpdate) && (
                 <WalletModal
                     isOpen={isModalOpen}
                     onClose={handleCloseModal}

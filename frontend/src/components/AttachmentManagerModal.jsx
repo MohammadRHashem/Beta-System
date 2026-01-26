@@ -99,15 +99,17 @@ const Button = styled.button`
 `;
 
 // 1. ACCEPT THE NEW PERMISSION PROP
-const AttachmentManagerModal = ({ isOpen, onClose, onSelect, canManageAttachments }) => {
+const AttachmentManagerModal = ({ isOpen, onClose, onSelect, canViewAttachments, canUploadAttachments, canDeleteAttachments }) => {
     const [uploads, setUploads] = useState([]);
     const fileInputRef = useRef(null);
 
     useEffect(() => {
-        if (isOpen) {
+        if (isOpen && canViewAttachments) {
             getBroadcastUploads().then(res => setUploads(res.data || []));
+        } else if (isOpen && !canViewAttachments) {
+            setUploads([]);
         }
-    }, [isOpen]);
+    }, [isOpen, canViewAttachments]);
 
     const handleDelete = async (e, id) => {
         e.stopPropagation();
@@ -153,7 +155,7 @@ const AttachmentManagerModal = ({ isOpen, onClose, onSelect, canManageAttachment
                             <Overlay className="overlay">
                                 <ActionButton color="#00C49A" textColor="#fff" onClick={(e) => { e.stopPropagation(); onSelect(upload); }}><FaCheckCircle/> Select</ActionButton>
                                 {/* 2. WRAP THE DELETE BUTTON IN PERMISSION CHECK */}
-                                {canManageAttachments && (
+                                {canDeleteAttachments && (
                                     <ActionButton color="#DE350B" textColor="#fff" onClick={(e) => handleDelete(e, upload.id)}><FaTrash/> Delete</ActionButton>
                                 )}
                             </Overlay>
@@ -162,7 +164,7 @@ const AttachmentManagerModal = ({ isOpen, onClose, onSelect, canManageAttachment
                 })}
             </Gallery>
             {/* 3. WRAP THE UPLOAD SECTION IN PERMISSION CHECK */}
-            {canManageAttachments && (
+            {canUploadAttachments && (
                 <UploadButtonContainer>
                     <HiddenInput ref={fileInputRef} onChange={handleFileSelect} />
                     <Button onClick={() => fileInputRef.current.click()}><FaUpload/> Upload & Select New File</Button>

@@ -123,9 +123,11 @@ export const exportPortalTransactions = async (params, format = 'excel') => {
 export const getAllUsers = () => apiClient.get('/admin/users');
 export const createUser = (data) => apiClient.post('/admin/users', data);
 export const updateUser = (id, data) => apiClient.put(`/admin/users/${id}`, data);
+export const deleteUser = (id) => apiClient.delete(`/admin/users/${id}`);
 export const getAllRoles = () => apiClient.get('/admin/roles');
 export const createRole = (data) => apiClient.post('/admin/roles', data); // NEW
 export const updateRole = (id, data) => apiClient.put(`/admin/roles/${id}`, data); // NEW
+export const deleteRole = (id) => apiClient.delete(`/admin/roles/${id}`);
 export const getRolePermissions = (id) => apiClient.get(`/admin/roles/${id}/permissions`);
 export const updateRolePermissions = (id, permissionIds) => apiClient.put(`/admin/roles/${id}/permissions`, { permissionIds });
 export const getAuditLogs = (params) => apiClient.get('/admin/audit-log', { params });

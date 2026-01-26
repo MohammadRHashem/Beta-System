@@ -42,7 +42,15 @@ const daysOfWeekFull = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", 
 
 const ScheduledBroadcastsPage = () => {
     const { hasPermission } = usePermissions(); // 2. GET PERMISSION CHECKER
-    const canManage = hasPermission('broadcast:schedule'); // 3. DEFINE MANAGE CAPABILITY
+    const canView = hasPermission(['broadcast:schedules:view', 'broadcast:schedule']);
+    const canCreate = hasPermission(['broadcast:schedules:create', 'broadcast:schedule']);
+    const canUpdate = hasPermission(['broadcast:schedules:update', 'broadcast:schedule']);
+    const canDelete = hasPermission(['broadcast:schedules:delete', 'broadcast:schedule']);
+    const canViewBatches = hasPermission(['broadcast:batches:view', 'broadcast:manage_batches']);
+    const canViewTemplates = hasPermission(['broadcast:templates:view', 'broadcast:manage_templates']);
+    const canViewUploads = hasPermission(['broadcast:uploads:view', 'broadcast:manage_attachments']);
+    const canCreateUploads = hasPermission(['broadcast:uploads:create', 'broadcast:manage_attachments']);
+    const canDeleteUploads = hasPermission(['broadcast:uploads:delete', 'broadcast:manage_attachments']);
 
     const [schedules, setSchedules] = useState([]);
     const [batches, setBatches] = useState([]);
@@ -54,7 +62,12 @@ const ScheduledBroadcastsPage = () => {
     const fetchData = useCallback(async () => {
         setLoading(true);
         try {
-            const [schedulesRes, batchesRes, templatesRes] = await Promise.all([ getScheduledBroadcasts(), getBatches(), getTemplates() ]);
+            const promises = [
+                canView ? getScheduledBroadcasts() : Promise.resolve({ data: [] }),
+                canViewBatches ? getBatches() : Promise.resolve({ data: [] }),
+                canViewTemplates ? getTemplates() : Promise.resolve({ data: [] })
+            ];
+            const [schedulesRes, batchesRes, templatesRes] = await Promise.all(promises);
             setSchedules(schedulesRes.data);
             setBatches(batchesRes.data);
             setTemplates(templatesRes.data);
@@ -63,7 +76,7 @@ const ScheduledBroadcastsPage = () => {
         } finally {
             setLoading(false);
         }
-    }, []);
+    }, [canView, canViewBatches, canViewTemplates]);
 
     useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -72,6 +85,8 @@ const ScheduledBroadcastsPage = () => {
 
     const handleSave = async (formData) => {
         try {
+            if (editingSchedule && !canUpdate) return;
+            if (!editingSchedule && !canCreate) return;
             if (editingSchedule) {
                 await updateSchedule(editingSchedule.id, formData);
             } else {
@@ -85,6 +100,7 @@ const ScheduledBroadcastsPage = () => {
     };
     
     const handleDelete = async (id) => {
+        if (!canDelete) return;
         if (window.confirm("Are you sure you want to delete this schedule?")) {
             try {
                 await deleteSchedule(id);
@@ -96,6 +112,7 @@ const ScheduledBroadcastsPage = () => {
     };
 
     const handleToggle = async (schedule) => {
+        if (!canUpdate) return;
         try {
             await toggleSchedule(schedule.id, !schedule.is_active);
             fetchData();
@@ -131,14 +148,14 @@ const ScheduledBroadcastsPage = () => {
                 <Header>
                     <h2>Scheduled Broadcasts</h2>
                     {/* 4. WRAP "NEW SCHEDULE" BUTTON IN PERMISSION CHECK */}
-                    {canManage && (
+                    {canCreate && (
                         <Button onClick={() => handleOpenModal(null)}><FaPlus /> New Schedule</Button>
                     )}
                 </Header>
                 <Card>
                     <p>Automate your broadcasts by setting them to run at specific times or on a recurring basis.</p>
                     <Table>
-                        <thead><tr><th>Active</th><th>Batch Name</th><th>Schedule</th><th>Content</th>{canManage && <th>Actions</th>}</tr></thead>
+                        <thead><tr><th>Active</th><th>Batch Name</th><th>Schedule</th><th>Content</th>{(canUpdate || canDelete) && <th>Actions</th>}</tr></thead>
                         <tbody>
                             {loading ? ( <tr><td colSpan="5">Loading...</td></tr> ) 
                             : schedules.length === 0 ? ( <tr><td colSpan="5">No schedules created.</td></tr> ) 
@@ -150,7 +167,7 @@ const ScheduledBroadcastsPage = () => {
                                                     type="checkbox" 
                                                     checked={!!s.is_active} 
                                                     onChange={() => handleToggle(s)} 
-                                                    disabled={!canManage} // 5. DISABLE INTERACTIVE ELEMENTS
+                                                    disabled={!canUpdate} // 5. DISABLE INTERACTIVE ELEMENTS
                                                 />
                                                 <Slider />
                                             </SwitchContainer>
@@ -164,10 +181,10 @@ const ScheduledBroadcastsPage = () => {
                                             </div>
                                         </MessageContent>
                                         {/* 6. WRAP ACTIONS COLUMN IN PERMISSION CHECK */}
-                                        {canManage && (
+                                        {(canUpdate || canDelete) && (
                                             <td className="actions">
-                                                <FaEdit onClick={() => handleOpenModal(s)} title="Edit"/>
-                                                <FaTrash onClick={() => handleDelete(s.id)} title="Delete"/>
+                                                {canUpdate && <FaEdit onClick={() => handleOpenModal(s)} title="Edit"/>}
+                                                {canDelete && <FaTrash onClick={() => handleDelete(s.id)} title="Delete"/>}
                                             </td>
                                         )}
                                     </tr>
@@ -178,7 +195,7 @@ const ScheduledBroadcastsPage = () => {
                 </Card>
             </PageContainer>
             {/* Modal is implicitly protected */}
-            {canManage && (
+            {(canCreate || canUpdate) && (
                 <ScheduleModal 
                     isOpen={isModalOpen} 
                     onClose={handleCloseModal} 
@@ -186,13 +203,15 @@ const ScheduledBroadcastsPage = () => {
                     schedule={editingSchedule} 
                     batches={batches}
                     templates={templates}
+                    canViewAttachments={canViewUploads}
+                    canUploadAttachments={canCreateUploads}
                 />
             )}
         </>
     );
 };
 
-const ScheduleModal = ({ isOpen, onClose, onSave, schedule, batches, templates }) => {
+const ScheduleModal = ({ isOpen, onClose, onSave, schedule, batches, templates, canViewAttachments, canUploadAttachments }) => {
     const [formData, setFormData] = useState({ batch_id: '', message: '', schedule_type: 'ONCE', scheduled_at_time: '09:00', scheduled_at_date: format(new Date(), 'yyyy-MM-dd'), scheduled_days_of_week: [], timezone: 'America/Sao_Paulo' });
     const [attachment, setAttachment] = useState(null);
     const [isAttachmentModalOpen, setIsAttachmentModalOpen] = useState(false);
@@ -246,6 +265,7 @@ const ScheduleModal = ({ isOpen, onClose, onSave, schedule, batches, templates }
 
     const handleSelectAttachment = (file) => { setAttachment(file); setIsAttachmentModalOpen(false); };
     const handleFileUpload = async (e) => {
+        if (!canUploadAttachments) return;
         const file = e.target.files[0];
         if (!file) return;
         try {
@@ -295,11 +315,17 @@ const ScheduleModal = ({ isOpen, onClose, onSave, schedule, batches, templates }
                         </AttachmentPreview>
                     )}
 
-                    <AttachmentControls>
-                        <HiddenInput ref={fileInputRef} onChange={handleFileUpload} />
-                        <ControlButton type="button" onClick={() => fileInputRef.current.click()}><FaPaperclip/> Attach New</ControlButton>
-                        <ControlButton type="button" onClick={() => setIsAttachmentModalOpen(true)}><FaFolderOpen/> Use Existing</ControlButton>
-                    </AttachmentControls>
+                    {(canUploadAttachments || canViewAttachments) && (
+                        <AttachmentControls>
+                            <HiddenInput ref={fileInputRef} onChange={handleFileUpload} />
+                            {canUploadAttachments && (
+                                <ControlButton type="button" onClick={() => fileInputRef.current.click()}><FaPaperclip/> Attach New</ControlButton>
+                            )}
+                            {canViewAttachments && (
+                                <ControlButton type="button" onClick={() => setIsAttachmentModalOpen(true)}><FaFolderOpen/> Use Existing</ControlButton>
+                            )}
+                        </AttachmentControls>
+                    )}
                     
                     <Fieldset>
                     <Legend>Schedule Type</Legend>
@@ -337,6 +363,9 @@ const ScheduleModal = ({ isOpen, onClose, onSave, schedule, batches, templates }
                     isOpen={isAttachmentModalOpen} 
                     onClose={() => setIsAttachmentModalOpen(false)} 
                     onSelect={handleSelectAttachment}
+                    canViewAttachments={canViewUploads}
+                    canUploadAttachments={canCreateUploads}
+                    canDeleteAttachments={canDeleteUploads}
                 />
             </>
         );

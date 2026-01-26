@@ -66,7 +66,7 @@ const ActionsContainer = styled.div`
 `;
 
 // 1. ACCEPT THE NEW PERMISSION PROP
-const BatchManager = ({ batches, onBatchSelect, onBatchEdit, onBatchesUpdate, canManageBatches }) => {
+const BatchManager = ({ batches, onBatchSelect, onBatchEdit, onBatchesUpdate, canEditBatch, canDeleteBatch }) => {
     const [searchTerm, setSearchTerm] = useState('');
 
     const handleDelete = async (batchId, batchName) => {
@@ -107,12 +107,12 @@ const BatchManager = ({ batches, onBatchSelect, onBatchEdit, onBatchesUpdate, ca
                             {batch.name}
                         </ItemName>
                         {/* 2. WRAP THE ACTIONS IN A PERMISSION CHECK */}
-                        {/* {canManageBatches && ( */}
+                        {(canEditBatch || canDeleteBatch) && (
                             <ActionsContainer>
-                                <FaEdit onClick={(e) => { e.stopPropagation(); onBatchEdit(batch); }} title="Edit"/>
-                                <FaTrash onClick={(e) => { e.stopPropagation(); handleDelete(batch.id, batch.name); }} title="Delete"/>
+                                {canEditBatch && <FaEdit onClick={(e) => { e.stopPropagation(); onBatchEdit(batch); }} title="Edit"/>}
+                                {canDeleteBatch && <FaTrash onClick={(e) => { e.stopPropagation(); handleDelete(batch.id, batch.name); }} title="Delete"/>}
                             </ActionsContainer>
-                        {/* )} */}
+                        )}
                     </BatchItem>
                 ))}
             </BatchList>

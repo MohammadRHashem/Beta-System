@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import styled from 'styled-components';
-import { getAllRoles, getRolePermissions, updateRolePermissions, createRole, updateRole } from '../services/api';
+import { getAllRoles, getRolePermissions, updateRolePermissions, createRole, updateRole, deleteRole } from '../services/api';
 import { usePermissions } from '../context/PermissionContext';
-import { FaShieldAlt, FaPlus, FaEdit } from 'react-icons/fa';
+import { FaShieldAlt, FaPlus, FaEdit, FaTrash } from 'react-icons/fa';
 import Modal from '../components/Modal';
 
 // Styled Components
@@ -280,6 +280,22 @@ const RolesPage = () => {
         }
     };
 
+    const handleDeleteRole = async (role) => {
+        if (role.name === 'Administrator') return;
+        if (window.confirm(`Delete role "${role.name}"? Users must be reassigned first.`)) {
+            try {
+                await deleteRole(role.id);
+                if (selectedRole?.id === role.id) {
+                    setSelectedRole(null);
+                    setPermissions([]);
+                }
+                fetchRoles();
+            } catch (error) {
+                alert(error.response?.data?.message || 'Failed to delete role.');
+            }
+        }
+    };
+
 
     const handlePermissionChange = (permissionId) => {
         setPermissions(prev =>
@@ -339,6 +355,7 @@ const RolesPage = () => {
                                         {canManage && role.name !== 'Administrator' && (
                                             <RoleActions>
                                                 <FaEdit onClick={(e) => { e.stopPropagation(); handleOpenRoleModal(role); }} />
+                                                <FaTrash onClick={(e) => { e.stopPropagation(); handleDeleteRole(role); }} />
                                             </RoleActions>
                                         )}
                                     </RoleListItem>

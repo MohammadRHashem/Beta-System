@@ -85,7 +85,11 @@ exports.createUser = async (req, res) => {
 
 exports.updateUser = async (req, res) => {
     const { id } = req.params;
-    const { role_ids, role_id, is_active, password } = req.body;
+    const { username, role_ids, role_id, is_active, password } = req.body;
+
+    if (username !== undefined && (!username || !username.trim())) {
+        return res.status(400).json({ message: 'Username cannot be empty.' });
+    }
 
     let normalizedRoleIds = null;
     if (Array.isArray(role_ids)) {
@@ -117,6 +121,12 @@ exports.updateUser = async (req, res) => {
         let fields = [];
         let params = [];
         let shouldBumpToken = false;
+
+        if (username) {
+            fields.push('username = ?');
+            params.push(username);
+            shouldBumpToken = true;
+        }
 
         if (normalizedRoleIds !== null) {
             fields.push('role_id = ?');
@@ -164,10 +174,31 @@ exports.updateUser = async (req, res) => {
         res.json({ message: 'User updated successfully.' });
     } catch (error) {
         await connection.rollback();
+        if (error.code === 'ER_DUP_ENTRY') {
+            return res.status(409).json({ message: 'Username already exists.' });
+        }
         console.error('Failed to update user:', error);
         res.status(500).json({ message: 'Server error.' });
     } finally {
         connection.release();
+    }
+};
+
+exports.deleteUser = async (req, res) => {
+    const { id } = req.params;
+    if (id == req.user.id) {
+        return res.status(403).json({ message: 'You cannot delete your own account.' });
+    }
+    try {
+        const [result] = await pool.query('DELETE FROM users WHERE id = ?', [id]);
+        if (result.affectedRows === 0) {
+            return res.status(404).json({ message: 'User not found.' });
+        }
+        await logAction(req, 'admin:manage_users', 'User', id, { deleted: true });
+        res.status(204).send();
+    } catch (error) {
+        console.error('Failed to delete user:', error);
+        res.status(500).json({ message: 'Server error.' });
     }
 };
 
@@ -312,6 +343,36 @@ exports.getAuditLogs = async (req, res) => {
         });
     } catch (error) {
         console.error('Failed to get audit logs:', error);
+        res.status(500).json({ message: 'Server error.' });
+    }
+};
+
+exports.deleteRole = async (req, res) => {
+    const { id } = req.params;
+    if (id == 1) {
+        return res.status(403).json({ message: 'The Administrator role cannot be deleted.' });
+    }
+    try {
+        const [[assignmentCount]] = await pool.query(
+            'SELECT COUNT(*) as count FROM user_roles WHERE role_id = ?',
+            [id]
+        );
+        const [[legacyCount]] = await pool.query(
+            'SELECT COUNT(*) as count FROM users WHERE role_id = ?',
+            [id]
+        );
+        if ((assignmentCount?.count || 0) > 0 || (legacyCount?.count || 0) > 0) {
+            return res.status(409).json({ message: 'Role is assigned to users. Reassign users before deleting.' });
+        }
+
+        const [result] = await pool.query('DELETE FROM roles WHERE id = ?', [id]);
+        if (result.affectedRows === 0) {
+            return res.status(404).json({ message: 'Role not found.' });
+        }
+        await logAction(req, 'admin:manage_roles', 'Role', id, { deleted: true });
+        res.status(204).send();
+    } catch (error) {
+        console.error('Failed to delete role:', error);
         res.status(500).json({ message: 'Server error.' });
     }
 };
