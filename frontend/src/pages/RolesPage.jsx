@@ -305,9 +305,15 @@ const RolesPage = () => {
         );
     };
 
+    const normalizeModule = (moduleName) => {
+        if (!moduleName) return 'other';
+        return moduleName === 'broadcasting' ? 'broadcast' : moduleName;
+    };
+
     const groupedPermissions = useMemo(() => {
         return permissions.reduce((acc, p) => {
-            (acc[p.module] = acc[p.module] || []).push(p);
+            const moduleName = normalizeModule(p.module);
+            (acc[moduleName] = acc[moduleName] || []).push(p);
             return acc;
         }, {});
     }, [permissions]);
