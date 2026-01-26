@@ -421,8 +421,7 @@ const ClientDashboard = () => {
     const debouncedSearch = useDebounce(filters.search, 500);
     const portalToken = sessionStorage.getItem('portalAuthToken') || localStorage.getItem('portalAuthToken');
     const tokenPayload = portalToken ? parseJwt(portalToken) : null;
-    const sessionImpersonating = sessionStorage.getItem('portalImpersonation') === 'true';
-    const isImpersonating = tokenPayload?.impersonation === true || sessionImpersonating;
+    const isImpersonating = tokenPayload?.impersonation === true;
     const portalAccountType = tokenPayload?.accountType;
     const portalPixKey = tokenPayload?.chavePix;
     const canCreateDebit = isImpersonating && portalAccountType === 'cross';
