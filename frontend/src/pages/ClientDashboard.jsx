@@ -348,6 +348,12 @@ const VolumeCard = styled.div`
     color: ${({ theme, color }) => theme[color] || theme.primary};
     font-family: "Courier New", Courier, monospace;
   }
+  span {
+    display: block;
+    margin-top: 0.35rem;
+    font-size: 0.85rem;
+    color: ${({ theme }) => theme.lightText};
+  }
   @media (max-width: 768px) {
     ${({ fullWidthOnMobile }) =>
       fullWidthOnMobile && ` grid-column: 1 / -1; `} padding: 0.75rem 1rem;
@@ -751,11 +757,37 @@ const ClientDashboard = () => {
             <VolumeCard color="success">
               <h3>IN TRANSACTIONS (BRL)</h3>
               <p>{loadingSummary ? "..." : formatCurrency(summary.dailyTotalIn)}</p>
+              <span>{loadingSummary ? "..." : `${formatNumber(summary.dailyCountIn)} transactions`}</span>
             </VolumeCard>
             <VolumeCard color="error">
               <h3>OUT TRANSACTIONS (BRL)</h3>
               <p>{loadingSummary ? "..." : formatCurrency(summary.dailyTotalOut)}</p>
+              <span>{loadingSummary ? "..." : `${formatNumber(summary.dailyCountOut)} transactions`}</span>
             </VolumeCard>
+            {isImpersonating && (
+              <VolumeCard color="primary">
+                <h3>TRANSACTIONS (BRL)</h3>
+                <p>
+                  {loadingSummary
+                    ? "..."
+                    : formatCurrency(
+                        (summary.dailyTotalIn || 0) + (summary.dailyTotalOut || 0)
+                      )}
+                </p>
+              </VolumeCard>
+            )}
+            {isImpersonating && (
+              <VolumeCard color="primary" fullWidthOnMobile>
+                <h3>FILTERED BALANCE (BRL)</h3>
+                <p>
+                  {loadingSummary
+                    ? "..."
+                    : formatCurrency(
+                        (summary.dailyTotalIn || 0) - (summary.dailyTotalOut || 0)
+                      )}
+                </p>
+              </VolumeCard>
+            )}
             <VolumeCard color="primary" fullWidthOnMobile>
               <h3>All-Time Balance (BRL)</h3>
               <p>{loadingSummary ? "..." : formatCurrency(summary.allTimeBalance)}</p>
@@ -767,10 +799,6 @@ const ClientDashboard = () => {
             <VolumeCard color="error">
               <h3># Transactions (OUT)</h3>
               <p>{loadingSummary ? "..." : formatNumber(summary.dailyCountOut)}</p>
-            </VolumeCard>
-             <VolumeCard color="primary">
-              <h3># Total Transactions</h3>
-              <p>{loadingSummary ? "..." : formatNumber(summary.dailyCountTotal)}</p>
             </VolumeCard>
           </VolumeContainer>
         </ControlsContainer>
