@@ -1553,16 +1553,10 @@ const handleMessage = async (message) => {
 
       for (const rule of requestTypeCache) {
           const match = messageBody.match(rule.regex);
-          if (match) { 
-              let capturedContent = '';
-              if (typeof match.index === 'number') {
-                  const afterMatch = messageBody.slice(match.index + match[0].length);
-                  capturedContent = afterMatch.trimStart();
-              }
-              if (!capturedContent) {
-                  capturedContent = '';
-              }
-              console.log(`[REQUEST-DETECT] Rule "${rule.name}" triggered. Content: ${capturedContent || '[empty]'}`);
+          // match[0] is the full match, match[1] is the first capture group
+          if (match && match[1]) { 
+              const capturedContent = match[1];
+              console.log(`[REQUEST-DETECT] Rule "${rule.name}" triggered. Content: ${capturedContent}`);
               
               const [[ourWallet]] = await pool.query(
                   'SELECT id FROM usdt_wallets WHERE wallet_address = ?',
