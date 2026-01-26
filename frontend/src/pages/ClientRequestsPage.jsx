@@ -26,8 +26,6 @@ const ModalList = styled.ul` list-style: none; margin: 1rem 0; padding: 0; `;
 const ModalListItem = styled.li` display: flex; justify-content: space-between; align-items: center; padding: 0.75rem; border: 1px solid ${({ theme }) => theme.border}; border-radius: 4px; margin-bottom: 0.5rem; background: #f9f9f9; `;
 const ArrowButton = styled.button` background: transparent; border: none; font-size: 1.2rem; cursor: pointer; color: ${({ theme }) => theme.text}; &:disabled { color: #ccc; cursor: not-allowed; } `;
 const SaveOrderButton = styled.button` background-color: ${({ theme }) => theme.primary}; color: white; border: none; padding: 0.75rem 1.5rem; border-radius: 4px; cursor: pointer; font-weight: bold; display: block; margin-left: auto; `;
-const GroupHeaderRow = styled.tr` background: ${({ theme }) => theme.background}; `;
-const GroupHeaderCell = styled.td` font-weight: 700; color: ${({ theme }) => theme.primary}; border-bottom: 1px solid ${({ theme }) => theme.border}; `;
 
 const SAO_PAULO_TIMEZONE = 'America/Sao_Paulo';
 
@@ -110,31 +108,6 @@ const ClientRequestsPage = () => {
         }
         return items;
     }, [allRequests, activeView, activeTypeTab, sortConfig]);
-
-    const groupedRequests = useMemo(() => {
-        if (activeTypeTab !== 'All') return [{ type: activeTypeTab, items: filteredAndSortedRequests }];
-        const groups = new Map();
-        filteredAndSortedRequests.forEach(req => {
-            const type = req.request_type || 'Unknown';
-            if (!groups.has(type)) groups.set(type, []);
-            groups.get(type).push(req);
-        });
-
-        const orderedTypeNames = requestTypes.map(type => type.name);
-        const result = [];
-        orderedTypeNames.forEach(typeName => {
-            if (groups.has(typeName)) {
-                result.push({ type: typeName, items: groups.get(typeName) });
-                groups.delete(typeName);
-            }
-        });
-
-        Array.from(groups.keys()).sort().forEach(typeName => {
-            result.push({ type: typeName, items: groups.get(typeName) });
-        });
-
-        return result;
-    }, [filteredAndSortedRequests, activeTypeTab, requestTypes]);
 
     const columnCount = activeView === 'completed' ? 7 : 6;
 
@@ -279,67 +252,57 @@ const ClientRequestsPage = () => {
                             {loading ? (
                                 <tr><td colSpan="7">Loading...</td></tr>
                             ) : filteredAndSortedRequests.length === 0 ? (
-                                <tr><td colSpan="7" style={{ textAlign: 'center', padding: '2rem' }}>No requests found for this view.</td></tr>
+                                <tr><td colSpan={columnCount} style={{ textAlign: 'center', padding: '2rem' }}>No requests found for this view.</td></tr>
                             ) : (
-                                groupedRequests.flatMap(group => {
-                                    const rows = [
-                                        <GroupHeaderRow key={`group-${group.type}`}>
-                                            <GroupHeaderCell colSpan={columnCount}>{group.type}</GroupHeaderCell>
-                                        </GroupHeaderRow>
-                                    ];
-                                    group.items.forEach(req => {
-                                        rows.push(
-                                            <TableRow key={req.id} highlightColor={req.type_color}>
-                                                <td>{formatSaoPauloDateTime(req.received_at, 'dd/MM/yyyy HH:mm')}</td>
-                                                <td>{req.source_group_name}</td>
-                                                <td>{req.request_type}</td>
-                                                <ContentCell>
-                                                    <EditableCell>
-                                                        <span title={req.content}>{req.content}</span>
-                                                        {canEditContent && <FaEdit onClick={() => handleContentUpdate(req.id)} />}
-                                                    </EditableCell>
-                                                </ContentCell>
-                                                <td>
-                                                    {req.amount ? (
-                                                        <EditableCell>
-                                                            {formatAmount(req.amount)}
-                                                            {canEditAmount && <FaEdit onClick={() => handleAmountUpdate(req.id)} />}
-                                                        </EditableCell>
-                                                    ) : (
-                                                        activeView === 'pending' && canEditAmount && <AmountButton onClick={() => handleAmountUpdate(req.id)}><FaDollarSign /> Add</AmountButton>
-                                                    )}
-                                                </td>
-                                                {activeView === 'completed' && (
-                                                    <td>
-                                                        {formatSaoPauloDateTime(req.completed_at, 'dd/MM HH:mm')}
-                                                        <br />
-                                                        <small>by {req.completed_by || 'N/A'}</small>
-                                                    </td>
-                                                )}
-                                                <td>
-                                                    {activeView === 'pending' ? (
-                                                        canComplete ? (
-                                                            <Button className="complete" onClick={() => handleComplete(req.id)}>
-                                                                <FaCheck /> Mark as Done
-                                                            </Button>
-                                                        ) : (
-                                                            <span>-</span>
-                                                        )
-                                                    ) : (
-                                                        canRestore ? (
-                                                            <Button className="restore" onClick={() => handleRestore(req.id)}>
-                                                                <FaHistory /> Restore
-                                                            </Button>
-                                                        ) : (
-                                                            <span>-</span>
-                                                        )
-                                                    )}
-                                                </td>
-                                            </TableRow>
-                                        );
-                                    });
-                                    return rows;
-                                })
+                                filteredAndSortedRequests.map(req => (
+                                    <TableRow key={req.id} highlightColor={req.type_color}>
+                                        <td>{formatSaoPauloDateTime(req.received_at, 'dd/MM/yyyy HH:mm')}</td>
+                                        <td>{req.source_group_name}</td>
+                                        <td>{req.request_type}</td>
+                                        <ContentCell>
+                                            <EditableCell>
+                                                <span title={req.content}>{req.content}</span>
+                                                {canEditContent && <FaEdit onClick={() => handleContentUpdate(req.id)} />}
+                                            </EditableCell>
+                                        </ContentCell>
+                                        <td>
+                                            {req.amount ? (
+                                                <EditableCell>
+                                                    {formatAmount(req.amount)}
+                                                    {canEditAmount && <FaEdit onClick={() => handleAmountUpdate(req.id)} />}
+                                                </EditableCell>
+                                            ) : (
+                                                activeView === 'pending' && canEditAmount && <AmountButton onClick={() => handleAmountUpdate(req.id)}><FaDollarSign /> Add</AmountButton>
+                                            )}
+                                        </td>
+                                        {activeView === 'completed' && (
+                                            <td>
+                                                {formatSaoPauloDateTime(req.completed_at, 'dd/MM HH:mm')}
+                                                <br />
+                                                <small>by {req.completed_by || 'N/A'}</small>
+                                            </td>
+                                        )}
+                                        <td>
+                                            {activeView === 'pending' ? (
+                                                canComplete ? (
+                                                    <Button className="complete" onClick={() => handleComplete(req.id)}>
+                                                        <FaCheck /> Mark as Done
+                                                    </Button>
+                                                ) : (
+                                                    <span>-</span>
+                                                )
+                                            ) : (
+                                                canRestore ? (
+                                                    <Button className="restore" onClick={() => handleRestore(req.id)}>
+                                                        <FaHistory /> Restore
+                                                    </Button>
+                                                ) : (
+                                                    <span>-</span>
+                                                )
+                                            )}
+                                        </td>
+                                    </TableRow>
+                                ))
                             )}
                         </tbody>
                     </Table>
