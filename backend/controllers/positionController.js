@@ -97,12 +97,23 @@ exports.calculateLocalPosition = async (req, res) => {
         return res.status(400).json({ message: 'A date and keyword are required.' });
     }
     try {
-        const targetDate = new Date(date + 'T00:00:00Z');
-        const endTime = new Date(targetDate);
-        const startTime = new Date(targetDate);
-        startTime.setUTCDate(startTime.getUTCDate() - 1);
-        startTime.setUTCHours(19, 15, 0, 0); // Corresponds to 16:15 São Paulo time of the previous day
-        endTime.setUTCHours(19, 15, 0, 0);   // Corresponds to 16:15 São Paulo time of the selected day
+        const [[firstRow]] = await pool.query(
+            `SELECT MIN(received_at) AS first_date
+             FROM invoices
+             WHERE is_deleted = 0 AND recipient_name LIKE ?`,
+            [`%${keyword}%`]
+        );
+        const firstDate = firstRow?.first_date ? new Date(firstRow.first_date) : null;
+        if (!firstDate) {
+            return res.json({
+                netPosition: 0,
+                transactionCount: 0,
+                calculationPeriod: { start: null, end: null },
+            });
+        }
+
+        const startTime = new Date(firstDate);
+        const endTime = new Date(`${date}T23:59:59Z`);
 
         // === FIX #2: CORRECTED SQL LOGIC ===
         // This new query correctly de-duplicates invoices with a transaction_id

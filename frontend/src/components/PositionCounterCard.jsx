@@ -163,7 +163,7 @@ const PositionCounterCard = ({ counter, onEdit, onDelete, canManage }) => {
             </Header>
 
             <InputGroup>
-                <Label>{counter.type === 'local' ? 'Select Business Day' : 'Select Date for Historical Balance'}</Label>
+                <Label>{counter.type === 'local' ? 'Select Date (Till Date)' : 'Select Date for Historical Balance'}</Label>
                 <Input type="date" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} />
             </InputGroup>
 
@@ -181,14 +181,14 @@ const PositionCounterCard = ({ counter, onEdit, onDelete, canManage }) => {
                                         )}
                                     </ResultValue>
                                     <ResultLabel>
-                                        {counter.sub_type === 'cross' ? 'Daily Net Position' : 'Available Balance'}
+                                        {counter.sub_type === 'cross' ? 'Net Position (Till Date)' : 'Available Balance (Till Date)'}
                                     </ResultLabel>
                                     <CalculationPeriod>
                                         {counter.sub_type === 'cross' 
                                             ? (result.calculationPeriod?.start && result.calculationPeriod?.end
-                                                ? `Net for period: ${formatDisplayDateTime(result.calculationPeriod.start)} - ${formatDisplayDateTime(result.calculationPeriod.end)}`
-                                                : `Net for date: ${result.dataReferencia || 'Today'}`)
-                                            : `Balance for date: ${result.dataReferencia || 'Today'}`
+                                                ? `Till date: ${formatDisplayDateTime(result.calculationPeriod.start)} - ${formatDisplayDateTime(result.calculationPeriod.end)}`
+                                                : `Till date: ${result.dataReferencia || 'Today'}`)
+                                            : `Till date: ${result.dataReferencia || 'Today'}`
                                         }
                                     </CalculationPeriod>
                                 </>
