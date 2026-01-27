@@ -237,6 +237,7 @@ export const updateRequestTypeOrder = (orderedIds) => apiClient.post('/request-t
 
 // ---- Subaccounts ----
 export const getSubaccounts = () => apiClient.get('/subaccounts');
+export const getWhatsappGroups = () => apiClient.get('/groups');
 export const createSubaccount = (data) => apiClient.post('/subaccounts', data);
 export const updateSubaccount = (id, data) => apiClient.put(`/subaccounts/${id}`, data);
 export const deleteSubaccount = (id) => apiClient.delete(`/subaccounts/${id}`);

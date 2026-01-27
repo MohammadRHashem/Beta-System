@@ -22,7 +22,17 @@ exports.getAllCounters = async (req, res) => {
 // POST a new counter
 exports.createCounter = async (req, res) => {
     const userId = req.user.id;
-    const { name, keyword, type, sub_type, local_mode, cross_variant, subaccount_id } = req.body;
+    const {
+        name,
+        keyword,
+        type,
+        sub_type,
+        local_mode,
+        cross_variant,
+        subaccount_id,
+        excluded_pix_keys,
+        excluded_source_group_jids
+    } = req.body;
     if (!name || !type) {
         return res.status(400).json({ message: 'Name and Type are required.' });
     }
@@ -31,7 +41,10 @@ exports.createCounter = async (req, res) => {
             if (!cross_variant) {
                 return res.status(400).json({ message: 'Cross type is required for Cross counters.' });
             }
-            if (cross_variant !== 'all' && !subaccount_id) {
+            if (cross_variant === 'geral' && !keyword) {
+                return res.status(400).json({ message: 'Keyword is required for Cross Geral counters.' });
+            }
+            if (cross_variant !== 'all' && cross_variant !== 'geral' && !subaccount_id) {
                 return res.status(400).json({ message: 'Subaccount is required for this Cross counter type.' });
             }
         } else if (!keyword) {
@@ -41,21 +54,32 @@ exports.createCounter = async (req, res) => {
     if (type === 'remote' && !sub_type) {
         return res.status(400).json({ message: 'Sub-type is required for remote counters.' });
     }
+    if (type === 'remote' && sub_type === 'cross' && !subaccount_id) {
+        return res.status(400).json({ message: 'Subaccount is required for Remote Cross counters.' });
+    }
 
     try {
         const [result] = await pool.query(
             `INSERT INTO position_counters
-                (user_id, name, keyword, type, sub_type, local_mode, cross_variant, subaccount_id)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+                (user_id, name, keyword, type, sub_type, local_mode, cross_variant, subaccount_id, excluded_pix_keys, excluded_source_group_jids)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
                 userId,
                 name,
-                type === 'local' && local_mode === 'cross' ? null : (keyword || null),
+                type === 'local' && local_mode === 'cross' && cross_variant !== 'geral' ? null : (keyword || null),
                 type,
                 sub_type || null,
                 type === 'local' ? (local_mode || 'keyword') : 'keyword',
                 type === 'local' && local_mode === 'cross' ? (cross_variant || null) : null,
-                type === 'local' && local_mode === 'cross' && cross_variant !== 'all' ? subaccount_id : null
+                type === 'local' && local_mode === 'cross' && cross_variant === 'chave'
+                    ? subaccount_id
+                    : (type === 'remote' && sub_type === 'cross' ? subaccount_id : null),
+                type === 'local' && local_mode === 'cross' && cross_variant === 'all'
+                    ? JSON.stringify((excluded_pix_keys || []).filter(Boolean))
+                    : null,
+                type === 'local' && local_mode === 'cross' && cross_variant === 'geral'
+                    ? JSON.stringify((excluded_source_group_jids || []).filter(Boolean))
+                    : null
             ]
         );
         res.status(201).json({ id: result.insertId, name, keyword, type, sub_type });
@@ -71,7 +95,17 @@ exports.createCounter = async (req, res) => {
 // PUT (update) an existing counter
 exports.updateCounter = async (req, res) => {
     const { id } = req.params;
-    const { name, keyword, type, sub_type, local_mode, cross_variant, subaccount_id } = req.body;
+    const {
+        name,
+        keyword,
+        type,
+        sub_type,
+        local_mode,
+        cross_variant,
+        subaccount_id,
+        excluded_pix_keys,
+        excluded_source_group_jids
+    } = req.body;
     if (!name || !type) {
         return res.status(400).json({ message: 'Name and Type are required.' });
     }
@@ -80,7 +114,10 @@ exports.updateCounter = async (req, res) => {
             if (!cross_variant) {
                 return res.status(400).json({ message: 'Cross type is required for Cross counters.' });
             }
-            if (cross_variant !== 'all' && !subaccount_id) {
+            if (cross_variant === 'geral' && !keyword) {
+                return res.status(400).json({ message: 'Keyword is required for Cross Geral counters.' });
+            }
+            if (cross_variant !== 'all' && cross_variant !== 'geral' && !subaccount_id) {
                 return res.status(400).json({ message: 'Subaccount is required for this Cross counter type.' });
             }
         } else if (!keyword) {
@@ -90,19 +127,30 @@ exports.updateCounter = async (req, res) => {
     if (type === 'remote' && !sub_type) {
         return res.status(400).json({ message: 'Sub-type is required for remote counters.' });
     }
+    if (type === 'remote' && sub_type === 'cross' && !subaccount_id) {
+        return res.status(400).json({ message: 'Subaccount is required for Remote Cross counters.' });
+    }
     try {
         const [result] = await pool.query(
             `UPDATE position_counters 
-             SET name = ?, keyword = ?, type = ?, sub_type = ?, local_mode = ?, cross_variant = ?, subaccount_id = ?
+             SET name = ?, keyword = ?, type = ?, sub_type = ?, local_mode = ?, cross_variant = ?, subaccount_id = ?, excluded_pix_keys = ?, excluded_source_group_jids = ?
              WHERE id = ?`,
             [
                 name,
-                type === 'local' && local_mode === 'cross' ? null : (keyword || null),
+                type === 'local' && local_mode === 'cross' && cross_variant !== 'geral' ? null : (keyword || null),
                 type,
                 sub_type || null,
                 type === 'local' ? (local_mode || 'keyword') : 'keyword',
                 type === 'local' && local_mode === 'cross' ? (cross_variant || null) : null,
-                type === 'local' && local_mode === 'cross' && cross_variant !== 'all' ? subaccount_id : null,
+                type === 'local' && local_mode === 'cross' && cross_variant === 'chave'
+                    ? subaccount_id
+                    : (type === 'remote' && sub_type === 'cross' ? subaccount_id : null),
+                type === 'local' && local_mode === 'cross' && cross_variant === 'all'
+                    ? JSON.stringify((excluded_pix_keys || []).filter(Boolean))
+                    : null,
+                type === 'local' && local_mode === 'cross' && cross_variant === 'geral'
+                    ? JSON.stringify((excluded_source_group_jids || []).filter(Boolean))
+                    : null,
                 id
             ]
         );
@@ -149,7 +197,7 @@ exports.calculateLocalPosition = async (req, res) => {
         let counter = null;
         if (counterId) {
             const [[row]] = await pool.query(
-                'SELECT id, type, keyword, local_mode, cross_variant, subaccount_id FROM position_counters WHERE id = ?',
+                'SELECT id, type, keyword, local_mode, cross_variant, subaccount_id, excluded_pix_keys, excluded_source_group_jids FROM position_counters WHERE id = ?',
                 [counterId]
             );
             if (!row || row.type !== 'local') {
@@ -162,14 +210,107 @@ exports.calculateLocalPosition = async (req, res) => {
         const effectiveKeyword = counter?.keyword || keyword;
 
         if (localMode === 'cross') {
-            let pixKeys = [];
-            if (counter?.cross_variant === 'all') {
-                const [rows] = await pool.query(
-                    `SELECT chave_pix
-                     FROM subaccounts
-                     WHERE account_type = 'cross' AND chave_pix IS NOT NULL`
+            if (counter?.cross_variant === 'geral') {
+                const excludedGroups = Array.isArray(counter?.excluded_source_group_jids)
+                    ? counter.excluded_source_group_jids
+                    : (counter?.excluded_source_group_jids ? JSON.parse(counter.excluded_source_group_jids) : []);
+
+                const [[firstRow]] = await pool.query(
+                    `SELECT MIN(received_at) AS first_date
+                     FROM invoices
+                     WHERE is_deleted = 0 AND recipient_name LIKE ?
+                     ${excludedGroups.length ? 'AND source_group_jid NOT IN (?)' : ''}`,
+                    excludedGroups.length
+                        ? [`%${effectiveKeyword}%`, excludedGroups]
+                        : [`%${effectiveKeyword}%`]
                 );
-                pixKeys = rows.map((row) => row.chave_pix);
+                const firstDate = firstRow?.first_date ? new Date(firstRow.first_date) : null;
+                if (!firstDate) {
+                    return res.json({
+                        netPosition: 0,
+                        transactionCount: 0,
+                        calculationPeriod: { start: null, end: null },
+                    });
+                }
+
+                const startTime = new Date(firstDate);
+                const endTime = new Date(`${date}T23:59:59Z`);
+
+                const positionQuery = `
+                    SELECT 
+                        SUM(CAST(REPLACE(i.amount, ',', '') AS DECIMAL(20, 2))) AS netPosition,
+                        COUNT(i.id) AS transactionCount
+                    FROM invoices i
+                    INNER JOIN (
+                        SELECT MAX(id) as max_id 
+                        FROM invoices
+                        WHERE 
+                            is_deleted = 0 
+                            AND recipient_name LIKE ?
+                            ${excludedGroups.length ? 'AND source_group_jid NOT IN (?)' : ''}
+                            AND received_at >= ? 
+                            AND received_at < ?
+                        GROUP BY (CASE WHEN transaction_id IS NULL OR transaction_id = '' THEN id ELSE transaction_id END)
+                    ) latest_invoices ON i.id = latest_invoices.max_id;
+                `;
+
+                const params = excludedGroups.length
+                    ? [`%${effectiveKeyword}%`, excludedGroups, startTime, endTime]
+                    : [`%${effectiveKeyword}%`, startTime, endTime];
+
+                const [[positionResult]] = await pool.query(positionQuery, params);
+                const netPositionAsNumber = parseFloat(positionResult.netPosition || 0);
+
+                return res.json({
+                    netPosition: netPositionAsNumber,
+                    transactionCount: positionResult.transactionCount || 0,
+                    calculationPeriod: { start: startTime.toISOString(), end: endTime.toISOString() },
+                });
+            }
+
+            let pixKeys = [];
+            const excluded = Array.isArray(counter?.excluded_pix_keys)
+                ? counter.excluded_pix_keys
+                : (counter?.excluded_pix_keys ? JSON.parse(counter.excluded_pix_keys) : []);
+
+            if (counter?.cross_variant === 'all') {
+                const [[firstRow]] = await pool.query(
+                    `SELECT MIN(tx_date) AS first_date
+                     FROM trkbit_transactions
+                     ${excluded.length ? 'WHERE tx_pix_key NOT IN (?)' : ''}`,
+                    excluded.length ? [excluded] : []
+                );
+                const firstDate = firstRow?.first_date ? new Date(firstRow.first_date) : null;
+                if (!firstDate) {
+                    return res.json({
+                        netPosition: 0,
+                        transactionCount: 0,
+                        calculationPeriod: { start: null, end: null },
+                    });
+                }
+
+                const startTime = new Date(firstDate);
+                const endTime = new Date(`${date}T23:59:59Z`);
+
+                const [[positionResult]] = await pool.query(
+                    `SELECT 
+                        SUM(CASE WHEN tx_type = 'C' THEN amount ELSE -amount END) AS netPosition,
+                        COUNT(*) AS transactionCount
+                     FROM trkbit_transactions
+                     WHERE tx_date >= ? AND tx_date <= ?
+                     ${excluded.length ? 'AND tx_pix_key NOT IN (?)' : ''}`,
+                    excluded.length
+                        ? [startTime, endTime, excluded]
+                        : [startTime, endTime]
+                );
+
+                const netPositionAsNumber = parseFloat(positionResult.netPosition || 0);
+
+                return res.json({
+                    netPosition: netPositionAsNumber,
+                    transactionCount: positionResult.transactionCount || 0,
+                    calculationPeriod: { start: startTime.toISOString(), end: endTime.toISOString() },
+                });
             } else {
                 const subaccountId = counter?.subaccount_id;
                 if (!subaccountId) {
@@ -185,14 +326,6 @@ exports.calculateLocalPosition = async (req, res) => {
                     return res.status(400).json({ message: 'Selected Cross subaccount is missing a chave_pix.' });
                 }
                 pixKeys = [subaccount.chave_pix];
-            }
-
-            if (pixKeys.length === 0) {
-                return res.json({
-                    netPosition: 0,
-                    transactionCount: 0,
-                    calculationPeriod: { start: null, end: null },
-                });
             }
 
             const [[firstRow]] = await pool.query(
@@ -217,7 +350,7 @@ exports.calculateLocalPosition = async (req, res) => {
                 `SELECT 
                     SUM(CASE WHEN tx_type = 'C' THEN amount ELSE -amount END) AS netPosition,
                     COUNT(*) AS transactionCount
-                 FROM trkbit_transactions
+                FROM trkbit_transactions
                  WHERE tx_pix_key IN (?) AND tx_date >= ? AND tx_date <= ?`,
                 [pixKeys, startTime, endTime]
             );
@@ -297,7 +430,7 @@ exports.calculateRemotePosition = async (req, res) => {
 
     try {
         const [[counter]] = await pool.query(
-            'SELECT type, sub_type FROM position_counters WHERE id = ?',
+            'SELECT type, sub_type, subaccount_id FROM position_counters WHERE id = ?',
             [id]
         );
 
@@ -317,15 +450,28 @@ exports.calculateRemotePosition = async (req, res) => {
             // Default to today if no date provided
             const targetDate = date || new Date().toISOString().split('T')[0];
 
+            let pixKey = null;
+            if (!counter.subaccount_id) {
+                return res.status(400).json({ message: 'Subaccount is required for Remote Cross counters.' });
+            }
+            const [[subaccount]] = await pool.query(
+                'SELECT chave_pix FROM subaccounts WHERE id = ? AND account_type = \"cross\"',
+                [counter.subaccount_id]
+            );
+            if (!subaccount?.chave_pix) {
+                return res.status(400).json({ message: 'Selected Cross subaccount is missing a chave_pix.' });
+            }
+            pixKey = subaccount.chave_pix;
+
             const query = `
                 SELECT 
                     SUM(CASE WHEN tx_type = 'C' THEN amount ELSE 0 END) as total_in,
                     SUM(CASE WHEN tx_type = 'D' THEN amount ELSE 0 END) as total_out
                 FROM trkbit_transactions
-                WHERE DATE(tx_date) = ?
+                WHERE DATE(tx_date) = ? AND tx_pix_key = ?
             `;
             
-            const [[rows]] = await pool.query(query, [targetDate]);
+            const [[rows]] = await pool.query(query, [targetDate, pixKey]);
             
             const totalIn = parseFloat(rows.total_in || 0);
             const totalOut = parseFloat(rows.total_out || 0);

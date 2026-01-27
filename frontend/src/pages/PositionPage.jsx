@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import styled from 'styled-components';
-import { getPositionCounters, createPositionCounter, updatePositionCounter, deletePositionCounter, getSubaccounts } from '../services/api';
+import { getPositionCounters, createPositionCounter, updatePositionCounter, deletePositionCounter, getSubaccounts, getWhatsappGroups } from '../services/api';
 import { usePermissions } from '../context/PermissionContext'; // 1. IMPORT PERMISSIONS HOOK
 import PositionCounterCard from '../components/PositionCounterCard';
 import PositionCounterModal from '../components/PositionCounterModal';
@@ -46,6 +46,7 @@ const PositionPage = () => {
 
     const [counters, setCounters] = useState([]);
     const [crossSubaccounts, setCrossSubaccounts] = useState([]);
+    const [whatsappGroups, setWhatsappGroups] = useState([]);
     const [loading, setLoading] = useState(true);
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingCounter, setEditingCounter] = useState(null);
@@ -77,6 +78,19 @@ const PositionPage = () => {
             }
         };
         fetchSubaccounts();
+    }, []);
+
+    useEffect(() => {
+        const fetchGroups = async () => {
+            try {
+                const { data } = await getWhatsappGroups();
+                setWhatsappGroups(data || []);
+            } catch (error) {
+                console.error('Failed to fetch WhatsApp groups', error);
+                setWhatsappGroups([]);
+            }
+        };
+        fetchGroups();
     }, []);
 
     const handleOpenModal = (counter = null) => {
@@ -156,6 +170,7 @@ const PositionPage = () => {
                 onSave={handleSaveCounter}
                 editingCounter={editingCounter}
                 crossSubaccounts={crossSubaccounts}
+                whatsappGroups={whatsappGroups}
             />
         </>
     );

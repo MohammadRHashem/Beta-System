@@ -53,6 +53,16 @@ const Legend = styled.legend`
   color: ${({ theme }) => theme.lightText};
 `;
 
+const GroupList = styled.div`
+  max-height: 160px;
+  overflow: auto;
+  border: 1px solid #eee;
+  border-radius: 4px;
+  padding: 0.5rem;
+  display: grid;
+  gap: 0.35rem;
+`;
+
 const Select = styled.select`
     padding: 0.75rem;
     border: 1px solid ${({ theme }) => theme.border};
@@ -61,7 +71,7 @@ const Select = styled.select`
     background: #fff;
 `;
 
-const PositionCounterModal = ({ isOpen, onClose, onSave, editingCounter, crossSubaccounts }) => {
+const PositionCounterModal = ({ isOpen, onClose, onSave, editingCounter, crossSubaccounts, whatsappGroups }) => {
     const isEditMode = !!editingCounter;
     const [name, setName] = useState('');
     const [type, setType] = useState('local');
@@ -70,6 +80,9 @@ const PositionCounterModal = ({ isOpen, onClose, onSave, editingCounter, crossSu
     const [localMode, setLocalMode] = useState('keyword');
     const [crossVariant, setCrossVariant] = useState('all');
     const [subaccountId, setSubaccountId] = useState('');
+    const [excludedPixKeys, setExcludedPixKeys] = useState('');
+    const [excludedSourceGroups, setExcludedSourceGroups] = useState([]);
+    const [groupSearch, setGroupSearch] = useState('');
 
     useEffect(() => {
         if (isOpen) {
@@ -80,8 +93,27 @@ const PositionCounterModal = ({ isOpen, onClose, onSave, editingCounter, crossSu
             setLocalMode(isEditMode ? (editingCounter.local_mode || 'keyword') : 'keyword');
             setCrossVariant(isEditMode ? (editingCounter.cross_variant || 'all') : 'all');
             setSubaccountId(isEditMode ? (editingCounter.subaccount_id || '') : '');
+            const excluded = isEditMode
+                ? (Array.isArray(editingCounter.excluded_pix_keys)
+                    ? editingCounter.excluded_pix_keys
+                    : (editingCounter.excluded_pix_keys ? JSON.parse(editingCounter.excluded_pix_keys) : []))
+                : [];
+            setExcludedPixKeys(excluded.join(', '));
+            const excludedGroups = isEditMode
+                ? (Array.isArray(editingCounter.excluded_source_group_jids)
+                    ? editingCounter.excluded_source_group_jids
+                    : (editingCounter.excluded_source_group_jids ? JSON.parse(editingCounter.excluded_source_group_jids) : []))
+                : [];
+            setExcludedSourceGroups(excludedGroups);
+            setGroupSearch('');
         }
     }, [isOpen, editingCounter, isEditMode]);
+
+    const filteredGroups = (whatsappGroups || []).filter((group) => {
+        if (!groupSearch.trim()) return true;
+        const needle = groupSearch.trim().toLowerCase();
+        return (group.name || '').toLowerCase().includes(needle) || (group.id || '').toLowerCase().includes(needle);
+    });
 
     const handleSubmit = (e) => {
         e.preventDefault();
@@ -90,14 +122,25 @@ const PositionCounterModal = ({ isOpen, onClose, onSave, editingCounter, crossSu
             payload.local_mode = localMode;
             if (localMode === 'cross') {
                 payload.cross_variant = crossVariant;
-                if (crossVariant !== 'all') {
+                if (crossVariant === 'geral') {
+                    payload.keyword = keyword;
+                    payload.excluded_source_group_jids = excludedSourceGroups;
+                } else if (crossVariant !== 'all') {
                     payload.subaccount_id = subaccountId;
+                } else {
+                    payload.excluded_pix_keys = excludedPixKeys
+                        .split(',')
+                        .map((key) => key.trim())
+                        .filter(Boolean);
                 }
             } else {
                 payload.keyword = keyword;
             }
         } else {
             payload.sub_type = subType;
+            if (subType === 'cross') {
+                payload.subaccount_id = subaccountId;
+            }
         }
         onSave(payload);
     };
@@ -147,7 +190,50 @@ const PositionCounterModal = ({ isOpen, onClose, onSave, editingCounter, crossSu
                                     </div>
                                 </Fieldset>
 
-                                {crossVariant !== 'all' && (
+                                {crossVariant === 'geral' && (
+                                    <>
+                                        <InputGroup>
+                                            <Label>Recipient Keyword</Label>
+                                            <Input type="text" placeholder="e.g., cross" value={keyword} onChange={(e) => setKeyword(e.target.value)} required />
+                                        </InputGroup>
+                                        <InputGroup>
+                                            <Label>Exclude Source Groups</Label>
+                                            <Input
+                                                type="text"
+                                                placeholder="Search groups..."
+                                                value={groupSearch}
+                                                onChange={(e) => setGroupSearch(e.target.value)}
+                                            />
+                                            <GroupList>
+                                                {filteredGroups.map((group) => (
+                                                    <label key={group.id}>
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={excludedSourceGroups.includes(group.id)}
+                                                            onChange={(e) => {
+                                                                const isChecked = e.target.checked;
+                                                                setExcludedSourceGroups((prev) => (
+                                                                    isChecked
+                                                                        ? [...prev, group.id]
+                                                                        : prev.filter((jid) => jid !== group.id)
+                                                                ));
+                                                            }}
+                                                        />{' '}
+                                                        {group.name || group.id}
+                                                    </label>
+                                                ))}
+                                                {(!whatsappGroups || whatsappGroups.length === 0) && (
+                                                    <span style={{ color: '#999' }}>No groups available.</span>
+                                                )}
+                                                {(whatsappGroups && whatsappGroups.length > 0 && filteredGroups.length === 0) && (
+                                                    <span style={{ color: '#999' }}>No matching groups.</span>
+                                                )}
+                                            </GroupList>
+                                        </InputGroup>
+                                    </>
+                                )}
+
+                                {crossVariant === 'chave' && (
                                     <InputGroup>
                                         <Label>Cross Subaccount</Label>
                                         <Select value={subaccountId} onChange={(e) => setSubaccountId(e.target.value)} required>
@@ -158,6 +244,17 @@ const PositionCounterModal = ({ isOpen, onClose, onSave, editingCounter, crossSu
                                                 </option>
                                             ))}
                                         </Select>
+                                    </InputGroup>
+                                )}
+                                {crossVariant === 'all' && (
+                                    <InputGroup>
+                                        <Label>Exclude Pix Keys (comma-separated)</Label>
+                                        <Input
+                                            type="text"
+                                            placeholder="e.g., key1@cross-otc.com, key2@cross-otc.com"
+                                            value={excludedPixKeys}
+                                            onChange={(e) => setExcludedPixKeys(e.target.value)}
+                                        />
                                     </InputGroup>
                                 )}
                             </>
@@ -185,6 +282,19 @@ const PositionCounterModal = ({ isOpen, onClose, onSave, editingCounter, crossSu
                                 Troca (Not Available)
                             </label>
                         </div>
+                        {subType === 'cross' && (
+                            <InputGroup style={{ marginTop: '0.5rem' }}>
+                                <Label>Cross Subaccount</Label>
+                                <Select value={subaccountId} onChange={(e) => setSubaccountId(e.target.value)} required>
+                                    <option value="">Select subaccount</option>
+                                    {(crossSubaccounts || []).map((account) => (
+                                        <option key={account.id} value={account.id}>
+                                            {account.name} {account.chave_pix ? `(${account.chave_pix})` : ''}
+                                        </option>
+                                    ))}
+                                </Select>
+                            </InputGroup>
+                        )}
                     </Fieldset>
                 )}
 
