@@ -147,6 +147,7 @@ const PositionCounterCard = ({ counter, onEdit, onDelete, canManage }) => {
     }, [counter.type, handleCalculate]);
     
     const formatDisplayDateTime = (isoString) => format(new Date(isoString), 'MMM dd, HH:mm:ss');
+    const formatMoney = (value) => new Intl.NumberFormat('en-US', { minimumFractionDigits: 2 }).format(value);
 
     return (
         <Card>
@@ -172,20 +173,30 @@ const PositionCounterCard = ({ counter, onEdit, onDelete, canManage }) => {
                         result && (
                             counter.type === 'local' ? ( // LOCAL DISPLAY
                                 <>
-                                    <ResultValue>{new Intl.NumberFormat('en-US', { minimumFractionDigits: 2 }).format(result.disponivel)}</ResultValue>
+                                    <ResultValue>
+                                        {formatMoney(
+                                            counter.sub_type === 'cross'
+                                                ? (result.netPosition ?? result.disponivel ?? 0)
+                                                : (result.disponivel ?? result.netPosition ?? 0)
+                                        )}
+                                    </ResultValue>
                                     <ResultLabel>
                                         {counter.sub_type === 'cross' ? 'Daily Net Position' : 'Available Balance'}
                                     </ResultLabel>
                                     <CalculationPeriod>
                                         {counter.sub_type === 'cross' 
-                                            ? `Net for date: ${result.dataReferencia || 'Today'}`
+                                            ? (result.calculationPeriod?.start && result.calculationPeriod?.end
+                                                ? `Net for period: ${formatDisplayDateTime(result.calculationPeriod.start)} - ${formatDisplayDateTime(result.calculationPeriod.end)}`
+                                                : `Net for date: ${result.dataReferencia || 'Today'}`)
                                             : `Balance for date: ${result.dataReferencia || 'Today'}`
                                         }
                                     </CalculationPeriod>
                                 </>
                             ) : ( // REMOTE DISPLAY
                                 <>
-                                    <ResultValue>{new Intl.NumberFormat('en-US', { minimumFractionDigits: 2 }).format(result.disponivel)}</ResultValue>
+                                    <ResultValue>
+                                        {formatMoney(result.disponivel ?? result.netPosition ?? 0)}
+                                    </ResultValue>
                                     <ResultLabel>Available Balance</ResultLabel>
                                     <CalculationPeriod>
                                         Balance for date: {result.dataReferencia || 'Today'}
