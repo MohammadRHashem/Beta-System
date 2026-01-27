@@ -20,6 +20,7 @@ const manualReviewController = require('./controllers/manualReviewController');
 
 const app = express();
 const server = http.createServer(app);
+app.set('trust proxy', 'loopback');
 
 const productionFrontendUrlWithPort = "https://platform.betaserver.dev:4433";
 const productionFrontendUrl = "https://platform.betaserver.dev";
