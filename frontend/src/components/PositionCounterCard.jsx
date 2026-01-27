@@ -113,7 +113,7 @@ const PositionCounterCard = ({ counter, onEdit, onDelete, canManage }) => {
         try {
             let data;
             if (counter.type === 'local') {
-                ({ data } = await calculateLocalPosition({ date: selectedDate, keyword: counter.keyword }));
+                ({ data } = await calculateLocalPosition({ date: selectedDate, keyword: counter.keyword, counterId: counter.id }));
             
             // === THIS IS THE CORRECTED LINE ===
             } else if (counter.type === 'remote') { 
@@ -148,6 +148,7 @@ const PositionCounterCard = ({ counter, onEdit, onDelete, canManage }) => {
     
     const formatDisplayDateTime = (isoString) => format(new Date(isoString), 'MMM dd, HH:mm:ss');
     const formatMoney = (value) => new Intl.NumberFormat('en-US', { minimumFractionDigits: 2 }).format(value);
+    const isLocalCross = counter.type === 'local' && counter.local_mode === 'cross';
 
     return (
         <Card>
@@ -175,16 +176,16 @@ const PositionCounterCard = ({ counter, onEdit, onDelete, canManage }) => {
                                 <>
                                     <ResultValue>
                                         {formatMoney(
-                                            counter.sub_type === 'cross'
+                                            isLocalCross || counter.sub_type === 'cross'
                                                 ? (result.netPosition ?? result.disponivel ?? 0)
                                                 : (result.disponivel ?? result.netPosition ?? 0)
                                         )}
                                     </ResultValue>
                                     <ResultLabel>
-                                        {counter.sub_type === 'cross' ? 'Net Position (Till Date)' : 'Available Balance (Till Date)'}
+                                        {isLocalCross || counter.sub_type === 'cross' ? 'Net Position (Till Date)' : 'Available Balance (Till Date)'}
                                     </ResultLabel>
                                     <CalculationPeriod>
-                                        {counter.sub_type === 'cross' 
+                                        {isLocalCross || counter.sub_type === 'cross' 
                                             ? (result.calculationPeriod?.start && result.calculationPeriod?.end
                                                 ? `Till date: ${formatDisplayDateTime(result.calculationPeriod.start)} - ${formatDisplayDateTime(result.calculationPeriod.end)}`
                                                 : `Till date: ${result.dataReferencia || 'Today'}`)

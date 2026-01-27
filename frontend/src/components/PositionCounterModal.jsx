@@ -53,12 +53,23 @@ const Legend = styled.legend`
   color: ${({ theme }) => theme.lightText};
 `;
 
-const PositionCounterModal = ({ isOpen, onClose, onSave, editingCounter }) => {
+const Select = styled.select`
+    padding: 0.75rem;
+    border: 1px solid ${({ theme }) => theme.border};
+    border-radius: 4px;
+    font-size: 1rem;
+    background: #fff;
+`;
+
+const PositionCounterModal = ({ isOpen, onClose, onSave, editingCounter, crossSubaccounts }) => {
     const isEditMode = !!editingCounter;
     const [name, setName] = useState('');
     const [type, setType] = useState('local');
     const [keyword, setKeyword] = useState('');
     const [subType, setSubType] = useState('alfa');
+    const [localMode, setLocalMode] = useState('keyword');
+    const [crossVariant, setCrossVariant] = useState('all');
+    const [subaccountId, setSubaccountId] = useState('');
 
     useEffect(() => {
         if (isOpen) {
@@ -66,6 +77,9 @@ const PositionCounterModal = ({ isOpen, onClose, onSave, editingCounter }) => {
             setType(isEditMode ? editingCounter.type : 'local');
             setKeyword(isEditMode ? editingCounter.keyword : '');
             setSubType(isEditMode ? editingCounter.sub_type : 'alfa');
+            setLocalMode(isEditMode ? (editingCounter.local_mode || 'keyword') : 'keyword');
+            setCrossVariant(isEditMode ? (editingCounter.cross_variant || 'all') : 'all');
+            setSubaccountId(isEditMode ? (editingCounter.subaccount_id || '') : '');
         }
     }, [isOpen, editingCounter, isEditMode]);
 
@@ -73,7 +87,15 @@ const PositionCounterModal = ({ isOpen, onClose, onSave, editingCounter }) => {
         e.preventDefault();
         const payload = { name, type };
         if (type === 'local') {
-            payload.keyword = keyword;
+            payload.local_mode = localMode;
+            if (localMode === 'cross') {
+                payload.cross_variant = crossVariant;
+                if (crossVariant !== 'all') {
+                    payload.subaccount_id = subaccountId;
+                }
+            } else {
+                payload.keyword = keyword;
+            }
         } else {
             payload.sub_type = subType;
         }
@@ -98,10 +120,49 @@ const PositionCounterModal = ({ isOpen, onClose, onSave, editingCounter }) => {
                 </Fieldset>
                 
                 {type === 'local' && (
-                    <InputGroup>
-                        <Label>Recipient Keyword</Label>
-                        <Input type="text" placeholder="e.g., trkbit" value={keyword} onChange={(e) => setKeyword(e.target.value)} required />
-                    </InputGroup>
+                    <>
+                        <Fieldset>
+                            <Legend>Local Source</Legend>
+                            <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+                                <label><input type="radio" value="keyword" checked={localMode === 'keyword'} onChange={(e) => setLocalMode(e.target.value)} /> Keyword (Invoices)</label>
+                                <label><input type="radio" value="cross" checked={localMode === 'cross'} onChange={(e) => setLocalMode(e.target.value)} /> Cross (Subaccounts)</label>
+                            </div>
+                        </Fieldset>
+
+                        {localMode === 'keyword' && (
+                            <InputGroup>
+                                <Label>Recipient Keyword</Label>
+                                <Input type="text" placeholder="e.g., trkbit" value={keyword} onChange={(e) => setKeyword(e.target.value)} required />
+                            </InputGroup>
+                        )}
+
+                        {localMode === 'cross' && (
+                            <>
+                                <Fieldset>
+                                    <Legend>Cross Counter Type</Legend>
+                                    <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+                                        <label><input type="radio" value="all" checked={crossVariant === 'all'} onChange={(e) => setCrossVariant(e.target.value)} /> All Cross</label>
+                                        <label><input type="radio" value="geral" checked={crossVariant === 'geral'} onChange={(e) => setCrossVariant(e.target.value)} /> Cross Geral</label>
+                                        <label><input type="radio" value="chave" checked={crossVariant === 'chave'} onChange={(e) => setCrossVariant(e.target.value)} /> Cross Chave</label>
+                                    </div>
+                                </Fieldset>
+
+                                {crossVariant !== 'all' && (
+                                    <InputGroup>
+                                        <Label>Cross Subaccount</Label>
+                                        <Select value={subaccountId} onChange={(e) => setSubaccountId(e.target.value)} required>
+                                            <option value="">Select subaccount</option>
+                                            {(crossSubaccounts || []).map((account) => (
+                                                <option key={account.id} value={account.id}>
+                                                    {account.name} {account.chave_pix ? `(${account.chave_pix})` : ''}
+                                                </option>
+                                            ))}
+                                        </Select>
+                                    </InputGroup>
+                                )}
+                            </>
+                        )}
+                    </>
                 )}
 
                 {type === 'remote' && (

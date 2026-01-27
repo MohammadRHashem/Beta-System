@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import styled from 'styled-components';
-import { getPositionCounters, createPositionCounter, updatePositionCounter, deletePositionCounter } from '../services/api';
+import { getPositionCounters, createPositionCounter, updatePositionCounter, deletePositionCounter, getSubaccounts } from '../services/api';
 import { usePermissions } from '../context/PermissionContext'; // 1. IMPORT PERMISSIONS HOOK
 import PositionCounterCard from '../components/PositionCounterCard';
 import PositionCounterModal from '../components/PositionCounterModal';
@@ -45,6 +45,7 @@ const PositionPage = () => {
     const canManage = hasPermission('finance:manage_counters'); // 3. DEFINE EDIT CAPABILITY
 
     const [counters, setCounters] = useState([]);
+    const [crossSubaccounts, setCrossSubaccounts] = useState([]);
     const [loading, setLoading] = useState(true);
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingCounter, setEditingCounter] = useState(null);
@@ -64,6 +65,19 @@ const PositionPage = () => {
     useEffect(() => {
         fetchCounters();
     }, [fetchCounters]);
+
+    useEffect(() => {
+        const fetchSubaccounts = async () => {
+            try {
+                const { data } = await getSubaccounts();
+                setCrossSubaccounts((data || []).filter((acc) => acc.account_type === 'cross'));
+            } catch (error) {
+                console.error('Failed to fetch subaccounts', error);
+                setCrossSubaccounts([]);
+            }
+        };
+        fetchSubaccounts();
+    }, []);
 
     const handleOpenModal = (counter = null) => {
         setEditingCounter(counter);
@@ -141,6 +155,7 @@ const PositionPage = () => {
                 onClose={handleCloseModal}
                 onSave={handleSaveCounter}
                 editingCounter={editingCounter}
+                crossSubaccounts={crossSubaccounts}
             />
         </>
     );
