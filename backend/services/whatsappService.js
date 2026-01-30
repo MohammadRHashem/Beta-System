@@ -520,8 +520,8 @@ const invoiceWorker = new Worker(
 
         const result = await usdtLinkService.processLink(txId);
         if (!result.success) {
-          await originalMessage.reply("⚠️ Failed to load transaction details.");
-          await originalMessage.react("");
+          await originalMessage.reply("⏳Processing... Please wait.⏳");
+          await originalMessage.react("⏳");
           return;
         }
 
