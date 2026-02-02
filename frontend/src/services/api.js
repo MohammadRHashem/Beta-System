@@ -304,6 +304,7 @@ export const exportTrkbit = async (params) => {
     const blob = await downloadFile('/trkbit/export', params);
     triggerBrowserDownload(blob, 'trkbit_export.xlsx');
 };
+export const reassignTrkbitTransaction = (payload) => apiClient.post('/trkbit/reassign', payload);
 
 // ---- Manual Review ----
 export const getPendingManualInvoices = () => apiClient.get('/manual/pending');

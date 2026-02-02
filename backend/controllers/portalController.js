@@ -91,7 +91,7 @@ exports.login = async (req, res) => {
         }
 
         const [[subaccount]] = await pool.query(
-            'SELECT id, name, account_type, subaccount_number, chave_pix, assigned_group_name FROM subaccounts WHERE id = ?', 
+            'SELECT id, name, account_type, subaccount_number, chave_pix, geral_pix_key, assigned_group_name FROM subaccounts WHERE id = ?', 
             [client.subaccount_id]
         );
 
@@ -104,7 +104,8 @@ exports.login = async (req, res) => {
             accessLevel: accessLevel,
             impersonation: false,
             accountType: subaccount.account_type,
-            chavePix: subaccount.chave_pix
+            chavePix: subaccount.chave_pix,
+            geralPixKey: subaccount.geral_pix_key
         };
         
         const token = jwt.sign(tokenPayload, PORTAL_JWT_SECRET, { expiresIn: '8h' });
@@ -126,7 +127,7 @@ exports.login = async (req, res) => {
 
 exports.getDashboardSummary = async (req, res) => {
     // CORRECTED: Use subaccountNumber for xpayz, chavePix for cross
-    const { accountType, subaccountNumber, chavePix, impersonation } = req.client;
+    const { accountType, subaccountNumber, chavePix, geralPixKey, impersonation } = req.client;
     const { date, dateFrom, dateTo } = req.query;
     const canUseRange = impersonation === true && dateFrom && dateTo;
     const range = canUseRange ? buildRangeParams(dateFrom, dateTo) : null;
@@ -146,9 +147,17 @@ exports.getDashboardSummary = async (req, res) => {
         let dailySummary, balance;
 
         if (accountType === 'cross') {
-            // This logic is correct
-            let dailySummaryQuery = `SELECT SUM(CASE WHEN tx_type = 'C' THEN amount ELSE 0 END) as dailyTotalIn, SUM(CASE WHEN tx_type = 'D' THEN amount ELSE 0 END) as dailyTotalOut, COUNT(CASE WHEN tx_type = 'C' THEN 1 END) as dailyCountIn, COUNT(CASE WHEN tx_type = 'D' THEN 1 END) as dailyCountOut, COUNT(*) as dailyCountTotal FROM trkbit_transactions WHERE tx_pix_key = ?`;
-            const summaryParams = [chavePix];
+            const pixKeys = [chavePix].filter(Boolean);
+            if (geralPixKey) pixKeys.push(geralPixKey);
+            if (pixKeys.length === 0) {
+                return res.json({ 
+                    dailyTotalIn: 0, dailyTotalOut: 0, allTimeBalance: 0,
+                    dailyCountIn: 0, dailyCountOut: 0, dailyCountTotal: 0 
+                });
+            }
+
+            let dailySummaryQuery = `SELECT SUM(CASE WHEN tx_type = 'C' THEN amount ELSE 0 END) as dailyTotalIn, SUM(CASE WHEN tx_type = 'D' THEN amount ELSE 0 END) as dailyTotalOut, COUNT(CASE WHEN tx_type = 'C' THEN 1 END) as dailyCountIn, COUNT(CASE WHEN tx_type = 'D' THEN 1 END) as dailyCountOut, COUNT(*) as dailyCountTotal FROM trkbit_transactions WHERE tx_pix_key IN (?)`;
+            const summaryParams = [pixKeys];
             if (range) {
                 dailySummaryQuery += ' AND tx_date BETWEEN ? AND ?';
                 summaryParams.push(range.start, range.end);
@@ -165,9 +174,9 @@ exports.getDashboardSummary = async (req, res) => {
                                 ELSE 0 
                             END) as allTimeBalance 
                 FROM trkbit_transactions 
-                WHERE tx_pix_key = ?;
+                WHERE tx_pix_key IN (?);
             `;
-            [[balance]] = await pool.query(allTimeBalanceQuery, [chavePix]);
+            [[balance]] = await pool.query(allTimeBalanceQuery, [pixKeys]);
             
         } else { // 'xpayz'
             let dailySummaryQuery = `SELECT SUM(CASE WHEN operation_direct = 'in' THEN amount ELSE 0 END) as dailyTotalIn, SUM(CASE WHEN operation_direct = 'out' THEN amount ELSE 0 END) as dailyTotalOut, COUNT(CASE WHEN operation_direct = 'in' THEN 1 END) as dailyCountIn, COUNT(CASE WHEN operation_direct = 'out' THEN 1 END) as dailyCountOut, COUNT(*) as dailyCountTotal FROM xpayz_transactions WHERE subaccount_id = ?`;
@@ -204,7 +213,7 @@ exports.getDashboardSummary = async (req, res) => {
 };
 
 exports.getTransactions = async (req, res) => {
-    const { accountType, subaccountNumber, chavePix, username, impersonation } = req.client;
+    const { accountType, subaccountNumber, chavePix, geralPixKey, username, impersonation } = req.client;
     const { page = 1, limit = 50, search, date, dateFrom, dateTo, direction } = req.query;
     const canUseRange = impersonation === true && dateFrom && dateTo;
     const range = canUseRange ? buildRangeParams(dateFrom, dateTo) : null;
@@ -219,8 +228,14 @@ exports.getTransactions = async (req, res) => {
         let transactions = [];
 
         if (accountType === 'cross') {
-            let query = `FROM trkbit_transactions tt WHERE tt.tx_pix_key = ?`;
-            const params = [chavePix];
+            const pixKeys = [chavePix].filter(Boolean);
+            if (geralPixKey) pixKeys.push(geralPixKey);
+            if (pixKeys.length === 0) {
+                return res.json({ transactions: [], totalPages: 0, currentPage: parseInt(page), totalRecords: 0 });
+            }
+
+            let query = `FROM trkbit_transactions tt WHERE tt.tx_pix_key IN (?)`;
+            const params = [pixKeys];
             if (search) {
                 query += ` AND (tt.tx_payer_name LIKE ? OR tt.amount LIKE ? OR tt.tx_id LIKE ?)`;
                 const searchTerm = `%${search}%`;
@@ -252,6 +267,10 @@ exports.getTransactions = async (req, res) => {
                         tt.is_portal_confirmed,
                         tt.portal_notes,
                         'trkbit' as source, -- <<< ADD THIS LINE
+                        CASE 
+                            WHEN ? IS NOT NULL AND tt.tx_pix_key = ? THEN 'Geral'
+                            ELSE NULL
+                        END AS pool,
                         CASE
                             WHEN tt.tx_type = 'C' THEN tt.tx_payer_name
                             ELSE 'CROSS INTERMEDIAÇÃO LTDA' 
@@ -264,7 +283,7 @@ exports.getTransactions = async (req, res) => {
                     ORDER BY tt.tx_date DESC 
                     LIMIT ? OFFSET ?
                 `;
-                const finalParams = [...params, parseInt(limit), (page - 1) * limit];
+                const finalParams = [...params, geralPixKey || null, geralPixKey || null, parseInt(limit), (page - 1) * limit];
                 [transactions] = await pool.query(dataQuery, finalParams);
             }
         } 

@@ -434,11 +434,13 @@ const ClientDashboard = () => {
     const isImpersonating = tokenPayload?.impersonation === true || sessionImpersonating;
     const portalAccountType = tokenPayload?.accountType;
     const portalPixKey = tokenPayload?.chavePix;
+    const showPoolColumn = portalAccountType === 'cross';
     const canCreateDebit = isImpersonating && portalAccountType === 'cross';
     const storedClient =
         sessionStorage.getItem('portalClient') ||
         localStorage.getItem('portalClient');
     const clientData = storedClient ? JSON.parse(storedClient) : {};
+    const tableColSpan = 6 + (clientData?.username === 'xplus' ? 1 : 0) + (showPoolColumn ? 1 : 0);
 
     const [isDebitModalOpen, setIsDebitModalOpen] = useState(false);
     const [debitForm, setDebitForm] = useState({ amount: '', tx_date: '', description: 'USD BETA OUT / C' });
@@ -803,6 +805,7 @@ const ClientDashboard = () => {
                     <th>Date</th>
                     <th>Type</th>
                     <th>Counterparty</th>
+                    {showPoolColumn && <th>Pool</th>}
                     <th>Amount (BRL)</th>
                     {clientData.username === 'xplus' && <th>Partner Actions</th>}
                     <th>Confirmation</th> {/* <<< NEW COLUMN HEADER */}
@@ -811,9 +814,9 @@ const ClientDashboard = () => {
               </thead>
               <tbody>
                 {loadingTable ? (
-                  [...Array(10)].map((_, i) => ( <tr><td colSpan={clientData.username === 'xplus' ? 5 : 4}><SkeletonCell /></td></tr> ))
+                  [...Array(10)].map((_, i) => ( <tr><td colSpan={tableColSpan}><SkeletonCell /></td></tr> ))
                 ) : transactions.length === 0 ? (
-                  <tr><td colSpan={clientData.username === 'xplus' ? 5 : 4}><EmptyStateContainer><h3>No transactions found</h3></EmptyStateContainer></td></tr>
+                  <tr><td colSpan={tableColSpan}><EmptyStateContainer><h3>No transactions found</h3></EmptyStateContainer></td></tr>
                 ) : (
                   transactions.map((tx) => {
                     const isCredit = tx.operation_direct === "in" || tx.operation_direct === "C";
@@ -828,6 +831,7 @@ const ClientDashboard = () => {
                             <td>{formatDateTime(tx.transaction_date)}</td>
                             <td><TypeCell isCredit={isCredit}>{isCredit ? "IN" : "OUT"}</TypeCell></td>
                             <td>{isCredit ? (tx.sender_name || "Unknown") : (tx.counterparty_name || "Unknown")}</td>
+                            {showPoolColumn && <td>{tx.pool || ''}</td>}
                             <td><AmountCell isCredit={isCredit}>{formatCurrency(tx.amount)}</AmountCell></td>
                             <td style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
                                 {isUpdatingConfirmation ? ( <LoadingSpinner /> ) : 
@@ -883,8 +887,9 @@ const ClientDashboard = () => {
                             </ArrowIcon>
                         </MobileCardHeader>
                         <MobileCardBody>
-                            <p><strong>{isCredit ? (tx.sender_name || "Unknown") : (tx.counterparty_name || "Unknown Receiver")}</strong></p>
-                            <p>{formatDateTime(tx.transaction_date)}</p>
+                          <p><strong>{isCredit ? (tx.sender_name || "Unknown") : (tx.counterparty_name || "Unknown Receiver")}</strong></p>
+                          <p>{formatDateTime(tx.transaction_date)}</p>
+                          {showPoolColumn && <p>Pool: {tx.pool || ''}</p>}
                         </MobileCardBody>
 
                         <MobileSection>

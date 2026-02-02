@@ -1,5 +1,6 @@
 const pool = require('../config/db');
 const ExcelJS = require('exceljs');
+const { logAction } = require('../services/auditService');
 
 exports.getTransactions = async (req, res) => {
     const { page = 1, limit = 50, search, dateFrom, dateTo } = req.query;
@@ -106,5 +107,64 @@ exports.exportExcel = async (req, res) => {
     } catch (error) {
         console.error('[TRKBIT-EXPORT-ERROR]', error);
         res.status(500).json({ message: 'Failed to export.' });
+    }
+};
+
+exports.reassignTransaction = async (req, res) => {
+    const { transactionId, targetPixKey, reason } = req.body;
+
+    if (!transactionId || !targetPixKey) {
+        return res.status(400).json({ message: 'Transaction ID and target PIX key are required.' });
+    }
+
+    try {
+        const [[tx]] = await pool.query(
+            'SELECT id, tx_pix_key FROM trkbit_transactions WHERE id = ?',
+            [transactionId]
+        );
+        if (!tx) {
+            return res.status(404).json({ message: 'Transaction not found.' });
+        }
+
+        const [[validKey]] = await pool.query(
+            `SELECT id FROM subaccounts 
+             WHERE account_type = 'cross' 
+               AND (chave_pix = ? OR geral_pix_key = ?)
+             LIMIT 1`,
+            [targetPixKey, targetPixKey]
+        );
+        if (!validKey) {
+            return res.status(400).json({ message: 'Target PIX key is not a valid Cross key.' });
+        }
+
+        await pool.query(
+            'UPDATE trkbit_transactions SET tx_pix_key = ? WHERE id = ?',
+            [targetPixKey, transactionId]
+        );
+
+        await pool.query(
+            `INSERT INTO trkbit_reassign_log 
+                (trkbit_transaction_id, old_pix_key, new_pix_key, reason, user_id, username)
+             VALUES (?, ?, ?, ?, ?, ?)`,
+            [
+                transactionId,
+                tx.tx_pix_key || null,
+                targetPixKey,
+                reason || null,
+                req.user?.id || null,
+                req.user?.username || null
+            ]
+        );
+
+        await logAction(req, 'trkbit:reassign', 'TrkbitTransaction', transactionId, {
+            oldPixKey: tx.tx_pix_key || null,
+            newPixKey: targetPixKey,
+            reason: reason || null
+        });
+
+        res.json({ message: 'Transaction successfully reassigned.' });
+    } catch (error) {
+        console.error('[TRKBIT-REASSIGN-ERROR]', error);
+        res.status(500).json({ message: 'Failed to reassign transaction.' });
     }
 };

@@ -130,6 +130,7 @@ const ClientViewOnlyDashboard = () => {
     const [transactions, setTransactions] = useState([]);
     const [loading, setLoading] = useState(true);
     const [pagination, setPagination] = useState({ page: 1, limit: 20, totalPages: 1, totalRecords: 0 });
+    const showPoolColumn = transactions.some((tx) => Object.prototype.hasOwnProperty.call(tx, 'pool'));
     
     const todayDate = format(new Date(), 'yyyy-MM-dd');
 
@@ -196,6 +197,7 @@ const ClientViewOnlyDashboard = () => {
                   <th>Date</th>
                   <th>Type</th>
                   <th>Counterparty</th>
+                  {showPoolColumn && <th>Pool</th>}
                   <th>Amount (BRL)</th>
                 </tr>
               </thead>
@@ -208,7 +210,7 @@ const ClientViewOnlyDashboard = () => {
                   [...Array(10)].map((_, i) => <SkeletonRow key={i} />)
                 ) : transactions.length === 0 ? (
                   <tr>
-                    <td colSpan="4">
+                    <td colSpan={showPoolColumn ? 5 : 4}>
                       <EmptyStateContainer>
                         <h3>No transactions found for today</h3>
                       </EmptyStateContainer>
@@ -232,6 +234,7 @@ const ClientViewOnlyDashboard = () => {
                           ? tx.sender_name || "Unknown"
                           : tx.counterparty_name || "Unknown Receiver"}
                       </td>
+                      {showPoolColumn && <td>{tx.pool || ''}</td>}
 
                       <AmountCell isCredit={tx.operation_direct === "in"}>
                         {tx.operation_direct === "in" ? "+" : "-"}
@@ -273,6 +276,7 @@ const ClientViewOnlyDashboard = () => {
                       </strong>
                     </p>
                     <p>{formatDateTime(tx.transaction_date)}</p>
+                    {showPoolColumn && <p>Pool: {tx.pool || ''}</p>}
                   </MobileCardBody>
                 </MobileCard>
               ))

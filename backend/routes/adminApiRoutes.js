@@ -128,6 +128,7 @@ router.get('/alfa-trust/export-excel', checkPermission('finance:view_bank_statem
 router.post('/alfa-trust/notify-update', alfaTrustController.notifyUpdate);
 router.get('/trkbit/transactions', checkPermission('finance:view_bank_statements'), trkbitController.getTransactions);
 router.get('/trkbit/export', checkPermission('finance:view_bank_statements'), trkbitController.exportExcel);
+router.post('/trkbit/reassign', checkPermission('trkbit:reassign'), trkbitController.reassignTransaction);
 
 
 // --- Client Requests ---

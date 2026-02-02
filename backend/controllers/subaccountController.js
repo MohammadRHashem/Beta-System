@@ -39,7 +39,7 @@ exports.getAll = async (req, res) => {
     try {
         const [subaccounts] = await pool.query(
             // --- MODIFIED: Select account_type ---
-            'SELECT id, name, account_type, subaccount_number, chave_pix, assigned_group_name FROM subaccounts ORDER BY name ASC'
+            'SELECT id, name, account_type, subaccount_number, chave_pix, geral_pix_key, assigned_group_name, assigned_group_jid FROM subaccounts ORDER BY name ASC'
         );
         res.json(subaccounts);
     } catch (error) {
@@ -51,7 +51,7 @@ exports.getAll = async (req, res) => {
 // POST a new subaccount
 exports.create = async (req, res) => {
     const userId = req.user.id;
-    const { name, account_type, subaccount_number, chave_pix, assigned_group_jid } = req.body;
+    const { name, account_type, subaccount_number, chave_pix, geral_pix_key, assigned_group_jid } = req.body;
 
     if (!name || !account_type) {
         return res.status(400).json({ message: 'Subaccount name and type are required.' });
@@ -77,8 +77,8 @@ exports.create = async (req, res) => {
         }
         
         const [result] = await connection.query(
-            'INSERT INTO subaccounts (user_id, name, account_type, subaccount_number, chave_pix, assigned_group_jid, assigned_group_name) VALUES (?, ?, ?, ?, ?, ?, ?)',
-            [userId, name, account_type, subaccount_number || null, chave_pix || null, assigned_group_jid || null, groupName]
+            'INSERT INTO subaccounts (user_id, name, account_type, subaccount_number, chave_pix, geral_pix_key, assigned_group_jid, assigned_group_name) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+            [userId, name, account_type, subaccount_number || null, chave_pix || null, account_type === 'cross' ? (geral_pix_key || null) : null, assigned_group_jid || null, groupName]
         );
         
         await connection.commit();
@@ -103,7 +103,7 @@ exports.create = async (req, res) => {
 // PUT (update) an existing subaccount
 exports.update = async (req, res) => {
     const { id } = req.params;
-    const { name, account_type, subaccount_number, chave_pix, assigned_group_jid } = req.body;
+    const { name, account_type, subaccount_number, chave_pix, geral_pix_key, assigned_group_jid } = req.body;
 
     if (!name || !account_type) {
         return res.status(400).json({ message: 'Subaccount name and type are required.' });
@@ -128,8 +128,8 @@ exports.update = async (req, res) => {
         }
 
         const [result] = await connection.query(
-            'UPDATE subaccounts SET name = ?, account_type = ?, subaccount_number = ?, chave_pix = ?, assigned_group_jid = ?, assigned_group_name = ? WHERE id = ?',
-            [name, account_type, subaccount_number || null, chave_pix || null, assigned_group_jid || null, groupName, id]
+            'UPDATE subaccounts SET name = ?, account_type = ?, subaccount_number = ?, chave_pix = ?, geral_pix_key = ?, assigned_group_jid = ?, assigned_group_name = ? WHERE id = ?',
+            [name, account_type, subaccount_number || null, chave_pix || null, account_type === 'cross' ? (geral_pix_key || null) : null, assigned_group_jid || null, groupName, id]
         );
 
         if (result.affectedRows === 0) {
@@ -438,7 +438,7 @@ exports.createPortalAccessSession = async (req, res) => {
 
     try {
         const [[subaccount]] = await pool.query(
-            'SELECT id, name, account_type, subaccount_number, chave_pix, assigned_group_name FROM subaccounts WHERE id = ?',
+            'SELECT id, name, account_type, subaccount_number, chave_pix, geral_pix_key, assigned_group_name FROM subaccounts WHERE id = ?',
             [subaccountId]
         );
 
@@ -492,7 +492,8 @@ exports.createPortalAccessSession = async (req, res) => {
             adminUserId: req.user?.id,
             adminUsername: req.user?.username,
             accountType: subaccount.account_type,
-            chavePix: subaccount.chave_pix
+            chavePix: subaccount.chave_pix,
+            geralPixKey: subaccount.geral_pix_key
         };
 
         const token = jwt.sign(tokenPayload, PORTAL_JWT_SECRET, { expiresIn: '8h' });

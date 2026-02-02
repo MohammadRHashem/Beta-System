@@ -370,7 +370,14 @@ const SubaccountsPage = ({ allGroups }) => {
                   <tr key={acc.id}>
                     <td>{acc.name}</td>
                     <td><span style={{ fontWeight: 'bold', color: acc.account_type === 'cross' ? '#217346' : '#7b1fa2' }}>{acc.account_type.toUpperCase()}</span></td>
-                    <td>{acc.account_type === 'cross' ? acc.chave_pix : acc.subaccount_number}</td>
+                    <td>
+                      {acc.account_type === 'cross' ? acc.chave_pix : acc.subaccount_number}
+                      {acc.account_type === 'cross' && acc.geral_pix_key && (
+                        <div style={{ color: '#6b7c93', fontSize: '0.8rem', marginTop: '0.25rem' }}>
+                          Geral: {acc.geral_pix_key}
+                        </div>
+                      )}
+                    </td>
                     <td>{acc.assigned_group_name || <span style={{ color: "#999" }}>None</span>}</td>
                     {/* 4. WRAP ACTION ICONS IN PERMISSION CHECKS */}
                     {(canManageSubaccounts || canManageCredentials || canPortalAccess || canCrossDebit) && (
@@ -450,7 +457,7 @@ const SubaccountsPage = ({ allGroups }) => {
 const SubaccountModal = ({ isOpen, onClose, onSave, subaccount, allGroups }) => {
   const [formData, setFormData] = useState({
     name: "", account_type: "xpayz", subaccount_number: "",
-    chave_pix: "", assigned_group_jid: "",
+    chave_pix: "", geral_pix_key: "", assigned_group_jid: "",
   });
 
   useEffect(() => {
@@ -461,12 +468,13 @@ const SubaccountModal = ({ isOpen, onClose, onSave, subaccount, allGroups }) => 
                 account_type: subaccount.account_type || 'xpayz',
                 subaccount_number: subaccount.subaccount_number || "",
                 chave_pix: subaccount.chave_pix || "",
+                geral_pix_key: subaccount.geral_pix_key || "",
                 assigned_group_jid: subaccount.assigned_group_jid || "",
             });
         } else {
             setFormData({
                 name: "", account_type: "xpayz", subaccount_number: "",
-                chave_pix: "", assigned_group_jid: "",
+                chave_pix: "", geral_pix_key: "", assigned_group_jid: "",
             });
         }
     }
@@ -515,10 +523,16 @@ const SubaccountModal = ({ isOpen, onClose, onSave, subaccount, allGroups }) => 
             </InputGroup>
         )}
         {formData.account_type === 'cross' && (
-            <InputGroup>
-                <Label>Chave PIX</Label>
-                <Input name="chave_pix" value={formData.chave_pix} onChange={handleChange} placeholder="e.g., financeirojk@cross-otc.com" required={formData.account_type === 'cross'} />
-            </InputGroup>
+            <>
+                <InputGroup>
+                    <Label>Chave PIX</Label>
+                    <Input name="chave_pix" value={formData.chave_pix} onChange={handleChange} placeholder="e.g., financeirojk@cross-otc.com" required={formData.account_type === 'cross'} />
+                </InputGroup>
+                <InputGroup>
+                    <Label>Geral Pool PIX (Optional)</Label>
+                    <Input name="geral_pix_key" value={formData.geral_pix_key} onChange={handleChange} placeholder="e.g., geral@cross-otc.com" />
+                </InputGroup>
+            </>
         )}
 
         <InputGroup>
