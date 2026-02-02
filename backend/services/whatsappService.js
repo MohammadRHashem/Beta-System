@@ -1820,8 +1820,8 @@ const initializeWhatsApp = (socketIoInstance) => {
       },
       webVersionCache: {
         type: "remote",
-        remotePath: "https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/2.3000.1031490220-alpha.html",
-      },
+        remotePath: "https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/2.3000.1032661607.html",
+      }
     });
   
     client.on("qr", async (qr) => {
