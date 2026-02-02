@@ -31,6 +31,7 @@ import GroupSettingsPage from "./GroupSettingsPage";
 import UsersPage from "./UsersPage";
 import RolesPage from "./RolesPage";
 import AuditLogPage from "./AuditLogPage";
+import PinMessagesPage from "./PinMessagesPage";
 
 
 // === HELPER COMPONENT FOR ROUTE PROTECTION ===
@@ -203,6 +204,7 @@ const MainLayout = () => {
               <Route path="/users" element={<ProtectedPage permission="admin:view_users"><UsersPage /></ProtectedPage>} />
               <Route path="/roles" element={<ProtectedPage permission="admin:view_roles"><RolesPage /></ProtectedPage>} />
               <Route path="/audit-log" element={<ProtectedPage permission="admin:view_audit_log"><AuditLogPage /></ProtectedPage>} />
+              <Route path="/pin-messages" element={<ProtectedPage permission="pin:view"><PinMessagesPage allGroups={allGroups} /></ProtectedPage>} />
 
               {/* === LEGACY & REDIRECTS === */}
               <Route path="/wallet-requests" element={<Navigate to="/client-requests" replace />} />

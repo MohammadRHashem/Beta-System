@@ -18,6 +18,7 @@ const usdtWalletRoutes = require('./usdtWalletRoutes');
 const scheduledBroadcastRoutes = require('./scheduledBroadcastRoutes');
 const subCustomerController = require('../controllers/subCustomerController');
 const trkbitController = require('../controllers/trkbitController');
+const pinMessageController = require('../controllers/pinMessageController');
 const manualReviewController = require('../controllers/manualReviewController');
 const clientRequestController = require('../controllers/clientRequestController');
 const requestTypesController = require('../controllers/requestTypesController');
@@ -48,6 +49,10 @@ router.get('/status', whatsappController.getStatus); // Publicly viewable by any
 router.get('/groups', whatsappController.getGroups);
 router.post('/groups/sync', checkPermission('admin:manage_roles'), whatsappController.syncGroups); // High-level admin task
 router.post('/broadcast', checkPermission('broadcast:send'), whatsappController.broadcastMessage);
+router.post('/pins', checkPermission('pin:create'), pinMessageController.createPin);
+router.get('/pins', checkPermission('pin:view'), pinMessageController.getPins);
+router.get('/pins/:id', checkPermission('pin:view'), pinMessageController.getPinDetails);
+router.post('/pins/:id/retry', checkPermission('pin:retry'), pinMessageController.retryFailedPins);
 
 
 // --- Batches ---

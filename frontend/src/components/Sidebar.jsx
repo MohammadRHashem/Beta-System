@@ -1,7 +1,7 @@
 import React from "react";
 import { NavLink } from "react-router-dom";
 import styled from "styled-components";
-import { FaWhatsapp, FaBullhorn, FaRobot, FaCog, FaKey, FaKeyboard, FaFileInvoiceDollar, FaChartLine, FaCheckCircle, FaRoute, FaUniversity, FaUsers, FaBitcoin, FaCalendarAlt, FaUserFriends, FaCheckDouble, FaClipboardList, FaCodeBranch, FaShieldAlt, FaHistory } from "react-icons/fa";
+import { FaWhatsapp, FaBullhorn, FaRobot, FaCog, FaKey, FaKeyboard, FaFileInvoiceDollar, FaChartLine, FaCheckCircle, FaRoute, FaUniversity, FaUsers, FaBitcoin, FaCalendarAlt, FaUserFriends, FaCheckDouble, FaClipboardList, FaCodeBranch, FaShieldAlt, FaHistory, FaThumbtack } from "react-icons/fa";
 import { usePermissions } from '../context/PermissionContext';
 
 const SidebarContainer = styled.nav`
@@ -73,6 +73,7 @@ const Sidebar = () => {
         {hasPermission('client_requests:view') && <NavItem to="/client-requests"><FaClipboardList /><span>Client Requests</span></NavItem>}
         {hasPermission('settings:edit_request_triggers') && <NavItem to="/request-types"><FaCodeBranch /><span>Request Triggers</span></NavItem>}
         {hasPermission('broadcast:schedules:view') && <NavItem to="/scheduled-broadcasts"><FaCalendarAlt /><span>Schedules</span></NavItem>}
+        {hasPermission('pin:view') && <NavItem to="/pin-messages"><FaThumbtack /><span>Pin Messages</span></NavItem>}
         
         {hasPermission('settings:view') && (
             <>

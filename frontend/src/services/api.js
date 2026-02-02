@@ -238,6 +238,10 @@ export const updateRequestTypeOrder = (orderedIds) => apiClient.post('/request-t
 // ---- Subaccounts ----
 export const getSubaccounts = () => apiClient.get('/subaccounts');
 export const getWhatsappGroups = () => apiClient.get('/groups');
+export const createPinMessage = (payload) => apiClient.post('/pins', payload);
+export const getPinHistory = () => apiClient.get('/pins');
+export const getPinDetails = (id) => apiClient.get(`/pins/${id}`);
+export const retryPinMessage = (id, payload = {}) => apiClient.post(`/pins/${id}/retry`, payload);
 export const createSubaccount = (data) => apiClient.post('/subaccounts', data);
 export const updateSubaccount = (id, data) => apiClient.put(`/subaccounts/${id}`, data);
 export const deleteSubaccount = (id) => apiClient.delete(`/subaccounts/${id}`);
