@@ -4,11 +4,14 @@ CREATE TABLE IF NOT EXISTS pinned_messages (
   message_text text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
   upload_id int DEFAULT NULL,
   duration_seconds int DEFAULT NULL,
+  batch_id int DEFAULT NULL,
   created_at timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
   KEY idx_pinned_messages_user_id (user_id),
+  KEY idx_pinned_messages_batch_id (batch_id),
   CONSTRAINT fk_pinned_messages_user FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,
-  CONSTRAINT fk_pinned_messages_upload FOREIGN KEY (upload_id) REFERENCES broadcast_uploads (id) ON DELETE SET NULL
+  CONSTRAINT fk_pinned_messages_upload FOREIGN KEY (upload_id) REFERENCES broadcast_uploads (id) ON DELETE SET NULL,
+  CONSTRAINT fk_pinned_messages_batch FOREIGN KEY (batch_id) REFERENCES group_batches (id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS pinned_message_targets (

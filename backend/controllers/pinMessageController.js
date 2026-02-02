@@ -12,10 +12,10 @@ const buildSummary = (targets) => {
 };
 
 exports.createPin = async (req, res) => {
-    const { groupObjects, message, upload_id, duration_seconds, socketId } = req.body;
+    const { groupObjects, message, upload_id, duration_seconds, socketId, batch_id } = req.body;
 
-    if (!Array.isArray(groupObjects) || groupObjects.length === 0) {
-        return res.status(400).json({ message: 'At least one group is required.' });
+    if ((!Array.isArray(groupObjects) || groupObjects.length === 0) && !batch_id) {
+        return res.status(400).json({ message: 'At least one group or a batch is required.' });
     }
     if (!message && !upload_id) {
         return res.status(400).json({ message: 'Message text or attachment is required.' });
@@ -39,13 +39,29 @@ exports.createPin = async (req, res) => {
     }
 
     const [result] = await pool.query(
-        `INSERT INTO pinned_messages (user_id, message_text, upload_id, duration_seconds)
-         VALUES (?, ?, ?, ?)`,
-        [req.user.id, message || null, upload_id || null, durationSeconds]
+        `INSERT INTO pinned_messages (user_id, message_text, upload_id, duration_seconds, batch_id)
+         VALUES (?, ?, ?, ?, ?)`,
+        [req.user.id, message || null, upload_id || null, durationSeconds, batch_id || null]
     );
     const pinId = result.insertId;
 
-    const targetValues = groupObjects.map((group) => [
+    let resolvedGroups = groupObjects;
+    if ((!Array.isArray(groupObjects) || groupObjects.length === 0) && batch_id) {
+        const [batchGroups] = await pool.query(
+            `SELECT bgl.group_id AS id, wg.group_name AS name
+             FROM batch_group_link bgl
+             LEFT JOIN whatsapp_groups wg ON wg.group_jid = bgl.group_id
+             WHERE bgl.batch_id = ?`,
+            [batch_id]
+        );
+        resolvedGroups = batchGroups.map((row) => ({ id: row.id, name: row.name || row.id }));
+    }
+
+    if (!Array.isArray(resolvedGroups) || resolvedGroups.length === 0) {
+        return res.status(400).json({ message: 'Selected batch has no groups.' });
+    }
+
+    const targetValues = resolvedGroups.map((group) => [
         pinId,
         group.id,
         group.name || null,
@@ -60,7 +76,7 @@ exports.createPin = async (req, res) => {
 
     const io = req.app.get('io');
     const results = await whatsappService.pinMessageToGroups({
-        groupObjects,
+        groupObjects: resolvedGroups,
         message,
         attachment,
         durationSeconds,
@@ -85,9 +101,10 @@ exports.createPin = async (req, res) => {
     }
 
     await auditService.logAction(req, 'pin:create', 'pinned_message', pinId, {
-        groupCount: groupObjects.length,
+        groupCount: resolvedGroups.length,
         durationSeconds,
-        uploadId: upload_id || null
+        uploadId: upload_id || null,
+        batchId: batch_id || null
     });
 
     res.json({
@@ -100,11 +117,13 @@ exports.createPin = async (req, res) => {
 exports.getPins = async (req, res) => {
     const [rows] = await pool.query(
         `SELECT pm.*, 
+            gb.name AS batch_name,
             COUNT(pmt.id) AS total_targets,
             SUM(pmt.status = 'pinned') AS total_pinned,
             SUM(pmt.status = 'failed') AS total_failed
          FROM pinned_messages pm
          LEFT JOIN pinned_message_targets pmt ON pm.id = pmt.pinned_message_id
+         LEFT JOIN group_batches gb ON pm.batch_id = gb.id
          GROUP BY pm.id
          ORDER BY pm.created_at DESC
          LIMIT 100`

@@ -5,7 +5,7 @@ import { usePermissions } from '../context/PermissionContext';
 import GroupSelector from '../components/GroupSelector';
 import AttachmentManagerModal from '../components/AttachmentManagerModal';
 import PinProgressModal from '../components/PinProgressModal';
-import { createPinMessage, getPinHistory, getPinDetails, retryPinMessage } from '../services/api';
+import { createPinMessage, getPinHistory, getPinDetails, retryPinMessage, getBatches, getGroupIdsForBatch } from '../services/api';
 
 const MainContent = styled.div`
   display: grid;
@@ -148,6 +148,9 @@ const PinMessagesPage = ({ allGroups }) => {
   const [history, setHistory] = useState([]);
   const [activePinId, setActivePinId] = useState(null);
   const [pinTargets, setPinTargets] = useState([]);
+  const [batches, setBatches] = useState([]);
+  const [targetMode, setTargetMode] = useState('manual');
+  const [selectedBatchId, setSelectedBatchId] = useState('');
 
   useEffect(() => {
     socket.current = io(API_URL, {
@@ -197,6 +200,18 @@ const PinMessagesPage = ({ allGroups }) => {
     fetchHistory();
   }, [canView]);
 
+  useEffect(() => {
+    const fetchBatches = async () => {
+      try {
+        const { data } = await getBatches();
+        setBatches(data || []);
+      } catch (error) {
+        console.error('Failed to fetch batches', error);
+      }
+    };
+    fetchBatches();
+  }, []);
+
   const loadPinDetails = async (pinId) => {
     if (!canView) return;
     try {
@@ -213,8 +228,12 @@ const PinMessagesPage = ({ allGroups }) => {
       alert('You do not have permission to pin messages.');
       return;
     }
-    if (selectedGroups.size === 0) {
+    if (targetMode === 'manual' && selectedGroups.size === 0) {
       alert('Please select at least one group.');
+      return;
+    }
+    if (targetMode === 'batch' && !selectedBatchId) {
+      alert('Please select a batch.');
       return;
     }
     if (!message && !attachment) {
@@ -226,7 +245,15 @@ const PinMessagesPage = ({ allGroups }) => {
       return;
     }
 
-    const groupObjects = (allGroups || []).filter((group) => selectedGroups.has(group.id));
+    let groupObjects = [];
+    if (targetMode === 'manual') {
+      groupObjects = (allGroups || []).filter((group) => selectedGroups.has(group.id));
+    } else {
+      const { data: batchGroupIds } = await getGroupIdsForBatch(selectedBatchId);
+      groupObjects = (allGroups || [])
+        .filter((group) => batchGroupIds.includes(group.id))
+        .map((group) => ({ id: group.id, name: group.name }));
+    }
 
     setIsPinning(true);
     setIsPinComplete(false);
@@ -235,11 +262,12 @@ const PinMessagesPage = ({ allGroups }) => {
 
     try {
       const { data } = await createPinMessage({
-        groupObjects,
+        groupObjects: targetMode === 'manual' ? groupObjects : [],
         message,
         upload_id: attachment?.id || null,
         duration_seconds: durationSeconds,
         socketId,
+        batch_id: targetMode === 'batch' ? selectedBatchId : null,
       });
 
       if (data?.id) {
@@ -271,23 +299,43 @@ const PinMessagesPage = ({ allGroups }) => {
     <>
       <MainContent>
         <LeftPanel>
-          <GroupSelector
-            allGroups={allGroups}
-            selectedGroups={selectedGroups}
-            setSelectedGroups={setSelectedGroups}
-            editingBatch={null}
-            setEditingBatch={() => {}}
-            onBatchUpdate={() => {}}
-            onSync={() => {}}
-            isSyncing={false}
-            canCreateBatch={false}
-            canEditBatch={false}
-            canSyncGroups={false}
-          />
+          {targetMode === 'manual' && (
+            <GroupSelector
+              allGroups={allGroups}
+              selectedGroups={selectedGroups}
+              setSelectedGroups={setSelectedGroups}
+              editingBatch={null}
+              setEditingBatch={() => {}}
+              onBatchUpdate={() => {}}
+              onSync={() => {}}
+              isSyncing={false}
+              canCreateBatch={false}
+              canEditBatch={false}
+              canSyncGroups={false}
+            />
+          )}
         </LeftPanel>
         <RightPanel>
           <Card>
             <h3>Pin Message</h3>
+            <Field>
+              <Label>Target Mode</Label>
+              <Select value={targetMode} onChange={(e) => setTargetMode(e.target.value)}>
+                <option value="manual">Select Groups</option>
+                <option value="batch">Use Batch</option>
+              </Select>
+            </Field>
+            {targetMode === 'batch' && (
+              <Field>
+                <Label>Batch</Label>
+                <Select value={selectedBatchId} onChange={(e) => setSelectedBatchId(e.target.value)}>
+                  <option value="">Select batch</option>
+                  {batches.map((batch) => (
+                    <option key={batch.id} value={batch.id}>{batch.name}</option>
+                  ))}
+                </Select>
+              </Field>
+            )}
             <Field>
               <Label>Message</Label>
               <Textarea value={message} onChange={(e) => setMessage(e.target.value)} placeholder="Write the message to pin" />
@@ -335,6 +383,7 @@ const PinMessagesPage = ({ allGroups }) => {
               <thead>
                 <tr>
                   <th>ID</th>
+                  <th>Batch</th>
                   <th>Message</th>
                   <th>Duration</th>
                   <th>Pinned</th>
@@ -346,6 +395,7 @@ const PinMessagesPage = ({ allGroups }) => {
                 {history.map((item) => (
                   <tr key={item.id}>
                     <td>{item.id}</td>
+                    <td>{item.batch_name || '-'}</td>
                     <td>{item.message_text ? item.message_text.slice(0, 40) : 'Attachment only'}</td>
                     <td>{item.duration_seconds ? `${item.duration_seconds}s` : '-'}</td>
                     <td>{item.total_pinned || 0}</td>
