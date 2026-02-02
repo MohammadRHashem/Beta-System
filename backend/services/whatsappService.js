@@ -2159,49 +2159,46 @@ const refreshTrocaCoinMethod = async () => {
 };
 
 const initializeWhatsApp = (socketIoInstance) => {
-  io = socketIoInstance;
-  console.log("[WAPP] Initializing WhatsApp client...");
-  client = new Client({
-    authStrategy: new LocalAuth({ dataPath: "wwebjs_sessions" }),
-    puppeteer: {
-      headless: true,
-      args: [
-        "--no-sandbox",
-        "--disable-setuid-sandbox",
-        "--disable-dev-shm-usage",
-        "--disable-gpu",
-        // This can help prevent navigation-related race conditions
-        "--unhandled-rejections=strict",
-      ],
-    },
-    webVersionCache: {
-      type: "remote",
-      remotePath:
-        "https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/2.3000.1031490220-alpha.html",
-    },
-  });
-
-  client.on("qr", async (qr) => {
-    console.log("[WAPP] QR code generated. Scan required.");
-    qrCodeData = await qrcode.toDataURL(qr);
-    connectionStatus = "qr";
-  });
-  client.on("ready", async () => {
-    cron.schedule("*/1 * * * *", auditAndReconcileInternalLog);
-    console.log(
-      "[AUDITOR] Internal message auditor scheduled to run every minute.",
-    );
-    // cron.schedule("*/2 * * * * *", sendPingToMonitor);
-    // console.log("[HEARTBEAT] Pinger to AWS monitor scheduled to run every second.");
-    qrCodeData = null;
-    connectionStatus = "connected";
-    refreshAlfaApiConfirmationStatus();
-    refreshTrocaCoinStatus();
-    refreshTrocaCoinMethod();
-    refreshRequestTypeCache();
-    refreshAbbreviationCache();
-    refreshTrkbitConfirmationStatus();
-    refreshAutoConfirmationStatus();
+    io = socketIoInstance;
+    console.log("[WAPP] Initializing WhatsApp client...");
+    client = new Client({
+      authStrategy: new LocalAuth({ dataPath: "wwebjs_sessions" }),
+      puppeteer: {
+        headless: true,
+        args: [
+          "--no-sandbox",
+          "--disable-setuid-sandbox",
+          "--disable-dev-shm-usage",
+          "--disable-gpu",
+          // This can help prevent navigation-related race conditions
+          "--unhandled-rejections=strict",
+        ],
+      },
+      webVersionCache: {
+        type: "remote",
+        remotePath: "https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/2.3000.1031490220-alpha.html",
+      },
+    });
+  
+    client.on("qr", async (qr) => {
+      console.log("[WAPP] QR code generated. Scan required.");
+      qrCodeData = await qrcode.toDataURL(qr);
+      connectionStatus = "qr";
+    });
+    client.on("ready", async () => {
+      cron.schedule("*/1 * * * *", auditAndReconcileInternalLog);
+      console.log("[AUDITOR] Internal message auditor scheduled to run every minute.");
+      // cron.schedule("*/2 * * * * *", sendPingToMonitor);
+      // console.log("[HEARTBEAT] Pinger to AWS monitor scheduled to run every second.");
+      qrCodeData = null;
+      connectionStatus = "connected";
+      refreshAlfaApiConfirmationStatus();
+      refreshTrocaCoinStatus();
+      refreshTrocaCoinMethod();
+      refreshRequestTypeCache();
+      refreshAbbreviationCache();
+      refreshTrkbitConfirmationStatus();
+      refreshAutoConfirmationStatus();
 
     console.log("[STARTUP] Clearing any old/stale jobs from the queue...");
     await invoiceQueue.obliterate({ force: true });
