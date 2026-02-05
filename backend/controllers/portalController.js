@@ -568,6 +568,24 @@ exports.updateTransactionConfirmation = async (req, res) => {
 // === THIS IS THE CORRECTED PDF HELPER FUNCTION ===
 // ===================================================================
 const generatePdfTable = (doc, transactions, clientName, timeOffsetHours = 0) => {
+    const computeRunningBalances = (rows) => {
+        const ordered = [...rows].sort((a, b) => {
+            const timeA = new Date(a.transaction_date).getTime();
+            const timeB = new Date(b.transaction_date).getTime();
+            return timeA - timeB;
+        });
+        let balance = 0;
+        ordered.forEach(tx => {
+            const isCredit = tx.operation_direct.toLowerCase() === 'in' || tx.operation_direct.toLowerCase() === 'c';
+            const amountValue = parseFloat(tx.amount);
+            const signedAmount = Number.isFinite(amountValue) ? (isCredit ? amountValue : -amountValue) : 0;
+            balance += signedAmount;
+            tx.running_balance = balance;
+        });
+    };
+
+    computeRunningBalances(transactions);
+
     doc.fontSize(20).font('Helvetica-Bold').text('Transaction Statement', { align: 'center' });
     doc.fontSize(12).font('Helvetica').text(`Client: ${clientName}`, { align: 'center' });
     doc.moveDown(2);
@@ -595,7 +613,6 @@ const generatePdfTable = (doc, transactions, clientName, timeOffsetHours = 0) =>
     let y = tableTop + 30;
 
     doc.fontSize(9).font('Helvetica');
-    let runningBalance = 0;
     transactions.forEach(tx => {
         if (y + rowHeight > doc.page.height - tableBottomMargin) {
             doc.addPage();
@@ -612,9 +629,8 @@ const generatePdfTable = (doc, transactions, clientName, timeOffsetHours = 0) =>
         const formattedDate = new Intl.DateTimeFormat('en-GB', { dateStyle: 'short', timeStyle: 'short' }).format(date);
         const amountValue = parseFloat(tx.amount);
         const signedAmount = Number.isFinite(amountValue) ? (isCredit ? amountValue : -amountValue) : 0;
-        runningBalance += signedAmount;
         const formattedAmount = (signedAmount < 0 ? '-' : '') + Math.abs(signedAmount).toFixed(2);
-        const formattedSaldo = runningBalance.toFixed(2);
+        const formattedSaldo = Number.isFinite(tx.running_balance) ? tx.running_balance.toFixed(2) : '0.00';
         const counterparty = isCredit ? tx.sender_name : tx.counterparty_name || 'N/A';
         
         doc.text(formattedDate, dateX, y, { width: 110, lineBreak: false });
