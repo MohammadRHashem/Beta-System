@@ -400,47 +400,12 @@ exports.exportTransactions = async (req, res) => {
         const filename = `statement_${username}_${filenameDate}`;
 
         if (format === 'pdf') {
-            let startingBalance = 0;
-            if (transactions.length > 0) {
-                const earliestDate = transactions.reduce((minDate, tx) => {
-                    const txDate = new Date(tx.transaction_date);
-                    if (!Number.isFinite(txDate.getTime())) return minDate;
-                    if (!minDate || txDate < minDate) return txDate;
-                    return minDate;
-                }, null);
-
-                if (earliestDate) {
-                    if (accountType === 'cross') {
-                        const [[balanceRow]] = await pool.query(
-                            `SELECT SUM(CASE 
-                                            WHEN tx_type = 'C' THEN amount 
-                                            WHEN tx_type = 'D' THEN -amount 
-                                            ELSE 0 
-                                        END) AS balance
-                             FROM trkbit_transactions
-                             WHERE tx_pix_key = ? AND tx_date < ?`,
-                            [chavePix, earliestDate]
-                        );
-                        startingBalance = parseFloat(balanceRow.balance || 0);
-                    } else {
-                        const [[balanceRow]] = await pool.query(
-                            `SELECT (SUM(CASE WHEN operation_direct = 'in' THEN amount ELSE 0 END) -
-                                     SUM(CASE WHEN operation_direct = 'out' THEN amount ELSE 0 END)) AS balance
-                             FROM xpayz_transactions
-                             WHERE subaccount_id = ? AND transaction_date < ?`,
-                            [subaccountNumber, earliestDate]
-                        );
-                        startingBalance = parseFloat(balanceRow.balance || 0);
-                    }
-                }
-            }
-
             const doc = new PDFDocument({ margin: 50, size: 'A4' });
             res.setHeader('Content-Type', 'application/pdf');
             res.setHeader('Content-Disposition', `attachment; filename="${filename}.pdf"`);
             doc.pipe(res);
             const timeOffsetHours = accountType === 'cross' ? -3 : 0;
-            generatePdfTable(doc, transactions, username, startingBalance, timeOffsetHours); // Use the universal helper
+            generatePdfTable(doc, transactions, username, timeOffsetHours); // Use the universal helper
             doc.end();
 
         } else { // Excel export
@@ -602,26 +567,7 @@ exports.updateTransactionConfirmation = async (req, res) => {
 // ===================================================================
 // === THIS IS THE CORRECTED PDF HELPER FUNCTION ===
 // ===================================================================
-const generatePdfTable = (doc, transactions, clientName, startingBalance = 0, timeOffsetHours = 0) => {
-    const computeRunningBalances = (rows, openingBalance) => {
-        const ordered = [...rows].sort((a, b) => {
-            const timeA = new Date(a.transaction_date).getTime();
-            const timeB = new Date(b.transaction_date).getTime();
-            return timeA - timeB;
-        });
-        let balance = openingBalance;
-        ordered.forEach(tx => {
-            const isCredit = tx.operation_direct.toLowerCase() === 'in' || tx.operation_direct.toLowerCase() === 'c';
-            const amount = parseFloat(tx.amount);
-            if (Number.isFinite(amount)) {
-                balance += isCredit ? amount : -amount;
-            }
-            tx.running_balance = balance;
-        });
-    };
-
-    computeRunningBalances(transactions, startingBalance);
-
+const generatePdfTable = (doc, transactions, clientName, timeOffsetHours = 0) => {
     doc.fontSize(20).font('Helvetica-Bold').text('Transaction Statement', { align: 'center' });
     doc.fontSize(12).font('Helvetica').text(`Client: ${clientName}`, { align: 'center' });
     doc.moveDown(2);
@@ -649,6 +595,7 @@ const generatePdfTable = (doc, transactions, clientName, startingBalance = 0, ti
     let y = tableTop + 30;
 
     doc.fontSize(9).font('Helvetica');
+    let runningBalance = 0;
     transactions.forEach(tx => {
         if (y + rowHeight > doc.page.height - tableBottomMargin) {
             doc.addPage();
@@ -663,8 +610,11 @@ const generatePdfTable = (doc, transactions, clientName, startingBalance = 0, ti
             date.setHours(date.getHours() + timeOffsetHours);
         }
         const formattedDate = new Intl.DateTimeFormat('en-GB', { dateStyle: 'short', timeStyle: 'short' }).format(date);
-        const formattedAmount = (isCredit ? '' : '-') + parseFloat(tx.amount).toFixed(2);
-        const formattedSaldo = Number.isFinite(tx.running_balance) ? tx.running_balance.toFixed(2) : '0.00';
+        const amountValue = parseFloat(tx.amount);
+        const signedAmount = Number.isFinite(amountValue) ? (isCredit ? amountValue : -amountValue) : 0;
+        runningBalance += signedAmount;
+        const formattedAmount = (signedAmount < 0 ? '-' : '') + Math.abs(signedAmount).toFixed(2);
+        const formattedSaldo = runningBalance.toFixed(2);
         const counterparty = isCredit ? tx.sender_name : tx.counterparty_name || 'N/A';
         
         doc.text(formattedDate, dateX, y, { width: 110, lineBreak: false });
