@@ -439,7 +439,8 @@ exports.exportTransactions = async (req, res) => {
             res.setHeader('Content-Type', 'application/pdf');
             res.setHeader('Content-Disposition', `attachment; filename="${filename}.pdf"`);
             doc.pipe(res);
-            generatePdfTable(doc, transactions, username, startingBalance); // Use the universal helper
+            const timeOffsetHours = accountType === 'cross' ? -3 : 0;
+            generatePdfTable(doc, transactions, username, startingBalance, timeOffsetHours); // Use the universal helper
             doc.end();
 
         } else { // Excel export
@@ -457,9 +458,13 @@ exports.exportTransactions = async (req, res) => {
             worksheet.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0A2540' } };
             worksheet.getRow(1).alignment = { vertical: 'middle', horizontal: 'center' };
 
+            const timeOffsetHours = accountType === 'cross' ? -3 : 0;
             transactions.forEach(tx => {
                 const isCredit = tx.operation_direct.toLowerCase() === 'in' || tx.operation_direct.toLowerCase() === 'c';
                 const dateObj = new Date(tx.transaction_date);
+                if (Number.isFinite(dateObj.getTime()) && timeOffsetHours) {
+                    dateObj.setHours(dateObj.getHours() + timeOffsetHours);
+                }
                 worksheet.addRow({
                     date: dateObj,
                     type: isCredit ? 'IN' : 'OUT',
@@ -597,7 +602,7 @@ exports.updateTransactionConfirmation = async (req, res) => {
 // ===================================================================
 // === THIS IS THE CORRECTED PDF HELPER FUNCTION ===
 // ===================================================================
-const generatePdfTable = (doc, transactions, clientName, startingBalance = 0) => {
+const generatePdfTable = (doc, transactions, clientName, startingBalance = 0, timeOffsetHours = 0) => {
     const computeRunningBalances = (rows, openingBalance) => {
         const ordered = [...rows].sort((a, b) => {
             const timeA = new Date(a.transaction_date).getTime();
@@ -654,6 +659,9 @@ const generatePdfTable = (doc, transactions, clientName, startingBalance = 0) =>
         
         const isCredit = tx.operation_direct.toLowerCase() === 'in' || tx.operation_direct.toLowerCase() === 'c';
         const date = new Date(tx.transaction_date);
+        if (Number.isFinite(date.getTime()) && timeOffsetHours) {
+            date.setHours(date.getHours() + timeOffsetHours);
+        }
         const formattedDate = new Intl.DateTimeFormat('en-GB', { dateStyle: 'short', timeStyle: 'short' }).format(date);
         const formattedAmount = (isCredit ? '' : '-') + parseFloat(tx.amount).toFixed(2);
         const formattedSaldo = Number.isFinite(tx.running_balance) ? tx.running_balance.toFixed(2) : '0.00';

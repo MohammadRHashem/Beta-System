@@ -685,6 +685,9 @@ const ClientDashboard = () => {
     const formatDateTime = (dbDateString) => {
         if (!dbDateString) return 'N/A';
         const date = new Date(dbDateString);
+        if (Number.isFinite(date.getTime()) && portalAccountType === 'cross') {
+            date.setHours(date.getHours() - 3);
+        }
         return new Intl.DateTimeFormat('en-GB', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }).format(date);
     };
 
