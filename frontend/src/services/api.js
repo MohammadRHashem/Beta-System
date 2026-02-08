@@ -74,6 +74,8 @@ export const getPortalTransactions = (params) => portalApiClient.get('/transacti
 export const getPortalDashboardSummary = (params) => portalApiClient.get('/dashboard-summary', { params });
 export const triggerPartnerConfirmation = (correlation_id) => portalApiClient.post('/bridge/confirm-payment', { correlation_id });
 export const createPortalCrossDebit = (data) => portalApiClient.post('/transactions/debit', data);
+export const getPortalTrkbitTransactions = (params) => portalApiClient.get('/trkbit/transactions', { params });
+export const claimPortalTrkbitTransaction = (transactionId) => portalApiClient.post('/trkbit/transactions/claim', { transactionId });
 
 export const updatePortalTransactionConfirmation = (id, source, confirmed, passcode) => {
     return portalApiClient.post(`/transactions/confirm`, { 

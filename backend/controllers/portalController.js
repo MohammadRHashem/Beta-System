@@ -450,6 +450,122 @@ exports.exportTransactions = async (req, res) => {
     }
 };
 
+exports.getTrkbitTransactionsForTransfer = async (req, res) => {
+    const { accountType, chavePix, impersonation } = req.client;
+    const { page = 1, limit = 50, search, dateFrom, dateTo } = req.query;
+    const offset = (page - 1) * limit;
+
+    if (!impersonation || accountType !== 'cross') {
+        return res.status(403).json({ message: 'Impersonation access required for Cross accounts.' });
+    }
+
+    try {
+        let query = `
+            FROM trkbit_transactions tt
+            WHERE (tt.tx_pix_key <> ? OR tt.tx_pix_key IS NULL)
+        `;
+        const params = [chavePix];
+
+        if (search) {
+            query += " AND (tt.tx_payer_name LIKE ? OR tt.tx_id LIKE ? OR tt.e2e_id LIKE ? OR tt.amount LIKE ?)";
+            const searchTerm = `%${search}%`;
+            params.push(searchTerm, searchTerm, searchTerm, searchTerm);
+        }
+        if (dateFrom) {
+            query += " AND DATE(tt.tx_date) >= ?";
+            params.push(dateFrom);
+        }
+        if (dateTo) {
+            query += " AND DATE(tt.tx_date) <= ?";
+            params.push(dateTo);
+        }
+
+        const countQuery = `SELECT count(*) as total ${query}`;
+        const [[{ total }]] = await pool.query(countQuery, params);
+
+        const dataQuery = `
+            SELECT 
+                tt.uid as id,
+                tt.tx_date as transaction_date,
+                tt.tx_id,
+                tt.tx_payer_name,
+                tt.amount,
+                tt.tx_type,
+                tt.tx_pix_key
+            ${query}
+            ORDER BY tt.tx_date DESC
+            LIMIT ? OFFSET ?
+        `;
+
+        const finalParams = [...params, parseInt(limit), parseInt(offset)];
+        const [transactions] = await pool.query(dataQuery, finalParams);
+
+        res.json({
+            transactions,
+            totalPages: Math.ceil(total / limit),
+            currentPage: parseInt(page),
+            totalRecords: total
+        });
+    } catch (error) {
+        console.error('[PORTAL-TRKBIT-TRANSFER-LIST] Failed to fetch transactions:', error);
+        res.status(500).json({ message: 'Failed to fetch Trkbit transactions.' });
+    }
+};
+
+exports.claimTrkbitTransaction = async (req, res) => {
+    const { accountType, chavePix, impersonation } = req.client;
+    const { transactionId } = req.body;
+
+    if (!impersonation || accountType !== 'cross') {
+        return res.status(403).json({ message: 'Impersonation access required for Cross accounts.' });
+    }
+    if (!transactionId) {
+        return res.status(400).json({ message: 'Transaction ID is required.' });
+    }
+
+    try {
+        const [[existing]] = await pool.query(
+            'SELECT uid, tx_pix_key, tx_id, amount, tx_date FROM trkbit_transactions WHERE uid = ?',
+            [transactionId]
+        );
+
+        if (!existing) {
+            return res.status(404).json({ message: 'Transaction not found.' });
+        }
+        if (existing.tx_pix_key === chavePix) {
+            return res.status(409).json({ message: 'Transaction already belongs to this PIX key.' });
+        }
+
+        const [result] = await pool.query(
+            `UPDATE trkbit_transactions 
+             SET tx_pix_key = ?, 
+                 raw_data = CASE 
+                    WHEN raw_data IS NULL THEN raw_data 
+                    ELSE JSON_SET(raw_data, '$.tx_pix_key', ?) 
+                 END
+             WHERE uid = ?`,
+            [chavePix, chavePix, transactionId]
+        );
+
+        if (result.affectedRows === 0) {
+            return res.status(404).json({ message: 'Transaction not found.' });
+        }
+
+        await logImpersonationAction(req.client, 'subaccount:transfer_trkbit', 'TrkbitTransaction', existing.uid, {
+            tx_id: existing.tx_id,
+            amount: existing.amount,
+            tx_date: existing.tx_date,
+            from_pix_key: existing.tx_pix_key,
+            to_pix_key: chavePix
+        });
+
+        res.json({ message: 'Transaction transferred successfully.' });
+    } catch (error) {
+        console.error('[PORTAL-TRKBIT-TRANSFER] Failed to transfer transaction:', error);
+        res.status(500).json({ message: 'Failed to transfer transaction.' });
+    }
+};
+
 exports.updateTransactionNotes = async (req, res) => {
     // === THE FIX: Read transactionId from the request body, not params ===
     const { transactionId, source, op_comment } = req.body;

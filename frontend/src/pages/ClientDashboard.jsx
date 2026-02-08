@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import styled, { keyframes } from 'styled-components';
 import { motion } from 'framer-motion';
-import { getPortalTransactions, getPortalDashboardSummary, triggerPartnerConfirmation, updatePortalTransactionConfirmation, updatePortalTransactionNotes, createPortalCrossDebit } from '../services/api'; 
+import { getPortalTransactions, getPortalDashboardSummary, triggerPartnerConfirmation, updatePortalTransactionConfirmation, updatePortalTransactionNotes, createPortalCrossDebit, getPortalTrkbitTransactions, claimPortalTrkbitTransaction } from '../services/api'; 
 import PasscodeModal from '../components/PasscodeModal'; // <<< IMPORT NEW COMPONENT
-import { FaSyncAlt, FaSearch, FaArrowUp, FaArrowDown, FaHourglassHalf, FaSpinner, FaPaperPlane, FaEdit, FaCheckDouble, FaMinusCircle } from 'react-icons/fa';
+import { FaSyncAlt, FaSearch, FaArrowUp, FaArrowDown, FaHourglassHalf, FaSpinner, FaPaperPlane, FaEdit, FaCheckDouble, FaMinusCircle, FaExchangeAlt } from 'react-icons/fa';
 import Pagination from '../components/Pagination';
 import { usePortal } from '../context/PortalContext';
 import axios from 'axios';
@@ -286,6 +286,30 @@ const Table = styled.table`
     border-bottom: none;
   }
 `;
+const ModalTableWrapper = styled.div`
+  overflow-x: auto;
+  border: 1px solid ${({ theme }) => theme.border};
+  border-radius: 8px;
+`;
+const ModalTable = styled.table`
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+  th,
+  td {
+    padding: 0.75rem 1rem;
+    text-align: left;
+    border-bottom: 1px solid ${({ theme }) => theme.border};
+  }
+  th {
+    background-color: #f6f9fc;
+    font-weight: 600;
+    color: ${({ theme }) => theme.lightText};
+  }
+  tr:last-child td {
+    border-bottom: none;
+  }
+`;
 const AmountCell = styled.td`
   font-weight: 600;
   font-family: "Courier New", Courier, monospace;
@@ -435,6 +459,7 @@ const ClientDashboard = () => {
     const portalAccountType = tokenPayload?.accountType;
     const portalPixKey = tokenPayload?.chavePix;
     const canCreateDebit = isImpersonating && portalAccountType === 'cross';
+    const canTransferTransaction = isImpersonating && portalAccountType === 'cross';
     const storedClient =
         sessionStorage.getItem('portalClient') ||
         localStorage.getItem('portalClient');
@@ -442,6 +467,13 @@ const ClientDashboard = () => {
 
     const [isDebitModalOpen, setIsDebitModalOpen] = useState(false);
     const [debitForm, setDebitForm] = useState({ amount: '', tx_date: '', description: 'USD BETA OUT / C' });
+    const [isTransferModalOpen, setIsTransferModalOpen] = useState(false);
+    const [transferTransactions, setTransferTransactions] = useState([]);
+    const [transferSearch, setTransferSearch] = useState('');
+    const [transferPagination, setTransferPagination] = useState({ page: 1, limit: 20, totalPages: 1, totalRecords: 0, currentPage: 1 });
+    const [transferLoading, setTransferLoading] = useState(false);
+    const [transferUpdatingIds, setTransferUpdatingIds] = useState(new Set());
+    const debouncedTransferSearch = useDebounce(transferSearch, 400);
 
     const [updatingIds, setUpdatingIds] = useState(new Set());
     const [isPasscodeModalOpen, setIsPasscodeModalOpen] = useState(false);
@@ -509,6 +541,13 @@ const ClientDashboard = () => {
         setIsDebitModalOpen(true);
     };
 
+    const handleOpenTransferModal = () => {
+        setTransferSearch('');
+        setTransferTransactions([]);
+        setTransferPagination(prev => ({ ...prev, page: 1, currentPage: 1, totalPages: 1, totalRecords: 0 }));
+        setIsTransferModalOpen(true);
+    };
+
     const handleDebitSubmit = async (e) => {
         e.preventDefault();
         const trimmedDate = (debitForm.tx_date || '').trim();
@@ -527,6 +566,50 @@ const ClientDashboard = () => {
             fetchSummaryData();
         } catch (error) {
             alert(error.response?.data?.message || 'Failed to create debit.');
+        }
+    };
+
+    const fetchTransferTransactions = useCallback(async () => {
+        if (!isTransferModalOpen) return;
+        setTransferLoading(true);
+        try {
+            const params = {
+                search: debouncedTransferSearch,
+                page: transferPagination.page,
+                limit: transferPagination.limit
+            };
+            const { data } = await getPortalTrkbitTransactions(params);
+            setTransferTransactions(data.transactions || []);
+            setTransferPagination(prev => ({
+                ...prev,
+                totalPages: data.totalPages,
+                totalRecords: data.totalRecords,
+                currentPage: data.currentPage
+            }));
+        } catch (error) {
+            console.error("Failed to fetch Trkbit transactions:", error);
+        } finally {
+            setTransferLoading(false);
+        }
+    }, [isTransferModalOpen, debouncedTransferSearch, transferPagination.page, transferPagination.limit]);
+
+    const handleTakeOwnership = async (tx) => {
+        if (transferUpdatingIds.has(tx.id)) return;
+        if (!window.confirm('Take ownership of this transaction? It will move to the current PIX key.')) return;
+        setTransferUpdatingIds(prev => new Set(prev).add(tx.id));
+        try {
+            await claimPortalTrkbitTransaction(tx.id);
+            setTransferTransactions(prev => prev.filter(item => item.id !== tx.id));
+            setTransferPagination(prev => ({
+                ...prev,
+                totalRecords: Math.max(0, prev.totalRecords - 1)
+            }));
+            fetchTableData();
+            fetchSummaryData();
+        } catch (error) {
+            alert(error.response?.data?.message || 'Failed to transfer transaction.');
+        } finally {
+            setTransferUpdatingIds(prev => { const newSet = new Set(prev); newSet.delete(tx.id); return newSet; });
         }
     };
 
@@ -655,6 +738,11 @@ const ClientDashboard = () => {
     }, [debouncedSearch, filters.date, filters.dateFrom, filters.dateTo, filters.direction]);
 
     useEffect(() => {
+        if (!isTransferModalOpen) return;
+        setTransferPagination(p => ({ ...p, page: 1, currentPage: 1 }));
+    }, [debouncedTransferSearch, isTransferModalOpen]);
+
+    useEffect(() => {
         if (isImpersonating) {
             if (filters.dateFrom && filters.dateTo) {
                 fetchTableData();
@@ -665,6 +753,12 @@ const ClientDashboard = () => {
             fetchTableData();
         }
     }, [fetchTableData, filters.date, filters.dateFrom, filters.dateTo, filters.direction, isImpersonating]);
+
+    useEffect(() => {
+        if (isTransferModalOpen) {
+            fetchTransferTransactions();
+        }
+    }, [fetchTransferTransactions, isTransferModalOpen]);
 
     useEffect(() => {
         if (isImpersonating) {
@@ -751,6 +845,11 @@ const ClientDashboard = () => {
               {canCreateDebit && (
                 <ActionButton onClick={handleOpenDebitModal}>
                   <FaMinusCircle /> Add Debit
+                </ActionButton>
+              )}
+              {canTransferTransaction && (
+                <ActionButton onClick={handleOpenTransferModal}>
+                  <FaExchangeAlt /> Transfer Transaction
                 </ActionButton>
               )}
             </FilterContainer>
@@ -990,6 +1089,62 @@ const ClientDashboard = () => {
               </RefreshButton>
             </ModalActions>
           </ModalForm>
+        </Modal>
+        <Modal isOpen={isTransferModalOpen} onClose={() => setIsTransferModalOpen(false)} maxWidth="980px">
+          <h2>Transfer Transaction</h2>
+          <p style={{ marginTop: 0, color: '#6b7c93' }}>
+            Select a Trkbit transaction to take ownership. Only transactions not already in this PIX key are shown.
+          </p>
+          <FormGroup>
+            <FormLabel>Search</FormLabel>
+            <ModalInput
+              type="text"
+              value={transferSearch}
+              onChange={(e) => setTransferSearch(e.target.value)}
+              placeholder="Search by payer, tx id, e2e id, amount..."
+            />
+          </FormGroup>
+          <ModalTableWrapper>
+            <ModalTable>
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Type</th>
+                  <th>Payer</th>
+                  <th>Amount (BRL)</th>
+                  <th>Current PIX</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {transferLoading ? (
+                  <tr><td colSpan="6">Loading...</td></tr>
+                ) : transferTransactions.length === 0 ? (
+                  <tr><td colSpan="6">No transactions found.</td></tr>
+                ) : (
+                  transferTransactions.map((tx) => {
+                    const isCredit = tx.tx_type === 'C';
+                    const isUpdating = transferUpdatingIds.has(tx.id);
+                    return (
+                      <tr key={tx.id}>
+                        <td>{formatDateTime(tx.transaction_date)}</td>
+                        <TypeCell as="td" isCredit={isCredit}>{isCredit ? 'IN' : 'OUT'}</TypeCell>
+                        <td>{tx.tx_payer_name || 'Unknown'}</td>
+                        <AmountCell as="td" isCredit={isCredit}>{formatCurrency(tx.amount)}</AmountCell>
+                        <td>{tx.tx_pix_key || '—'}</td>
+                        <td>
+                          <ActionButton type="button" onClick={() => handleTakeOwnership(tx)} disabled={isUpdating}>
+                            {isUpdating ? 'Working...' : 'Take Ownership'}
+                          </ActionButton>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </ModalTable>
+          </ModalTableWrapper>
+          <Pagination pagination={transferPagination} setPagination={setTransferPagination} />
         </Modal>
         <PasscodeModal 
             isOpen={isPasscodeModalOpen}
