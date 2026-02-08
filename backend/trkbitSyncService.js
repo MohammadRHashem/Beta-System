@@ -10,6 +10,33 @@ const HISTORY_START_DATE = '2024-01-01';
 
 let isSyncing = false;
 
+/**
+ * Intelligently cleans and truncates a PIX key from the Trkbit API.
+ * It first tries to find a logical endpoint (like ']') before doing a generic truncate.
+ * This makes the service resilient to malformed API data.
+ * @param {string} key The raw PIX key from the API.
+ * @returns {string} A cleaned and safe key, guaranteed to be 255 chars or less.
+ */
+function smartTruncatePixKey(key) {
+    const rawKey = key || '';
+    
+    if (rawKey.length <= 255) {
+        return rawKey;
+    }
+
+    // --- Intelligent Parsing based on observed API error ---
+    const garbageStartIndex = rawKey.indexOf(']');
+    if (garbageStartIndex !== -1) {
+        const cleanKey = rawKey.substring(0, garbageStartIndex);
+        // Final safety check in case the "clean" part is still too long
+        return cleanKey.substring(0, 255);
+    }
+
+    // --- Fallback Safety Net for unknown error formats ---
+    console.warn(`[DATA-WARNING] A long PIX key without a ']' delimiter was found in Trkbit sync. Performing generic truncate.`);
+    return rawKey.substring(0, 255);
+}
+
 const fetchAndStoreTransactions = async (customStartDate = null) => {
     if (isSyncing) {
         console.log('[TRKBIT-SYNC] Sync is already in progress. Skipping this run.');
@@ -19,7 +46,6 @@ const fetchAndStoreTransactions = async (customStartDate = null) => {
     
     try {
         const today = format(new Date(), 'yyyy-MM-dd');
-        // If no custom start date is provided, default to fetching only today's data.
         const startDate = customStartDate || today;
 
         console.log(`[TRKBIT-SYNC] Starting sync cycle from ${startDate} to ${today}...`);
@@ -67,9 +93,18 @@ const fetchAndStoreTransactions = async (customStartDate = null) => {
             for (let i = 0; i < allTransactions.length; i += chunkSize) {
                 const chunk = allTransactions.slice(i, i + chunkSize);
                 const values = chunk.map(tx => [
-                    tx.uid, tx.tx_id, tx.e2e_id, tx.tx_date,
-                    parseFloat(tx.amount), tx.tx_pix_key, tx.tx_type,
-                    tx.tx_payer_name, tx.tx_payer_id, JSON.stringify(tx)
+                    tx.uid,
+                    tx.tx_id,
+                    tx.e2e_id,
+                    tx.tx_date,
+                    parseFloat(tx.amount),
+                    // === THIS IS THE FIX APPLIED TO THE MAIN SERVICE ===
+                    smartTruncatePixKey(tx.tx_pix_key),
+                    // ===================================================
+                    tx.tx_type,
+                    tx.tx_payer_name,
+                    tx.tx_payer_id,
+                    JSON.stringify(tx)
                 ]);
                 
                 const [result] = await connection.query(query, [values]);
@@ -87,35 +122,29 @@ const fetchAndStoreTransactions = async (customStartDate = null) => {
     }
 };
 
-// --- THIS IS THE FINAL, MORE EFFICIENT STARTUP LOGIC ---
 const main = async () => {
-    console.log('--- Trkbit Sync Service Started (Self-Healing v2) ---');
+    console.log('--- Trkbit Sync Service Started (Self-Healing v2 & Data-Safe) ---');
 
     try {
         const [[{ count }]] = await pool.query("SELECT COUNT(*) as count FROM trkbit_transactions");
 
         if (count === 0) {
-            // Case A: Database is empty. Perform full initial history sync.
             console.log('[TRKBIT-SYNC] Database is empty. Performing INITIAL HISTORY SYNC...');
             await fetchAndStoreTransactions(HISTORY_START_DATE);
             console.log('[TRKBIT-SYNC] Initial history sync complete.');
         } else {
-            // Case B & C: Database has data. Check how old the latest entry is.
             const [[{ latest_tx_date }]] = await pool.query("SELECT MAX(tx_date) as latest_tx_date FROM trkbit_transactions");
             
             const now = new Date();
             const lastSyncDate = new Date(latest_tx_date);
             const hoursSinceLastSync = differenceInHours(now, lastSyncDate);
 
-            // If the last sync was more than 2 hours ago, assume downtime.
             if (hoursSinceLastSync > 2) {
-                // EFFICIENT CATCH-UP: Start the sync from the date of the last known transaction.
                 const catchUpStartDate = format(lastSyncDate, 'yyyy-MM-dd');
                 console.log(`[TRKBIT-SYNC] Last transaction is from over 2 hours ago (at ${lastSyncDate.toLocaleString()}). Assuming downtime.`);
                 console.log(`[TRKBIT-SYNC] Performing CATCH-UP sync starting from ${catchUpStartDate}...`);
                 await fetchAndStoreTransactions(catchUpStartDate);
             } else {
-                // If data is recent, just sync today to be safe.
                 console.log(`[TRKBIT-SYNC] Data is recent. Performing standard incremental sync for today.`);
                 await fetchAndStoreTransactions(null); 
             }
@@ -125,7 +154,6 @@ const main = async () => {
         console.error('[TRKBIT-SYNC] FATAL: Failed to run startup sync logic:', e.message);
     }
 
-    // Schedule the normal, recurring sync to run every minute (fetching only today's data)
     cron.schedule('* * * * *', () => fetchAndStoreTransactions(null));
     console.log('[TRKBIT-SYNC] Recurring 1-minute sync for "today" has been scheduled.');
 };
