@@ -16,6 +16,7 @@ const alfaTrustController = require('../controllers/alfaTrustController');
 const subaccountController = require('../controllers/subaccountController');
 const usdtWalletRoutes = require('./usdtWalletRoutes');
 const scheduledBroadcastRoutes = require('./scheduledBroadcastRoutes');
+const scheduledWithdrawalRoutes = require('./scheduledWithdrawalRoutes');
 const subCustomerController = require('../controllers/subCustomerController');
 const trkbitController = require('../controllers/trkbitController');
 const pinMessageController = require('../controllers/pinMessageController');
@@ -175,6 +176,7 @@ router.post('/settings/trkbit-confirmation', checkPermission('settings:toggle_co
 // --- Standalone Routes ---
 router.use('/usdt-wallets', usdtWalletRoutes); // Permissions are handled inside this route file
 router.use('/scheduled-broadcasts', scheduledBroadcastRoutes); // Permissions are handled inside this route file
+router.use('/scheduled-withdrawals', scheduledWithdrawalRoutes); // Permissions are handled inside this route file
 
 
 // DEPRECATED/LEGACY: Chave PIX (if needed, should be under a permission)

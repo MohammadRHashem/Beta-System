@@ -15,6 +15,7 @@ import InvoicesPage from "./InvoicesPage";
 import SubaccountsPage from "./SubaccountsPage";
 import ManualReviewPage from "./ManualReviewPage";
 import ScheduledBroadcastsPage from "./ScheduledBroadcastsPage";
+import ScheduledWithdrawalsPage from "./ScheduledWithdrawalsPage";
 import SubCustomersPage from "./SubCustomersPage";
 import UsdtWalletsPage from "./UsdtWalletsPage";
 import PositionPage from "./PositionPage";
@@ -154,6 +155,7 @@ const MainLayout = () => {
     if (hasPermission('invoice:view')) return '/invoices';
     if (hasPermission('manual_review:view')) return '/manual-review';
     if (hasPermission('broadcast:send')) return '/broadcaster';
+    if (hasPermission('subaccount:withdrawals:view')) return '/scheduled-withdrawals';
     return '/'; // Fallback to a blank page if no permissions
   };
 
@@ -181,6 +183,7 @@ const MainLayout = () => {
               {/* === BROADCASTING ROUTES === */}
               <Route path="/broadcaster" element={<ProtectedPage permission="broadcast:send"><BroadcasterPage allGroups={allGroups} /></ProtectedPage>} />
               <Route path="/scheduled-broadcasts" element={<ProtectedPage permission="broadcast:schedules:view"><ScheduledBroadcastsPage /></ProtectedPage>} />
+              <Route path="/scheduled-withdrawals" element={<ProtectedPage permission="subaccount:withdrawals:view"><ScheduledWithdrawalsPage /></ProtectedPage>} />
               
               {/* === SUBACCOUNT & CLIENT ROUTES === */}
               <Route path="/subaccounts" element={<ProtectedPage permission="subaccount:view"><SubaccountsPage allGroups={allGroups} /></ProtectedPage>} />

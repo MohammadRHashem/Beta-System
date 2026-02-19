@@ -112,4 +112,7 @@ server.listen(PORT, HOST, () => {
 
     const broadcastScheduler = require('./services/broadcastScheduler');
     broadcastScheduler.initialize(io);
+
+    const scheduledWithdrawalScheduler = require('./services/scheduledWithdrawalScheduler');
+    scheduledWithdrawalScheduler.initialize();
 });
