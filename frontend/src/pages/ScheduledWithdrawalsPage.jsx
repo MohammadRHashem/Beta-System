@@ -5,6 +5,7 @@ import { format, parseISO } from 'date-fns';
 import Modal from '../components/Modal';
 import {
     getScheduledWithdrawals,
+    getScheduledWithdrawalBalances,
     createScheduledWithdrawal,
     updateScheduledWithdrawal,
     deleteScheduledWithdrawal,
@@ -133,6 +134,7 @@ const DayButton = styled.button`
 
 const daysOfWeek = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const daysOfWeekFull = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+const amountFormatter = new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 const parseDays = (value) => {
     if (Array.isArray(value)) return value;
@@ -171,9 +173,12 @@ const ScheduledWithdrawalsPage = () => {
     const [loading, setLoading] = useState(true);
     const [schedules, setSchedules] = useState([]);
     const [subaccounts, setSubaccounts] = useState([]);
+    const [balancesBySubaccount, setBalancesBySubaccount] = useState({});
+    const [isBalanceRefreshing, setIsBalanceRefreshing] = useState(false);
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingSchedule, setEditingSchedule] = useState(null);
     const [withdrawingId, setWithdrawingId] = useState(null);
+    const tableColumnCount = (canUpdate || canDelete) ? 7 : 6;
 
     const fetchData = useCallback(async () => {
         setLoading(true);
@@ -194,6 +199,44 @@ const ScheduledWithdrawalsPage = () => {
     useEffect(() => {
         fetchData();
     }, [fetchData]);
+
+    const fetchBalances = useCallback(async () => {
+        if (!canView) return;
+
+        const subaccountIds = [...new Set(
+            schedules
+                .map((schedule) => schedule.subaccount_id)
+                .filter((id) => Number.isInteger(id) || /^\d+$/.test(String(id)))
+                .map((id) => parseInt(id, 10))
+                .filter((id) => Number.isInteger(id) && id > 0)
+        )];
+
+        if (subaccountIds.length === 0) {
+            setBalancesBySubaccount({});
+            return;
+        }
+
+        setIsBalanceRefreshing(true);
+        try {
+            const { data } = await getScheduledWithdrawalBalances(subaccountIds);
+            const nextBalances = {};
+            (data?.items || []).forEach((item) => {
+                nextBalances[item.subaccount_id] = item;
+            });
+            setBalancesBySubaccount(nextBalances);
+        } catch (error) {
+            console.error('[SCHEDULED-WITHDRAWALS] Failed to fetch balances:', error);
+        } finally {
+            setIsBalanceRefreshing(false);
+        }
+    }, [canView, schedules]);
+
+    useEffect(() => {
+        if (!canView) return undefined;
+        fetchBalances();
+        const intervalId = setInterval(fetchBalances, 5000);
+        return () => clearInterval(intervalId);
+    }, [canView, fetchBalances]);
 
     const handleOpenModal = (schedule = null) => {
         setEditingSchedule(schedule);
@@ -244,20 +287,66 @@ const ScheduledWithdrawalsPage = () => {
 
     const handleWithdrawNow = async (schedule) => {
         if (!canUpdate) return;
-        if (!window.confirm(`Trigger all-in withdraw now for "${schedule.subaccount_name}"?`)) return;
+
+        window.alert(`Security check: you are about to execute a live withdrawal for "${schedule.subaccount_name}".`);
+
+        const useAllAmount = window.confirm(
+            `Choose withdrawal type for "${schedule.subaccount_name}".\n\nPress OK: withdraw ALL available balance.\nPress Cancel: enter custom amount.`
+        );
+
+        let payload = { mode: 'all' };
+        let actionLabel = 'ALL available balance';
+
+        if (!useAllAmount) {
+            const entered = window.prompt('Enter custom amount to withdraw:', '');
+            if (entered === null) return;
+
+            const normalizedInput = String(entered).trim().replace(',', '.');
+            const customAmount = Number.parseFloat(normalizedInput);
+            if (!Number.isFinite(customAmount) || customAmount <= 0) {
+                alert('Custom amount must be a valid number greater than zero.');
+                return;
+            }
+
+            const liveBalance = balancesBySubaccount[schedule.subaccount_id]?.amount;
+            if (Number.isFinite(liveBalance) && customAmount > liveBalance) {
+                alert(`Custom amount exceeds current displayed balance (${amountFormatter.format(liveBalance)}).`);
+                return;
+            }
+
+            payload = { mode: 'custom', amount: customAmount };
+            actionLabel = `custom amount ${amountFormatter.format(customAmount)}`;
+        }
+
+        if (!window.confirm(`Final confirmation: withdraw ${actionLabel} from "${schedule.subaccount_name}" now?`)) return;
 
         setWithdrawingId(schedule.id);
         try {
-            const { data } = await withdrawNowScheduledWithdrawal(schedule.id);
+            const { data } = await withdrawNowScheduledWithdrawal(schedule.id, payload);
             if (data?.message) {
                 alert(data.message);
             }
             await fetchData();
+            await fetchBalances();
         } catch (error) {
             alert(error.response?.data?.message || 'Failed to execute manual withdraw.');
         } finally {
             setWithdrawingId(null);
         }
+    };
+
+    const renderBalance = (schedule) => {
+        const balanceInfo = balancesBySubaccount[schedule.subaccount_id];
+
+        if (!balanceInfo) {
+            return isBalanceRefreshing ? 'Refreshing...' : '...';
+        }
+
+        if (balanceInfo.status === 'error') {
+            return 'Error';
+        }
+
+        return amountFormatter.format(Number(balanceInfo.amount || 0));
     };
 
     return (
@@ -272,12 +361,13 @@ const ScheduledWithdrawalsPage = () => {
                     )}
                 </Header>
                 <Card>
-                    <p>Every execution is all-in: system fetches live subaccount balance, then withdraws full amount.</p>
+                    <p>Balances are fetched live every 5 seconds. Manual withdraw supports all-in or custom amount with security confirmation.</p>
                     <Table>
                         <thead>
                             <tr>
                                 <th>Active</th>
                                 <th>Subaccount</th>
+                                <th>Live Balance</th>
                                 <th>Schedule</th>
                                 <th>Last Run</th>
                                 <th>Last Status</th>
@@ -286,9 +376,9 @@ const ScheduledWithdrawalsPage = () => {
                         </thead>
                         <tbody>
                             {loading ? (
-                                <tr><td colSpan="6">Loading...</td></tr>
+                                <tr><td colSpan={tableColumnCount}>Loading...</td></tr>
                             ) : schedules.length === 0 ? (
-                                <tr><td colSpan="6">No scheduled withdrawals found.</td></tr>
+                                <tr><td colSpan={tableColumnCount}>No scheduled withdrawals found.</td></tr>
                             ) : (
                                 schedules.map((schedule) => (
                                     <tr key={schedule.id}>
@@ -309,6 +399,7 @@ const ScheduledWithdrawalsPage = () => {
                                                 <span>#{schedule.subaccount_number}</span>
                                             </ScheduleInfo>
                                         </td>
+                                        <td>{renderBalance(schedule)}</td>
                                         <td>
                                             <ScheduleInfo>
                                                 {formatSchedule(schedule)}

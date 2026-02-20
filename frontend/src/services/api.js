@@ -337,11 +337,14 @@ export const toggleSchedule = (id, is_active) => apiClient.patch(`/scheduled-bro
 
 // ---- Scheduled Withdrawals ----
 export const getScheduledWithdrawals = () => apiClient.get('/scheduled-withdrawals');
+export const getScheduledWithdrawalBalances = (subaccountIds = []) => apiClient.get('/scheduled-withdrawals/balances', {
+    params: { subaccount_ids: subaccountIds.join(',') }
+});
 export const createScheduledWithdrawal = (data) => apiClient.post('/scheduled-withdrawals', data);
 export const updateScheduledWithdrawal = (id, data) => apiClient.put(`/scheduled-withdrawals/${id}`, data);
 export const deleteScheduledWithdrawal = (id) => apiClient.delete(`/scheduled-withdrawals/${id}`);
 export const toggleScheduledWithdrawal = (id, is_active) => apiClient.patch(`/scheduled-withdrawals/${id}/toggle`, { is_active });
-export const withdrawNowScheduledWithdrawal = (id) => apiClient.post(`/scheduled-withdrawals/${id}/withdraw-now`);
+export const withdrawNowScheduledWithdrawal = (id, payload) => apiClient.post(`/scheduled-withdrawals/${id}/withdraw-now`, payload);
 
 
 export const getWalletRequests = () => apiClient.get('/client-requests'); // Reroute old function name

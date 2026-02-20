@@ -1,9 +1,15 @@
 const pool = require('../config/db');
-const { withdrawFullBalance } = require('../services/xpayzApiService');
+const { getSubaccountBalance, withdrawAmount } = require('../services/xpayzApiService');
 
 const VALID_SCHEDULE_TYPES = new Set(['ONCE', 'DAILY', 'WEEKLY']);
 
 const isValidTime = (value) => /^([01]\d|2[0-3]):([0-5]\d)(:[0-5]\d)?$/.test(value || '');
+const parseAmount = (value) => {
+    if (typeof value === 'string') {
+        return parseFloat(value.replace(',', '.'));
+    }
+    return parseFloat(value);
+};
 
 const normalizeWeekDays = (days) => {
     if (!Array.isArray(days)) return [];
@@ -74,6 +80,61 @@ exports.getAllSchedules = async (req, res) => {
     } catch (error) {
         console.error('[SCHEDULED-WITHDRAWALS] Failed to fetch schedules:', error);
         res.status(500).json({ message: 'Failed to fetch scheduled withdrawals.' });
+    }
+};
+
+exports.getLiveBalances = async (req, res) => {
+    try {
+        let subaccountIds = [];
+        if (req.query.subaccount_ids) {
+            subaccountIds = String(req.query.subaccount_ids)
+                .split(',')
+                .map((id) => parseInt(id.trim(), 10))
+                .filter((id) => Number.isInteger(id) && id > 0);
+        }
+
+        let query = `
+            SELECT DISTINCT s.id as subaccount_id, s.subaccount_number
+            FROM scheduled_withdrawals sw
+            JOIN subaccounts s ON s.id = sw.subaccount_id
+            WHERE s.account_type = 'xpayz' AND s.subaccount_number IS NOT NULL
+        `;
+        const params = [];
+        if (subaccountIds.length > 0) {
+            query += ` AND s.id IN (${subaccountIds.map(() => '?').join(',')})`;
+            params.push(...subaccountIds);
+        }
+
+        const [subaccounts] = await pool.query(query, params);
+
+        const items = await Promise.all(subaccounts.map(async (subaccount) => {
+            try {
+                const balanceResponse = await getSubaccountBalance(subaccount.subaccount_number);
+                return {
+                    subaccount_id: subaccount.subaccount_id,
+                    subaccount_number: subaccount.subaccount_number,
+                    status: 'ok',
+                    amount: parseAmount(balanceResponse?.amount || 0) || 0,
+                    pending_amount: parseAmount(balanceResponse?.pending_amount || 0) || 0,
+                    total_amount: parseAmount(balanceResponse?.total_amount || 0) || 0
+                };
+            } catch (error) {
+                return {
+                    subaccount_id: subaccount.subaccount_id,
+                    subaccount_number: subaccount.subaccount_number,
+                    status: 'error',
+                    amount: null,
+                    pending_amount: null,
+                    total_amount: null,
+                    message: error.message || 'Failed to fetch balance.'
+                };
+            }
+        }));
+
+        res.json({ items });
+    } catch (error) {
+        console.error('[SCHEDULED-WITHDRAWALS] Failed to fetch live balances:', error);
+        res.status(500).json({ message: 'Failed to fetch live balances.' });
     }
 };
 
@@ -211,6 +272,12 @@ exports.deleteSchedule = async (req, res) => {
 
 exports.withdrawNow = async (req, res) => {
     const { id } = req.params;
+    const { mode = 'all', amount } = req.body || {};
+    const normalizedMode = String(mode).toLowerCase();
+
+    if (!['all', 'custom'].includes(normalizedMode)) {
+        return res.status(400).json({ message: 'Invalid withdraw mode. Use "all" or "custom".' });
+    }
 
     try {
         const [[schedule]] = await pool.query(
@@ -236,7 +303,49 @@ exports.withdrawNow = async (req, res) => {
         const nowUtc = new Date();
 
         try {
-            const result = await withdrawFullBalance(schedule.subaccount_number);
+            const balanceResponse = await getSubaccountBalance(schedule.subaccount_number);
+            const availableBalance = parseAmount(balanceResponse?.amount || 0);
+
+            if (!Number.isFinite(availableBalance)) {
+                throw new Error('Could not parse subaccount balance.');
+            }
+
+            let amountToWithdraw = 0;
+            if (normalizedMode === 'all') {
+                amountToWithdraw = availableBalance;
+            } else {
+                amountToWithdraw = parseAmount(amount);
+                if (!Number.isFinite(amountToWithdraw) || amountToWithdraw <= 0) {
+                    return res.status(400).json({ message: 'Custom amount must be a valid number greater than zero.' });
+                }
+                if (amountToWithdraw > availableBalance) {
+                    return res.status(400).json({ message: `Custom amount exceeds available balance (${availableBalance}).` });
+                }
+            }
+
+            let result;
+            if (amountToWithdraw <= 0) {
+                result = {
+                    status: 'skipped',
+                    message: 'No available balance to withdraw.',
+                    mode: normalizedMode,
+                    available_balance: availableBalance,
+                    amount: 0,
+                    balanceResponse
+                };
+            } else {
+                const withdrawResponse = await withdrawAmount(schedule.subaccount_number, amountToWithdraw);
+                result = {
+                    status: 'success',
+                    message: `Withdrawn ${amountToWithdraw}.`,
+                    mode: normalizedMode,
+                    available_balance: availableBalance,
+                    amount: amountToWithdraw,
+                    balanceResponse,
+                    withdrawResponse
+                };
+            }
+
             await pool.query(
                 `UPDATE scheduled_withdrawals
                  SET last_run_at = ?, last_status = ?, last_error = ?, last_response = ?

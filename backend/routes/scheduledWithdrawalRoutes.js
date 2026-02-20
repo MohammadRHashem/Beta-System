@@ -4,6 +4,7 @@ const scheduledWithdrawalController = require('../controllers/scheduledWithdrawa
 const checkPermission = require('../middleware/permissionMiddleware');
 
 router.get('/', checkPermission('subaccount:withdrawals:view'), scheduledWithdrawalController.getAllSchedules);
+router.get('/balances', checkPermission('subaccount:withdrawals:view'), scheduledWithdrawalController.getLiveBalances);
 router.post('/', checkPermission('subaccount:withdrawals:create'), scheduledWithdrawalController.createSchedule);
 router.put('/:id', checkPermission('subaccount:withdrawals:update'), scheduledWithdrawalController.updateSchedule);
 router.patch('/:id/toggle', checkPermission('subaccount:withdrawals:update'), scheduledWithdrawalController.toggleSchedule);
