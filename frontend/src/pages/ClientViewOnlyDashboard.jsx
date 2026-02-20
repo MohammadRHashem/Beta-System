@@ -62,14 +62,6 @@ const FilterGroup = styled.div`
     flex-wrap: wrap;
 `;
 
-const DateInput = styled.input`
-    padding: 0.65rem 0.8rem;
-    border: 1px solid ${({ theme }) => theme.border};
-    border-radius: 8px;
-    font-size: 0.95rem;
-    background: #fff;
-`;
-
 const SelectInput = styled.select`
     padding: 0.65rem 0.8rem;
     border: 1px solid ${({ theme }) => theme.border};
@@ -225,11 +217,11 @@ const MobileRow = styled.div`
 const isCreditTx = (tx) => tx.operation_direct === 'in' || tx.operation_direct === 'C';
 
 const ClientViewOnlyDashboard = () => {
+    const todayDate = format(new Date(), 'yyyy-MM-dd');
     const [transactions, setTransactions] = useState([]);
     const [loading, setLoading] = useState(true);
     const [pagination, setPagination] = useState({ page: 1, limit: 20, totalPages: 1, totalRecords: 0 });
     const [filters, setFilters] = useState({
-        date: format(new Date(), 'yyyy-MM-dd'),
         confirmation: ''
     });
     const [updatingIds, setUpdatingIds] = useState(new Set());
@@ -241,7 +233,7 @@ const ClientViewOnlyDashboard = () => {
         setLoading(true);
         try {
             const params = {
-                date: filters.date,
+                date: todayDate,
                 page: pagination.page,
                 limit: pagination.limit
             };
@@ -263,7 +255,7 @@ const ClientViewOnlyDashboard = () => {
         } finally {
             setLoading(false);
         }
-    }, [filters.date, filters.confirmation, pagination.page, pagination.limit]);
+    }, [todayDate, filters.confirmation, pagination.page, pagination.limit]);
 
     useEffect(() => {
         fetchData();
@@ -271,7 +263,7 @@ const ClientViewOnlyDashboard = () => {
 
     useEffect(() => {
         setPagination((prev) => ({ ...prev, page: 1 }));
-    }, [filters.date, filters.confirmation]);
+    }, [filters.confirmation]);
 
     const handleConfirm = async (tx) => {
         if (updatingIds.has(tx.id)) return;
@@ -348,14 +340,9 @@ const ClientViewOnlyDashboard = () => {
         <PageContainer initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
             <ControlsContainer>
                 <h2 style={{ color: '#0A2540', margin: 0 }}>
-                    Transactions ({format(new Date(filters.date), 'dd/MM/yyyy')})
+                    Transactions for Today ({format(new Date(todayDate), 'dd/MM/yyyy')})
                 </h2>
                 <FilterGroup>
-                    <DateInput
-                        type="date"
-                        value={filters.date}
-                        onChange={(e) => setFilters((prev) => ({ ...prev, date: e.target.value }))}
-                    />
                     <SelectInput
                         value={filters.confirmation}
                         onChange={(e) => setFilters((prev) => ({ ...prev, confirmation: e.target.value }))}
