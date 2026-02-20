@@ -1,4 +1,5 @@
 const pool = require('../config/db');
+const { withdrawFullBalance } = require('../services/xpayzApiService');
 
 const VALID_SCHEDULE_TYPES = new Set(['ONCE', 'DAILY', 'WEEKLY']);
 
@@ -205,5 +206,72 @@ exports.deleteSchedule = async (req, res) => {
     } catch (error) {
         console.error('[SCHEDULED-WITHDRAWALS] Failed to delete schedule:', error);
         res.status(500).json({ message: 'Failed to delete scheduled withdrawal.' });
+    }
+};
+
+exports.withdrawNow = async (req, res) => {
+    const { id } = req.params;
+
+    try {
+        const [[schedule]] = await pool.query(
+            `SELECT sw.id, sw.subaccount_id, s.subaccount_number, s.account_type
+             FROM scheduled_withdrawals sw
+             JOIN subaccounts s ON s.id = sw.subaccount_id
+             WHERE sw.id = ?`,
+            [id]
+        );
+
+        if (!schedule) {
+            return res.status(404).json({ message: 'Schedule not found.' });
+        }
+
+        if (schedule.account_type !== 'xpayz') {
+            return res.status(400).json({ message: 'Manual withdraw is only available for XPayz subaccounts.' });
+        }
+
+        if (!schedule.subaccount_number) {
+            return res.status(400).json({ message: 'Selected XPayz subaccount is missing subaccount number.' });
+        }
+
+        const nowUtc = new Date();
+
+        try {
+            const result = await withdrawFullBalance(schedule.subaccount_number);
+            await pool.query(
+                `UPDATE scheduled_withdrawals
+                 SET last_run_at = ?, last_status = ?, last_error = ?, last_response = ?
+                 WHERE id = ?`,
+                [
+                    nowUtc,
+                    result.status || 'success',
+                    result.status === 'failed' ? (result.message || 'Withdraw failed.') : null,
+                    JSON.stringify(result),
+                    id
+                ]
+            );
+
+            if (result.status === 'skipped') {
+                return res.status(200).json({ message: result.message, result });
+            }
+
+            return res.status(200).json({ message: 'Manual withdraw executed successfully.', result });
+        } catch (error) {
+            const responsePayload = {
+                message: error.message,
+                responseData: error.response?.data || null
+            };
+
+            await pool.query(
+                `UPDATE scheduled_withdrawals
+                 SET last_run_at = ?, last_status = ?, last_error = ?, last_response = ?
+                 WHERE id = ?`,
+                [nowUtc, 'failed', error.message || 'Manual withdraw failed.', JSON.stringify(responsePayload), id]
+            );
+
+            return res.status(500).json({ message: error.message || 'Failed to execute manual withdraw.' });
+        }
+    } catch (error) {
+        console.error('[SCHEDULED-WITHDRAWALS] Failed to execute manual withdraw:', error);
+        res.status(500).json({ message: 'Failed to execute manual withdraw.' });
     }
 };

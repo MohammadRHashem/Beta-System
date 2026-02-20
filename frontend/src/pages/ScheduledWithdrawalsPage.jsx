@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import styled from 'styled-components';
-import { FaCalendarAlt, FaEdit, FaPlus, FaTrash } from 'react-icons/fa';
+import { FaCalendarAlt, FaEdit, FaPlus, FaTrash, FaBolt } from 'react-icons/fa';
 import { format, parseISO } from 'date-fns';
 import Modal from '../components/Modal';
 import {
@@ -9,6 +9,7 @@ import {
     updateScheduledWithdrawal,
     deleteScheduledWithdrawal,
     toggleScheduledWithdrawal,
+    withdrawNowScheduledWithdrawal,
     getSubaccounts
 } from '../services/api';
 import { usePermissions } from '../context/PermissionContext';
@@ -40,6 +41,8 @@ const Table = styled.table`
     th { background-color: ${({ theme }) => theme.background}; }
     td.actions {
         display: flex;
+        align-items: center;
+        flex-wrap: wrap;
         gap: 1.5rem;
         font-size: 1.1rem;
         svg {
@@ -47,6 +50,23 @@ const Table = styled.table`
             color: ${({ theme }) => theme.lightText};
             &:hover { color: ${({ theme }) => theme.primary}; }
         }
+    }
+`;
+const InlineActionButton = styled.button`
+    background-color: ${({ theme }) => theme.primary};
+    color: #fff;
+    border: none;
+    border-radius: 4px;
+    padding: 0.45rem 0.7rem;
+    font-size: 0.8rem;
+    font-weight: 600;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    cursor: pointer;
+    &:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
     }
 `;
 const SwitchContainer = styled.label`position: relative; display: inline-block; width: 50px; height: 28px;`;
@@ -153,6 +173,7 @@ const ScheduledWithdrawalsPage = () => {
     const [subaccounts, setSubaccounts] = useState([]);
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingSchedule, setEditingSchedule] = useState(null);
+    const [withdrawingId, setWithdrawingId] = useState(null);
 
     const fetchData = useCallback(async () => {
         setLoading(true);
@@ -221,6 +242,24 @@ const ScheduledWithdrawalsPage = () => {
         }
     };
 
+    const handleWithdrawNow = async (schedule) => {
+        if (!canUpdate) return;
+        if (!window.confirm(`Trigger all-in withdraw now for "${schedule.subaccount_name}"?`)) return;
+
+        setWithdrawingId(schedule.id);
+        try {
+            const { data } = await withdrawNowScheduledWithdrawal(schedule.id);
+            if (data?.message) {
+                alert(data.message);
+            }
+            await fetchData();
+        } catch (error) {
+            alert(error.response?.data?.message || 'Failed to execute manual withdraw.');
+        } finally {
+            setWithdrawingId(null);
+        }
+    };
+
     return (
         <>
             <PageContainer>
@@ -282,6 +321,17 @@ const ScheduledWithdrawalsPage = () => {
                                         </td>
                                         {(canUpdate || canDelete) && (
                                             <td className="actions">
+                                                {canUpdate && (
+                                                    <InlineActionButton
+                                                        type="button"
+                                                        onClick={() => handleWithdrawNow(schedule)}
+                                                        disabled={withdrawingId === schedule.id}
+                                                        title="Execute all-in withdraw immediately"
+                                                    >
+                                                        <FaBolt />
+                                                        {withdrawingId === schedule.id ? 'Withdrawing...' : 'Withdraw Now'}
+                                                    </InlineActionButton>
+                                                )}
                                                 {canUpdate && <FaEdit title="Edit" onClick={() => handleOpenModal(schedule)} />}
                                                 {canDelete && <FaTrash title="Delete" onClick={() => handleDelete(schedule.id)} />}
                                             </td>

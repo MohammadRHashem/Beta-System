@@ -341,6 +341,7 @@ export const createScheduledWithdrawal = (data) => apiClient.post('/scheduled-wi
 export const updateScheduledWithdrawal = (id, data) => apiClient.put(`/scheduled-withdrawals/${id}`, data);
 export const deleteScheduledWithdrawal = (id) => apiClient.delete(`/scheduled-withdrawals/${id}`);
 export const toggleScheduledWithdrawal = (id, is_active) => apiClient.patch(`/scheduled-withdrawals/${id}/toggle`, { is_active });
+export const withdrawNowScheduledWithdrawal = (id) => apiClient.post(`/scheduled-withdrawals/${id}/withdraw-now`);
 
 
 export const getWalletRequests = () => apiClient.get('/client-requests'); // Reroute old function name

@@ -7,6 +7,7 @@ router.get('/', checkPermission('subaccount:withdrawals:view'), scheduledWithdra
 router.post('/', checkPermission('subaccount:withdrawals:create'), scheduledWithdrawalController.createSchedule);
 router.put('/:id', checkPermission('subaccount:withdrawals:update'), scheduledWithdrawalController.updateSchedule);
 router.patch('/:id/toggle', checkPermission('subaccount:withdrawals:update'), scheduledWithdrawalController.toggleSchedule);
+router.post('/:id/withdraw-now', checkPermission('subaccount:withdrawals:update'), scheduledWithdrawalController.withdrawNow);
 router.delete('/:id', checkPermission('subaccount:withdrawals:delete'), scheduledWithdrawalController.deleteSchedule);
 
 module.exports = router;
