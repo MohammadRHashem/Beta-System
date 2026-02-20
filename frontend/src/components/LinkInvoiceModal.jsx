@@ -45,7 +45,7 @@ const LinkButton = styled.button`
     cursor: pointer;
 `;
 
-const LinkInvoiceModal = ({ isOpen, onClose, transaction }) => {
+const LinkInvoiceModal = ({ isOpen, onClose, transaction, recipientPrefix = '' }) => {
     const [candidates, setCandidates] = useState([]);
     const [loading, setLoading] = useState(false);
 
@@ -54,7 +54,7 @@ const LinkInvoiceModal = ({ isOpen, onClose, transaction }) => {
             const fetchCandidates = async () => {
                 setLoading(true);
                 try {
-                    const { data } = await getCandidateInvoices(transaction.amount);
+                    const { data } = await getCandidateInvoices(transaction.amount, recipientPrefix);
                     setCandidates(data);
                 } catch (error) {
                     console.error("Failed to fetch candidate invoices:", error);
@@ -64,7 +64,7 @@ const LinkInvoiceModal = ({ isOpen, onClose, transaction }) => {
             };
             fetchCandidates();
         }
-    }, [isOpen, transaction]);
+    }, [isOpen, transaction, recipientPrefix]);
 
     const handleLink = async (invoice) => {
         if (!window.confirm(`Link this ${transaction.source} transaction to the invoice from "${invoice.source_group_name}"? This will confirm the invoice.`)) {

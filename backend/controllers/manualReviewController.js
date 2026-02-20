@@ -114,6 +114,9 @@ exports.confirmInvoice = async (req, res) => {
         if (io) {
             io.emit('manual:refresh');
             io.emit('invoices:updated');
+            if (source === 'Trkbit') {
+                io.emit('trkbit:updated');
+            }
         }
 
         res.json({ message: 'Invoice confirmed and linked successfully.' });
@@ -170,12 +173,13 @@ exports.clearAllPending = async (req, res) => {
 };
 
 exports.getCandidateInvoices = async (req, res) => {
-    const { amount } = req.query;
+    const { amount, recipientPrefix } = req.query;
     if (!amount) return res.status(400).json({ message: 'Amount is required.' });
     
     try {
         const searchAmount = parseFloat(amount);
         const margin = 0.01; 
+        const safeRecipientPrefix = String(recipientPrefix || '').trim().toLowerCase().replace(/[%_]/g, '');
         const query = `
             SELECT
                 i.id, i.message_id, i.amount, i.sender_name, i.recipient_name,
@@ -188,9 +192,14 @@ exports.getCandidateInvoices = async (req, res) => {
                 AND i.is_deleted = 0
                 AND i.linked_transaction_id IS NULL
                 AND CAST(REPLACE(i.amount, ',', '') AS DECIMAL(20, 2)) BETWEEN ? AND ?
+                ${safeRecipientPrefix ? 'AND LOWER(i.recipient_name) LIKE ?' : ''}
             ORDER BY i.received_at DESC;
         `;
-        const [invoices] = await pool.query(query, [searchAmount - margin, searchAmount + margin]);
+        const params = [searchAmount - margin, searchAmount + margin];
+        if (safeRecipientPrefix) {
+            params.push(`%${safeRecipientPrefix}%`);
+        }
+        const [invoices] = await pool.query(query, params);
         res.json(invoices);
     } catch (error) {
         console.error('[MANUAL-REVIEW] Failed to fetch candidate invoices:', error);

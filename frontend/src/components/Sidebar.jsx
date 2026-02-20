@@ -90,7 +90,7 @@ const Sidebar = () => {
         
         {hasPermission('finance:view_bank_statements') && (
             <>
-                <NavItem to="/trkbit"><FaUniversity /><span>Trkbit</span></NavItem>
+                <NavItem to="/trkbit"><FaUniversity /><span>Cross Intermediação</span></NavItem>
                 <NavItem to="/alfa-trust"><FaUniversity /><span>Alfa Trust</span></NavItem>
             </>
         )}

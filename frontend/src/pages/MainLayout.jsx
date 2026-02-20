@@ -111,8 +111,12 @@ const MainLayout = () => {
   const { logout } = useAuth();
   const { hasPermission } = usePermissions(); // Get permission checker for the default route
 
-  // Dynamically generate the page name from the URL path
+  // Dynamically generate the page name from the URL path, with custom labels where needed.
   const pageName = location.pathname.replace("/", "").replace(/-/g, " ") || "invoices";
+  const pageTitleOverrides = {
+    '/trkbit': 'Cross Intermediação'
+  };
+  const displayPageName = pageTitleOverrides[location.pathname] || pageName;
 
   const fetchAllGroupsForConfig = useCallback(async () => {
     try {
@@ -164,7 +168,7 @@ const MainLayout = () => {
       <Sidebar />
       <ContentArea>
         <Header>
-          <PageTitle>{pageName}</PageTitle>
+          <PageTitle>{displayPageName}</PageTitle>
           <StatusIndicator status={status} onLogout={handleLogout} />
         </Header>
         <PageContent>

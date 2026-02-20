@@ -302,9 +302,12 @@ export const exportAlfaPdf = async (params) => {
     }
 };
 export const getTrkbitTransactions = (params) => apiClient.get('/trkbit/transactions', { params });
+export const getTrkbitViews = () => apiClient.get('/trkbit/views');
+export const getTrkbitRefreshToken = () => apiClient.get('/trkbit/refresh-token');
+export const unlinkTrkbitTransaction = (uid) => apiClient.post(`/trkbit/transactions/${uid}/unlink`);
 export const exportTrkbit = async (params) => {
     const blob = await downloadFile('/trkbit/export', params);
-    triggerBrowserDownload(blob, 'trkbit_export.xlsx');
+    triggerBrowserDownload(blob, 'cross_intermediacao_export.xlsx');
 };
 
 // ---- Manual Review ----
@@ -312,7 +315,9 @@ export const getPendingManualInvoices = () => apiClient.get('/manual/pending');
 export const getManualCandidates = (amount) => apiClient.get('/manual/candidates', { params: { amount } });
 export const confirmManualInvoice = (data) => apiClient.post('/manual/confirm', data);
 export const rejectManualInvoice = (messageId) => apiClient.post('/manual/reject', { messageId });
-export const getCandidateInvoices = (amount) => apiClient.get('/manual/candidate-invoices', { params: { amount } });
+export const getCandidateInvoices = (amount, recipientPrefix = '') => apiClient.get('/manual/candidate-invoices', {
+    params: { amount, recipientPrefix }
+});
 export const clearAllPendingInvoices = (messageIds) => apiClient.post('/manual/clear-all', { messageIds });
 
 // ---- Maybe Unused ----
