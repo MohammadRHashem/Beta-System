@@ -3,12 +3,10 @@ import styled from 'styled-components';
 import {
     getTrkbitTransactions,
     getTrkbitViews,
-    getTrkbitRefreshToken,
     unlinkTrkbitTransaction,
     exportTrkbit
 } from '../services/api';
 import { usePermissions } from '../context/PermissionContext';
-import { useSocket } from '../context/SocketContext';
 import { FaFileExcel, FaLink, FaSyncAlt, FaUnlink } from 'react-icons/fa';
 import Pagination from '../components/Pagination';
 import LinkInvoiceModal from '../components/LinkInvoiceModal';
@@ -22,6 +20,9 @@ const useDebounce = (value, delay) => {
     }, [value, delay]);
     return debouncedValue;
 };
+
+const CROSS_TAB_ORDER_STORAGE_KEY = 'cross_statement_tab_order_v1';
+const CROSS_ACTIVE_TAB_STORAGE_KEY = 'cross_statement_active_tab_v1';
 
 const PageContainer = styled.div`
     display: flex;
@@ -56,33 +57,27 @@ const ActionButton = styled.button`
     font-weight: 700;
     cursor: pointer;
     color: #fff;
-    background-color: ${({ theme, variant }) => variant === 'excel' ? '#217346' : theme.primary};
+    background-color: ${({ theme, variant }) => (variant === 'excel' ? '#217346' : theme.primary)};
     font-size: 0.86rem;
+
     &:disabled {
         opacity: 0.6;
         cursor: not-allowed;
     }
 `;
 
-const RefreshBanner = styled.button`
-    border: none;
-    background: ${({ theme }) => theme.secondary};
-    color: #fff;
-    font-weight: 700;
-    border-radius: 8px;
-    padding: 0.75rem 1rem;
-    text-align: left;
-    cursor: pointer;
-    display: inline-flex;
-    align-items: center;
-    gap: 0.55rem;
-`;
-
 const TabContainer = styled.div`
     border-bottom: 2px solid ${({ theme }) => theme.border};
     display: flex;
     flex-wrap: wrap;
-    gap: 0.2rem;
+    gap: 0.45rem;
+    align-items: center;
+`;
+
+const TabItem = styled.div`
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
 `;
 
 const TabButton = styled.button`
@@ -92,15 +87,32 @@ const TabButton = styled.button`
     cursor: pointer;
     font-weight: 700;
     font-size: 0.9rem;
-    color: ${({ theme, active }) => active ? theme.primary : theme.lightText};
-    border-bottom: 3px solid ${({ theme, active }) => active ? theme.secondary : 'transparent'};
+    color: ${({ theme, active }) => (active ? theme.primary : theme.lightText)};
+    border-bottom: 3px solid ${({ theme, active }) => (active ? theme.secondary : 'transparent')};
     margin-bottom: -2px;
+`;
+
+const TabOrderButton = styled.button`
+    border: 1px solid ${({ theme }) => theme.border};
+    border-radius: 5px;
+    background: #fff;
+    color: ${({ theme }) => theme.lightText};
+    font-weight: 700;
+    width: 26px;
+    height: 26px;
+    line-height: 1;
+    cursor: pointer;
+
+    &:disabled {
+        opacity: 0.45;
+        cursor: not-allowed;
+    }
 `;
 
 const TableWrapper = styled.div`
     background: #fff;
     border-radius: 8px;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
     overflow-x: auto;
     border: 1px solid ${({ theme }) => theme.border};
 `;
@@ -109,12 +121,15 @@ const Table = styled.table`
     width: 100%;
     border-collapse: collapse;
     font-size: 0.9rem;
-    th, td {
+
+    th,
+    td {
         padding: 0.8rem 0.85rem;
         text-align: left;
         border-bottom: 1px solid ${({ theme }) => theme.border};
         white-space: nowrap;
     }
+
     th {
         background: ${({ theme }) => theme.background};
         font-weight: 700;
@@ -130,29 +145,84 @@ const LinkBadge = styled.span`
     border-radius: 999px;
     padding: 0.28rem 0.58rem;
     color: #fff;
-    background: ${({ status }) => status === 'linked' ? '#00C49A' : '#6B7C93'};
+    background: ${({ status }) => (status === 'linked' ? '#00C49A' : '#6B7C93')};
 `;
 
 const RowAction = styled.button`
     border: none;
     background: transparent;
-    color: ${({ theme, kind }) => kind === 'unlink' ? theme.error : theme.primary};
+    color: ${({ theme, kind }) => (kind === 'unlink' ? theme.error : theme.primary)};
     cursor: pointer;
     display: inline-flex;
     align-items: center;
     gap: 0.35rem;
     font-weight: 700;
     font-size: 0.8rem;
+
     &:disabled {
         opacity: 0.6;
         cursor: not-allowed;
     }
 `;
 
+const getStoredTabOrder = () => {
+    if (typeof window === 'undefined') return [];
+    try {
+        const value = localStorage.getItem(CROSS_TAB_ORDER_STORAGE_KEY);
+        if (!value) return [];
+        const parsed = JSON.parse(value);
+        return Array.isArray(parsed) ? parsed : [];
+    } catch (error) {
+        return [];
+    }
+};
+
+const saveTabOrder = (tabKeys) => {
+    if (typeof window === 'undefined') return;
+    try {
+        localStorage.setItem(CROSS_TAB_ORDER_STORAGE_KEY, JSON.stringify(tabKeys));
+    } catch (error) {
+        // no-op
+    }
+};
+
+const getStoredActiveTab = () => {
+    if (typeof window === 'undefined') return '';
+    try {
+        return localStorage.getItem(CROSS_ACTIVE_TAB_STORAGE_KEY) || '';
+    } catch (error) {
+        return '';
+    }
+};
+
+const saveActiveTab = (tabKey) => {
+    if (typeof window === 'undefined') return;
+    try {
+        localStorage.setItem(CROSS_ACTIVE_TAB_STORAGE_KEY, tabKey);
+    } catch (error) {
+        // no-op
+    }
+};
+
+const applyStoredOrder = (nextTabs) => {
+    const savedOrder = getStoredTabOrder();
+    if (!savedOrder.length) return nextTabs;
+
+    const rankMap = new Map(savedOrder.map((key, index) => [key, index]));
+    return [...nextTabs].sort((a, b) => {
+        const rankA = rankMap.has(a.key) ? rankMap.get(a.key) : Number.MAX_SAFE_INTEGER;
+        const rankB = rankMap.has(b.key) ? rankMap.get(b.key) : Number.MAX_SAFE_INTEGER;
+        return rankA - rankB;
+    });
+};
+
 const formatDateTime = (value) => {
     if (!value) return '-';
     try {
-        return new Date(value).toLocaleString('pt-BR', {
+        const date = new Date(value);
+        if (Number.isNaN(date.getTime())) return value;
+        date.setHours(date.getHours() - 3);
+        return date.toLocaleString('pt-BR', {
             year: 'numeric',
             month: '2-digit',
             day: '2-digit',
@@ -169,17 +239,14 @@ const currencyFormatter = new Intl.NumberFormat('pt-BR', { style: 'currency', cu
 
 const TrkbitPage = () => {
     const { hasPermission } = usePermissions();
-    const socket = useSocket();
     const canViewStatements = hasPermission('finance:view_bank_statements');
     const canLink = hasPermission('invoice:link');
 
     const [tabs, setTabs] = useState([]);
-    const [activeTabKey, setActiveTabKey] = useState('');
+    const [activeTabKey, setActiveTabKey] = useState(() => getStoredActiveTab());
     const [transactions, setTransactions] = useState([]);
     const [loading, setLoading] = useState(true);
     const [viewsLoading, setViewsLoading] = useState(true);
-    const [hasNewData, setHasNewData] = useState(false);
-    const [refreshToken, setRefreshToken] = useState(null);
     const [isExporting, setIsExporting] = useState(false);
     const [unlinkingUid, setUnlinkingUid] = useState('');
 
@@ -220,18 +287,19 @@ const TrkbitPage = () => {
                 label: subaccount.name,
                 pixKey: subaccount.pix_key
             }));
+
             const otherTab = {
                 key: 'other',
                 type: 'other',
                 label: data?.otherTab?.label || 'Other'
             };
 
-            const nextTabs = [...crossTabs, otherTab];
+            const nextTabs = applyStoredOrder([...crossTabs, otherTab]);
             setTabs(nextTabs);
-
             setActiveTabKey((current) => {
-                if (current && nextTabs.some((tab) => tab.key === current)) {
-                    return current;
+                const preferredTab = current || getStoredActiveTab();
+                if (preferredTab && nextTabs.some((tab) => tab.key === preferredTab)) {
+                    return preferredTab;
                 }
                 return nextTabs[0]?.key || '';
             });
@@ -244,70 +312,69 @@ const TrkbitPage = () => {
         }
     }, [canViewStatements]);
 
-    const fetchTransactions = useCallback(async (showLoading = true) => {
-        if (!canViewStatements || !activeTab) return;
+    const fetchTransactions = useCallback(
+        async (showLoading = true) => {
+            if (!canViewStatements || !activeTab) return;
 
-        if (showLoading) {
-            setLoading(true);
-        }
-        setHasNewData(false);
-
-        try {
-            const params = {
-                page: pagination.page,
-                limit: pagination.limit,
-                search: debouncedSearch,
-                txType: filters.txType,
-                linkStatus: filters.linkStatus,
-                dateFrom: filters.dateFrom,
-                timeFrom: filters.timeFrom,
-                dateTo: filters.dateTo,
-                timeTo: filters.timeTo,
-                viewType: activeTab.type
-            };
-
-            if (activeTab.type === 'cross') {
-                params.subaccountId = activeTab.subaccountId;
-            }
-
-            Object.keys(params).forEach((key) => {
-                const value = params[key];
-                if (value === '' || value === null || value === undefined) {
-                    delete params[key];
-                }
-            });
-
-            const { data } = await getTrkbitTransactions(params);
-            setTransactions(data.transactions || []);
-            setPagination((prev) => ({
-                ...prev,
-                totalPages: data.totalPages || 1,
-                totalRecords: data.totalRecords || 0
-            }));
-            if (data.refreshToken) {
-                setRefreshToken(data.refreshToken);
-            }
-        } catch (error) {
-            console.error('Failed to fetch Cross Intermediação transactions:', error);
-            setTransactions([]);
-        } finally {
             if (showLoading) {
-                setLoading(false);
+                setLoading(true);
             }
-        }
-    }, [
-        canViewStatements,
-        activeTab,
-        pagination.page,
-        pagination.limit,
-        debouncedSearch,
-        filters.txType,
-        filters.linkStatus,
-        filters.dateFrom,
-        filters.timeFrom,
-        filters.dateTo,
-        filters.timeTo
-    ]);
+
+            try {
+                const params = {
+                    page: pagination.page,
+                    limit: pagination.limit,
+                    search: debouncedSearch,
+                    txType: filters.txType,
+                    linkStatus: filters.linkStatus,
+                    dateFrom: filters.dateFrom,
+                    timeFrom: filters.timeFrom,
+                    dateTo: filters.dateTo,
+                    timeTo: filters.timeTo,
+                    viewType: activeTab.type
+                };
+
+                if (activeTab.type === 'cross') {
+                    params.subaccountId = activeTab.subaccountId;
+                }
+
+                Object.keys(params).forEach((key) => {
+                    const value = params[key];
+                    if (value === '' || value === null || value === undefined) {
+                        delete params[key];
+                    }
+                });
+
+                const { data } = await getTrkbitTransactions(params);
+                setTransactions(data.transactions || []);
+                setPagination((prev) => ({
+                    ...prev,
+                    totalPages: data.totalPages || 1,
+                    totalRecords: data.totalRecords || 0
+                }));
+            } catch (error) {
+                console.error('Failed to fetch Cross Intermediação transactions:', error);
+                setTransactions([]);
+            } finally {
+                if (showLoading) {
+                    setLoading(false);
+                }
+            }
+        },
+        [
+            canViewStatements,
+            activeTab,
+            pagination.page,
+            pagination.limit,
+            debouncedSearch,
+            filters.txType,
+            filters.linkStatus,
+            filters.dateFrom,
+            filters.timeFrom,
+            filters.dateTo,
+            filters.timeTo
+        ]
+    );
 
     useEffect(() => {
         fetchViews();
@@ -318,37 +385,24 @@ const TrkbitPage = () => {
     }, [fetchTransactions]);
 
     useEffect(() => {
-        if (!socket) return undefined;
-
-        const onTrkbitUpdate = () => setHasNewData(true);
-        socket.on('trkbit:updated', onTrkbitUpdate);
-        return () => socket.off('trkbit:updated', onTrkbitUpdate);
-    }, [socket]);
+        if (tabs.length > 0) {
+            saveTabOrder(tabs.map((tab) => tab.key));
+        }
+    }, [tabs]);
 
     useEffect(() => {
-        if (!canViewStatements) return undefined;
-
-        const intervalId = setInterval(async () => {
-            try {
-                const { data } = await getTrkbitRefreshToken();
-                if (refreshToken && data?.refreshToken && data.refreshToken !== refreshToken) {
-                    setHasNewData(true);
-                }
-            } catch (error) {
-                console.error('Failed to poll Trkbit refresh token:', error);
-            }
-        }, 12000);
-
-        return () => clearInterval(intervalId);
-    }, [canViewStatements, refreshToken]);
+        if (activeTabKey) {
+            saveActiveTab(activeTabKey);
+        }
+    }, [activeTabKey]);
 
     const handleFilterChange = (nextFilters) => {
-        setPagination((prev) => ({ ...prev, page: 1 }));
+        setPagination((prev) => ({ ...prev, page: 1, currentPage: 1 }));
         setFilters(nextFilters);
     };
 
     const handleClearFilters = () => {
-        setPagination((prev) => ({ ...prev, page: 1 }));
+        setPagination((prev) => ({ ...prev, page: 1, currentPage: 1 }));
         setFilters({
             search: '',
             txType: '',
@@ -364,6 +418,20 @@ const TrkbitPage = () => {
         fetchTransactions();
     };
 
+    const moveTab = (tabIndex, direction) => {
+        setTabs((previousTabs) => {
+            const targetIndex = tabIndex + direction;
+            if (targetIndex < 0 || targetIndex >= previousTabs.length) {
+                return previousTabs;
+            }
+
+            const nextTabs = [...previousTabs];
+            const [movedTab] = nextTabs.splice(tabIndex, 1);
+            nextTabs.splice(targetIndex, 0, movedTab);
+            return nextTabs;
+        });
+    };
+
     const handleExport = async () => {
         if (!activeTab) return;
         setIsExporting(true);
@@ -373,14 +441,17 @@ const TrkbitPage = () => {
                 search: debouncedSearch,
                 viewType: activeTab.type
             };
+
             if (activeTab.type === 'cross') {
                 params.subaccountId = activeTab.subaccountId;
             }
+
             Object.keys(params).forEach((key) => {
                 if (params[key] === '' || params[key] === null || params[key] === undefined) {
                     delete params[key];
                 }
             });
+
             await exportTrkbit(params);
         } catch (error) {
             console.error('Failed to export Cross Intermediação statement:', error);
@@ -437,28 +508,43 @@ const TrkbitPage = () => {
                     </HeaderActions>
                 </Header>
 
-                {hasNewData && (
-                    <RefreshBanner onClick={() => fetchTransactions()}>
-                        <FaSyncAlt /> New transactions detected. Click to refresh the statement.
-                    </RefreshBanner>
-                )}
-
                 <TabContainer>
                     {viewsLoading ? (
                         <TabButton type="button" active={true}>Loading tabs...</TabButton>
-                    ) : tabs.map((tab) => (
-                        <TabButton
-                            type="button"
-                            key={tab.key}
-                            active={activeTabKey === tab.key}
-                            onClick={() => {
-                                setPagination((prev) => ({ ...prev, page: 1 }));
-                                setActiveTabKey(tab.key);
-                            }}
-                        >
-                            {tab.label}
-                        </TabButton>
-                    ))}
+                    ) : (
+                        tabs.map((tab, index) => (
+                            <TabItem key={tab.key}>
+                                <TabButton
+                                    type="button"
+                                    active={activeTabKey === tab.key}
+                                    onClick={() => {
+                                        setPagination((prev) => ({ ...prev, page: 1, currentPage: 1 }));
+                                        setActiveTabKey(tab.key);
+                                    }}
+                                >
+                                    {tab.label}
+                                </TabButton>
+                                <TabOrderButton
+                                    type="button"
+                                    aria-label={`Move ${tab.label} left`}
+                                    title="Move left"
+                                    onClick={() => moveTab(index, -1)}
+                                    disabled={index === 0}
+                                >
+                                    {'<'}
+                                </TabOrderButton>
+                                <TabOrderButton
+                                    type="button"
+                                    aria-label={`Move ${tab.label} right`}
+                                    title="Move right"
+                                    onClick={() => moveTab(index, 1)}
+                                    disabled={index === tabs.length - 1}
+                                >
+                                    {'>'}
+                                </TabOrderButton>
+                            </TabItem>
+                        ))
+                    )}
                 </TabContainer>
 
                 <CrossIntermediacaoFilter
@@ -498,14 +584,15 @@ const TrkbitPage = () => {
                                     const isLinked = tx.link_status === 'linked';
 
                                     return (
-                                        <tr key={tx.id}>
+                                        <tr key={tx.id || tx.uid}>
                                             <td>{formatDateTime(tx.tx_date)}</td>
                                             <td>{tx.e2e_id || '-'}</td>
                                             <td>{tx.tx_payer_name || '-'}</td>
                                             <td>{tx.tx_payer_id || '-'}</td>
                                             {isOtherTab && <td>{tx.tx_pix_key || '-'}</td>}
                                             <td style={{ color: isDebit ? '#DE350B' : '#00A86B', fontWeight: 700 }}>
-                                                {isDebit ? '-' : '+'}{currencyFormatter.format(amountValue)}
+                                                {isDebit ? '-' : '+'}
+                                                {currencyFormatter.format(amountValue)}
                                             </td>
                                             <td>
                                                 <LinkBadge status={tx.link_status}>{tx.link_status}</LinkBadge>

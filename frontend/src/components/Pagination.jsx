@@ -1,5 +1,3 @@
-// frontend/src/components/Pagination.jsx
-
 import React, { useState, useEffect, useMemo } from 'react';
 import styled, { css } from 'styled-components';
 
@@ -96,14 +94,15 @@ const GoToPageButton = styled.button`
     }
 `;
 
-// Helper to create a range of numbers
 const range = (start, end) => {
-    let length = end - start + 1;
+    const length = end - start + 1;
     return Array.from({ length }, (_, idx) => idx + start);
 };
 
 const Pagination = ({ pagination, setPagination }) => {
-    const { currentPage, totalPages, totalRecords } = pagination;
+    const currentPage = Number(pagination.page ?? pagination.currentPage ?? 1);
+    const totalPages = Math.max(Number(pagination.totalPages ?? 1), 1);
+    const totalRecords = Number(pagination.totalRecords ?? 0);
     const [goToPage, setGoToPage] = useState(currentPage);
 
     useEffect(() => {
@@ -112,22 +111,20 @@ const Pagination = ({ pagination, setPagination }) => {
 
     const handlePageChange = (newPage) => {
         const pageAsNumber = Number(newPage);
-        if (!isNaN(pageAsNumber) && pageAsNumber >= 1 && pageAsNumber <= totalPages && pageAsNumber !== currentPage) {
-            setPagination(p => ({ ...p, page: pageAsNumber }));
+        if (!Number.isNaN(pageAsNumber) && pageAsNumber >= 1 && pageAsNumber <= totalPages && pageAsNumber !== currentPage) {
+            setPagination((p) => ({ ...p, page: pageAsNumber, currentPage: pageAsNumber }));
         }
     };
-    
+
     const handleGoToPageSubmit = (e) => {
         e.preventDefault();
         handlePageChange(goToPage);
     };
 
-    // === THIS IS THE NEW "SLIDING WINDOW" LOGIC ===
     const pageRange = useMemo(() => {
-        const siblingCount = 1; // How many pages to show on each side of the current page
-        const totalPageNumbers = siblingCount + 5; // 1 current, 2 siblings, 2 dots, first, last
+        const siblingCount = 1;
+        const totalPageNumbers = siblingCount + 5;
 
-        // Case 1: Total pages is less than the number we want to show. Show all pages.
         if (totalPages <= totalPageNumbers) {
             return range(1, totalPages);
         }
@@ -141,29 +138,25 @@ const Pagination = ({ pagination, setPagination }) => {
         const firstPageIndex = 1;
         const lastPageIndex = totalPages;
 
-        // Case 2: No left dots, but right dots are needed (we are near the start).
         if (!shouldShowLeftDots && shouldShowRightDots) {
-            let leftItemCount = 3 + 2 * siblingCount;
-            let leftRange = range(1, leftItemCount);
+            const leftItemCount = 3 + 2 * siblingCount;
+            const leftRange = range(1, leftItemCount);
             return [...leftRange, '...', totalPages];
         }
 
-        // Case 3: Left dots needed, but no right dots (we are near the end).
         if (shouldShowLeftDots && !shouldShowRightDots) {
-            let rightItemCount = 3 + 2 * siblingCount;
-            let rightRange = range(totalPages - rightItemCount + 1, totalPages);
+            const rightItemCount = 3 + 2 * siblingCount;
+            const rightRange = range(totalPages - rightItemCount + 1, totalPages);
             return [firstPageIndex, '...', ...rightRange];
         }
 
-        // Case 4: Both left and right dots are needed (we are in the middle).
         if (shouldShowLeftDots && shouldShowRightDots) {
-            let middleRange = range(leftSiblingIndex, rightSiblingIndex);
+            const middleRange = range(leftSiblingIndex, rightSiblingIndex);
             return [firstPageIndex, '...', ...middleRange, '...', lastPageIndex];
         }
-        
-        return []; // Should be unreachable
+
+        return [];
     }, [currentPage, totalPages]);
-    // === END OF NEW LOGIC ===
 
     if (totalPages <= 1) {
         return (
@@ -180,7 +173,7 @@ const Pagination = ({ pagination, setPagination }) => {
             </PageInfo>
             <PageControls>
                 <PageButton onClick={() => handlePageChange(currentPage - 1)} disabled={currentPage <= 1}>
-                    «
+                    {'<'}
                 </PageButton>
 
                 {pageRange.map((page, index) => {
@@ -199,19 +192,19 @@ const Pagination = ({ pagination, setPagination }) => {
                 })}
 
                 <PageButton onClick={() => handlePageChange(currentPage + 1)} disabled={currentPage >= totalPages}>
-                    »
+                    {'>'}
                 </PageButton>
             </PageControls>
-            
+
             <GoToPageForm onSubmit={handleGoToPageSubmit}>
-                 <GoToPageInput 
+                <GoToPageInput
                     type="number"
                     value={goToPage}
                     onChange={(e) => setGoToPage(e.target.value)}
                     min="1"
                     max={totalPages}
-                 />
-                 <GoToPageButton type="submit">Go</GoToPageButton>
+                />
+                <GoToPageButton type="submit">Go</GoToPageButton>
             </GoToPageForm>
         </PaginationContainer>
     );
