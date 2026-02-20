@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import styled, { keyframes } from 'styled-components';
 import { motion } from 'framer-motion';
-import { getPortalTransactions, updatePortalTransactionConfirmation } from '../services/api';
-import { FaSyncAlt, FaArrowUp, FaArrowDown, FaHourglassHalf, FaSpinner, FaCheckDouble } from 'react-icons/fa';
+import { getPortalTransactions, updatePortalTransactionConfirmation, updatePortalTransactionNotes } from '../services/api';
+import { FaSyncAlt, FaArrowUp, FaArrowDown, FaHourglassHalf, FaSpinner, FaCheckDouble, FaEdit } from 'react-icons/fa';
 import Pagination from '../components/Pagination';
 import PasscodeModal from '../components/PasscodeModal';
 import { format } from 'date-fns';
@@ -42,6 +42,37 @@ const StatusText = styled.span`
     font-size: 0.9rem;
     width: 82px;
     color: ${({ confirmed, theme }) => confirmed ? theme.success : theme.lightText};
+`;
+
+const NotesCell = styled.div`
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    min-height: 30px;
+    cursor: pointer;
+    .notes-text {
+        color: ${({ theme }) => theme.text};
+        font-style: italic;
+    }
+    .placeholder {
+        color: ${({ theme }) => theme.lightText};
+        opacity: 0.7;
+    }
+    .edit-icon {
+        visibility: hidden;
+        color: ${({ theme }) => theme.primary};
+    }
+    &:hover .edit-icon {
+        visibility: visible;
+    }
+`;
+
+const NoteInput = styled.input`
+    padding: 0.5rem;
+    border: 1px solid ${({ theme }) => theme.secondary};
+    border-radius: 4px;
+    width: 100%;
+    max-width: 180px;
 `;
 
 const PageContainer = styled(motion.div)``;
@@ -162,6 +193,7 @@ const SkeletonRow = () => (
         <td><SkeletonCell /></td>
         <td><SkeletonCell style={{ width: '60%' }} /></td>
         <td><SkeletonCell style={{ width: '50%' }} /></td>
+        <td><SkeletonCell style={{ width: '70%' }} /></td>
     </tr>
 );
 
@@ -214,6 +246,14 @@ const MobileRow = styled.div`
     }
 `;
 
+const MobileSection = styled.div`
+    margin-top: 1rem;
+    padding-top: 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+`;
+
 const isCreditTx = (tx) => tx.operation_direct === 'in' || tx.operation_direct === 'C';
 
 const ClientViewOnlyDashboard = () => {
@@ -228,6 +268,8 @@ const ClientViewOnlyDashboard = () => {
     const [isPasscodeModalOpen, setIsPasscodeModalOpen] = useState(false);
     const [transactionToUpdate, setTransactionToUpdate] = useState(null);
     const [passcodeError, setPasscodeError] = useState('');
+    const [editingNoteId, setEditingNoteId] = useState(null);
+    const [noteInputText, setNoteInputText] = useState('');
 
     const fetchData = useCallback(async () => {
         setLoading(true);
@@ -289,6 +331,31 @@ const ClientViewOnlyDashboard = () => {
         setTransactionToUpdate(tx);
         setPasscodeError('');
         setIsPasscodeModalOpen(true);
+    };
+
+    const handleNoteClick = (tx) => {
+        if (updatingIds.has(`note-${tx.id}`)) return;
+        setEditingNoteId(tx.id);
+        setNoteInputText(tx.portal_notes || '');
+    };
+
+    const handleNoteUpdate = async (tx) => {
+        setUpdatingIds((prev) => new Set(prev).add(`note-${tx.id}`));
+        try {
+            await updatePortalTransactionNotes(tx.id, tx.source, noteInputText);
+            setTransactions((prev) => prev.map((item) => item.id === tx.id
+                ? { ...item, portal_notes: noteInputText.trim() }
+                : item));
+        } catch (error) {
+            alert('Failed to save note.');
+        } finally {
+            setEditingNoteId(null);
+            setUpdatingIds((prev) => {
+                const next = new Set(prev);
+                next.delete(`note-${tx.id}`);
+                return next;
+            });
+        }
     };
 
     const closePasscodeModal = () => {
@@ -367,6 +434,7 @@ const ClientViewOnlyDashboard = () => {
                                 <th>Counterparty</th>
                                 <th>Amount (BRL)</th>
                                 <th>Confirmation</th>
+                                <th>Operator Notes</th>
                             </tr>
                         </thead>
                         <motion.tbody variants={containerVariants} initial="hidden" animate="visible">
@@ -374,7 +442,7 @@ const ClientViewOnlyDashboard = () => {
                                 [...Array(10)].map((_, index) => <SkeletonRow key={index} />)
                             ) : transactions.length === 0 ? (
                                 <tr>
-                                    <td colSpan="5">
+                                    <td colSpan="6">
                                         <EmptyStateContainer>
                                             <h3>No transactions found</h3>
                                         </EmptyStateContainer>
@@ -385,6 +453,8 @@ const ClientViewOnlyDashboard = () => {
                                     const isCredit = isCreditTx(tx);
                                     const isConfirmedByPortal = !!tx.is_portal_confirmed;
                                     const isUpdatingConfirmation = updatingIds.has(tx.id);
+                                    const isEditingNote = editingNoteId === tx.id;
+                                    const isUpdatingNote = updatingIds.has(`note-${tx.id}`);
                                     return (
                                         <motion.tr key={tx.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
                                             <td>{formatDateTime(tx.transaction_date)}</td>
@@ -409,6 +479,29 @@ const ClientViewOnlyDashboard = () => {
                                                     {isConfirmedByPortal ? 'Confirmed' : 'Pending'}
                                                 </StatusText>
                                             </td>
+                                            <td>
+                                                {isEditingNote ? (
+                                                    <NoteInput
+                                                        autoFocus
+                                                        value={noteInputText}
+                                                        onChange={(e) => setNoteInputText(e.target.value)}
+                                                        onBlur={() => handleNoteUpdate(tx)}
+                                                        onKeyDown={(e) => { if (e.key === 'Enter') handleNoteUpdate(tx); }}
+                                                        maxLength="25"
+                                                    />
+                                                ) : isUpdatingNote ? (
+                                                    <LoadingSpinner />
+                                                ) : (
+                                                    <NotesCell onClick={() => handleNoteClick(tx)}>
+                                                        {tx.portal_notes ? (
+                                                            <span className="notes-text">{tx.portal_notes}</span>
+                                                        ) : (
+                                                            <span className="placeholder">Add note...</span>
+                                                        )}
+                                                        <FaEdit className="edit-icon" />
+                                                    </NotesCell>
+                                                )}
+                                            </td>
                                         </motion.tr>
                                     );
                                 })
@@ -427,6 +520,8 @@ const ClientViewOnlyDashboard = () => {
                             const isCredit = isCreditTx(tx);
                             const isConfirmedByPortal = !!tx.is_portal_confirmed;
                             const isUpdatingConfirmation = updatingIds.has(tx.id);
+                            const isEditingNote = editingNoteId === tx.id;
+                            const isUpdatingNote = updatingIds.has(`note-${tx.id}`);
                             return (
                                 <MobileCard key={tx.id} isCredit={isCredit} variants={itemVariants}>
                                     <MobileCardHeader isCredit={isCredit}>
@@ -438,25 +533,51 @@ const ClientViewOnlyDashboard = () => {
                                         <p>{formatDateTime(tx.transaction_date)}</p>
                                     </MobileCardBody>
 
-                                    <MobileRow>
-                                        <span className="label">Confirmation</span>
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
-                                            {isUpdatingConfirmation ? (
+                                    <MobileSection>
+                                        <MobileRow>
+                                            <span className="label">Confirmation</span>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                                                {isUpdatingConfirmation ? (
+                                                    <LoadingSpinner />
+                                                ) : isConfirmedByPortal ? (
+                                                    <ConfirmationButton confirmed={true} onClick={() => handleInitiateUnconfirm(tx)}>
+                                                        <FaCheckDouble />
+                                                    </ConfirmationButton>
+                                                ) : (
+                                                    <ConfirmationButton confirmed={false} onClick={() => handleConfirm(tx)}>
+                                                        <FaHourglassHalf />
+                                                    </ConfirmationButton>
+                                                )}
+                                                <StatusText confirmed={isConfirmedByPortal}>
+                                                    {isConfirmedByPortal ? 'Confirmed' : 'Pending'}
+                                                </StatusText>
+                                            </div>
+                                        </MobileRow>
+                                        <MobileRow>
+                                            <span className="label">Notes</span>
+                                            {isEditingNote ? (
+                                                <NoteInput
+                                                    autoFocus
+                                                    value={noteInputText}
+                                                    onChange={(e) => setNoteInputText(e.target.value)}
+                                                    onBlur={() => handleNoteUpdate(tx)}
+                                                    onKeyDown={(e) => { if (e.key === 'Enter') handleNoteUpdate(tx); }}
+                                                    maxLength="25"
+                                                />
+                                            ) : isUpdatingNote ? (
                                                 <LoadingSpinner />
-                                            ) : isConfirmedByPortal ? (
-                                                <ConfirmationButton confirmed={true} onClick={() => handleInitiateUnconfirm(tx)}>
-                                                    <FaCheckDouble />
-                                                </ConfirmationButton>
                                             ) : (
-                                                <ConfirmationButton confirmed={false} onClick={() => handleConfirm(tx)}>
-                                                    <FaHourglassHalf />
-                                                </ConfirmationButton>
+                                                <NotesCell onClick={() => handleNoteClick(tx)} style={{ justifyContent: 'flex-end', flexGrow: 1 }}>
+                                                    {tx.portal_notes ? (
+                                                        <span className="notes-text">{tx.portal_notes}</span>
+                                                    ) : (
+                                                        <span className="placeholder">Add note...</span>
+                                                    )}
+                                                    <FaEdit className="edit-icon" />
+                                                </NotesCell>
                                             )}
-                                            <StatusText confirmed={isConfirmedByPortal}>
-                                                {isConfirmedByPortal ? 'Confirmed' : 'Pending'}
-                                            </StatusText>
-                                        </div>
-                                    </MobileRow>
+                                        </MobileRow>
+                                    </MobileSection>
                                 </MobileCard>
                             );
                         })
