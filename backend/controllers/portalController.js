@@ -205,10 +205,13 @@ exports.getDashboardSummary = async (req, res) => {
 
 exports.getTransactions = async (req, res) => {
     const { accountType, subaccountNumber, chavePix, username, impersonation } = req.client;
-    const { page = 1, limit = 50, search, date, dateFrom, dateTo, direction } = req.query;
+    const { page = 1, limit = 50, search, date, dateFrom, dateTo, direction, confirmation } = req.query;
     const canUseRange = impersonation === true && dateFrom && dateTo;
     const range = canUseRange ? buildRangeParams(dateFrom, dateTo) : null;
     const normalizedDirection = impersonation === true && (direction === 'in' || direction === 'out') ? direction : null;
+    const normalizedConfirmation = confirmation === 'confirmed'
+        ? 'confirmed'
+        : (confirmation === 'pending' ? 'pending' : null);
 
     if (canUseRange && !range) {
         return res.status(400).json({ message: 'Invalid date range.' });
@@ -236,6 +239,10 @@ exports.getTransactions = async (req, res) => {
             if (normalizedDirection) {
                 query += ' AND tt.tx_type = ?';
                 params.push(normalizedDirection === 'in' ? 'C' : 'D');
+            }
+            if (normalizedConfirmation) {
+                query += ' AND tt.is_portal_confirmed = ?';
+                params.push(normalizedConfirmation === 'confirmed' ? 1 : 0);
             }
             
             const countQuery = `SELECT count(*) as total ${query}`;
@@ -300,6 +307,10 @@ exports.getTransactions = async (req, res) => {
                 query += ' AND xt.operation_direct = ?';
                 params.push(normalizedDirection);
             }
+            if (normalizedConfirmation) {
+                query += ' AND xt.is_portal_confirmed = ?';
+                params.push(normalizedConfirmation === 'confirmed' ? 1 : 0);
+            }
 
             const countQuery = `SELECT count(xt.id) as total ${query}`;
             const [[{ total: queryTotal }]] = await pool.query(countQuery, params);
@@ -326,10 +337,13 @@ exports.getTransactions = async (req, res) => {
 
 exports.exportTransactions = async (req, res) => {
     const { accountType, subaccountNumber, chavePix, username, impersonation } = req.client;
-    const { search, date, dateFrom, dateTo, direction, format = 'excel' } = req.query;
+    const { search, date, dateFrom, dateTo, direction, confirmation, format = 'excel' } = req.query;
     const canUseRange = impersonation === true && dateFrom && dateTo;
     const range = canUseRange ? buildRangeParams(dateFrom, dateTo) : null;
     const normalizedDirection = impersonation === true && (direction === 'in' || direction === 'out') ? direction : null;
+    const normalizedConfirmation = confirmation === 'confirmed'
+        ? 'confirmed'
+        : (confirmation === 'pending' ? 'pending' : null);
 
     if (canUseRange && !range) {
         return res.status(400).json({ message: 'Invalid date range.' });
@@ -367,6 +381,10 @@ exports.exportTransactions = async (req, res) => {
                 query += ' AND tx_type = ?';
                 params.push(normalizedDirection === 'in' ? 'C' : 'D');
             }
+            if (normalizedConfirmation) {
+                query += ' AND is_portal_confirmed = ?';
+                params.push(normalizedConfirmation === 'confirmed' ? 1 : 0);
+            }
             query += ' ORDER BY tx_date DESC';
             [transactions] = await pool.query(query, params);
 
@@ -391,6 +409,10 @@ exports.exportTransactions = async (req, res) => {
             if (normalizedDirection) {
                 query += ' AND operation_direct = ?';
                 params.push(normalizedDirection);
+            }
+            if (normalizedConfirmation) {
+                query += ' AND is_portal_confirmed = ?';
+                params.push(normalizedConfirmation === 'confirmed' ? 1 : 0);
             }
             query += ' ORDER BY transaction_date DESC';
             [transactions] = await pool.query(query, params);
