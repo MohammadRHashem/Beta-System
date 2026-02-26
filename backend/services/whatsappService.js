@@ -21,6 +21,9 @@ let connectionStatus = "disconnected";
 let abbreviationCache = [];
 let requestTypeCache = [];
 let io; // To hold the socket.io instance
+const DEFAULT_NEW_CONTENT_REACTION = "🆕";
+const DEFAULT_NEW_CONTENT_REPLY_TEXT =
+  "Request received. Everything is okay. If you need anything, call us.";
 
 const normalizeClientRequestContent = (value) => {
   if (value === undefined || value === null) return "";
@@ -1775,7 +1778,10 @@ const refreshRequestTypeCache = async () => {
   try {
     console.log("[CACHE] Refreshing client request types cache...");
     const [types] = await pool.query(
-      "SELECT id, name, trigger_regex, acknowledgement_reaction FROM request_types WHERE is_enabled = 1",
+      `SELECT id, name, trigger_regex, acknowledgement_reaction, track_content_history,
+              new_content_reaction, new_content_reply_text
+       FROM request_types
+       WHERE is_enabled = 1`,
     );
     requestTypeCache = types.map((t) => ({
       ...t,
@@ -1854,6 +1860,7 @@ const handleMessage = async (message) => {
         if (match && match[1]) {
           const capturedContent = match[1];
           const contentKey = normalizeClientRequestContent(capturedContent);
+          const trackHistory = Number(rule.track_content_history) === 1;
           console.log(
             `[REQUEST-DETECT] Rule "${rule.name}" triggered. Content: ${capturedContent}`,
           );
@@ -1898,8 +1905,49 @@ const handleMessage = async (message) => {
           );
 
           if (io) io.emit("client_request:new");
-          if (rule.acknowledgement_reaction) {
-            await message.react(rule.acknowledgement_reaction);
+          let hasCompletedHistory = false;
+          if (trackHistory && contentKey) {
+            const [historyRows] = await pool.query(
+              `SELECT EXISTS(
+                  SELECT 1
+                  FROM client_requests
+                  WHERE is_completed = 1
+                    AND (
+                      (? IS NOT NULL AND (request_type_id = ? OR (request_type_id IS NULL AND request_type = ?)))
+                      OR (? IS NULL AND request_type = ?)
+                    )
+                    AND COALESCE(content_key, '') = ?
+                  LIMIT 1
+                ) AS has_history`,
+              [
+                rule.id,
+                rule.id,
+                rule.name,
+                rule.id,
+                rule.name,
+                contentKey,
+              ],
+            );
+            hasCompletedHistory = Number(historyRows?.[0]?.has_history) === 1;
+          }
+
+          const shouldTreatAsNewContent =
+            trackHistory && contentKey && !hasCompletedHistory;
+          const reactionToApply = shouldTreatAsNewContent
+            ? rule.new_content_reaction || DEFAULT_NEW_CONTENT_REACTION
+            : rule.acknowledgement_reaction;
+
+          if (reactionToApply) {
+            await message.react(reactionToApply);
+          }
+
+          if (shouldTreatAsNewContent) {
+            const replyText =
+              (rule.new_content_reply_text || "").trim() ||
+              DEFAULT_NEW_CONTENT_REPLY_TEXT;
+            if (replyText) {
+              await message.reply(replyText);
+            }
           }
 
           await pool.query(

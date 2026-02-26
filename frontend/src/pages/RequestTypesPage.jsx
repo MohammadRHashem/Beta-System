@@ -34,7 +34,9 @@ const normalizeDraft = (type) => ({
     ...type,
     is_enabled: type?.is_enabled ? 1 : 0,
     track_content_history: type?.track_content_history ? 1 : 0,
-    content_label: type?.content_label || ''
+    content_label: type?.content_label || '',
+    new_content_reaction: type?.new_content_reaction || '\uD83C\uDD95',
+    new_content_reply_text: type?.new_content_reply_text || 'Request received. Everything is okay. If you need anything, call us.'
 });
 
 const RequestTypesPage = () => {
@@ -108,6 +110,8 @@ const RequestTypesPage = () => {
                                 name: '',
                                 trigger_regex: '',
                                 acknowledgement_reaction: '\uD83D\uDD14',
+                                new_content_reaction: '\uD83C\uDD95',
+                                new_content_reply_text: 'Request received. Everything is okay. If you need anything, call us.',
                                 color: '#E0E0E0',
                                 is_enabled: 1,
                                 track_content_history: 0,
@@ -126,6 +130,7 @@ const RequestTypesPage = () => {
                                 <th>Name</th>
                                 <th>Trigger Regex</th>
                                 <th>Reaction</th>
+                                <th>New Reaction</th>
                                 <th>Track History</th>
                                 <th>Content Label</th>
                                 {canEdit && <th>Actions</th>}
@@ -139,6 +144,7 @@ const RequestTypesPage = () => {
                                     <td>{type.name}</td>
                                     <td><Code>{type.trigger_regex}</Code></td>
                                     <td>{type.acknowledgement_reaction}</td>
+                                    <td>{type.new_content_reaction || '\uD83C\uDD95'}</td>
                                     <td>{type.track_content_history ? 'On' : 'Off'}</td>
                                     <td>{type.content_label || '-'}</td>
                                     {canEdit && (
@@ -176,6 +182,26 @@ const RequestTypesPage = () => {
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
                             <InputGroup><Label>Acknowledgement Reaction</Label><Input type="text" value={editingType.acknowledgement_reaction} onChange={e => setEditingType({ ...editingType, acknowledgement_reaction: e.target.value })} /></InputGroup>
                             <InputGroup><Label>Highlight Color</Label><ColorInput value={editingType.color} onChange={e => setEditingType({ ...editingType, color: e.target.value })} /></InputGroup>
+                        </div>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '1rem' }}>
+                            <InputGroup>
+                                <Label>New Content Reaction</Label>
+                                <Input
+                                    type="text"
+                                    value={editingType.new_content_reaction || ''}
+                                    onChange={e => setEditingType({ ...editingType, new_content_reaction: e.target.value })}
+                                />
+                                <small>Used when tracked content appears with no completed history yet.</small>
+                            </InputGroup>
+                            <InputGroup>
+                                <Label>New Content Reply Text</Label>
+                                <Input
+                                    type="text"
+                                    value={editingType.new_content_reply_text || ''}
+                                    onChange={e => setEditingType({ ...editingType, new_content_reply_text: e.target.value })}
+                                    placeholder="Request received. Everything is okay. If you need anything, call us."
+                                />
+                            </InputGroup>
                         </div>
                         <InputGroup style={{ flexDirection: 'row', alignItems: 'center' }}>
                             <input

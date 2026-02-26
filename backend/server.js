@@ -107,12 +107,21 @@ const HOST = '0.0.0.0';
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, HOST, () => {
     console.log(`[SERVER] Server is running on http://${HOST}:${PORT}`);
-    const whatsappService = require('./services/whatsappService');
-    whatsappService.init(io);
+    (async () => {
+        try {
+            const { ensureRuntimeSchema } = require('./services/schemaMaintenanceService');
+            await ensureRuntimeSchema();
+        } catch (error) {
+            console.error('[SERVER] Runtime schema ensure failed. Continuing startup with existing schema.');
+        }
 
-    const broadcastScheduler = require('./services/broadcastScheduler');
-    broadcastScheduler.initialize(io);
+        const whatsappService = require('./services/whatsappService');
+        whatsappService.init(io);
 
-    const scheduledWithdrawalScheduler = require('./services/scheduledWithdrawalScheduler');
-    scheduledWithdrawalScheduler.initialize();
+        const broadcastScheduler = require('./services/broadcastScheduler');
+        broadcastScheduler.initialize(io);
+
+        const scheduledWithdrawalScheduler = require('./services/scheduledWithdrawalScheduler');
+        scheduledWithdrawalScheduler.initialize();
+    })();
 });
