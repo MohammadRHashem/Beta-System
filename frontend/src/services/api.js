@@ -327,10 +327,12 @@ export const triggerAlfaSync = () => apiClient.post('/alfa-trust/trigger-sync');
 
 // ---- Client Requests ----
 export const getClientRequests = () => apiClient.get('/client-requests');
+export const getClientRequestHistory = (id) => apiClient.get(`/client-requests/${id}/history`);
 export const completeClientRequest = (id) => apiClient.patch(`/client-requests/${id}/complete`);
 export const updateClientRequestAmount = (id, amount) => apiClient.patch(`/client-requests/${id}/amount`, { amount });
 export const updateClientRequestContent = (id, content) => apiClient.patch(`/client-requests/${id}/content`, { content });
 export const restoreClientRequest = (id) => apiClient.patch(`/client-requests/${id}/restore`);
+export const deleteClientRequest = (id) => apiClient.delete(`/client-requests/${id}`);
 
 
 // ---- Schedules ----

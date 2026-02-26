@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { getRequestTypes, createRequestType, updateRequestType, deleteRequestType } from '../services/api';
 import styled from 'styled-components';
 import Modal from '../components/Modal';
-import { usePermissions } from '../context/PermissionContext'; // 1. IMPORT PERMISSIONS HOOK
+import { usePermissions } from '../context/PermissionContext';
 import { FaEdit, FaTrash, FaPlus, FaCodeBranch } from 'react-icons/fa';
 
 const PageContainer = styled.div` display: flex; flex-direction: column; gap: 2rem; `;
@@ -30,9 +30,16 @@ const ColorPreview = styled.div`
     border: 1px solid #ccc;
 `;
 
+const normalizeDraft = (type) => ({
+    ...type,
+    is_enabled: type?.is_enabled ? 1 : 0,
+    track_content_history: type?.track_content_history ? 1 : 0,
+    content_label: type?.content_label || ''
+});
+
 const RequestTypesPage = () => {
-    const { hasPermission } = usePermissions(); // 2. GET PERMISSION CHECKER
-    const canEdit = hasPermission('settings:edit_request_triggers'); // 3. DEFINE EDIT CAPABILITY
+    const { hasPermission } = usePermissions();
+    const canEdit = hasPermission('settings:edit_request_triggers');
 
     const [types, setTypes] = useState([]);
     const [isModalOpen, setIsModalOpen] = useState(false);
@@ -43,8 +50,8 @@ const RequestTypesPage = () => {
             const { data } = await getRequestTypes();
             setTypes(data);
         } catch (error) {
-            console.error("Failed to fetch request types:", error);
-            alert("Failed to fetch request types.");
+            console.error('Failed to fetch request types:', error);
+            alert('Failed to fetch request types.');
         }
     };
 
@@ -53,17 +60,24 @@ const RequestTypesPage = () => {
     }, []);
 
     const openEditModal = (type) => {
-        setEditingType(type);
+        setEditingType(normalizeDraft(type));
         setIsModalOpen(true);
     };
 
     const handleSave = async (e) => {
         e.preventDefault();
+        const payload = {
+            ...editingType,
+            is_enabled: editingType.is_enabled ? 1 : 0,
+            track_content_history: editingType.track_content_history ? 1 : 0,
+            content_label: (editingType.content_label || '').trim() || null
+        };
+
         try {
             if (editingType.id) {
-                await updateRequestType(editingType.id, editingType);
+                await updateRequestType(editingType.id, payload);
             } else {
-                await createRequestType(editingType);
+                await createRequestType(payload);
             }
             fetchTypes();
             setIsModalOpen(false);
@@ -88,15 +102,22 @@ const RequestTypesPage = () => {
             <PageContainer>
                 <Card>
                     <Header>
-                        <h2 style={{display: 'flex', alignItems: 'center', gap: '0.5rem'}}><FaCodeBranch/> Client Request Triggers</h2>
-                        {/* 4. WRAP "NEW TRIGGER" BUTTON IN PERMISSION CHECK */}
+                        <h2 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}><FaCodeBranch /> Client Request Triggers</h2>
                         {canEdit && (
-                            <Button onClick={() => openEditModal({ name: '', trigger_regex: '', acknowledgement_reaction: '🔔', color: '#E0E0E0', is_enabled: 1 })}>
+                            <Button onClick={() => openEditModal({
+                                name: '',
+                                trigger_regex: '',
+                                acknowledgement_reaction: '\uD83D\uDD14',
+                                color: '#E0E0E0',
+                                is_enabled: 1,
+                                track_content_history: 0,
+                                content_label: ''
+                            })}>
                                 <FaPlus /> New Trigger
                             </Button>
                         )}
                     </Header>
-                    <p>Configure regular expressions to automatically capture specific client requests from chat messages.</p>
+                    <p>Configure regular expressions to capture requests from chat. Use history tracking only for types where repeated content matters (for example wallet addresses).</p>
                     <RulesTable>
                         <thead>
                             <tr>
@@ -105,6 +126,8 @@ const RequestTypesPage = () => {
                                 <th>Name</th>
                                 <th>Trigger Regex</th>
                                 <th>Reaction</th>
+                                <th>Track History</th>
+                                <th>Content Label</th>
                                 {canEdit && <th>Actions</th>}
                             </tr>
                         </thead>
@@ -116,11 +139,12 @@ const RequestTypesPage = () => {
                                     <td>{type.name}</td>
                                     <td><Code>{type.trigger_regex}</Code></td>
                                     <td>{type.acknowledgement_reaction}</td>
-                                    {/* 5. WRAP ACTIONS COLUMN IN PERMISSION CHECK */}
+                                    <td>{type.track_content_history ? 'On' : 'Off'}</td>
+                                    <td>{type.content_label || '-'}</td>
                                     {canEdit && (
                                         <td className="actions">
-                                            <FaEdit onClick={() => openEditModal(type)} title="Edit"/>
-                                            <FaTrash onClick={() => handleDelete(type.id)} title="Delete"/>
+                                            <FaEdit onClick={() => openEditModal(type)} title="Edit" />
+                                            <FaTrash onClick={() => handleDelete(type.id)} title="Delete" />
                                         </td>
                                     )}
                                 </tr>
@@ -129,24 +153,49 @@ const RequestTypesPage = () => {
                     </RulesTable>
                 </Card>
             </PageContainer>
-            
-            {/* Modal is implicitly protected as it's only opened by users with `canEdit` */}
+
             <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)}>
                 {editingType && (
                     <Form onSubmit={handleSave}>
                         <h2>{editingType.id ? 'Edit' : 'Create'} Request Trigger</h2>
-                        <InputGroup><Label>Name</Label><Input type="text" value={editingType.name} onChange={e => setEditingType({...editingType, name: e.target.value})} required /></InputGroup>
+                        <InputGroup><Label>Name</Label><Input type="text" value={editingType.name} onChange={e => setEditingType({ ...editingType, name: e.target.value })} required /></InputGroup>
                         <InputGroup>
                             <Label>Trigger Regex</Label>
-                            <Input type="text" value={editingType.trigger_regex} onChange={e => setEditingType({...editingType, trigger_regex: e.target.value})} required />
-                            <small>Must contain one capture group <Code>()</Code> for the content. E.g., <Code>SWIFT: (\\w+)</Code></small>
+                            <Input type="text" value={editingType.trigger_regex} onChange={e => setEditingType({ ...editingType, trigger_regex: e.target.value })} required />
+                            <small>Must contain one capture group <Code>()</Code> for the content. Example: <Code>SWIFT: (\\w+)</Code></small>
                         </InputGroup>
-                        <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem'}}>
-                            <InputGroup><Label>Acknowledgement Reaction</Label><Input type="text" value={editingType.acknowledgement_reaction} onChange={e => setEditingType({...editingType, acknowledgement_reaction: e.target.value})} /></InputGroup>
-                            <InputGroup><Label>Highlight Color</Label><ColorInput value={editingType.color} onChange={e => setEditingType({...editingType, color: e.target.value})} /></InputGroup>
+                        <InputGroup>
+                            <Label>Content Label (optional)</Label>
+                            <Input
+                                type="text"
+                                value={editingType.content_label || ''}
+                                onChange={e => setEditingType({ ...editingType, content_label: e.target.value })}
+                                placeholder="Example: USDT Address"
+                            />
+                        </InputGroup>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                            <InputGroup><Label>Acknowledgement Reaction</Label><Input type="text" value={editingType.acknowledgement_reaction} onChange={e => setEditingType({ ...editingType, acknowledgement_reaction: e.target.value })} /></InputGroup>
+                            <InputGroup><Label>Highlight Color</Label><ColorInput value={editingType.color} onChange={e => setEditingType({ ...editingType, color: e.target.value })} /></InputGroup>
                         </div>
-                        <InputGroup style={{flexDirection: 'row', alignItems: 'center'}}><input type="checkbox" id="is_enabled" checked={!!editingType.is_enabled} onChange={e => setEditingType({...editingType, is_enabled: e.target.checked ? 1 : 0})} /><Label htmlFor="is_enabled">Enabled</Label></InputGroup>
-                        <Button type="submit" style={{alignSelf: 'flex-end'}}>Save Changes</Button>
+                        <InputGroup style={{ flexDirection: 'row', alignItems: 'center' }}>
+                            <input
+                                type="checkbox"
+                                id="track_content_history"
+                                checked={!!editingType.track_content_history}
+                                onChange={e => setEditingType({ ...editingType, track_content_history: e.target.checked ? 1 : 0 })}
+                            />
+                            <Label htmlFor="track_content_history">Track history by captured information value</Label>
+                        </InputGroup>
+                        <InputGroup style={{ flexDirection: 'row', alignItems: 'center' }}>
+                            <input
+                                type="checkbox"
+                                id="is_enabled"
+                                checked={!!editingType.is_enabled}
+                                onChange={e => setEditingType({ ...editingType, is_enabled: e.target.checked ? 1 : 0 })}
+                            />
+                            <Label htmlFor="is_enabled">Enabled</Label>
+                        </InputGroup>
+                        <Button type="submit" style={{ alignSelf: 'flex-end' }}>Save Changes</Button>
                     </Form>
                 )}
             </Modal>

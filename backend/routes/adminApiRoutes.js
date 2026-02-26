@@ -136,10 +136,12 @@ router.get('/trkbit/export', checkPermission('finance:view_bank_statements'), tr
 
 // --- Client Requests ---
 router.get('/client-requests', checkPermission('client_requests:view'), clientRequestController.getAllRequests);
+router.get('/client-requests/:id/history', checkPermission('client_requests:view'), clientRequestController.getRequestHistory);
 router.patch('/client-requests/:id/complete', checkPermission('client_requests:complete'), clientRequestController.completeRequest);
 router.patch('/client-requests/:id/amount', checkPermission('client_requests:edit_amount'), clientRequestController.updateRequestAmount);
 router.patch('/client-requests/:id/restore', checkPermission('client_requests:restore'), clientRequestController.restoreRequest);
 router.patch('/client-requests/:id/content', checkPermission('client_requests:edit_content'), clientRequestController.updateRequestContent);
+router.delete('/client-requests/:id', checkPermission('client_requests:delete'), clientRequestController.deleteRequest);
 
 
 // --- Settings & Rules (Most require settings:edit_rules) ---

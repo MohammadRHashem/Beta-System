@@ -9,7 +9,23 @@ exports.getAllRequests = async (req, res) => {
                 cr.id, cr.message_id, cr.content, cr.amount, cr.source_group_name, cr.request_type, 
                 cr.received_at, cr.is_completed, cr.completed_at, u.username as completed_by,
                 COALESCE(rt.color, '#E0E0E0') as type_color,
-                rt.acknowledgement_reaction
+                rt.acknowledgement_reaction,
+                COALESCE(rt.track_content_history, 0) as track_content_history,
+                rt.content_label,
+                CASE
+                    WHEN COALESCE(rt.track_content_history, 0) = 1 AND TRIM(COALESCE(cr.content, '')) != '' THEN (
+                        SELECT COUNT(*)
+                        FROM client_requests crh
+                        WHERE crh.is_completed = 1
+                          AND crh.request_type = cr.request_type
+                          AND TRIM(COALESCE(crh.content, '')) = TRIM(COALESCE(cr.content, ''))
+                          AND (
+                              crh.received_at < cr.received_at
+                              OR (crh.received_at = cr.received_at AND crh.id < cr.id)
+                          )
+                    )
+                    ELSE 0
+                END as history_completed_count
             FROM client_requests cr
             LEFT JOIN request_types rt ON cr.request_type = rt.name
             LEFT JOIN users u ON cr.completed_by_user_id = u.id
@@ -159,5 +175,102 @@ exports.updateRequestContent = async (req, res) => {
     } catch (error) {
         console.error(`[CLIENT-REQ-ERROR] Failed to update content for request ${id}:`, error);
         res.status(500).json({ message: 'Failed to update information.' });
+    }
+};
+
+exports.deleteRequest = async (req, res) => {
+    const { id } = req.params;
+    const io = req.app.get('io');
+
+    try {
+        const [result] = await pool.query(
+            'DELETE FROM client_requests WHERE id = ?',
+            [id]
+        );
+
+        if (result.affectedRows === 0) {
+            return res.status(404).json({ message: 'Request not found.' });
+        }
+
+        io.emit('client_request:update');
+        res.json({ message: 'Request deleted successfully.' });
+    } catch (error) {
+        console.error(`[CLIENT-REQ-ERROR] Failed to delete request ${id}:`, error);
+        res.status(500).json({ message: 'Failed to delete request.' });
+    }
+};
+
+exports.getRequestHistory = async (req, res) => {
+    const { id } = req.params;
+
+    try {
+        const [[currentRequest]] = await pool.query(
+            `SELECT cr.id, cr.request_type, cr.content, cr.received_at,
+                    COALESCE(rt.track_content_history, 0) as track_content_history,
+                    rt.content_label
+             FROM client_requests cr
+             LEFT JOIN request_types rt ON cr.request_type = rt.name
+             WHERE cr.id = ?
+             LIMIT 1`,
+            [id]
+        );
+
+        if (!currentRequest) {
+            return res.status(404).json({ message: 'Request not found.' });
+        }
+
+        const tracked = Number(currentRequest.track_content_history) === 1;
+        const normalizedContent = (currentRequest.content || '').trim();
+        if (!tracked || normalizedContent.length === 0) {
+            return res.json({
+                tracked: false,
+                request_type: currentRequest.request_type,
+                content_label: currentRequest.content_label || null,
+                content: currentRequest.content || '',
+                items: []
+            });
+        }
+
+        const [items] = await pool.query(
+            `SELECT
+                crh.id,
+                crh.message_id,
+                crh.content,
+                crh.amount,
+                crh.source_group_name,
+                crh.request_type,
+                crh.received_at,
+                crh.completed_at,
+                u.username as completed_by
+             FROM client_requests crh
+             LEFT JOIN users u ON crh.completed_by_user_id = u.id
+             WHERE crh.is_completed = 1
+               AND crh.request_type = ?
+               AND TRIM(COALESCE(crh.content, '')) = ?
+               AND (
+                    crh.received_at < ?
+                    OR (crh.received_at = ? AND crh.id < ?)
+               )
+             ORDER BY crh.received_at DESC, crh.id DESC
+             LIMIT 100`,
+            [
+                currentRequest.request_type,
+                normalizedContent,
+                currentRequest.received_at,
+                currentRequest.received_at,
+                currentRequest.id
+            ]
+        );
+
+        res.json({
+            tracked: true,
+            request_type: currentRequest.request_type,
+            content_label: currentRequest.content_label || null,
+            content: currentRequest.content || '',
+            items
+        });
+    } catch (error) {
+        console.error(`[CLIENT-REQ-ERROR] Failed to fetch request history for ${id}:`, error);
+        res.status(500).json({ message: 'Failed to fetch request history.' });
     }
 };
