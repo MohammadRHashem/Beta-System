@@ -6,16 +6,25 @@ const { withdrawFullBalance } = require('./xpayzApiService');
 let isChecking = false;
 
 const toDateOnly = (dateObj, timezone) => dateFnsTz.format(dateFnsTz.toZonedTime(dateObj, timezone), 'yyyy-MM-dd');
+const toMinutesOfDay = (dateObj) => (dateObj.getHours() * 60) + dateObj.getMinutes();
 
 const parseDaysOfWeek = (value) => {
-    if (Array.isArray(value)) return value;
-    if (!value) return [];
-    try {
-        const parsed = JSON.parse(value);
-        return Array.isArray(parsed) ? parsed : [];
-    } catch (error) {
-        return [];
+    let source = value;
+    if (!Array.isArray(source)) {
+        if (!source) return [];
+        try {
+            source = JSON.parse(source);
+        } catch (error) {
+            return [];
+        }
     }
+
+    if (!Array.isArray(source)) return [];
+
+    return [...new Set(source
+        .map((day) => parseInt(day, 10))
+        .filter((day) => Number.isInteger(day) && day >= 0 && day <= 6)
+    )];
 };
 
 const shouldRunJobNow = (job, nowUtc) => {
@@ -29,12 +38,18 @@ const shouldRunJobNow = (job, nowUtc) => {
     const scheduledMinute = parseInt(minuteStr, 10);
 
     if (!Number.isInteger(scheduledHour) || !Number.isInteger(scheduledMinute)) return false;
-    if (nowInJobTimezone.getHours() !== scheduledHour || nowInJobTimezone.getMinutes() !== scheduledMinute) return false;
+    const nowMinutes = toMinutesOfDay(nowInJobTimezone);
+    const scheduledMinutes = (scheduledHour * 60) + scheduledMinute;
+    const timeReached = nowMinutes >= scheduledMinutes;
+    if (!timeReached) return false;
 
     if (job.schedule_type === 'ONCE') {
         const scheduledDateStr = job.scheduled_at_date ? String(job.scheduled_at_date) : null;
         if (!scheduledDateStr) return false;
-        return !job.last_run_at && toDateOnly(nowInJobTimezone, jobTimezone) === scheduledDateStr;
+        if (job.last_run_at) return false;
+        const todayStr = toDateOnly(nowInJobTimezone, jobTimezone);
+        if (todayStr < scheduledDateStr) return false;
+        return true;
     }
 
     if (job.schedule_type === 'DAILY') {
@@ -51,11 +66,14 @@ const shouldRunJobNow = (job, nowUtc) => {
 };
 
 const checkSchedules = async () => {
-    if (isChecking) return;
+    if (isChecking) {
+        console.warn('[WITHDRAW-SCHEDULER] Previous tick is still running; skipping this minute tick.');
+        return;
+    }
     isChecking = true;
-
-    const connection = await pool.getConnection();
+    let connection;
     try {
+        connection = await pool.getConnection();
         const [jobs] = await connection.query(
             `SELECT sw.*, s.subaccount_number, s.name as subaccount_name, s.account_type
              FROM scheduled_withdrawals sw
@@ -119,7 +137,9 @@ const checkSchedules = async () => {
     } catch (error) {
         console.error('[WITHDRAW-SCHEDULER] Critical scheduler error:', error);
     } finally {
-        connection.release();
+        if (connection) {
+            connection.release();
+        }
         isChecking = false;
     }
 };
