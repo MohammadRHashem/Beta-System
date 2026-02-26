@@ -82,7 +82,30 @@ const ArrowButton = styled.button` background: transparent; border: none; font-s
 const SaveOrderButton = styled.button` background-color: ${({ theme }) => theme.primary}; color: white; border: none; padding: 0.75rem 1.5rem; border-radius: 4px; cursor: pointer; font-weight: bold; display: block; margin-left: auto; `;
 const SearchRow = styled.div` display: flex; justify-content: flex-end; align-items: center; gap: 1rem; margin-top: 1rem; flex-wrap: wrap; `;
 const SearchInput = styled.input` padding: 0.65rem 0.9rem; border: 1px solid ${({ theme }) => theme.border}; border-radius: 6px; font-size: 0.95rem; min-width: 260px; `;
-const HistoryTable = styled.table` width: 100%; border-collapse: collapse; margin-top: 1rem; th, td { padding: 0.65rem 0.75rem; border-bottom: 1px solid ${({ theme }) => theme.border}; text-align: left; } th { background-color: ${({ theme }) => theme.background}; } `;
+const HistoryTableWrapper = styled.div`
+    margin-top: 1rem;
+    width: 100%;
+    overflow-x: auto;
+    border: 1px solid ${({ theme }) => theme.border};
+    border-radius: 6px;
+`;
+const HistoryTable = styled.table`
+    width: 100%;
+    min-width: 680px;
+    border-collapse: collapse;
+    table-layout: fixed;
+    th, td {
+        padding: 0.65rem 0.75rem;
+        border-bottom: 1px solid ${({ theme }) => theme.border};
+        text-align: left;
+        vertical-align: top;
+    }
+    th { background-color: ${({ theme }) => theme.background}; }
+    td:nth-child(3) {
+        white-space: normal;
+        word-break: break-word;
+    }
+`;
 const HistoryHint = styled.p` margin: 0; color: ${({ theme }) => theme.lightText}; font-size: 0.9rem; `;
 
 const SAO_PAULO_TIMEZONE = 'America/Sao_Paulo';
@@ -468,7 +491,7 @@ const ClientRequestsPage = () => {
                 <SaveOrderButton onClick={handleSaveOrder}>Save Order</SaveOrderButton>
             </Modal>
 
-            <Modal isOpen={isHistoryModalOpen} onClose={() => setIsHistoryModalOpen(false)}>
+            <Modal isOpen={isHistoryModalOpen} onClose={() => setIsHistoryModalOpen(false)} maxWidth='900px'>
                 <h2>Completed History</h2>
                 <HistoryHint>
                     {historyPayload?.content_label ? `${historyPayload.content_label}: ` : 'Information: '}
@@ -478,28 +501,30 @@ const ClientRequestsPage = () => {
                     <p style={{ marginTop: '1rem' }}>Loading history...</p>
                 ) : (
                     historyPayload?.items?.length ? (
-                        <HistoryTable>
-                            <thead>
-                                <tr>
-                                    <th>Received</th>
-                                    <th>Completed</th>
-                                    <th>Group</th>
-                                    <th>Amount</th>
-                                    <th>Completed By</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {historyPayload.items.map(item => (
-                                    <tr key={item.id}>
-                                        <td>{formatSaoPauloDateTime(item.received_at, 'dd/MM/yyyy HH:mm')}</td>
-                                        <td>{formatSaoPauloDateTime(item.completed_at, 'dd/MM/yyyy HH:mm')}</td>
-                                        <td>{item.source_group_name || '-'}</td>
-                                        <td>{item.amount ? formatAmount(item.amount) : '-'}</td>
-                                        <td>{item.completed_by || '-'}</td>
+                        <HistoryTableWrapper>
+                            <HistoryTable>
+                                <thead>
+                                    <tr>
+                                        <th>Received</th>
+                                        <th>Completed</th>
+                                        <th>Group</th>
+                                        <th>Amount</th>
+                                        <th>Completed By</th>
                                     </tr>
-                                ))}
-                            </tbody>
-                        </HistoryTable>
+                                </thead>
+                                <tbody>
+                                    {historyPayload.items.map(item => (
+                                        <tr key={item.id}>
+                                            <td>{formatSaoPauloDateTime(item.received_at, 'dd/MM/yyyy HH:mm')}</td>
+                                            <td>{formatSaoPauloDateTime(item.completed_at, 'dd/MM/yyyy HH:mm')}</td>
+                                            <td>{item.source_group_name || '-'}</td>
+                                            <td>{item.amount ? formatAmount(item.amount) : '-'}</td>
+                                            <td>{item.completed_by || '-'}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </HistoryTable>
+                        </HistoryTableWrapper>
                     ) : (
                         <p style={{ marginTop: '1rem' }}>No completed history found for this value.</p>
                     )
