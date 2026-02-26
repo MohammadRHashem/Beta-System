@@ -1,6 +1,15 @@
 const pool = require('../config/db');
 const whatsappService = require('../services/whatsappService');
 
+const normalizeContentValue = (value) => {
+    if (value === undefined || value === null) return '';
+    return String(value)
+        .replace(/[\r\n\t]+/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .toLowerCase();
+};
+
 // RENAMED & MODIFIED: Fetches ALL requests (pending and completed)
 exports.getAllRequests = async (req, res) => {
     try {
@@ -13,12 +22,18 @@ exports.getAllRequests = async (req, res) => {
                 COALESCE(rt.track_content_history, 0) as track_content_history,
                 rt.content_label,
                 CASE
-                    WHEN COALESCE(rt.track_content_history, 0) = 1 AND TRIM(COALESCE(cr.content, '')) != '' THEN (
+                    WHEN COALESCE(rt.track_content_history, 0) = 1 AND COALESCE(cr.content_key, '') != '' THEN (
                         SELECT COUNT(*)
                         FROM client_requests crh
                         WHERE crh.is_completed = 1
-                          AND crh.request_type = cr.request_type
-                          AND TRIM(COALESCE(crh.content, '')) = TRIM(COALESCE(cr.content, ''))
+                          AND (
+                              (cr.request_type_id IS NOT NULL AND (
+                                  crh.request_type_id = cr.request_type_id
+                                  OR (crh.request_type_id IS NULL AND crh.request_type = cr.request_type)
+                              ))
+                              OR (cr.request_type_id IS NULL AND crh.request_type = cr.request_type)
+                          )
+                          AND COALESCE(crh.content_key, '') = COALESCE(cr.content_key, '')
                           AND (
                               crh.received_at < cr.received_at
                               OR (crh.received_at = cr.received_at AND crh.id < cr.id)
@@ -27,7 +42,9 @@ exports.getAllRequests = async (req, res) => {
                     ELSE 0
                 END as history_completed_count
             FROM client_requests cr
-            LEFT JOIN request_types rt ON cr.request_type = rt.name
+            LEFT JOIN request_types rt
+              ON (cr.request_type_id IS NOT NULL AND rt.id = cr.request_type_id)
+              OR (cr.request_type_id IS NULL AND rt.name = cr.request_type)
             LEFT JOIN users u ON cr.completed_by_user_id = u.id
             ORDER BY cr.received_at ASC
         `;
@@ -87,7 +104,9 @@ exports.restoreRequest = async (req, res) => {
         const [[requestToRestore]] = await pool.query(
             `SELECT cr.message_id, rt.acknowledgement_reaction 
              FROM client_requests cr
-             LEFT JOIN request_types rt ON cr.request_type = rt.name
+             LEFT JOIN request_types rt
+               ON (cr.request_type_id IS NOT NULL AND rt.id = cr.request_type_id)
+               OR (cr.request_type_id IS NULL AND rt.name = cr.request_type)
              WHERE cr.id = ?`,
             [id]
         );
@@ -159,9 +178,10 @@ exports.updateRequestContent = async (req, res) => {
     }
 
     try {
+        const normalizedContentKey = normalizeContentValue(content);
         const [result] = await pool.query(
-            'UPDATE client_requests SET content = ? WHERE id = ?',
-            [content, id]
+            'UPDATE client_requests SET content = ?, content_key = ? WHERE id = ?',
+            [content, normalizedContentKey, id]
         );
 
         if (result.affectedRows === 0) {
@@ -205,11 +225,13 @@ exports.getRequestHistory = async (req, res) => {
 
     try {
         const [[currentRequest]] = await pool.query(
-            `SELECT cr.id, cr.request_type, cr.content, cr.received_at,
+            `SELECT cr.id, cr.request_type, cr.request_type_id, cr.content, cr.content_key, cr.received_at,
                     COALESCE(rt.track_content_history, 0) as track_content_history,
                     rt.content_label
              FROM client_requests cr
-             LEFT JOIN request_types rt ON cr.request_type = rt.name
+             LEFT JOIN request_types rt
+               ON (cr.request_type_id IS NOT NULL AND rt.id = cr.request_type_id)
+               OR (cr.request_type_id IS NULL AND rt.name = cr.request_type)
              WHERE cr.id = ?
              LIMIT 1`,
             [id]
@@ -220,7 +242,7 @@ exports.getRequestHistory = async (req, res) => {
         }
 
         const tracked = Number(currentRequest.track_content_history) === 1;
-        const normalizedContent = (currentRequest.content || '').trim();
+        const normalizedContent = currentRequest.content_key || normalizeContentValue(currentRequest.content);
         if (!tracked || normalizedContent.length === 0) {
             return res.json({
                 tracked: false,
@@ -245,8 +267,14 @@ exports.getRequestHistory = async (req, res) => {
              FROM client_requests crh
              LEFT JOIN users u ON crh.completed_by_user_id = u.id
              WHERE crh.is_completed = 1
-               AND crh.request_type = ?
-               AND TRIM(COALESCE(crh.content, '')) = ?
+               AND (
+                    (? IS NOT NULL AND (
+                        crh.request_type_id = ?
+                        OR (crh.request_type_id IS NULL AND crh.request_type = ?)
+                    ))
+                    OR (? IS NULL AND crh.request_type = ?)
+               )
+               AND COALESCE(crh.content_key, '') = ?
                AND (
                     crh.received_at < ?
                     OR (crh.received_at = ? AND crh.id < ?)
@@ -254,6 +282,10 @@ exports.getRequestHistory = async (req, res) => {
              ORDER BY crh.received_at DESC, crh.id DESC
              LIMIT 100`,
             [
+                currentRequest.request_type_id,
+                currentRequest.request_type_id,
+                currentRequest.request_type,
+                currentRequest.request_type_id,
                 currentRequest.request_type,
                 normalizedContent,
                 currentRequest.received_at,

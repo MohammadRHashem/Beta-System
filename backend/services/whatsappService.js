@@ -22,6 +22,15 @@ let abbreviationCache = [];
 let requestTypeCache = [];
 let io; // To hold the socket.io instance
 
+const normalizeClientRequestContent = (value) => {
+  if (value === undefined || value === null) return "";
+  return String(value)
+    .replace(/[\r\n\t]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+};
+
 // === NEW: State for Auto Confirmation ===
 let isAutoConfirmationEnabled = false;
 let isAlfaApiConfirmationEnabled = false;
@@ -1766,7 +1775,7 @@ const refreshRequestTypeCache = async () => {
   try {
     console.log("[CACHE] Refreshing client request types cache...");
     const [types] = await pool.query(
-      "SELECT name, trigger_regex, acknowledgement_reaction FROM request_types WHERE is_enabled = 1",
+      "SELECT id, name, trigger_regex, acknowledgement_reaction FROM request_types WHERE is_enabled = 1",
     );
     requestTypeCache = types.map((t) => ({
       ...t,
@@ -1844,6 +1853,7 @@ const handleMessage = async (message) => {
         // match[0] is the full match, match[1] is the first capture group
         if (match && match[1]) {
           const capturedContent = match[1];
+          const contentKey = normalizeClientRequestContent(capturedContent);
           console.log(
             `[REQUEST-DETECT] Rule "${rule.name}" triggered. Content: ${capturedContent}`,
           );
@@ -1864,13 +1874,23 @@ const handleMessage = async (message) => {
           }
 
           await pool.query(
-            `INSERT INTO client_requests (message_id, content, request_type, source_group_jid, source_group_name, received_at) 
-                   VALUES (?, ?, ?, ?, ?, ?)
-                   ON DUPLICATE KEY UPDATE content = VALUES(content)`,
+            `INSERT INTO client_requests
+                   (message_id, content, content_key, request_type, request_type_id, source_group_jid, source_group_name, received_at) 
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                   ON DUPLICATE KEY UPDATE
+                     content = VALUES(content),
+                     content_key = VALUES(content_key),
+                     request_type = VALUES(request_type),
+                     request_type_id = VALUES(request_type_id),
+                     source_group_jid = VALUES(source_group_jid),
+                     source_group_name = VALUES(source_group_name),
+                     received_at = VALUES(received_at)`,
             [
               message.id._serialized,
               capturedContent,
+              contentKey,
               rule.name,
+              rule.id,
               chat.id._serialized,
               chat.name,
               new Date(message.timestamp * 1000),
