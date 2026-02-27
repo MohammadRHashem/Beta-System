@@ -1,16 +1,36 @@
 const pool = require('../config/db');
 const whatsappService = require('../services/whatsappService');
+const isMissingNewContentColumnsError = (error) => error?.code === 'ER_BAD_FIELD_ERROR';
 
 // GET all request types (permission-gated)
 exports.getAll = async (req, res) => {
     try {
         // MODIFIED: Select new sort_order column and order by it
-        const [types] = await pool.query(
-            `SELECT id, name, trigger_regex, acknowledgement_reaction, new_content_reaction, new_content_reply_text, color, is_enabled,
-                    sort_order, track_content_history, content_label
-             FROM request_types
-             ORDER BY sort_order ASC, name ASC`
-        );
+        let types;
+        try {
+            const [rows] = await pool.query(
+                `SELECT id, name, trigger_regex, acknowledgement_reaction, new_content_reaction, new_content_reply_text, color, is_enabled,
+                        sort_order, track_content_history, content_label
+                 FROM request_types
+                 ORDER BY sort_order ASC, name ASC`
+            );
+            types = rows;
+        } catch (error) {
+            if (!isMissingNewContentColumnsError(error)) {
+                throw error;
+            }
+            const [legacyRows] = await pool.query(
+                `SELECT id, name, trigger_regex, acknowledgement_reaction, color, is_enabled,
+                        sort_order, track_content_history, content_label
+                 FROM request_types
+                 ORDER BY sort_order ASC, name ASC`
+            );
+            types = legacyRows.map((row) => ({
+                ...row,
+                new_content_reaction: null,
+                new_content_reply_text: null
+            }));
+        }
         res.json(types);
     } catch (error) {
         res.status(500).json({ message: 'Failed to fetch request types.' });
@@ -75,12 +95,27 @@ exports.create = async (req, res) => {
 
     try {
         // UPDATED: Insert color into DB
-        const [result] = await pool.query(
-            `INSERT INTO request_types
-                (user_id, name, trigger_regex, acknowledgement_reaction, new_content_reaction, new_content_reply_text, color, track_content_history, content_label)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [userId, name, trigger_regex, acknowledgement_reaction, normalizedNewReaction, normalizedNewReplyText, color || '#E0E0E0', trackHistory, normalizedContentLabel]
-        );
+        let result;
+        try {
+            const [insertResult] = await pool.query(
+                `INSERT INTO request_types
+                    (user_id, name, trigger_regex, acknowledgement_reaction, new_content_reaction, new_content_reply_text, color, track_content_history, content_label)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                [userId, name, trigger_regex, acknowledgement_reaction, normalizedNewReaction, normalizedNewReplyText, color || '#E0E0E0', trackHistory, normalizedContentLabel]
+            );
+            result = insertResult;
+        } catch (error) {
+            if (!isMissingNewContentColumnsError(error)) {
+                throw error;
+            }
+            const [legacyInsertResult] = await pool.query(
+                `INSERT INTO request_types
+                    (user_id, name, trigger_regex, acknowledgement_reaction, color, track_content_history, content_label)
+                 VALUES (?, ?, ?, ?, ?, ?, ?)`,
+                [userId, name, trigger_regex, acknowledgement_reaction, color || '#E0E0E0', trackHistory, normalizedContentLabel]
+            );
+            result = legacyInsertResult;
+        }
         whatsappService.refreshRequestTypeCache();
         res.status(201).json({ id: result.insertId });
     } catch (error) {
@@ -100,13 +135,26 @@ exports.update = async (req, res) => {
 
     try {
         // UPDATED: Update color in DB
-        await pool.query(
-            `UPDATE request_types
-             SET name = ?, trigger_regex = ?, acknowledgement_reaction = ?, new_content_reaction = ?, new_content_reply_text = ?, is_enabled = ?,
-                 color = ?, track_content_history = ?, content_label = ?
-             WHERE id = ?`,
-            [name, trigger_regex, acknowledgement_reaction, normalizedNewReaction, normalizedNewReplyText, is_enabled, color || '#E0E0E0', trackHistory, normalizedContentLabel, id]
-        );
+        try {
+            await pool.query(
+                `UPDATE request_types
+                 SET name = ?, trigger_regex = ?, acknowledgement_reaction = ?, new_content_reaction = ?, new_content_reply_text = ?, is_enabled = ?,
+                     color = ?, track_content_history = ?, content_label = ?
+                 WHERE id = ?`,
+                [name, trigger_regex, acknowledgement_reaction, normalizedNewReaction, normalizedNewReplyText, is_enabled, color || '#E0E0E0', trackHistory, normalizedContentLabel, id]
+            );
+        } catch (error) {
+            if (!isMissingNewContentColumnsError(error)) {
+                throw error;
+            }
+            await pool.query(
+                `UPDATE request_types
+                 SET name = ?, trigger_regex = ?, acknowledgement_reaction = ?, is_enabled = ?,
+                     color = ?, track_content_history = ?, content_label = ?
+                 WHERE id = ?`,
+                [name, trigger_regex, acknowledgement_reaction, is_enabled, color || '#E0E0E0', trackHistory, normalizedContentLabel, id]
+            );
+        }
         whatsappService.refreshRequestTypeCache();
         res.json({ message: 'Request type updated.' });
     } catch (error) {

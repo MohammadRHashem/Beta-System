@@ -367,7 +367,9 @@ exports.withdrawNow = async (req, res) => {
         } catch (error) {
             const responsePayload = {
                 message: error.message,
-                responseData: error.response?.data || null
+                responseData: error.response?.data || null,
+                mode: normalizedMode,
+                manual: true
             };
 
             await pool.query(

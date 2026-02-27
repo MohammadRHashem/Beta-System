@@ -1777,12 +1777,34 @@ const reconcileDeletedMessages = async () => {
 const refreshRequestTypeCache = async () => {
   try {
     console.log("[CACHE] Refreshing client request types cache...");
-    const [types] = await pool.query(
-      `SELECT id, name, trigger_regex, acknowledgement_reaction, track_content_history,
-              new_content_reaction, new_content_reply_text
-       FROM request_types
-       WHERE is_enabled = 1`,
-    );
+    let types;
+    try {
+      const [rows] = await pool.query(
+        `SELECT id, name, trigger_regex, acknowledgement_reaction, track_content_history,
+                new_content_reaction, new_content_reply_text
+         FROM request_types
+         WHERE is_enabled = 1`,
+      );
+      types = rows;
+    } catch (error) {
+      if (error?.code !== "ER_BAD_FIELD_ERROR") {
+        throw error;
+      }
+      console.warn(
+        "[CACHE] request_types new-content columns not found yet. Falling back to legacy cache query.",
+      );
+      const [legacyRows] = await pool.query(
+        `SELECT id, name, trigger_regex, acknowledgement_reaction, track_content_history
+         FROM request_types
+         WHERE is_enabled = 1`,
+      );
+      types = legacyRows.map((row) => ({
+        ...row,
+        new_content_reaction: null,
+        new_content_reply_text: null,
+      }));
+    }
+
     requestTypeCache = types.map((t) => ({
       ...t,
       // Compile regex on load for performance
