@@ -328,6 +328,7 @@ exports.withdrawNow = async (req, res) => {
                 result = {
                     status: 'skipped',
                     message: 'No available balance to withdraw.',
+                    manual: true,
                     mode: normalizedMode,
                     available_balance: availableBalance,
                     amount: 0,
@@ -338,6 +339,7 @@ exports.withdrawNow = async (req, res) => {
                 result = {
                     status: 'success',
                     message: `Withdrawn ${amountToWithdraw}.`,
+                    manual: true,
                     mode: normalizedMode,
                     available_balance: availableBalance,
                     amount: amountToWithdraw,

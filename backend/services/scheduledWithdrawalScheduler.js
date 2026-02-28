@@ -8,7 +8,9 @@ let isChecking = false;
 const toDateOnly = (dateObj, timezone) => dateFnsTz.format(dateFnsTz.toZonedTime(dateObj, timezone), 'yyyy-MM-dd');
 const toMinutesOfDay = (dateObj) => (dateObj.getHours() * 60) + dateObj.getMinutes();
 const safeParseJson = (value) => {
-    if (!value || typeof value !== 'string') return null;
+    if (value === undefined || value === null) return null;
+    if (typeof value === 'object') return value;
+    if (typeof value !== 'string') return null;
     try {
         return JSON.parse(value);
     } catch (error) {
@@ -64,7 +66,9 @@ const evaluateJobSchedule = (job, nowUtc) => {
         || Boolean(lastResponse?.mode)
         || Boolean(lastResponse?.manual);
     const lastRun = job.last_run_at ? dateFnsTz.toZonedTime(new Date(`${job.last_run_at}Z`), jobTimezone) : null;
-    const hasRunToday = !wasManualRun
+    const hasPersistedStatus = String(job.last_status || '').trim().length > 0;
+    const hasRunToday = hasPersistedStatus
+        && !wasManualRun
         && lastRun
         && toDateOnly(lastRun, jobTimezone) === toDateOnly(nowInJobTimezone, jobTimezone);
 
@@ -108,7 +112,11 @@ const evaluateJobSchedule = (job, nowUtc) => {
 
     if (job.schedule_type === 'DAILY') {
         return hasRunToday
-            ? { shouldRun: false, reason: 'daily_already_ran_today' }
+            ? {
+                shouldRun: false,
+                reason: 'daily_already_ran_today',
+                message: `last_run_at=${job.last_run_at}, last_status=${job.last_status}, manual=${wasManualRun}`
+            }
             : { shouldRun: true, reason: 'daily_due' };
     }
 
@@ -116,7 +124,8 @@ const evaluateJobSchedule = (job, nowUtc) => {
         if (hasRunToday) {
             return {
                 shouldRun: false,
-                reason: 'weekly_already_ran_today'
+                reason: 'weekly_already_ran_today',
+                message: `last_run_at=${job.last_run_at}, last_status=${job.last_status}, manual=${wasManualRun}`
             };
         }
         const days = parseDaysOfWeek(job.scheduled_days_of_week);
