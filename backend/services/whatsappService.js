@@ -40,6 +40,10 @@ let isAlfaApiConfirmationEnabled = false;
 let isTrocaCoinTelegramEnabled = false;
 let trocaCoinConfirmationMethod = "telegram";
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const PUPPETEER_PROTOCOL_TIMEOUT_MS = parseInt(
+  process.env.PUPPETEER_PROTOCOL_TIMEOUT_MS || "180000",
+  10,
+);
 
 const redisConnection = {
   host: process.env.REDIS_HOST || "127.0.0.1",
@@ -54,6 +58,19 @@ const MEDIA_ARCHIVE_DIR = path.join(__dirname, "..", "media_archive");
 if (!fsSync.existsSync(MEDIA_ARCHIVE_DIR)) {
   fsSync.mkdirSync(MEDIA_ARCHIVE_DIR, { recursive: true });
 }
+
+const moveFileSafely = async (sourcePath, destinationPath) => {
+  try {
+    await fs.rename(sourcePath, destinationPath);
+  } catch (error) {
+    if (error && error.code === "EXDEV") {
+      await fs.copyFile(sourcePath, destinationPath);
+      await fs.unlink(sourcePath);
+      return;
+    }
+    throw error;
+  }
+};
 
 const sendPingToMonitor = async () => {
   const monitorUrl = process.env.MONITOR_URL;
@@ -1288,7 +1305,7 @@ const invoiceWorker = new Worker(
         const finalMediaPath = path.join(MEDIA_ARCHIVE_DIR, archiveFileName);
         // Ensure file is moved before proceeding
         if (fsSync.existsSync(tempFilePath)) {
-          await fs.rename(tempFilePath, finalMediaPath);
+          await moveFileSafely(tempFilePath, finalMediaPath);
           tempFilePaths.pop();
         }
 
@@ -1422,6 +1439,36 @@ const refreshAbbreviationCache = async () => {
 };
 
 let isReconciling = false;
+const isProtocolTimeoutError = (error) => {
+  if (!error) return false;
+  const message = String(error.message || "");
+  return (
+    error.name === "ProtocolError" ||
+    message.includes("Runtime.callFunctionOn timed out") ||
+    message.includes("protocolTimeout")
+  );
+};
+
+const getChatsWithRetry = async (attempts = 2) => {
+  let lastError = null;
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    try {
+      return await client.getChats();
+    } catch (error) {
+      lastError = error;
+      if (!isProtocolTimeoutError(error) || attempt === attempts) {
+        throw error;
+      }
+      const backoffMs = attempt * 3000;
+      console.warn(
+        `[RECONCILER] getChats timeout on attempt ${attempt}/${attempts}. Retrying in ${backoffMs}ms...`,
+      );
+      await delay(backoffMs);
+    }
+  }
+  throw lastError;
+};
+
 const reconcileMissedMessages = async () => {
   if (isReconciling) {
     console.log(
@@ -1442,7 +1489,7 @@ const reconcileMissedMessages = async () => {
       (Date.now() - 10 * 60 * 60 * 1000) / 1000,
     );
     const allRecentMessageIds = new Set();
-    const chats = await client.getChats();
+    const chats = await getChatsWithRetry(3);
     const groups = chats.filter((chat) => chat.isGroup);
 
     for (const group of groups) {
@@ -1485,10 +1532,16 @@ const reconcileMissedMessages = async () => {
       console.log("[RECONCILER] No missed messages found.");
     }
   } catch (error) {
-    console.error(
-      "[RECONCILER-ERROR] A critical error occurred during reconciliation:",
-      error,
-    );
+    if (isProtocolTimeoutError(error)) {
+      console.warn(
+        "[RECONCILER-WARN] Reconciliation skipped due to transient Puppeteer protocol timeout.",
+      );
+    } else {
+      console.error(
+        "[RECONCILER-ERROR] A critical error occurred during reconciliation:",
+        error,
+      );
+    }
   } finally {
     isReconciling = false;
     console.log("[RECONCILER] Finished missed message reconciliation check.");
@@ -2258,6 +2311,7 @@ const initializeWhatsApp = (socketIoInstance) => {
     authStrategy: new LocalAuth({ dataPath: "wwebjs_sessions" }),
     puppeteer: {
       headless: true,
+      protocolTimeout: PUPPETEER_PROTOCOL_TIMEOUT_MS,
       args: [
         "--no-sandbox",
         "--disable-setuid-sandbox",
