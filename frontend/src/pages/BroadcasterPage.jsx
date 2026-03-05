@@ -32,7 +32,7 @@ const RightPanel = styled.div`
   flex-direction: column;
   gap: 1.5rem;
 `;
-const API_URL = "https://platform.betaserver.dev:4433";
+const API_URL = (import.meta.env.VITE_SOCKET_URL || window.location.origin).trim();
 
 const BroadcasterPage = ({ allGroups }) => {
   const { hasPermission } = usePermissions(); // 2. GET PERMISSION CHECKER

@@ -21,13 +21,28 @@ const manualReviewController = require('./controllers/manualReviewController');
 const app = express();
 const server = http.createServer(app);
 
-const productionFrontendUrlWithPort = "https://platform.betaserver.dev:4433";
-const productionFrontendUrl = "https://platform.betaserver.dev";
+const fallbackCorsOrigins = [
+    'https://platform.betaserver.dev',
+    'http://localhost:5173',
+    'http://127.0.0.1:5173'
+];
+const corsOrigins = (process.env.CORS_ORIGINS || '')
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+const allowedOrigins = corsOrigins.length > 0 ? corsOrigins : fallbackCorsOrigins;
+const isAllowedOrigin = (origin) => !origin || allowedOrigins.includes(origin);
 
 const io = new Server(server, {
     path: "/socket.io/",
     cors: {
-        origin: [productionFrontendUrlWithPort, productionFrontendUrl],
+        origin: (origin, callback) => {
+            if (isAllowedOrigin(origin)) {
+                callback(null, true);
+                return;
+            }
+            callback(new Error('Not allowed by CORS'));
+        },
         methods: ["GET", "POST"]
     }
 });
@@ -35,7 +50,13 @@ const io = new Server(server, {
 // --- Global Setup ---
 app.set('io', io); // Make io accessible in controllers via req.app.get('io')
 app.use(cors({
-    origin: [productionFrontendUrlWithPort, productionFrontendUrl],
+    origin: (origin, callback) => {
+        if (isAllowedOrigin(origin)) {
+            callback(null, true);
+            return;
+        }
+        callback(new Error('Not allowed by CORS'));
+    },
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE"],
     allowedHeaders: ["Content-Type", "Authorization"]
 }));
@@ -73,6 +94,7 @@ const portalController = require('./controllers/portalController');
 app.post('/api/portal/auth/login', portalController.login);
 
 
+app.post('/api/portal/bridge/confirm-payment', portalAuthMiddleware, portalController.triggerPartnerConfirmation);
 app.post('/portal/bridge/confirm-payment', portalAuthMiddleware, portalController.triggerPartnerConfirmation);
 
 

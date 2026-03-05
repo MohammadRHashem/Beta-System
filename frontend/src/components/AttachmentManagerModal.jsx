@@ -149,7 +149,7 @@ const AttachmentManagerModal = ({ isOpen, onClose, onSelect, canViewAttachments,
                     return (
                         <FileCard key={upload.id} onClick={() => onSelect(upload)}>
                             <FilePreview>
-                                {canPreviewImage ? <img src={`https://platform.betaserver.dev${upload.url}`} alt={upload.original_filename} /> : icon}
+                                {canPreviewImage ? <img src={upload.url} alt={upload.original_filename} /> : icon}
                             </FilePreview>
                             <FileName title={upload.original_filename}>{upload.original_filename}</FileName>
                             <Overlay className="overlay">

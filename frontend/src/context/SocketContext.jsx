@@ -6,7 +6,7 @@ const SocketContext = createContext(null);
 
 export const useSocket = () => useContext(SocketContext);
 
-const API_URL = "https://platform.betaserver.dev:4433";
+const API_URL = (import.meta.env.VITE_SOCKET_URL || window.location.origin).trim();
 
 export const SocketProvider = ({ children }) => {
     const [socket, setSocket] = useState(null);

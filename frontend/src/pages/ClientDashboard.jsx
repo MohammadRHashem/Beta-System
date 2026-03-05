@@ -6,7 +6,6 @@ import PasscodeModal from '../components/PasscodeModal'; // <<< IMPORT NEW COMPO
 import { FaSyncAlt, FaSearch, FaArrowUp, FaArrowDown, FaHourglassHalf, FaSpinner, FaPaperPlane, FaEdit, FaCheckDouble, FaMinusCircle, FaExchangeAlt } from 'react-icons/fa';
 import Pagination from '../components/Pagination';
 import { usePortal } from '../context/PortalContext';
-import axios from 'axios';
 import Modal from '../components/Modal';
 
 const useDebounce = (value, delay) => {
@@ -491,26 +490,7 @@ const ClientDashboard = () => {
             return;
         }
         try {
-            // === THE DEFINITIVE FIX: DIRECT API CALL ===
-            const token =
-                sessionStorage.getItem('portalAuthToken') ||
-                localStorage.getItem('portalAuthToken');
-            if (!token) {
-                alert('Authentication error: No portal token found. Please log out and log back in.');
-                return;
-            }
-
-            await axios.post(
-                'https://platform.betaserver.dev:4433/portal/bridge/confirm-payment',
-                { correlation_id: correlationId },
-                {
-                    headers: {
-                        'Authorization': `Bearer ${token}`,
-                        'Content-Type': 'application/json'
-                    }
-                }
-            );
-            // ==========================================
+            await triggerPartnerConfirmation(correlationId);
 
             alert(`Confirmation signal sent for order: ${correlationId}`);
             fetchTableData();

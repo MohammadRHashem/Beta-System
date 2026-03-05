@@ -42,8 +42,8 @@ let trocaCoinConfirmationMethod = "telegram";
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const redisConnection = {
-  host: "localhost",
-  port: 6379,
+  host: process.env.REDIS_HOST || "127.0.0.1",
+  port: parseInt(process.env.REDIS_PORT || "6379", 10),
   maxRetriesPerRequest: null,
 };
 const invoiceQueue = new Queue("invoice-processing-queue", {
@@ -704,7 +704,8 @@ const invoiceWorker = new Worker(
       tempFilePaths.push(tempFilePath);
       await fs.writeFile(tempFilePath, Buffer.from(media.data, "base64"));
 
-      const { stdout } = await execa("python", [
+      const pythonExecutable = process.platform === "win32" ? "python" : "python3";
+      const { stdout } = await execa(pythonExecutable, [
         path.join(__dirname, "..", "python_scripts", "main.py"),
         tempFilePath,
       ]);

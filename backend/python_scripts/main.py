@@ -4,12 +4,11 @@ import json
 from dotenv import load_dotenv
 from pathlib import Path # Import the modern Path library for robust path handling
 
-# === THE DEFINITIVE FIX: Use pathlib to guarantee the .env path is correct ===
-# 1. Get the directory of the current script.
 script_dir = Path(__file__).resolve().parent
-# 2. Construct the full path to the .env file next to it.
-dotenv_path = script_dir / '.env'
-# 3. Load the .env file from that explicit path.
+project_root = script_dir.parent
+dotenv_path = project_root / '.env'
+if not dotenv_path.exists():
+    dotenv_path = script_dir / '.env'
 load_dotenv(dotenv_path=dotenv_path)
 
 # This must be imported AFTER load_dotenv has run.

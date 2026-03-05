@@ -1,7 +1,10 @@
 import axios from 'axios';
 
-const apiClient = axios.create({ baseURL: 'https://platform.betaserver.dev:4433/api' });
-const portalApiClient = axios.create({ baseURL: 'https://platform.betaserver.dev:4433/api/portal' });
+const API_BASE = (import.meta.env.VITE_API_BASE_URL || '/api').trim();
+const PORTAL_API_BASE = (import.meta.env.VITE_PORTAL_API_BASE_URL || `${API_BASE}/portal`).trim();
+
+const apiClient = axios.create({ baseURL: API_BASE });
+const portalApiClient = axios.create({ baseURL: PORTAL_API_BASE });
 
 const getPortalToken = () => sessionStorage.getItem('portalAuthToken') || localStorage.getItem('portalAuthToken');
 
