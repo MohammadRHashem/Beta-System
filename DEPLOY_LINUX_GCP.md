@@ -55,7 +55,7 @@ pip install -r requirements.txt
 deactivate
 
 cd /opt/beta-system/frontend
-npm ci
+npm install
 npm run build
 ```
 
@@ -68,6 +68,7 @@ cp /opt/beta-system/backend/.env.example.linux /opt/beta-system/backend/.env
 ```
 
 2. Fill real values in `/opt/beta-system/backend/.env`.
+   - Set `PYTHON_BIN=/opt/beta-system/backend/.venv/bin/python3`
 3. Keep certificate/key files for Inter API inside:
    - `/opt/beta-system/backend/services/Inter_API_Certificado.crt`
    - `/opt/beta-system/backend/services/Inter_API_Chave.key`
@@ -290,6 +291,6 @@ App checks:
 cd /opt/beta-system
 git pull
 cd backend && npm ci
-cd ../frontend && npm ci && npm run build
+cd ../frontend && npm install && npm run build
 sudo systemctl restart beta-server beta-xpayz-sync beta-trkbit-sync beta-usdt-sync beta-alfa-sync beta-bridge-linker
 ```

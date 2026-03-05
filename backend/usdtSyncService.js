@@ -23,7 +23,8 @@ const syncUsdtTransactions = async () => {
             return;
         }
 
-        const pythonExecutable = process.platform === 'win32' ? 'python' : 'python3';
+        const configuredPython = (process.env.PYTHON_BIN || '').trim();
+        const pythonExecutable = configuredPython || (process.platform === 'win32' ? 'python' : 'python3');
         const scriptPath = path.join(__dirname, 'python_scripts', 'usdt_sync.py');
         let totalUpserted = 0;
 

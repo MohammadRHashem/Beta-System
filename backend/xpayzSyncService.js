@@ -13,7 +13,8 @@ const syncSingleSubaccount = async (subaccountId, historical = false) => {
         return;
     }
     try {
-        const pythonExecutable = process.platform === 'win32' ? 'python' : 'python3';
+        const configuredPython = (process.env.PYTHON_BIN || '').trim();
+        const pythonExecutable = configuredPython || (process.platform === 'win32' ? 'python' : 'python3');
         const scriptPath = path.join(__dirname, 'python_scripts', 'xpayz_subaccount_exporter.py');
         
         // Build the arguments for the script

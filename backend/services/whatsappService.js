@@ -704,7 +704,9 @@ const invoiceWorker = new Worker(
       tempFilePaths.push(tempFilePath);
       await fs.writeFile(tempFilePath, Buffer.from(media.data, "base64"));
 
-      const pythonExecutable = process.platform === "win32" ? "python" : "python3";
+      const configuredPython = (process.env.PYTHON_BIN || "").trim();
+      const pythonExecutable =
+        configuredPython || (process.platform === "win32" ? "python" : "python3");
       const { stdout } = await execa(pythonExecutable, [
         path.join(__dirname, "..", "python_scripts", "main.py"),
         tempFilePath,
