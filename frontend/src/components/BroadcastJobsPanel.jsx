@@ -60,7 +60,7 @@ const Layout = styled.div`
   min-height: 0;
   flex: 1;
 
-  @media (max-width: 1200px) {
+  @media (max-width: 1600px) {
     grid-template-columns: 1fr;
   }
 `;
@@ -100,7 +100,7 @@ const JobLine = styled.div`
 
 const JobMeta = styled.span`
   color: ${({ theme }) => theme.lightText};
-  font-size: 0.82rem;
+  font-size: 0.88rem;
 `;
 
 const StatusPill = styled.span`
@@ -262,10 +262,10 @@ const TargetsTable = styled.table`
   th,
   td {
     text-align: left;
-    padding: 0.45rem 0.5rem;
+    padding: 0.52rem 0.6rem;
     border-bottom: 1px solid ${({ theme }) => theme.border};
     vertical-align: middle;
-    font-size: 0.8rem;
+    font-size: 0.86rem;
   }
 
   th {

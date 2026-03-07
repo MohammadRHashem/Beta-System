@@ -1,6 +1,13 @@
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import styled from "styled-components";
 import { io } from "socket.io-client";
+import {
+  FaCheckCircle,
+  FaLayerGroup,
+  FaPaste,
+  FaSyncAlt,
+  FaTasks,
+} from "react-icons/fa";
 import api, {
   cancelBroadcastJob,
   deleteBroadcastForEveryone,
@@ -8,6 +15,7 @@ import api, {
   getBatches,
   getBroadcastJobById,
   getBroadcastJobs,
+  getGroupIdsForBatch,
   getTemplates,
   pauseBroadcastJob,
   replayBroadcastJob,
@@ -17,45 +25,181 @@ import api, {
 } from "../services/api";
 import { usePermissions } from "../context/PermissionContext";
 
-import BatchManager from "../components/BatchManager";
-import GroupSelector from "../components/GroupSelector";
 import BroadcastForm from "../components/BroadcastForm";
-import TemplateManager from "../components/TemplateManager";
 import AttachmentManagerModal from "../components/AttachmentManagerModal";
 import BroadcastJobsPanel from "../components/BroadcastJobsPanel";
+import Modal from "../components/Modal";
 
-const MainContent = styled.div`
-  display: grid;
-  grid-template-columns: minmax(320px, 390px) 1fr;
-  gap: 1.5rem;
-  align-items: flex-start;
+const PageShell = styled.div`
   height: 100%;
   min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
   overflow: hidden;
+`;
 
-  @media (max-width: 1400px) and (min-width: 1201px) {
-    grid-template-columns: minmax(300px, 360px) 1fr;
+const TabBar = styled.div`
+  display: flex;
+  gap: 0.5rem;
+  border-bottom: 1px solid ${({ theme }) => theme.border};
+  padding-bottom: 0.4rem;
+`;
+
+const TabButton = styled.button`
+  border: 1px solid ${({ theme, $active }) => ($active ? theme.primary : theme.border)};
+  background: ${({ theme, $active }) => ($active ? theme.primary : theme.surface)};
+  color: ${({ $active }) => ($active ? "#fff" : "#1f2a37")};
+  border-radius: 8px;
+  padding: 0.5rem 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+`;
+
+const TabContent = styled.div`
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+`;
+
+const ComposeLayout = styled.div`
+  height: 100%;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto 1fr;
+  gap: 0.9rem;
+`;
+
+const CompactCard = styled.div`
+  background: #fff;
+  border: 1px solid ${({ theme }) => theme.border};
+  border-radius: 12px;
+  padding: 0.9rem;
+`;
+
+const SetupGrid = styled.div`
+  display: grid;
+  grid-template-columns: repeat(4, minmax(180px, 1fr));
+  gap: 0.65rem;
+
+  @media (max-width: 1480px) {
+    grid-template-columns: repeat(2, minmax(160px, 1fr));
   }
 
-  @media (max-width: 1200px) {
+  @media (max-width: 820px) {
     grid-template-columns: 1fr;
   }
 `;
 
-const LeftPanel = styled.div`
+const Label = styled.div`
+  font-size: 0.78rem;
+  color: ${({ theme }) => theme.lightText};
+  margin-bottom: 0.35rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+`;
+
+const ValueBox = styled.div`
+  border: 1px solid ${({ theme }) => theme.border};
+  border-radius: 8px;
+  padding: 0.58rem 0.66rem;
+  min-height: 38px;
   display: flex;
-  flex-direction: column;
-  gap: 1.5rem;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  background: ${({ theme }) => theme.surface};
+`;
+
+const ActionButton = styled.button`
+  border: 1px solid ${({ theme }) => theme.border};
+  border-radius: 8px;
+  background: ${({ theme }) => theme.surfaceAlt};
+  color: ${({ theme }) => theme.primary};
+  padding: 0.48rem 0.7rem;
+  font-weight: 700;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  white-space: nowrap;
+
+  &:disabled {
+    opacity: 0.65;
+    cursor: not-allowed;
+  }
+`;
+
+const Select = styled.select`
+  width: 100%;
+  border: 1px solid ${({ theme }) => theme.border};
+  border-radius: 8px;
+  padding: 0.58rem 0.66rem;
+  background: #fff;
+  min-height: 38px;
+`;
+
+const ScrollArea = styled.div`
   min-height: 0;
+  overflow: auto;
+  padding-right: 0.2rem;
+`;
+
+const ModalHeader = styled.div`
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.8rem;
+  margin-bottom: 0.7rem;
+`;
+
+const SearchInput = styled.input`
+  width: 100%;
+  border: 1px solid ${({ theme }) => theme.border};
+  border-radius: 8px;
+  padding: 0.58rem 0.66rem;
+`;
+
+const ModalControls = styled.div`
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+  margin-bottom: 0.65rem;
+`;
+
+const ListWrap = styled.div`
+  border: 1px solid ${({ theme }) => theme.border};
+  border-radius: 10px;
+  max-height: 56vh;
   overflow: auto;
 `;
 
-const RightPanel = styled.div`
+const ListItem = styled.label`
   display: flex;
-  flex-direction: column;
-  gap: 1.5rem;
-  min-height: 0;
-  overflow: auto;
+  align-items: center;
+  gap: 0.6rem;
+  border-bottom: 1px solid ${({ theme }) => theme.border};
+  padding: 0.52rem 0.6rem;
+  cursor: pointer;
+  background: ${({ $selected, theme }) => ($selected ? theme.background : "#fff")};
+
+  &:hover {
+    background: ${({ theme }) => theme.background};
+  }
+`;
+
+const ItemText = styled.span`
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+`;
+
+const FooterRow = styled.div`
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 0.7rem;
 `;
 
 const API_URL = (import.meta.env.VITE_SOCKET_URL || window.location.origin).trim();
@@ -78,9 +222,6 @@ const sortJobsDesc = (jobs) =>
 const BroadcasterPage = ({ allGroups }) => {
   const { hasPermission } = usePermissions();
   const canViewBatches = hasPermission("broadcast:batches:view");
-  const canCreateBatches = hasPermission("broadcast:batches:create");
-  const canUpdateBatches = hasPermission("broadcast:batches:update");
-  const canDeleteBatches = hasPermission("broadcast:batches:delete");
   const canViewTemplates = hasPermission("broadcast:templates:view");
   const canCreateTemplates = hasPermission("broadcast:templates:create");
   const canUpdateTemplates = hasPermission("broadcast:templates:update");
@@ -91,15 +232,23 @@ const BroadcasterPage = ({ allGroups }) => {
   const canViewJobs = hasPermission("broadcast:jobs:view");
   const canControlJobs = hasPermission("broadcast:jobs:control");
   const canReplayJobs = hasPermission("broadcast:jobs:replay");
+  const canSyncGroups = hasPermission("admin:manage_roles");
 
+  const [activeTab, setActiveTab] = useState("compose");
+  const [isGroupModalOpen, setGroupModalOpen] = useState(false);
+  const [isTemplateModalOpen, setTemplateModalOpen] = useState(false);
+  const [isAttachmentModalOpen, setIsAttachmentModalOpen] = useState(false);
+
+  const [groupSearch, setGroupSearch] = useState("");
+  const [templateSearch, setTemplateSearch] = useState("");
   const [selectedGroups, setSelectedGroups] = useState(new Set());
+  const [selectedBatchId, setSelectedBatchId] = useState("");
+
   const [batches, setBatches] = useState([]);
   const [templates, setTemplates] = useState([]);
   const [message, setMessage] = useState("");
   const [attachment, setAttachment] = useState(null);
-  const [editingBatch, setEditingBatch] = useState(null);
   const [isSyncing, setIsSyncing] = useState(false);
-  const [isAttachmentModalOpen, setIsAttachmentModalOpen] = useState(false);
 
   const [socketId, setSocketId] = useState(null);
   const socket = useRef(null);
@@ -113,6 +262,25 @@ const BroadcasterPage = ({ allGroups }) => {
   const [jobActionLoading, setJobActionLoading] = useState({});
   const [isJobsRefreshing, setIsJobsRefreshing] = useState(false);
   const [isCreatingBroadcast, setIsCreatingBroadcast] = useState(false);
+
+  const filteredGroups = useMemo(() => {
+    const term = groupSearch.trim().toLowerCase();
+    const list = allGroups || [];
+    if (!term) return list;
+    return list.filter((group) => group.name?.toLowerCase().includes(term));
+  }, [allGroups, groupSearch]);
+
+  const filteredTemplates = useMemo(() => {
+    const term = templateSearch.trim().toLowerCase();
+    const list = templates || [];
+    if (!term) return list;
+    return list.filter((template) => template.name?.toLowerCase().includes(term));
+  }, [templates, templateSearch]);
+
+  const allFilteredSelected = useMemo(() => {
+    if (!filteredGroups.length) return false;
+    return filteredGroups.every((group) => selectedGroups.has(group.id));
+  }, [filteredGroups, selectedGroups]);
 
   const appendJobLog = useCallback((jobId, status, text) => {
     if (!jobId) return;
@@ -322,29 +490,6 @@ const BroadcasterPage = ({ allGroups }) => {
     await fetchBroadcasterData();
   };
 
-  const loadGroupsForBatch = async (batchId) => {
-    if (!batchId) {
-      setSelectedGroups(new Set());
-      return;
-    }
-    try {
-      const { data: groupIds } = await api.get(`/batches/${batchId}`);
-      setSelectedGroups(new Set(groupIds));
-    } catch (error) {
-      console.error("Error loading groups for batch:", error);
-    }
-  };
-
-  const handleBatchSelect = (batchId) => {
-    setEditingBatch(null);
-    loadGroupsForBatch(batchId);
-  };
-
-  const handleBatchEdit = (batch) => {
-    setEditingBatch(batch);
-    loadGroupsForBatch(batch.id);
-  };
-
   const handleSyncGroups = async () => {
     if (!window.confirm("This will fetch the latest group list... Continue?")) return;
     setIsSyncing(true);
@@ -356,6 +501,47 @@ const BroadcasterPage = ({ allGroups }) => {
       alert(error.response?.data?.message || "Failed to sync groups.");
       setIsSyncing(false);
     }
+  };
+
+  const handleApplyBatch = async (batchId) => {
+    setSelectedBatchId(batchId);
+    if (!batchId) {
+      setSelectedGroups(new Set());
+      return;
+    }
+    try {
+      const { data: groupIds } = await getGroupIdsForBatch(batchId);
+      setSelectedGroups(new Set(groupIds || []));
+    } catch (error) {
+      alert(error.response?.data?.message || "Failed to load batch groups.");
+    }
+  };
+
+  const toggleGroup = (groupId) => {
+    setSelectedGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(groupId)) next.delete(groupId);
+      else next.add(groupId);
+      return next;
+    });
+  };
+
+  const toggleAllFiltered = () => {
+    setSelectedGroups((prev) => {
+      const next = new Set(prev);
+      if (allFilteredSelected) {
+        filteredGroups.forEach((group) => next.delete(group.id));
+      } else {
+        filteredGroups.forEach((group) => next.add(group.id));
+      }
+      return next;
+    });
+  };
+
+  const applyTemplate = (template) => {
+    setMessage(template.text || "");
+    setAttachment(template.attachment || null);
+    setTemplateModalOpen(false);
   };
 
   const startBroadcast = async (groupObjects, broadcastMessage, broadcastAttachment) => {
@@ -372,6 +558,7 @@ const BroadcasterPage = ({ allGroups }) => {
       if (startedJob?.id) {
         upsertJob(startedJob);
         setSelectedJobId(startedJob.id);
+        setActiveTab("jobs");
         appendJobLog(startedJob.id, "info", `Broadcast job #${startedJob.id} queued.`);
         await fetchJobDetails(startedJob.id);
       }
@@ -461,11 +648,6 @@ const BroadcasterPage = ({ allGroups }) => {
     );
   };
 
-  const handleTemplateSelect = (template) => {
-    setMessage(template.text || "");
-    setAttachment(template.attachment || null);
-  };
-
   const handleSelectAttachment = (selectedFile) => {
     setAttachment(selectedFile);
     setIsAttachmentModalOpen(false);
@@ -473,70 +655,115 @@ const BroadcasterPage = ({ allGroups }) => {
 
   const selectedJobDetails = selectedJobId ? jobDetailsById[selectedJobId] : null;
   const selectedJobLogs = selectedJobId ? jobLogsById[selectedJobId] || [] : [];
-
   const isActionPending = (jobId, actionKey) => !!jobActionLoading[`${jobId}:${actionKey}`];
 
   return (
     <>
-      <MainContent>
-        <LeftPanel>
-          {canViewBatches && (
-            <BatchManager
-              batches={batches}
-              onBatchSelect={handleBatchSelect}
-              onBatchEdit={handleBatchEdit}
-              onBatchesUpdate={handleDataUpdate}
-              canEditBatch={canUpdateBatches}
-              canDeleteBatch={canDeleteBatches}
-            />
-          )}
-          <GroupSelector
-            allGroups={allGroups}
-            selectedGroups={selectedGroups}
-            setSelectedGroups={setSelectedGroups}
-            editingBatch={editingBatch}
-            setEditingBatch={setEditingBatch}
-            onBatchUpdate={handleDataUpdate}
-            onSync={handleSyncGroups}
-            isSyncing={isSyncing}
-            canCreateBatch={canCreateBatches}
-            canEditBatch={canUpdateBatches}
-            canSyncGroups={hasPermission("admin:manage_roles")}
-          />
-        </LeftPanel>
-
-        <RightPanel>
-          {canViewTemplates && (
-            <TemplateManager
-              templates={templates}
-              onTemplateSelect={handleTemplateSelect}
-              onTemplatesUpdate={handleDataUpdate}
-              canEditTemplate={canUpdateTemplates}
-              canDeleteTemplate={canDeleteTemplates}
-              canViewAttachments={canViewAttachments}
-              canUploadAttachments={canCreateAttachments}
-              canDeleteAttachments={canDeleteAttachments}
-            />
-          )}
-
-          <BroadcastForm
-            selectedGroupIds={Array.from(selectedGroups)}
-            allGroups={allGroups}
-            message={message}
-            setMessage={setMessage}
-            attachment={attachment}
-            setAttachment={setAttachment}
-            onTemplateSave={handleDataUpdate}
-            onBroadcastStart={startBroadcast}
-            isBroadcasting={isCreatingBroadcast}
-            onOpenAttachmentManager={() => setIsAttachmentModalOpen(true)}
-            canSendBroadcast={hasPermission("broadcast:send")}
-            canCreateTemplates={canCreateTemplates}
-            canUploadAttachments={canCreateAttachments}
-            canViewAttachments={canViewAttachments}
-          />
-
+      <PageShell>
+        <TabBar>
+          <TabButton
+            type="button"
+            $active={activeTab === "compose"}
+            onClick={() => setActiveTab("compose")}
+          >
+            Compose
+          </TabButton>
           {canViewJobs && (
+            <TabButton
+              type="button"
+              $active={activeTab === "jobs"}
+              onClick={() => setActiveTab("jobs")}
+            >
+              Jobs
+            </TabButton>
+          )}
+        </TabBar>
+
+        <TabContent>
+          {activeTab === "compose" && (
+            <ComposeLayout>
+              <CompactCard>
+                <SetupGrid>
+                  <div>
+                    <Label>Targets</Label>
+                    <ValueBox>
+                      <span>{selectedGroups.size} groups selected</span>
+                      <ActionButton type="button" onClick={() => setGroupModalOpen(true)}>
+                        <FaLayerGroup /> Select
+                      </ActionButton>
+                    </ValueBox>
+                  </div>
+
+                  <div>
+                    <Label>Batch</Label>
+                    <Select
+                      value={selectedBatchId}
+                      onChange={(event) => handleApplyBatch(event.target.value)}
+                      disabled={!canViewBatches}
+                    >
+                      <option value="">No batch</option>
+                      {(batches || []).map((batch) => (
+                        <option key={batch.id} value={batch.id}>
+                          {batch.name}
+                        </option>
+                      ))}
+                    </Select>
+                  </div>
+
+                  <div>
+                    <Label>Template</Label>
+                    <ValueBox>
+                      <span>{message || attachment ? "Loaded" : "Not selected"}</span>
+                      <ActionButton
+                        type="button"
+                        onClick={() => setTemplateModalOpen(true)}
+                        disabled={!canViewTemplates}
+                      >
+                        <FaPaste /> Pick
+                      </ActionButton>
+                    </ValueBox>
+                  </div>
+
+                  <div>
+                    <Label>Actions</Label>
+                    <ValueBox>
+                      <ActionButton
+                        type="button"
+                        onClick={handleSyncGroups}
+                        disabled={!canSyncGroups || isSyncing}
+                      >
+                        <FaSyncAlt /> {isSyncing ? "Syncing..." : "Sync Groups"}
+                      </ActionButton>
+                      <ActionButton type="button" onClick={() => setActiveTab("jobs")}>
+                        <FaTasks /> Jobs
+                      </ActionButton>
+                    </ValueBox>
+                  </div>
+                </SetupGrid>
+              </CompactCard>
+
+              <ScrollArea>
+                <BroadcastForm
+                  selectedGroupIds={Array.from(selectedGroups)}
+                  allGroups={allGroups}
+                  message={message}
+                  setMessage={setMessage}
+                  attachment={attachment}
+                  setAttachment={setAttachment}
+                  onTemplateSave={handleDataUpdate}
+                  onBroadcastStart={startBroadcast}
+                  isBroadcasting={isCreatingBroadcast}
+                  onOpenAttachmentManager={() => setIsAttachmentModalOpen(true)}
+                  canSendBroadcast={hasPermission("broadcast:send")}
+                  canCreateTemplates={canCreateTemplates}
+                  canUploadAttachments={canCreateAttachments}
+                  canViewAttachments={canViewAttachments}
+                />
+              </ScrollArea>
+            </ComposeLayout>
+          )}
+
+          {activeTab === "jobs" && canViewJobs && (
             <BroadcastJobsPanel
               jobs={jobs}
               selectedJobId={selectedJobId}
@@ -562,8 +789,82 @@ const BroadcasterPage = ({ allGroups }) => {
               isActionPending={isActionPending}
             />
           )}
-        </RightPanel>
-      </MainContent>
+        </TabContent>
+      </PageShell>
+
+      <Modal
+        isOpen={isGroupModalOpen}
+        onClose={() => setGroupModalOpen(false)}
+        maxWidth="860px"
+      >
+        <h2>Select Target Groups</h2>
+        <ModalHeader>
+          <SearchInput
+            type="text"
+            placeholder="Search groups..."
+            value={groupSearch}
+            onChange={(event) => setGroupSearch(event.target.value)}
+          />
+        </ModalHeader>
+
+        <ModalControls>
+          <ActionButton type="button" onClick={toggleAllFiltered}>
+            {allFilteredSelected ? "Deselect Visible" : "Select Visible"}
+          </ActionButton>
+          <ActionButton type="button" onClick={() => setSelectedGroups(new Set())}>
+            Clear All
+          </ActionButton>
+          <ActionButton type="button" onClick={() => setGroupModalOpen(false)}>
+            <FaCheckCircle /> Done ({selectedGroups.size})
+          </ActionButton>
+        </ModalControls>
+
+        <ListWrap>
+          {filteredGroups.map((group) => (
+            <ListItem key={group.id} $selected={selectedGroups.has(group.id)}>
+              <input
+                type="checkbox"
+                checked={selectedGroups.has(group.id)}
+                onChange={() => toggleGroup(group.id)}
+              />
+              <ItemText title={group.name}>{group.name}</ItemText>
+            </ListItem>
+          ))}
+        </ListWrap>
+      </Modal>
+
+      <Modal
+        isOpen={isTemplateModalOpen}
+        onClose={() => setTemplateModalOpen(false)}
+        maxWidth="760px"
+      >
+        <h2>Select Template</h2>
+        <ModalHeader>
+          <SearchInput
+            type="text"
+            placeholder="Search templates..."
+            value={templateSearch}
+            onChange={(event) => setTemplateSearch(event.target.value)}
+          />
+        </ModalHeader>
+
+        <ListWrap>
+          {filteredTemplates.map((template) => (
+            <ListItem key={template.id} $selected={false}>
+              <ItemText title={template.name}>{template.name}</ItemText>
+              <ActionButton type="button" onClick={() => applyTemplate(template)}>
+                Apply
+              </ActionButton>
+            </ListItem>
+          ))}
+        </ListWrap>
+
+        <FooterRow>
+          <ActionButton type="button" onClick={() => setTemplateModalOpen(false)}>
+            Close
+          </ActionButton>
+        </FooterRow>
+      </Modal>
 
       <AttachmentManagerModal
         isOpen={isAttachmentModalOpen}
