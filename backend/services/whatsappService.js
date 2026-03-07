@@ -2432,6 +2432,93 @@ const fetchAllGroups = async () => {
   }
 };
 
+const sendBroadcastToGroup = async ({ groupId, message, attachment = null }) => {
+  if (connectionStatus !== "connected" || !client) {
+    throw new Error("WhatsApp is not connected.");
+  }
+
+  const chat = await client.getChatById(groupId);
+  if (chat) {
+    try {
+      chat.sendStateTyping();
+    } catch (error) {
+      // Ignore typing-state errors and continue sending.
+    }
+  }
+
+  await delay(400);
+
+  let sentMessage;
+  if (attachment && attachment.filepath) {
+    const media = MessageMedia.fromFilePath(attachment.filepath);
+    sentMessage = await client.sendMessage(groupId, media, {
+      caption: message || "",
+    });
+  } else {
+    sentMessage = await client.sendMessage(groupId, message || "");
+  }
+
+  return {
+    messageId: sentMessage?.id?._serialized || null,
+    sentMessage,
+  };
+};
+
+const getMessageBySerializedId = async (messageId) => {
+  if (!messageId || typeof messageId !== "string") {
+    throw new Error("A valid WhatsApp message ID is required.");
+  }
+  if (connectionStatus !== "connected" || !client) {
+    throw new Error("WhatsApp is not connected.");
+  }
+
+  try {
+    return await client.getMessageById(messageId);
+  } catch (error) {
+    throw new Error(
+      `Failed to load message ${messageId}. It may be too old or unavailable in cache.`,
+    );
+  }
+};
+
+const deleteMessageForEveryone = async (messageId) => {
+  const message = await getMessageBySerializedId(messageId);
+  if (!message || typeof message.delete !== "function") {
+    throw new Error("Message delete operation is not supported for this message.");
+  }
+
+  const result = await message.delete(true);
+  if (result === false) {
+    throw new Error(
+      "Delete for everyone failed. WhatsApp may have rejected the request (time/admin limits).",
+    );
+  }
+
+  return { messageId, deleted: true };
+};
+
+const editMessageById = async (messageId, newBody) => {
+  const sanitized = String(newBody || "").trim();
+  if (!sanitized) {
+    throw new Error("Edited message text is required.");
+  }
+
+  const message = await getMessageBySerializedId(messageId);
+  if (!message || typeof message.edit !== "function") {
+    throw new Error("Message edit operation is not supported for this message.");
+  }
+
+  try {
+    await message.edit(sanitized);
+  } catch (error) {
+    throw new Error(
+      `Edit failed for ${messageId}. WhatsApp may have rejected the request (time/type limits).`,
+    );
+  }
+
+  return { messageId, edited: true, newBody: sanitized };
+};
+
 const broadcast = async (
   socketIo,
   socketId,
@@ -2464,23 +2551,19 @@ const broadcast = async (
 
   for (const group of groupObjects) {
     try {
-      io.to(socketId).emit("broadcast:progress", {
+      localIo.to(socketId).emit("broadcast:progress", {
         groupName: group.name,
         status: "sending",
         message: `Sending to "${group.name}"...`,
       });
-      const chat = await client.getChatById(group.id);
-      chat.sendStateTyping();
-      await new Promise((resolve) => setTimeout(resolve, 400));
-      if (attachment && attachment.filepath) {
-        const media = MessageMedia.fromFilePath(attachment.filepath);
-        await client.sendMessage(group.id, media, { caption: message || "" });
-      } else {
-        await client.sendMessage(group.id, message);
-      }
+      await sendBroadcastToGroup({
+        groupId: group.id,
+        message,
+        attachment,
+      });
       successfulSends++;
       successfulGroups.push(group.name);
-      io.to(socketId).emit("broadcast:progress", {
+      localIo.to(socketId).emit("broadcast:progress", {
         groupName: group.name,
         status: "success",
         message: `Successfully sent to "${group.name}".`,
@@ -2493,7 +2576,7 @@ const broadcast = async (
       );
       failedSends++;
       failedGroups.push(group.name);
-      io.to(socketId).emit("broadcast:progress", {
+      localIo.to(socketId).emit("broadcast:progress", {
         groupName: group.name,
         status: "failed",
         message: `Failed to send to "${group.name}". Reason: ${error.message}`,
@@ -2504,7 +2587,7 @@ const broadcast = async (
   console.log(
     `[BROADCAST] Broadcast complete for socket ${socketId}. Successful: ${successfulSends}, Failed: ${failedSends}.`,
   );
-  io.to(socketId).emit("broadcast:complete", {
+  localIo.to(socketId).emit("broadcast:complete", {
     total: groupObjects.length,
     successful: successfulSends,
     failed: failedSends,
@@ -2636,5 +2719,8 @@ module.exports = {
   sendManualRejection,
   reactToMessage,
   clearReaction,
+  sendBroadcastToGroup,
+  deleteMessageForEveryone,
+  editMessageById,
   pinMessageToGroups,
 };

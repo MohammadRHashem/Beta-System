@@ -57,7 +57,6 @@ const LogEntry = styled.p`
 
 const CloseButton = styled.button`
     margin-top: 0.7rem;
-    width: 100%;
     background-color: ${({ theme, disabled }) => disabled ? theme.lightText : theme.primary};
     color: white;
     border: none;
@@ -68,7 +67,36 @@ const CloseButton = styled.button`
     font-size: 1rem;
 `;
 
-const BroadcastProgressModal = ({ isOpen, onClose, logs, summary, isComplete }) => {
+const CancelButton = styled.button`
+    margin-top: 0.7rem;
+    background-color: ${({ theme, disabled }) => disabled ? theme.lightText : theme.error};
+    color: white;
+    border: none;
+    padding: 0.68rem 0.9rem;
+    border-radius: 8px;
+    cursor: ${({ disabled }) => disabled ? 'not-allowed' : 'pointer'};
+    font-weight: bold;
+    font-size: 1rem;
+`;
+
+const ActionRow = styled.div`
+    display: grid;
+    gap: 0.6rem;
+    grid-template-columns: ${({ hasCancel }) => hasCancel ? '1fr 1fr' : '1fr'};
+`;
+
+const BroadcastProgressModal = ({
+    isOpen,
+    onClose,
+    logs,
+    summary,
+    isComplete,
+    onCancel,
+    canCancel = false,
+    isCancelling = false,
+}) => {
+    const hasCancelButton = canCancel && !isComplete;
+
     return (
         <Modal isOpen={isOpen} onClose={isComplete ? onClose : () => {}}>
             <ProgressContainer>
@@ -86,6 +114,10 @@ const BroadcastProgressModal = ({ isOpen, onClose, logs, summary, isComplete }) 
                         <span className="failed">{summary.failed}</span>
                         Failed
                     </SummaryItem>
+                    <SummaryItem>
+                        <span>{summary.cancelled || 0}</span>
+                        Cancelled
+                    </SummaryItem>
                 </Summary>
                 <LogContainer>
                     {logs.map((log, index) => (
@@ -94,9 +126,16 @@ const BroadcastProgressModal = ({ isOpen, onClose, logs, summary, isComplete }) 
                         </LogEntry>
                     ))}
                 </LogContainer>
-                <CloseButton onClick={onClose} disabled={!isComplete}>
-                    {isComplete ? 'Close' : 'Please wait...'}
-                </CloseButton>
+                <ActionRow hasCancel={hasCancelButton}>
+                    {hasCancelButton && (
+                        <CancelButton onClick={onCancel} disabled={isCancelling}>
+                            {isCancelling ? 'Cancelling...' : 'Cancel Broadcast'}
+                        </CancelButton>
+                    )}
+                    <CloseButton onClick={onClose} disabled={!isComplete}>
+                        {isComplete ? 'Close' : 'Please wait...'}
+                    </CloseButton>
+                </ActionRow>
             </ProgressContainer>
         </Modal>
     );

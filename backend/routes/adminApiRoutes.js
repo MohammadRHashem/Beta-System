@@ -24,6 +24,7 @@ const manualReviewController = require('../controllers/manualReviewController');
 const clientRequestController = require('../controllers/clientRequestController');
 const requestTypesController = require('../controllers/requestTypesController');
 const broadcastUploadController = require('../controllers/broadcastUploadController');
+const broadcastJobController = require('../controllers/broadcastJobController');
 
 
 // ===================================
@@ -50,6 +51,16 @@ router.get('/status', whatsappController.getStatus); // Publicly viewable by any
 router.get('/groups', whatsappController.getGroups);
 router.post('/groups/sync', checkPermission('admin:manage_roles'), whatsappController.syncGroups); // High-level admin task
 router.post('/broadcast', checkPermission('broadcast:send'), whatsappController.broadcastMessage);
+router.post('/broadcast-jobs', checkPermission('broadcast:send'), broadcastJobController.createJob);
+router.get('/broadcast-jobs', checkPermission('broadcast:jobs:view'), broadcastJobController.listJobs);
+router.get('/broadcast-jobs/:id', checkPermission('broadcast:jobs:view'), broadcastJobController.getJobById);
+router.post('/broadcast-jobs/:id/pause', checkPermission('broadcast:jobs:control'), broadcastJobController.pauseJob);
+router.post('/broadcast-jobs/:id/resume', checkPermission('broadcast:jobs:control'), broadcastJobController.resumeJob);
+router.post('/broadcast-jobs/:id/cancel', checkPermission('broadcast:jobs:control'), broadcastJobController.cancelJob);
+router.post('/broadcast-jobs/:id/retry-failed', checkPermission('broadcast:jobs:control'), broadcastJobController.retryFailed);
+router.post('/broadcast-jobs/:id/replay', checkPermission('broadcast:jobs:replay'), broadcastJobController.replayJob);
+router.post('/broadcast-jobs/:id/delete-for-everyone', checkPermission('broadcast:jobs:control'), broadcastJobController.deleteForEveryone);
+router.post('/broadcast-jobs/:id/edit-message', checkPermission('broadcast:jobs:control'), broadcastJobController.editJobMessage);
 router.post('/pins', checkPermission('pin:create'), pinMessageController.createPin);
 router.get('/pins', checkPermission('pin:view'), pinMessageController.getPins);
 router.get('/pins/:id', checkPermission('pin:view'), pinMessageController.getPinDetails);

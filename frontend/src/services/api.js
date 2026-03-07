@@ -202,6 +202,16 @@ export const uploadBroadcastAttachment = (file) => {
 };
 export const getBroadcastUploads = () => apiClient.get('/broadcasts/uploads');
 export const deleteBroadcastUpload = (id) => apiClient.delete(`/broadcasts/uploads/${id}`);
+export const startBroadcastJob = (payload) => apiClient.post('/broadcast-jobs', payload);
+export const getBroadcastJobs = (params = {}) => apiClient.get('/broadcast-jobs', { params });
+export const getBroadcastJobById = (id) => apiClient.get(`/broadcast-jobs/${id}`);
+export const pauseBroadcastJob = (id) => apiClient.post(`/broadcast-jobs/${id}/pause`);
+export const resumeBroadcastJob = (id) => apiClient.post(`/broadcast-jobs/${id}/resume`);
+export const cancelBroadcastJob = (id) => apiClient.post(`/broadcast-jobs/${id}/cancel`);
+export const retryFailedBroadcastJob = (id) => apiClient.post(`/broadcast-jobs/${id}/retry-failed`);
+export const replayBroadcastJob = (id, socketId) => apiClient.post(`/broadcast-jobs/${id}/replay`, { socketId });
+export const deleteBroadcastForEveryone = (id) => apiClient.post(`/broadcast-jobs/${id}/delete-for-everyone`);
+export const editBroadcastJobMessage = (id, message) => apiClient.post(`/broadcast-jobs/${id}/edit-message`, { message });
 
 
 // ---- Invoices ----

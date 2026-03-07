@@ -1,7 +1,7 @@
 const cron = require('node-cron');
 const pool = require('../config/db');
 const dateFnsTz = require('date-fns-tz');
-const whatsappService = require('./whatsappService');
+const broadcastJobService = require('./broadcastJobService');
 
 let isChecking = false;
 let io = null;
@@ -74,13 +74,26 @@ const checkSchedules = async () => {
                     let attachment = null;
                     if (job.upload_id && job.attachment_filepath) {
                         attachment = {
+                            id: job.upload_id,
                             filepath: job.attachment_filepath,
                             mimetype: job.attachment_mimetype,
                             original_filename: job.attachment_filename
                         };
                     }
 
-                    whatsappService.broadcast(io, null, groupObjects, job.message, attachment);
+                    await broadcastJobService.createBroadcastJob({
+                        userId: job.user_id || null,
+                        source: 'scheduled',
+                        sourceRefType: 'scheduled_broadcast',
+                        sourceRefId: job.id,
+                        socketId: null,
+                        groupObjects,
+                        message: job.message || '',
+                        attachment,
+                        uploadId: job.upload_id || null,
+                        batchId: job.batch_id || null,
+                        creationAction: 'schedule_trigger'
+                    });
 
                     const updateQuery = 'UPDATE scheduled_broadcasts SET last_run_at = ?' + (job.schedule_type === 'ONCE' ? ', is_active = 0' : '') + ' WHERE id = ?';
                     await connection.query(updateQuery, [nowUtc, job.id]);

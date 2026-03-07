@@ -1,5 +1,6 @@
 const fs = require("fs-extra");
 const whatsappService = require("../services/whatsappService");
+const broadcastJobService = require("../services/broadcastJobService");
 const pool = require("../config/db");
 
 exports.init = () => {
@@ -90,26 +91,49 @@ exports.syncGroups = async (req, res) => {
 };
 
 exports.broadcastMessage = (req, res) => {
-  // === THE FIX: Make socketId optional ===
-  const { groupObjects, message, socketId, attachment } = req.body;
+  const { groupObjects, message, socketId, attachment, upload_id, batch_id } =
+    req.body;
 
-  // The broadcast can proceed even if the socketId is missing.
-  if (!groupObjects || (!message && !attachment) || !Array.isArray(groupObjects)) {
-    return res.status(400).json({ message: "Invalid request body: Missing groups or content." });
+  if (!Array.isArray(groupObjects) || groupObjects.length === 0) {
+    return res
+      .status(400)
+      .json({ message: "Invalid request body: Missing target groups." });
+  }
+  if ((!message || !String(message).trim()) && !attachment && !upload_id) {
+    return res
+      .status(400)
+      .json({ message: "Invalid request body: Missing message or attachment." });
   }
 
-  try {
-    res.status(202).json({ message: "Broadcast accepted and will start shortly." });
-
-    // The service will handle the case where socketId is null.
-    whatsappService.broadcast(req.io, socketId, groupObjects, message, attachment);
-  } catch (error) {
-    console.error("[CONTROLLER-ERROR] Failed to start broadcast job:", error);
-    // This error won't be sent if the socket is down, but it's good practice.
-    if (req.io && socketId) {
-      req.io.to(socketId).emit("broadcast:error", {
-        message: "Failed to start the broadcast process on the server.",
+  broadcastJobService
+    .createBroadcastJob({
+      userId: req.user?.id || null,
+      source: "manual",
+      sourceRefType: "api",
+      sourceRefId: null,
+      socketId: socketId || null,
+      groupObjects,
+      message: message || "",
+      attachment: attachment || null,
+      uploadId: upload_id || null,
+      batchId: batch_id || null,
+    })
+    .then((job) => {
+      res.status(202).json({
+        message: "Broadcast accepted and queued.",
+        job,
       });
-    }
-  }
+    })
+    .catch((error) => {
+      console.error("[CONTROLLER-ERROR] Failed to queue broadcast job:", error);
+      const io = req.app.get("io");
+      if (io && socketId) {
+        io.to(socketId).emit("broadcast:error", {
+          message: "Failed to queue the broadcast process on the server.",
+        });
+      }
+      res.status(500).json({
+        message: error.message || "Failed to start the broadcast process.",
+      });
+    });
 };

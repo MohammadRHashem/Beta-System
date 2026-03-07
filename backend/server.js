@@ -140,6 +140,9 @@ server.listen(PORT, HOST, () => {
         const whatsappService = require('./services/whatsappService');
         whatsappService.init(io);
 
+        const broadcastJobService = require('./services/broadcastJobService');
+        broadcastJobService.initialize(io);
+
         const broadcastScheduler = require('./services/broadcastScheduler');
         broadcastScheduler.initialize(io);
 
