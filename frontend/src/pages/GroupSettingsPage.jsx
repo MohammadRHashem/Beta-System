@@ -1,41 +1,54 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import styled from 'styled-components';
 import api from '../services/api';
-import { usePermissions } from '../context/PermissionContext'; // 1. IMPORT PERMISSIONS HOOK
+import { usePermissions } from '../context/PermissionContext';
 
 const PageContainer = styled.div`
     display: flex;
     flex-direction: column;
-    gap: 2rem;
+    gap: 1.25rem;
 `;
 
 const Card = styled.div`
     background: #fff;
-    padding: 1.5rem;
-    border-radius: 8px;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    padding: 1.1rem 1.2rem 1rem;
+    border-radius: 14px;
+    border: 1px solid rgba(9, 30, 66, 0.08);
+    box-shadow: 0 14px 30px rgba(9, 30, 66, 0.08);
 `;
 
 const SearchInput = styled.input`
     width: 100%;
     max-width: 400px;
-    padding: 0.75rem;
+    padding: 0.68rem 0.72rem;
     border: 1px solid ${({ theme }) => theme.border};
-    border-radius: 4px;
-    font-size: 1rem;
-    margin-bottom: 1.5rem;
+    border-radius: 8px;
+    font-size: 0.95rem;
+    margin-bottom: 0.9rem;
+`;
+
+const TableWrapper = styled.div`
+    width: 100%;
+    overflow-x: auto;
+    border: 1px solid ${({ theme }) => theme.border};
+    border-radius: 10px;
 `;
 
 const SettingsTable = styled.table`
     width: 100%;
+    min-width: 760px;
     border-collapse: collapse;
+    font-size: 0.9rem;
     th, td {
-        padding: 1rem;
+        padding: 0.78rem 0.85rem;
         text-align: left;
         border-bottom: 1px solid ${({ theme }) => theme.border};
+        white-space: nowrap;
     }
     th {
         background-color: ${({ theme }) => theme.background};
+        font-size: 0.84rem;
+        letter-spacing: 0.01em;
     }
 `;
 
@@ -88,8 +101,8 @@ const Slider = styled.span`
 
 
 const GroupSettingsPage = () => {
-    const { hasPermission } = usePermissions(); // 2. GET PERMISSION CHECKER
-    const canEdit = hasPermission('settings:edit_rules'); // 3. DEFINE EDIT CAPABILITY
+    const { hasPermission } = usePermissions();
+    const canEdit = hasPermission('settings:edit_rules');
 
     const [settings, setSettings] = useState([]);
     const [searchTerm, setSearchTerm] = useState('');
@@ -144,44 +157,46 @@ const GroupSettingsPage = () => {
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
                 />
-                <SettingsTable>
-                    <thead>
-                        <tr>
-                            <th>Group Name</th>
-                            <th>Enable Forwarding</th>
-                            <th>Enable Archiving</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {filteredSettings.map(group => (
-                            <tr key={group.group_jid}>
-                                <td>{group.group_name}</td>
-                                <td>
-                                    <SwitchContainer>
-                                        <SwitchInput 
-                                            type="checkbox" 
-                                            checked={!!group.forwarding_enabled}
-                                            onChange={() => handleToggle(group, 'forwarding_enabled', !!group.forwarding_enabled)}
-                                            disabled={!canEdit} // 4. DISABLE THE SWITCH IF NO PERMISSION
-                                        />
-                                        <Slider />
-                                    </SwitchContainer>
-                                </td>
-                                <td>
-                                    <SwitchContainer>
-                                        <SwitchInput 
-                                            type="checkbox"
-                                            checked={!!group.archiving_enabled}
-                                            onChange={() => handleToggle(group, 'archiving_enabled', !!group.archiving_enabled)}
-                                            disabled={!canEdit} // 4. DISABLE THE SWITCH IF NO PERMISSION
-                                        />
-                                        <Slider />
-                                    </SwitchContainer>
-                                </td>
+                <TableWrapper>
+                    <SettingsTable>
+                        <thead>
+                            <tr>
+                                <th>Group Name</th>
+                                <th>Enable Forwarding</th>
+                                <th>Enable Archiving</th>
                             </tr>
-                        ))}
-                    </tbody>
-                </SettingsTable>
+                        </thead>
+                        <tbody>
+                            {filteredSettings.map(group => (
+                                <tr key={group.group_jid}>
+                                    <td>{group.group_name}</td>
+                                    <td>
+                                        <SwitchContainer>
+                                            <SwitchInput 
+                                                type="checkbox" 
+                                                checked={!!group.forwarding_enabled}
+                                                onChange={() => handleToggle(group, 'forwarding_enabled', !!group.forwarding_enabled)}
+                                                disabled={!canEdit}
+                                            />
+                                            <Slider />
+                                        </SwitchContainer>
+                                    </td>
+                                    <td>
+                                        <SwitchContainer>
+                                            <SwitchInput 
+                                                type="checkbox"
+                                                checked={!!group.archiving_enabled}
+                                                onChange={() => handleToggle(group, 'archiving_enabled', !!group.archiving_enabled)}
+                                                disabled={!canEdit}
+                                            />
+                                            <Slider />
+                                        </SwitchContainer>
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </SettingsTable>
+                </TableWrapper>
             </Card>
         </PageContainer>
     );

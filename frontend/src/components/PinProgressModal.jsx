@@ -6,6 +6,7 @@ const ProgressContainer = styled.div`
     max-height: 80vh;
     display: flex;
     flex-direction: column;
+    gap: 0.75rem;
 `;
 
 const Title = styled.h2`
@@ -16,11 +17,12 @@ const Title = styled.h2`
 const Summary = styled.div`
     display: flex;
     justify-content: space-around;
-    padding: 1rem;
+    padding: 0.85rem;
     background: ${({ theme }) => theme.background};
-    border-radius: 8px;
-    margin-bottom: 1rem;
+    border-radius: 10px;
+    margin-bottom: 0.6rem;
     text-align: center;
+    gap: 0.6rem;
 `;
 
 const SummaryItem = styled.div`
@@ -39,8 +41,8 @@ const LogContainer = styled.div`
     flex-grow: 1;
     overflow-y: auto;
     border: 1px solid ${({ theme }) => theme.border};
-    border-radius: 4px;
-    padding: 1rem;
+    border-radius: 8px;
+    padding: 0.8rem;
     background: #fdfdfd;
 `;
 
@@ -54,13 +56,13 @@ const LogEntry = styled.p`
 `;
 
 const CloseButton = styled.button`
-    margin-top: 1.5rem;
+    margin-top: 0.7rem;
     width: 100%;
     background-color: ${({ theme, disabled }) => disabled ? theme.lightText : theme.primary};
     color: white;
     border: none;
-    padding: 0.75rem 1.5rem;
-    border-radius: 4px;
+    padding: 0.68rem 0.9rem;
+    border-radius: 8px;
     cursor: ${({ disabled }) => disabled ? 'not-allowed' : 'pointer'};
     font-weight: bold;
     font-size: 1rem;

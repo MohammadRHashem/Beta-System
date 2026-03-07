@@ -30,7 +30,7 @@ const useDebounce = (value, delay) => {
 const PageContainer = styled.div`
   display: flex;
   flex-direction: column;
-  gap: 1.5rem;
+  gap: 1.1rem;
   height: 100%;
 `;
 
@@ -44,20 +44,23 @@ const Header = styled.div`
 
 const Title = styled.h2`
   margin: 0;
+  line-height: 1.2;
 `;
 
 const Actions = styled.div`
   display: flex;
   gap: 1rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 `;
 
 const Button = styled.button`
   display: inline-flex;
   align-items: center;
   gap: 0.5rem;
-  padding: 0.6rem 1.2rem;
+  padding: 0.62rem 1rem;
   border: none;
-  border-radius: 6px;
+  border-radius: 8px;
   font-weight: 600;
   cursor: pointer;
   background-color: ${({ theme, primary }) =>
@@ -78,8 +81,8 @@ const Button = styled.button`
 const RefreshBanner = styled.div`
   background-color: ${({ theme }) => theme.secondary};
   color: white;
-  padding: 0.75rem 1rem;
-  border-radius: 6px;
+  padding: 0.7rem 1rem;
+  border-radius: 8px;
   text-align: center;
   font-weight: 600;
   cursor: pointer;

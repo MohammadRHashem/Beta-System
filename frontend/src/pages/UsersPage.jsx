@@ -2,21 +2,22 @@ import React, { useState, useEffect, useCallback } from 'react';
 import styled from 'styled-components';
 import { getAllUsers, getAllRoles, createUser, updateUser, deleteUser } from '../services/api';
 import Modal from '../components/Modal';
-import { usePermissions } from '../context/PermissionContext'; // 1. IMPORT PERMISSIONS HOOK
+import { usePermissions } from '../context/PermissionContext';
 import { FaPlus, FaUsers, FaEdit, FaTrash } from 'react-icons/fa';
 import { format } from 'date-fns';
 
-// Styled Components
 const PageContainer = styled.div`
     display: flex;
     flex-direction: column;
-    gap: 1.5rem;
+    gap: 1.25rem;
 `;
 
 const Header = styled.div`
     display: flex;
     justify-content: space-between;
     align-items: center;
+    gap: 1rem;
+    flex-wrap: wrap;
 `;
 
 const Title = styled.h2`
@@ -29,17 +30,18 @@ const Title = styled.h2`
 
 const Card = styled.div`
     background: #fff;
-    padding: 1.5rem 2rem;
-    border-radius: 8px;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    padding: 1.1rem 1.25rem 1rem;
+    border-radius: 14px;
+    border: 1px solid rgba(9, 30, 66, 0.08);
+    box-shadow: 0 14px 30px rgba(9, 30, 66, 0.08);
 `;
 
 const Button = styled.button`
     background-color: ${({ theme }) => theme.secondary};
     color: white;
     border: none;
-    padding: 0.75rem 1.5rem;
-    border-radius: 4px;
+    padding: 0.66rem 1rem;
+    border-radius: 8px;
     cursor: pointer;
     font-weight: bold;
     display: flex;
@@ -47,25 +49,41 @@ const Button = styled.button`
     gap: 0.5rem;
 `;
 
+const TableWrapper = styled.div`
+    width: 100%;
+    overflow-x: auto;
+    border: 1px solid ${({ theme }) => theme.border};
+    border-radius: 10px;
+`;
+
 const Table = styled.table`
     width: 100%;
+    min-width: 820px;
     border-collapse: collapse;
-    margin-top: 1.5rem;
+    margin-top: 0.85rem;
+    font-size: 0.9rem;
     th, td {
-        padding: 1rem;
+        padding: 0.8rem 0.9rem;
         text-align: left;
         border-bottom: 1px solid ${({ theme }) => theme.border};
         vertical-align: middle;
+        white-space: nowrap;
     }
     th {
         background-color: ${({ theme }) => theme.background};
+        font-size: 0.84rem;
+        letter-spacing: 0.01em;
     }
     .actions {
-        font-size: 1.1rem;
+        font-size: 1rem;
         color: ${({ theme }) => theme.lightText};
-        cursor: pointer;
-        &:hover {
-            color: ${({ theme }) => theme.primary};
+        display: inline-flex;
+        gap: 0.9rem;
+        svg {
+            cursor: pointer;
+            &:hover {
+                color: ${({ theme }) => theme.primary};
+            }
         }
     }
 `;
@@ -82,7 +100,7 @@ const StatusBadge = styled.span`
 const ModalForm = styled.form`
     display: flex;
     flex-direction: column;
-    gap: 1.5rem;
+    gap: 1rem;
 `;
 
 const InputGroup = styled.div`
@@ -96,10 +114,10 @@ const Label = styled.label`
 `;
 
 const Input = styled.input`
-    padding: 0.75rem;
+    padding: 0.68rem 0.74rem;
     border: 1px solid ${({ theme }) => theme.border};
-    border-radius: 4px;
-    font-size: 1rem;
+    border-radius: 8px;
+    font-size: 0.95rem;
 `;
 
 const RoleGrid = styled.div`
@@ -112,7 +130,7 @@ const RoleChipLabel = styled.label`
     display: inline-flex;
     align-items: center;
     gap: 0.5rem;
-    padding: 0.4rem 0.75rem;
+    padding: 0.36rem 0.7rem;
     border-radius: 999px;
     border: 1px solid ${({ theme }) => theme.border};
     background: ${({ theme }) => theme.background};
@@ -158,8 +176,8 @@ const Slider = styled.span`
 
 
 const UsersPage = () => {
-    const { hasPermission } = usePermissions(); // 2. GET PERMISSION CHECKER
-    const canManage = hasPermission('admin:manage_users'); // 3. DEFINE MANAGE CAPABILITY
+    const { hasPermission } = usePermissions();
+    const canManage = hasPermission('admin:manage_users');
 
     const [users, setUsers] = useState([]);
     const [roles, setRoles] = useState([]);
@@ -288,49 +306,48 @@ const UsersPage = () => {
             <PageContainer>
                 <Header>
                     <Title><FaUsers /> User Management</Title>
-                    {/* 4. WRAP CREATE BUTTON IN PERMISSION CHECK */}
                     {canManage && (
                         <Button onClick={() => handleOpenModal(null)}><FaPlus /> Create User</Button>
                     )}
                 </Header>
                 <Card>
                     <p>Create and manage user accounts and their assigned roles.</p>
-                    <Table>
-                        <thead>
-                            <tr>
-                                <th>Username</th>
-                                <th>Roles</th>
-                                <th>Status</th>
-                                <th>Last Login</th>
-                                {canManage && <th>Actions</th>}
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {loading ? (
-                                <tr><td colSpan={canManage ? 5 : 4}>Loading users...</td></tr>
-                            ) : (
-                                users.map(user => (
-                                    <tr key={user.id}>
-                                        <td>{user.username}</td>
-                                        <td>{user.role_names?.length ? user.role_names.join(', ') : <span style={{color: '#aaa'}}>None</span>}</td>
-                                        <td><StatusBadge active={user.is_active}>{user.is_active ? 'Active' : 'Inactive'}</StatusBadge></td>
-                                        <td>{formatTimestamp(user.last_login)}</td>
-                                        {/* 5. WRAP ACTIONS COLUMN IN PERMISSION CHECK */}
-                                        {canManage && (
-                                            <td className="actions">
-                                                <FaEdit onClick={() => handleOpenModal(user)} title="Edit User" />
-                                                <FaTrash onClick={() => handleDelete(user)} title="Delete User" />
-                                            </td>
-                                        )}
-                                    </tr>
-                                ))
-                            )}
-                        </tbody>
-                    </Table>
+                    <TableWrapper>
+                        <Table>
+                            <thead>
+                                <tr>
+                                    <th>Username</th>
+                                    <th>Roles</th>
+                                    <th>Status</th>
+                                    <th>Last Login</th>
+                                    {canManage && <th>Actions</th>}
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {loading ? (
+                                    <tr><td colSpan={canManage ? 5 : 4}>Loading users...</td></tr>
+                                ) : (
+                                    users.map(user => (
+                                        <tr key={user.id}>
+                                            <td>{user.username}</td>
+                                            <td>{user.role_names?.length ? user.role_names.join(', ') : <span style={{color: '#aaa'}}>None</span>}</td>
+                                            <td><StatusBadge active={user.is_active}>{user.is_active ? 'Active' : 'Inactive'}</StatusBadge></td>
+                                            <td>{formatTimestamp(user.last_login)}</td>
+                                            {canManage && (
+                                                <td className="actions">
+                                                    <FaEdit onClick={() => handleOpenModal(user)} title="Edit User" />
+                                                    <FaTrash onClick={() => handleDelete(user)} title="Delete User" />
+                                                </td>
+                                            )}
+                                        </tr>
+                                    ))
+                                )}
+                            </tbody>
+                        </Table>
+                    </TableWrapper>
                 </Card>
             </PageContainer>
             
-            {/* Modal is implicitly protected as it can only be opened by a user with `canManage` permissions */}
             <Modal isOpen={isModalOpen} onClose={handleCloseModal} maxWidth="500px">
                 <h2>{editingUser ? 'Edit User' : 'Create New User'}</h2>
                 <ModalForm onSubmit={handleSubmit}>

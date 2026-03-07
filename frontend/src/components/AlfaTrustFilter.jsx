@@ -4,12 +4,13 @@ import { format } from 'date-fns';
 
 const FilterContainer = styled.div`
     background: #fff;
-    padding: 1.5rem;
-    border-radius: 8px;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    padding: 1.05rem 1.15rem;
+    border-radius: 14px;
+    border: 1px solid rgba(9, 30, 66, 0.08);
+    box-shadow: 0 14px 30px rgba(9, 30, 66, 0.08);
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-    gap: 1rem 1.5rem;
+    gap: 0.85rem;
     align-items: flex-end;
 `;
 
@@ -24,9 +25,9 @@ const InputGroup = styled.div`
     }
 
     input, select {
-        padding: 0.75rem;
+        padding: 0.62rem 0.72rem;
         border: 1px solid ${({ theme }) => theme.border};
-        border-radius: 4px;
+        border-radius: 8px;
         font-size: 0.9rem;
         width: 100%;
         background: #fff;
@@ -34,14 +35,14 @@ const InputGroup = styled.div`
 `;
 
 const ClearButton = styled.button`
-    padding: 0.75rem 1rem;
+    padding: 0.62rem 0.8rem;
     border: 1px solid ${({ theme }) => theme.lightText};
     color: ${({ theme }) => theme.lightText};
     background: transparent;
-    border-radius: 4px;
+    border-radius: 8px;
     cursor: pointer;
     font-weight: 600;
-    height: 45px; /* Align with inputs */
+    height: 40px;
     
     &:hover {
         background: ${({ theme }) => theme.background};
@@ -55,7 +56,6 @@ const AlfaTrustFilter = ({ filters, onFilterChange }) => {
         onFilterChange({ ...filters, [e.target.name]: e.target.value });
     };
 
-    // === MODIFICATION 1: Update clear function for date range ===
     const handleClear = () => {
         const today = format(new Date(), 'yyyy-MM-dd');
         onFilterChange({ 
@@ -73,7 +73,6 @@ const AlfaTrustFilter = ({ filters, onFilterChange }) => {
                 <input name="search" type="text" value={filters.search} onChange={handleChange} />
             </InputGroup>
             
-            {/* === MODIFICATION 2: Add two date inputs === */}
             <InputGroup>
                 <label>Date From</label>
                 <input name="dateFrom" type="date" value={filters.dateFrom} onChange={handleChange} />
@@ -83,7 +82,6 @@ const AlfaTrustFilter = ({ filters, onFilterChange }) => {
                 <label>Date To</label>
                 <input name="dateTo" type="date" value={filters.dateTo} onChange={handleChange} />
             </InputGroup>
-            {/* ========================================= */}
             
             <InputGroup>
                 <label>Operation</label>

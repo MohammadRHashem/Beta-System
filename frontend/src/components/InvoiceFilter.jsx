@@ -4,12 +4,13 @@ import Select from 'react-select';
 
 const FilterContainer = styled.div`
     background: #fff;
-    padding: 1.5rem;
-    border-radius: 8px;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    padding: 1.05rem 1.15rem;
+    border-radius: 14px;
+    border: 1px solid rgba(9, 30, 66, 0.08);
+    box-shadow: 0 14px 30px rgba(9, 30, 66, 0.08);
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-    gap: 1rem;
+    grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+    gap: 0.85rem;
     align-items: flex-end;
 `;
 
@@ -25,18 +26,27 @@ const Label = styled.label`
 `;
 
 const Input = styled.input`
-    padding: 0.6rem;
+    padding: 0.58rem 0.66rem;
     border: 1px solid ${({ theme }) => theme.border};
-    border-radius: 4px;
+    border-radius: 8px;
     font-size: 0.9rem;
 `;
 
+const SelectInput = styled.select`
+    height: 40px;
+    border: 1px solid hsl(0, 0%, 80%);
+    border-radius: 8px;
+    padding: 0 0.65rem;
+    font-size: 0.9rem;
+    background: #fff;
+`;
+
 const ClearButton = styled.button`
-    padding: 0.6rem 1rem;
+    padding: 0.6rem 0.9rem;
     border: 1px solid ${({ theme }) => theme.lightText};
     color: ${({ theme }) => theme.lightText};
     background: transparent;
-    border-radius: 4px;
+    border-radius: 8px;
     cursor: pointer;
     font-weight: 600;
     
@@ -81,7 +91,7 @@ const InvoiceFilter = ({ filters, onFilterChange, allGroups, recipientNames }) =
     return (
         <FilterContainer>
             <InputGroup>
-                <Label>Search (ID, Name, Amount, etc.)</Label> {/* <-- Reverted Label */}
+                <Label>Search (ID, Name, Amount, etc.)</Label>
                 <Input name="search" type="text" value={filters.search} onChange={handleChange} />
             </InputGroup>
             <InputGroup>
@@ -125,20 +135,20 @@ const InvoiceFilter = ({ filters, onFilterChange, allGroups, recipientNames }) =
 
             <InputGroup>
                 <Label>Review Status</Label>
-                <select name="reviewStatus" value={filters.reviewStatus} onChange={handleChange} style={{height: '40px', border: '1px solid hsl(0, 0%, 80%)', borderRadius: '4px'}}>
+                <SelectInput name="reviewStatus" value={filters.reviewStatus} onChange={handleChange}>
                     <option value="">Show All</option>
                     <option value="only_review">Show Only To Be Reviewed</option>
                     <option value="hide_review">Hide "To Be Reviewed"</option>
-                </select>
+                </SelectInput>
             </InputGroup>
             
             <InputGroup>
                 <Label>Other Status</Label>
-                <select name="status" value={filters.status} onChange={handleChange} style={{height: '40px', border: '1px solid hsl(0, 0%, 80%)', borderRadius: '4px'}}>
+                <SelectInput name="status" value={filters.status} onChange={handleChange}>
                     <option value="">Show All</option>
                     <option value="only_deleted">Show Only Deleted</option>
                     <option value="only_duplicates">Show Only Duplicates</option>
-                </select>
+                </SelectInput>
             </InputGroup>
 
             <ClearButton onClick={handleClear}>Clear Filters</ClearButton>

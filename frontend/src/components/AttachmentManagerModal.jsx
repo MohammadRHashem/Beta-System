@@ -7,13 +7,13 @@ import { FaImage, FaFilePdf, FaFile, FaTrash, FaCheckCircle, FaUpload } from 're
 const Gallery = styled.div`
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-    gap: 1rem;
+    gap: 0.75rem;
     max-height: 60vh;
     overflow-y: auto;
-    padding: 1rem;
+    padding: 0.75rem;
     background: #f9f9f9;
     border: 1px solid ${({ theme }) => theme.border};
-    border-radius: 8px;
+    border-radius: 10px;
 `;
 const FileCard = styled.div`
     position: relative;
@@ -67,8 +67,8 @@ const ActionButton = styled.button`
     background: ${props => props.color || '#fff'};
     color: ${props => props.textColor || '#333'};
     border: none;
-    padding: 0.5rem 1rem;
-    border-radius: 4px;
+    padding: 0.45rem 0.7rem;
+    border-radius: 8px;
     font-weight: bold;
     cursor: pointer;
 `;
@@ -84,8 +84,8 @@ const Button = styled.button`
     background-color: ${({ theme }) => theme.primary};
     color: white;
     border: none;
-    padding: 0.75rem 1.5rem;
-    border-radius: 4px;
+    padding: 0.66rem 1rem;
+    border-radius: 8px;
     cursor: pointer;
     font-weight: bold;
     display: flex;
@@ -98,7 +98,6 @@ const Button = styled.button`
     }
 `;
 
-// 1. ACCEPT THE NEW PERMISSION PROP
 const AttachmentManagerModal = ({ isOpen, onClose, onSelect, canViewAttachments, canUploadAttachments, canDeleteAttachments }) => {
     const [uploads, setUploads] = useState([]);
     const fileInputRef = useRef(null);
@@ -154,7 +153,6 @@ const AttachmentManagerModal = ({ isOpen, onClose, onSelect, canViewAttachments,
                             <FileName title={upload.original_filename}>{upload.original_filename}</FileName>
                             <Overlay className="overlay">
                                 <ActionButton color="#00C49A" textColor="#fff" onClick={(e) => { e.stopPropagation(); onSelect(upload); }}><FaCheckCircle/> Select</ActionButton>
-                                {/* 2. WRAP THE DELETE BUTTON IN PERMISSION CHECK */}
                                 {canDeleteAttachments && (
                                     <ActionButton color="#DE350B" textColor="#fff" onClick={(e) => handleDelete(e, upload.id)}><FaTrash/> Delete</ActionButton>
                                 )}
@@ -163,7 +161,6 @@ const AttachmentManagerModal = ({ isOpen, onClose, onSelect, canViewAttachments,
                     );
                 })}
             </Gallery>
-            {/* 3. WRAP THE UPLOAD SECTION IN PERMISSION CHECK */}
             {canUploadAttachments && (
                 <UploadButtonContainer>
                     <HiddenInput ref={fileInputRef} onChange={handleFileSelect} />

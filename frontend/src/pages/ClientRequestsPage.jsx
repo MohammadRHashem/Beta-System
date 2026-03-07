@@ -30,17 +30,53 @@ import {
 import { formatInTimeZone } from 'date-fns-tz';
 import Modal from '../components/Modal';
 
-const PageContainer = styled.div` display: flex; flex-direction: column; gap: 1.5rem; `;
-const Header = styled.div` display: flex; justify-content: space-between; align-items: center; `;
-const Card = styled.div` background: #fff; padding: 1.5rem 2rem; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); `;
-const Title = styled.h2` display: flex; align-items: center; gap: 0.75rem; margin: 0; color: ${({ theme }) => theme.primary}; `;
-const Table = styled.table` width: 100%; border-collapse: collapse; margin-top: 1.5rem; th, td { padding: 1rem; text-align: left; border-bottom: 1px solid ${({ theme }) => theme.border}; vertical-align: middle; } `;
-const TableHeader = styled.th` background-color: ${({ theme }) => theme.background}; cursor: pointer; user-select: none; &:hover { background-color: #eef2f7; } `;
+const PageContainer = styled.div` display: flex; flex-direction: column; gap: 1.25rem; `;
+const Header = styled.div` display: flex; justify-content: space-between; align-items: center; gap: 1rem; flex-wrap: wrap; `;
+const Card = styled.div`
+    background: #fff;
+    padding: 1.1rem 1.25rem 1rem;
+    border-radius: 14px;
+    border: 1px solid rgba(9, 30, 66, 0.08);
+    box-shadow: 0 14px 30px rgba(9, 30, 66, 0.08);
+`;
+const Title = styled.h2` display: flex; align-items: center; gap: 0.7rem; margin: 0; color: ${({ theme }) => theme.primary}; line-height: 1.2; `;
+const CardTopBar = styled.div` display: flex; justify-content: space-between; align-items: center; gap: 0.75rem; flex-wrap: wrap; `;
+const TableWrapper = styled.div`
+    width: 100%;
+    overflow-x: auto;
+    border: 1px solid ${({ theme }) => theme.border};
+    border-radius: 10px;
+`;
+const Table = styled.table`
+    width: 100%;
+    min-width: 1100px;
+    border-collapse: collapse;
+    margin-top: 0.8rem;
+    font-size: 0.9rem;
+    th, td {
+        padding: 0.8rem 0.9rem;
+        text-align: left;
+        border-bottom: 1px solid ${({ theme }) => theme.border};
+        vertical-align: middle;
+        white-space: nowrap;
+    }
+    td:nth-child(4) {
+        white-space: normal;
+    }
+`;
+const TableHeader = styled.th`
+    background-color: ${({ theme }) => theme.background};
+    cursor: pointer;
+    user-select: none;
+    font-size: 0.84rem;
+    letter-spacing: 0.01em;
+    &:hover { background-color: #eef2f7; }
+`;
 const TableRow = styled.tr` border-left: 5px solid ${props => props.highlightColor || '#E0E0E0'}; transition: background-color 0.2s; &:hover { background-color: ${props => props.highlightColor ? `${props.highlightColor}4D` : '#f9f9f9'}; } `;
 const Button = styled.button`
     border: none;
-    padding: 0.5rem 0.85rem;
-    border-radius: 4px;
+    padding: 0.46rem 0.78rem;
+    border-radius: 8px;
     cursor: pointer;
     font-weight: bold;
     display: flex;
@@ -72,16 +108,35 @@ const HistoryBadgeButton = styled.button`
     background: transparent;
     cursor: pointer;
 `;
-const AmountButton = styled.button` background: transparent; border: 1px dashed #ccc; color: #666; cursor: pointer; padding: 0.3rem 0.8rem; border-radius: 4px; display: flex; align-items: center; gap: 0.5rem; &:hover { background: #f0f0f0; border-color: #999; } `;
-const TabContainer = styled.div` border-bottom: 2px solid ${({ theme }) => theme.border}; margin-bottom: 1.5rem; display: flex; flex-wrap: wrap; `;
-const Tab = styled.button` padding: 0.75rem 1.25rem; border: none; background: transparent; cursor: pointer; font-weight: 600; font-size: 1rem; color: ${({ theme, active }) => active ? theme.primary : theme.lightText}; border-bottom: 3px solid ${({ theme, active }) => active ? theme.secondary : 'transparent'}; margin-bottom: -2px; transition: all 0.2s ease-in-out; `;
+const AmountButton = styled.button` background: transparent; border: 1px dashed #ccc; color: #666; cursor: pointer; padding: 0.3rem 0.75rem; border-radius: 8px; display: flex; align-items: center; gap: 0.45rem; &:hover { background: #f0f0f0; border-color: #999; } `;
+const TabContainer = styled.div`
+    border-bottom: 2px solid ${({ theme }) => theme.border};
+    margin-bottom: 1rem;
+    display: flex;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: thin;
+`;
+const Tab = styled.button`
+    padding: 0.64rem 1rem;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    font-weight: 600;
+    font-size: 0.92rem;
+    color: ${({ theme, active }) => active ? theme.primary : theme.lightText};
+    border-bottom: 3px solid ${({ theme, active }) => active ? theme.secondary : 'transparent'};
+    margin-bottom: -2px;
+    transition: all 0.2s ease-in-out;
+    white-space: nowrap;
+`;
 const ConfigButton = styled.button` background: transparent; border: none; color: ${({ theme }) => theme.lightText}; cursor: pointer; font-size: 1.2rem; &:hover { color: ${({ theme }) => theme.primary}; } `;
 const ModalList = styled.ul` list-style: none; margin: 1rem 0; padding: 0; `;
 const ModalListItem = styled.li` display: flex; justify-content: space-between; align-items: center; padding: 0.75rem; border: 1px solid ${({ theme }) => theme.border}; border-radius: 4px; margin-bottom: 0.5rem; background: #f9f9f9; `;
 const ArrowButton = styled.button` background: transparent; border: none; font-size: 1.2rem; cursor: pointer; color: ${({ theme }) => theme.text}; &:disabled { color: #ccc; cursor: not-allowed; } `;
 const SaveOrderButton = styled.button` background-color: ${({ theme }) => theme.primary}; color: white; border: none; padding: 0.75rem 1.5rem; border-radius: 4px; cursor: pointer; font-weight: bold; display: block; margin-left: auto; `;
-const SearchRow = styled.div` display: flex; justify-content: flex-end; align-items: center; gap: 1rem; margin-top: 1rem; flex-wrap: wrap; `;
-const SearchInput = styled.input` padding: 0.65rem 0.9rem; border: 1px solid ${({ theme }) => theme.border}; border-radius: 6px; font-size: 0.95rem; min-width: 260px; `;
+const SearchRow = styled.div` display: flex; justify-content: flex-end; align-items: center; gap: 1rem; margin-top: 0.7rem; flex-wrap: wrap; `;
+const SearchInput = styled.input` padding: 0.6rem 0.8rem; border: 1px solid ${({ theme }) => theme.border}; border-radius: 8px; font-size: 0.9rem; min-width: 260px; width: min(360px, 100%); `;
 const HistoryTableWrapper = styled.div`
     margin-top: 1rem;
     width: 100%;
@@ -340,7 +395,7 @@ const ClientRequestsPage = () => {
             <PageContainer>
                 <Header><Title><FaClipboardList /> Client Requests</Title></Header>
                 <Card>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <CardTopBar>
                         <TabContainer>
                             <Tab active={activeView === 'pending'} onClick={() => setActiveView('pending')}>Pending</Tab>
                             <Tab active={activeView === 'completed'} onClick={() => setActiveView('completed')}>Completed</Tab>
@@ -350,7 +405,7 @@ const ClientRequestsPage = () => {
                                 <FaCog />
                             </ConfigButton>
                         )}
-                    </div>
+                    </CardTopBar>
 
                     <TabContainer style={{ borderBottom: 'none' }}>
                         <Tab active={activeTypeTab === 'All'} onClick={() => setActiveTypeTab('All')}>
@@ -371,102 +426,104 @@ const ClientRequestsPage = () => {
                         />
                     </SearchRow>
 
-                    <Table>
-                        <thead>
-                            <tr>
-                                <TableHeader onClick={() => handleSort('received_at')}>
-                                    {activeView === 'completed' ? 'Date' : 'Received At (BRT)'} {getSortIcon('received_at')}
-                                </TableHeader>
-                                <TableHeader onClick={() => handleSort('source_group_name')}>Group Name {getSortIcon('source_group_name')}</TableHeader>
-                                <TableHeader onClick={() => handleSort('request_type')}>Request Type {getSortIcon('request_type')}</TableHeader>
-                                <TableHeader onClick={() => handleSort('content')}>Information {getSortIcon('content')}</TableHeader>
-                                <TableHeader onClick={() => handleSort('amount')}>Amount {getSortIcon('amount')}</TableHeader>
-                                {activeView === 'completed' && <TableHeader>Completed At</TableHeader>}
-                                <th>Action</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {loading ? (
-                                <tr><td colSpan={columnCount}>Loading...</td></tr>
-                            ) : filteredAndSortedRequests.length === 0 ? (
-                                <tr><td colSpan={columnCount} style={{ textAlign: 'center', padding: '2rem' }}>No requests found for this view.</td></tr>
-                            ) : (
-                                filteredAndSortedRequests.map(req => {
-                                    const isTracked = Number(req.track_content_history) === 1;
-                                    const historyCount = Number(req.history_completed_count) || 0;
-                                    const infoLabel = req.content_label ? `${req.content_label}: ` : '';
+                    <TableWrapper>
+                        <Table>
+                            <thead>
+                                <tr>
+                                    <TableHeader onClick={() => handleSort('received_at')}>
+                                        {activeView === 'completed' ? 'Date' : 'Received At (BRT)'} {getSortIcon('received_at')}
+                                    </TableHeader>
+                                    <TableHeader onClick={() => handleSort('source_group_name')}>Group Name {getSortIcon('source_group_name')}</TableHeader>
+                                    <TableHeader onClick={() => handleSort('request_type')}>Request Type {getSortIcon('request_type')}</TableHeader>
+                                    <TableHeader onClick={() => handleSort('content')}>Information {getSortIcon('content')}</TableHeader>
+                                    <TableHeader onClick={() => handleSort('amount')}>Amount {getSortIcon('amount')}</TableHeader>
+                                    {activeView === 'completed' && <TableHeader>Completed At</TableHeader>}
+                                    <th>Action</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {loading ? (
+                                    <tr><td colSpan={columnCount}>Loading...</td></tr>
+                                ) : filteredAndSortedRequests.length === 0 ? (
+                                    <tr><td colSpan={columnCount} style={{ textAlign: 'center', padding: '2rem' }}>No requests found for this view.</td></tr>
+                                ) : (
+                                    filteredAndSortedRequests.map(req => {
+                                        const isTracked = Number(req.track_content_history) === 1;
+                                        const historyCount = Number(req.history_completed_count) || 0;
+                                        const infoLabel = req.content_label ? `${req.content_label}: ` : '';
 
-                                    return (
-                                        <TableRow key={req.id} highlightColor={req.type_color}>
-                                            <td>{formatSaoPauloDateTime(req.received_at, 'dd/MM/yyyy HH:mm')}</td>
-                                            <td>{req.source_group_name}</td>
-                                            <td>{req.request_type}</td>
-                                            <ContentCell>
-                                                <EditableCell>
-                                                    <div>
-                                                        <InfoValue title={req.content}>{infoLabel}{req.content}</InfoValue>
-                                                        {activeView === 'pending' && isTracked && (
-                                                            historyCount > 0 ? (
-                                                                <HistoryBadgeButton onClick={() => openHistoryModal(req)} title='Open completed history'>
-                                                                    <HistoryBadge className='history'>
-                                                                        <FaHistory /> HISTORY ({historyCount})
-                                                                    </HistoryBadge>
-                                                                </HistoryBadgeButton>
-                                                            ) : (
-                                                                <HistoryBadge className='new'>NEW</HistoryBadge>
+                                        return (
+                                            <TableRow key={req.id} highlightColor={req.type_color}>
+                                                <td>{formatSaoPauloDateTime(req.received_at, 'dd/MM/yyyy HH:mm')}</td>
+                                                <td>{req.source_group_name}</td>
+                                                <td>{req.request_type}</td>
+                                                <ContentCell>
+                                                    <EditableCell>
+                                                        <div>
+                                                            <InfoValue title={req.content}>{infoLabel}{req.content}</InfoValue>
+                                                            {activeView === 'pending' && isTracked && (
+                                                                historyCount > 0 ? (
+                                                                    <HistoryBadgeButton onClick={() => openHistoryModal(req)} title='Open completed history'>
+                                                                        <HistoryBadge className='history'>
+                                                                            <FaHistory /> HISTORY ({historyCount})
+                                                                        </HistoryBadge>
+                                                                    </HistoryBadgeButton>
+                                                                ) : (
+                                                                    <HistoryBadge className='new'>NEW</HistoryBadge>
+                                                                )
+                                                            )}
+                                                        </div>
+                                                        {canEditContent && <FaEdit onClick={() => handleContentUpdate(req.id)} />}
+                                                    </EditableCell>
+                                                </ContentCell>
+                                                <td>
+                                                    {req.amount ? (
+                                                        <EditableCell>
+                                                            {formatAmount(req.amount)}
+                                                            {canEditAmount && <FaEdit onClick={() => handleAmountUpdate(req.id)} />}
+                                                        </EditableCell>
+                                                    ) : (
+                                                        activeView === 'pending' && canEditAmount && <AmountButton onClick={() => handleAmountUpdate(req.id)}><FaDollarSign /> Add</AmountButton>
+                                                    )}
+                                                </td>
+                                                {activeView === 'completed' && (
+                                                    <td>
+                                                        {formatSaoPauloDateTime(req.completed_at, 'dd/MM HH:mm')}
+                                                        <br />
+                                                        <small>by {req.completed_by || 'N/A'}</small>
+                                                    </td>
+                                                )}
+                                                <td>
+                                                    <ActionButtons>
+                                                        {activeView === 'pending' ? (
+                                                            canComplete && (
+                                                                <Button className='complete' onClick={() => handleComplete(req.id)}>
+                                                                    <FaCheck /> Done
+                                                                </Button>
+                                                            )
+                                                        ) : (
+                                                            canRestore && (
+                                                                <Button className='restore' onClick={() => handleRestore(req.id)}>
+                                                                    <FaHistory /> Restore
+                                                                </Button>
                                                             )
                                                         )}
-                                                    </div>
-                                                    {canEditContent && <FaEdit onClick={() => handleContentUpdate(req.id)} />}
-                                                </EditableCell>
-                                            </ContentCell>
-                                            <td>
-                                                {req.amount ? (
-                                                    <EditableCell>
-                                                        {formatAmount(req.amount)}
-                                                        {canEditAmount && <FaEdit onClick={() => handleAmountUpdate(req.id)} />}
-                                                    </EditableCell>
-                                                ) : (
-                                                    activeView === 'pending' && canEditAmount && <AmountButton onClick={() => handleAmountUpdate(req.id)}><FaDollarSign /> Add</AmountButton>
-                                                )}
-                                            </td>
-                                            {activeView === 'completed' && (
-                                                <td>
-                                                    {formatSaoPauloDateTime(req.completed_at, 'dd/MM HH:mm')}
-                                                    <br />
-                                                    <small>by {req.completed_by || 'N/A'}</small>
+                                                        {canDelete && (
+                                                            <Button className='delete' onClick={() => handleDelete(req.id)}>
+                                                                <FaTrash /> Delete
+                                                            </Button>
+                                                        )}
+                                                        {!canDelete && activeView === 'pending' && !canComplete && <span>-</span>}
+                                                        {!canDelete && activeView === 'completed' && !canRestore && <span>-</span>}
+                                                    </ActionButtons>
                                                 </td>
-                                            )}
-                                            <td>
-                                                <ActionButtons>
-                                                    {activeView === 'pending' ? (
-                                                        canComplete && (
-                                                            <Button className='complete' onClick={() => handleComplete(req.id)}>
-                                                                <FaCheck /> Done
-                                                            </Button>
-                                                        )
-                                                    ) : (
-                                                        canRestore && (
-                                                            <Button className='restore' onClick={() => handleRestore(req.id)}>
-                                                                <FaHistory /> Restore
-                                                            </Button>
-                                                        )
-                                                    )}
-                                                    {canDelete && (
-                                                        <Button className='delete' onClick={() => handleDelete(req.id)}>
-                                                            <FaTrash /> Delete
-                                                        </Button>
-                                                    )}
-                                                    {!canDelete && activeView === 'pending' && !canComplete && <span>-</span>}
-                                                    {!canDelete && activeView === 'completed' && !canRestore && <span>-</span>}
-                                                </ActionButtons>
-                                            </td>
-                                        </TableRow>
-                                    );
-                                })
-                            )}
-                        </tbody>
-                    </Table>
+                                            </TableRow>
+                                        );
+                                    })
+                                )}
+                            </tbody>
+                        </Table>
+                    </TableWrapper>
                 </Card>
             </PageContainer>
 

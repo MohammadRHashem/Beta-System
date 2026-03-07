@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import styled from 'styled-components';
 import { getPositionCounters, createPositionCounter, updatePositionCounter, deletePositionCounter, getSubaccounts, getWhatsappGroups } from '../services/api';
-import { usePermissions } from '../context/PermissionContext'; // 1. IMPORT PERMISSIONS HOOK
+import { usePermissions } from '../context/PermissionContext';
 import PositionCounterCard from '../components/PositionCounterCard';
 import PositionCounterModal from '../components/PositionCounterModal';
 import { FaPlus } from 'react-icons/fa';
@@ -9,13 +9,15 @@ import { FaPlus } from 'react-icons/fa';
 const PageContainer = styled.div`
     display: flex;
     flex-direction: column;
-    gap: 1.5rem;
+    gap: 1.2rem;
 `;
 
 const Header = styled.div`
     display: flex;
     justify-content: space-between;
     align-items: center;
+    gap: 1rem;
+    flex-wrap: wrap;
 `;
 
 const Title = styled.h2` margin: 0; `;
@@ -24,9 +26,9 @@ const Button = styled.button`
     display: inline-flex;
     align-items: center;
     gap: 0.5rem;
-    padding: 0.6rem 1.2rem;
+    padding: 0.62rem 1rem;
     border: none;
-    border-radius: 6px;
+    border-radius: 8px;
     font-weight: 600;
     cursor: pointer;
     background-color: ${({ theme }) => theme.secondary};
@@ -36,13 +38,13 @@ const Button = styled.button`
 
 const CountersGrid = styled.div`
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
-    gap: 1.5rem;
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    gap: 1rem;
 `;
 
 const PositionPage = () => {
-    const { hasPermission } = usePermissions(); // 2. GET PERMISSION CHECKER
-    const canManage = hasPermission('finance:manage_counters'); // 3. DEFINE EDIT CAPABILITY
+    const { hasPermission } = usePermissions();
+    const canManage = hasPermission('finance:manage_counters');
 
     const [counters, setCounters] = useState([]);
     const [crossSubaccounts, setCrossSubaccounts] = useState([]);
@@ -133,7 +135,6 @@ const PositionPage = () => {
             <PageContainer>
                 <Header>
                     <Title>Position Dashboard</Title>
-                    {/* 4. WRAP "CREATE" BUTTON IN PERMISSION CHECK */}
                     {canManage && (
                         <Button onClick={() => handleOpenModal()}>
                             <FaPlus /> Create New Counter
@@ -150,7 +151,6 @@ const PositionPage = () => {
                                     counter={counter}
                                     onEdit={handleOpenModal}
                                     onDelete={handleDeleteCounter}
-                                    // 5. PASS PERMISSION DOWN TO THE CARD COMPONENT
                                     canManage={canManage}
                                 />
                             ))}
@@ -163,7 +163,6 @@ const PositionPage = () => {
                 )}
             </PageContainer>
             
-            {/* Modal is implicitly protected as it's only opened by users with `canManage` */}
             <PositionCounterModal
                 isOpen={isModalOpen}
                 onClose={handleCloseModal}

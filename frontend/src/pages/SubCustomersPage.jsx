@@ -19,21 +19,41 @@ const useDebounce = (value, delay) => {
 const PageContainer = styled.div`
     display: flex;
     flex-direction: column;
-    gap: 2rem;
+    gap: 1.2rem;
 `;
 
 const Card = styled.div`
     background: #fff;
-    padding: 1.5rem;
-    border-radius: 8px;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    padding: 1.1rem 1.2rem 1rem;
+    border-radius: 14px;
+    border: 1px solid rgba(9, 30, 66, 0.08);
+    box-shadow: 0 14px 30px rgba(9, 30, 66, 0.08);
+`;
+
+const CardHeader = styled.div`
+    margin-bottom: 0.9rem;
+    border-bottom: 1px solid #eee;
+    padding-bottom: 0.75rem;
+`;
+
+const CardTitle = styled.h2`
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin: 0;
+`;
+
+const CardSubtitle = styled.p`
+    color: #666;
+    margin-top: 0.5rem;
+    margin-bottom: 0;
 `;
 
 const FilterContainer = styled.div`
     display: grid;
     grid-template-columns: 1fr 1fr 1fr;
-    gap: 1.5rem;
-    margin-bottom: 1.5rem;
+    gap: 0.9rem;
+    margin-bottom: 0.9rem;
     align-items: flex-end;
 
     @media (max-width: 960px) {
@@ -56,31 +76,41 @@ const Label = styled.label`
 `;
 
 const Input = styled.input`
-    padding: 0.75rem;
+    padding: 0.68rem 0.72rem;
     border: 1px solid ${({ theme }) => theme.border};
-    border-radius: 4px;
-    font-size: 1rem;
+    border-radius: 8px;
+    font-size: 0.95rem;
     width: 100%;
 `;
 
 const Select = styled.select`
-    padding: 0.75rem;
+    padding: 0.68rem 0.72rem;
     border: 1px solid ${({ theme }) => theme.border};
-    border-radius: 4px;
-    font-size: 1rem;
+    border-radius: 8px;
+    font-size: 0.95rem;
     width: 100%;
     background-color: white;
 `;
 
+const TableWrapper = styled.div`
+    width: 100%;
+    overflow-x: auto;
+    border: 1px solid ${({ theme }) => theme.border};
+    border-radius: 10px;
+`;
+
 const Table = styled.table`
     width: 100%;
+    min-width: 900px;
     border-collapse: collapse;
-    margin-top: 1rem;
+    margin-top: 0.8rem;
+    font-size: 0.9rem;
     
     th, td {
-        padding: 1rem;
+        padding: 0.78rem 0.85rem;
         text-align: left;
         border-bottom: 1px solid ${({ theme }) => theme.border};
+        white-space: nowrap;
     }
     th {
         background-color: ${({ theme }) => theme.background};
@@ -147,14 +177,14 @@ const SubCustomersPage = ({ allGroups }) => {
     return (
         <PageContainer>
             <Card>
-                <div style={{marginBottom: '1.5rem', borderBottom: '1px solid #eee', paddingBottom: '1rem'}}>
-                    <h2 style={{display: 'flex', alignItems: 'center', gap: '0.75rem', margin: 0}}>
+                <CardHeader>
+                    <CardTitle>
                         <FaUserFriends color="#00C49A"/> Potential Sub-Customers
-                    </h2>
-                    <p style={{color: '#666', marginTop: '0.5rem'}}>
+                    </CardTitle>
+                    <CardSubtitle>
                         Analyze sender names extracted from diverse sources (WhatsApp Invoices, XPayz API, Alfa Trust API).
-                    </p>
-                </div>
+                    </CardSubtitle>
+                </CardHeader>
 
                 <FilterContainer>
                     <InputGroup>
@@ -189,36 +219,38 @@ const SubCustomersPage = ({ allGroups }) => {
 
                 {loading ? <p>Loading CRM data...</p> : (
                     <>
-                        <Table>
-                            <thead>
-                                <tr>
-                                    <th>Source</th>
-                                    <th>Sub-Customer (Sender)</th>
-                                    <th>Main Customer (Group / Account)</th>
-                                    <th>Tx Count</th>
-                                    <th>Last Seen</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {data.length === 0 ? (
-                                    <tr><td colSpan="5" style={{textAlign: 'center', padding: '2rem'}}>No records found matching your criteria.</td></tr>
-                                ) : (
-                                    data.map((row, index) => (
-                                        <tr key={index}>
-                                            <td style={{width: '50px', textAlign: 'center'}} title={source}>
-                                                <SourceIcon type={source} />
-                                            </td>
-                                            <td style={{fontWeight: '500'}}>{row.sender_name}</td>
-                                            <td style={{color: '#0A2540'}}>{row.group_name || 'Unknown'}</td>
-                                            <td>{row.transaction_count}</td>
-                                            <td style={{color: '#666'}}>
-                                                {row.last_seen ? format(new Date(row.last_seen), 'dd/MM/yyyy HH:mm') : 'N/A'}
-                                            </td>
-                                        </tr>
-                                    ))
-                                )}
-                            </tbody>
-                        </Table>
+                        <TableWrapper>
+                            <Table>
+                                <thead>
+                                    <tr>
+                                        <th>Source</th>
+                                        <th>Sub-Customer (Sender)</th>
+                                        <th>Main Customer (Group / Account)</th>
+                                        <th>Tx Count</th>
+                                        <th>Last Seen</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {data.length === 0 ? (
+                                        <tr><td colSpan="5" style={{textAlign: 'center', padding: '2rem'}}>No records found matching your criteria.</td></tr>
+                                    ) : (
+                                        data.map((row, index) => (
+                                            <tr key={index}>
+                                                <td style={{width: '50px', textAlign: 'center'}} title={source}>
+                                                    <SourceIcon type={source} />
+                                                </td>
+                                                <td style={{fontWeight: '500'}}>{row.sender_name}</td>
+                                                <td style={{color: '#0A2540'}}>{row.group_name || 'Unknown'}</td>
+                                                <td>{row.transaction_count}</td>
+                                                <td style={{color: '#666'}}>
+                                                    {row.last_seen ? format(new Date(row.last_seen), 'dd/MM/yyyy HH:mm') : 'N/A'}
+                                                </td>
+                                            </tr>
+                                        ))
+                                    )}
+                                </tbody>
+                            </Table>
+                        </TableWrapper>
                         <Pagination pagination={pagination} setPagination={setPagination} />
                     </>
                 )}

@@ -4,9 +4,9 @@ import { Navigate, useLocation } from "react-router-dom";
 const PortalProtectedRoute = ({ children }) => {
     const token = sessionStorage.getItem('portalAuthToken') || localStorage.getItem('portalAuthToken');
     const location = useLocation();
+    const hasToken = Boolean(token);
 
-    if (!token) {
-        // Redirect them to the client login page, passing the current location
+    if (!hasToken) {
         return <Navigate to="/portal/login" state={{ from: location }} replace />;
     }
 

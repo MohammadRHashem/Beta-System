@@ -132,6 +132,11 @@ const ControlsContainer = styled.div`
   flex-direction: column;
   gap: 1.5rem;
   margin-bottom: 1.5rem;
+
+  @media (max-height: 800px) and (min-width: 1024px) {
+    gap: 0.85rem;
+    margin-bottom: 1rem;
+  }
 `;
 const TopControls = styled.div`
   display: flex;
@@ -145,6 +150,10 @@ const FilterContainer = styled.div`
   flex-wrap: wrap;
   gap: 1rem;
   align-items: center;
+
+  @media (max-height: 800px) and (min-width: 1024px) {
+    gap: 0.65rem;
+  }
 `;
 const Input = styled.input`
   padding: 0.75rem;
@@ -157,6 +166,10 @@ const Input = styled.input`
     outline: none;
     border-color: ${({ theme }) => theme.secondary};
     box-shadow: 0 0 0 3px rgba(0, 196, 154, 0.2);
+  }
+
+  @media (max-width: 1200px) {
+    min-width: 200px;
   }
 `;
 const SelectInput = styled.select`
@@ -272,7 +285,7 @@ const Table = styled.table`
   font-size: 0.95rem;
   th,
   td {
-    padding: 1rem 1.5rem;
+    padding: 0.85rem 1rem;
     text-align: left;
     border-bottom: 1px solid ${({ theme }) => theme.border};
   }
@@ -354,7 +367,7 @@ const VolumeContainer = styled.div`
 `;
 const VolumeCard = styled.div`
   background: #fff;
-  padding: 1rem 1.5rem;
+  padding: 0.85rem 1rem;
   border-radius: 8px;
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
   border-left: 4px solid ${({ theme, color }) => theme[color] || theme.primary};
@@ -366,7 +379,7 @@ const VolumeCard = styled.div`
   }
   p {
     margin: 0;
-    font-size: 1.75rem;
+    font-size: 1.45rem;
     font-weight: 700;
     color: ${({ theme, color }) => theme[color] || theme.primary};
     font-family: "Courier New", Courier, monospace;
@@ -385,6 +398,17 @@ const VolumeCard = styled.div`
     }
     p {
       font-size: 1.5rem;
+    }
+  }
+
+  @media (max-height: 800px) and (min-width: 1024px) {
+    padding: 0.7rem 0.85rem;
+    p {
+      font-size: 1.2rem;
+    }
+    span {
+      margin-top: 0.2rem;
+      font-size: 0.78rem;
     }
   }
 `;

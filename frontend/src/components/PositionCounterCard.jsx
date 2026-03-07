@@ -6,9 +6,9 @@ import { FaEdit, FaTrash, FaSyncAlt } from 'react-icons/fa';
 
 const Card = styled.div`
     background: #fff;
-    padding: 1.5rem;
-    border-radius: 8px;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+    padding: 1.1rem;
+    border-radius: 14px;
+    box-shadow: 0 14px 30px rgba(9, 30, 66, 0.08);
     border-top: 4px solid ${({ theme }) => theme.secondary};
     position: relative;
 `;
@@ -27,7 +27,7 @@ const Title = styled.h3`
 
 const Actions = styled.div`
     display: flex;
-    gap: 1rem;
+    gap: 0.75rem;
     color: ${({ theme }) => theme.lightText};
     font-size: 1rem;
     
@@ -52,10 +52,10 @@ const Label = styled.label`
 `;
 
 const Input = styled.input`
-    padding: 0.75rem;
+    padding: 0.68rem 0.72rem;
     border: 1px solid ${({ theme }) => theme.border};
-    border-radius: 4px;
-    font-size: 1rem;
+    border-radius: 8px;
+    font-size: 0.95rem;
 `;
 
 const ResultContainer = styled.div`
@@ -75,7 +75,7 @@ const CalculationPeriod = styled.p`
     margin-top: 1.5rem;
     background-color: ${({ theme }) => theme.background};
     padding: 0.5rem;
-    border-radius: 4px;
+    border-radius: 8px;
 `;
 
 const SpinIcon = styled(FaSyncAlt)`
@@ -87,7 +87,7 @@ const SpinIcon = styled(FaSyncAlt)`
 `;
 
 const ResultValue = styled.p`
-    font-size: 2.2rem; // Slightly smaller to fit better
+    font-size: 2.2rem;
     font-weight: 700;
     color: ${({ theme }) => theme.primary};
     margin: 0;
@@ -114,12 +114,7 @@ const PositionCounterCard = ({ counter, onEdit, onDelete, canManage }) => {
             let data;
             if (counter.type === 'local') {
                 ({ data } = await calculateLocalPosition({ date: selectedDate, keyword: counter.keyword, counterId: counter.id }));
-            
-            // === THIS IS THE CORRECTED LINE ===
-            } else if (counter.type === 'remote') { 
-            // ===================================
-                
-                // For a manual refresh of any remote counter, we fetch today's data.
+            } else if (counter.type === 'remote') {
                 const dateParam = isRefresh ? null : selectedDate;
                 ({ data } = await calculateRemotePosition(counter.id, { date: dateParam }));
                 setLastUpdated(new Date());
@@ -133,12 +128,10 @@ const PositionCounterCard = ({ counter, onEdit, onDelete, canManage }) => {
         }
     }, [selectedDate, counter]);
 
-    // Initial calculation and on date change
     useEffect(() => {
         handleCalculate();
     }, [handleCalculate]);
 
-    // Auto-refresh for remote counters
     useEffect(() => {
         if (counter.type === 'remote') {
             const interval = setInterval(() => handleCalculate(true), 60000); // 1 minute

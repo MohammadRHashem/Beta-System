@@ -5,7 +5,7 @@ import Modal from './Modal';
 const Form = styled.form`
     display: flex;
     flex-direction: column;
-    gap: 1.5rem;
+    gap: 1rem;
 `;
 
 const InputGroup = styled.div`
@@ -19,18 +19,18 @@ const Label = styled.label`
 `;
 
 const Input = styled.input`
-    padding: 0.75rem;
+    padding: 0.68rem 0.72rem;
     border: 1px solid ${({ theme }) => theme.border};
-    border-radius: 4px;
-    font-size: 1rem;
+    border-radius: 8px;
+    font-size: 0.95rem;
 `;
 
 const Button = styled.button`
     background-color: ${({ theme }) => theme.primary};
     color: white;
     border: none;
-    padding: 0.8rem 1.5rem;
-    border-radius: 4px;
+    padding: 0.72rem 0.95rem;
+    border-radius: 8px;
     cursor: pointer;
     font-weight: bold;
     font-size: 1rem;
@@ -40,8 +40,8 @@ const Button = styled.button`
 
 const Fieldset = styled.fieldset`
   border: 1px solid #eee;
-  border-radius: 4px;
-  padding: 1rem;
+  border-radius: 8px;
+  padding: 0.85rem;
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
@@ -57,17 +57,17 @@ const GroupList = styled.div`
   max-height: 160px;
   overflow: auto;
   border: 1px solid #eee;
-  border-radius: 4px;
+  border-radius: 8px;
   padding: 0.5rem;
   display: grid;
   gap: 0.35rem;
 `;
 
 const Select = styled.select`
-    padding: 0.75rem;
+    padding: 0.68rem 0.72rem;
     border: 1px solid ${({ theme }) => theme.border};
-    border-radius: 4px;
-    font-size: 1rem;
+    border-radius: 8px;
+    font-size: 0.95rem;
     background: #fff;
 `;
 

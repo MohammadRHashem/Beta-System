@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import styled from "styled-components";
 import { Routes, Route, useLocation, Navigate } from "react-router-dom";
+import { FaBars, FaTimes } from "react-icons/fa";
 import api from "../services/api";
 import { useAuth } from "../context/AuthContext";
 import { usePermissions } from '../context/PermissionContext';
@@ -52,45 +53,73 @@ const AppLayout = styled.div`
   display: flex;
   height: 100vh;
   background-color: ${({ theme }) => theme.background};
+  overflow: hidden;
 `;
 
 const ContentArea = styled.main`
   flex-grow: 1;
   display: flex;
   flex-direction: column;
-  height: 100vh;
+  height: 100dvh;
   overflow-y: hidden;
+  min-width: 0;
 `;
 
 const Header = styled.header`
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 1.5rem 2rem;
+  gap: 1rem;
+  min-height: ${({ theme }) => theme.appHeaderHeight};
+  padding: 0.9rem 1.25rem;
   border-bottom: 1px solid ${({ theme }) => theme.border};
-  background-color: #ffffff;
+  background-color: ${({ theme }) => theme.surface};
   flex-shrink: 0;
+  box-shadow: ${({ theme }) => theme.shadowSm};
+  z-index: 20;
+
+  @media (min-width: ${({ theme }) => theme.breakpoints.tablet}) {
+    padding: 0.9rem 1.5rem;
+  }
+
+  @media (max-height: 800px) and (min-width: ${({ theme }) => theme.breakpoints.tablet}) {
+    padding-top: 0.6rem;
+    padding-bottom: 0.6rem;
+  }
 `;
 
 const PageTitle = styled.h2`
   color: ${({ theme }) => theme.primary};
   text-transform: capitalize;
   margin: 0;
+  font-size: clamp(1rem, 1.3vw, 1.35rem);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+`;
+
+const HeaderLeft = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-width: 0;
+  flex: 1;
 `;
 
 const PageContent = styled.div`
-  padding: 2rem;
+  padding: clamp(0.8rem, 1.3vw, 1.35rem);
   overflow-y: auto;
   flex-grow: 1;
+  min-height: 0;
 `;
 
 const QRContainer = styled.div`
-  padding: 2rem;
+  padding: 1.5rem;
   text-align: center;
   border: 1px dashed ${({ theme }) => theme.border};
-  border-radius: 8px;
-  background: #fff;
-  margin: 2rem;
+  border-radius: ${({ theme }) => theme.radiusMd};
+  background: ${({ theme }) => theme.surface};
+  margin: 0.5rem;
   h2 {
     margin-bottom: 1rem;
   }
@@ -100,12 +129,45 @@ const QRContainer = styled.div`
   }
 `;
 
+const SidebarBackdrop = styled.button`
+  display: none;
+  border: none;
+  background: rgba(10, 37, 64, 0.35);
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  cursor: pointer;
+
+  @media (max-width: ${({ theme }) => theme.breakpoints.tablet}) {
+    display: ${({ $visible }) => ($visible ? "block" : "none")};
+  }
+`;
+
+const MobileMenuButton = styled.button`
+  width: 2.2rem;
+  height: 2.2rem;
+  border-radius: 8px;
+  border: 1px solid ${({ theme }) => theme.border};
+  background: ${({ theme }) => theme.surfaceAlt};
+  color: ${({ theme }) => theme.primary};
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+
+  @media (min-width: ${({ theme }) => theme.breakpoints.tablet}) {
+    display: none;
+  }
+`;
+
 
 // --- Main Layout Component ---
 const MainLayout = () => {
   const [status, setStatus] = useState("disconnected");
   const [qrCode, setQrCode] = useState(null);
   const [allGroups, setAllGroups] = useState([]);
+  const [isSidebarOpen, setSidebarOpen] = useState(false);
 
   const location = useLocation();
   const { logout } = useAuth();
@@ -117,6 +179,10 @@ const MainLayout = () => {
     '/trkbit': 'Cross Intermediação'
   };
   const displayPageName = pageTitleOverrides[location.pathname] || pageName;
+
+  useEffect(() => {
+    setSidebarOpen(false);
+  }, [location.pathname]);
 
   const fetchAllGroupsForConfig = useCallback(async () => {
     try {
@@ -165,10 +231,25 @@ const MainLayout = () => {
 
   return (
     <AppLayout>
-      <Sidebar />
+      <Sidebar isOpen={isSidebarOpen} onNavigate={() => setSidebarOpen(false)} />
+      <SidebarBackdrop
+        type="button"
+        aria-label="Close sidebar"
+        $visible={isSidebarOpen}
+        onClick={() => setSidebarOpen(false)}
+      />
       <ContentArea>
         <Header>
-          <PageTitle>{displayPageName}</PageTitle>
+          <HeaderLeft>
+            <MobileMenuButton
+              type="button"
+              aria-label={isSidebarOpen ? "Close menu" : "Open menu"}
+              onClick={() => setSidebarOpen((prev) => !prev)}
+            >
+              {isSidebarOpen ? <FaTimes /> : <FaBars />}
+            </MobileMenuButton>
+            <PageTitle>{displayPageName}</PageTitle>
+          </HeaderLeft>
           <StatusIndicator status={status} onLogout={handleLogout} />
         </Header>
         <PageContent>

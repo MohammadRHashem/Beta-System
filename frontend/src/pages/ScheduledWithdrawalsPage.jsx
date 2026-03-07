@@ -15,36 +15,71 @@ import {
 } from '../services/api';
 import { usePermissions } from '../context/PermissionContext';
 
-const PageContainer = styled.div`display: flex; flex-direction: column; gap: 2rem;`;
-const Header = styled.div`display: flex; justify-content: space-between; align-items: center;`;
-const Card = styled.div`background: #fff; padding: 1.5rem 2rem; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.05);`;
+const PageContainer = styled.div`
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+`;
+const Header = styled.div`
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+    flex-wrap: wrap;
+`;
+const Card = styled.div`
+    background: #fff;
+    padding: 1.15rem 1.25rem 1rem;
+    border-radius: 14px;
+    border: 1px solid rgba(9, 30, 66, 0.08);
+    box-shadow: 0 14px 30px rgba(9, 30, 66, 0.08);
+`;
 const Button = styled.button`
     background-color: ${({ theme, color }) => color === 'primary' ? theme.primary : theme.secondary};
     color: white;
     border: none;
-    padding: 0.75rem 1.5rem;
-    border-radius: 4px;
+    padding: 0.66rem 1.05rem;
+    border-radius: 10px;
     cursor: pointer;
-    font-weight: bold;
+    font-weight: 700;
     display: flex;
     align-items: center;
     gap: 0.5rem;
 `;
+const Hint = styled.p`
+    margin: 0 0 0.85rem;
+    color: ${({ theme }) => theme.lightText};
+    font-size: 0.9rem;
+`;
+const TableWrapper = styled.div`
+    width: 100%;
+    overflow-x: auto;
+    border: 1px solid ${({ theme }) => theme.border};
+    border-radius: 10px;
+    background: #fff;
+`;
 const Table = styled.table`
     width: 100%;
+    min-width: 980px;
     border-collapse: collapse;
-    margin-top: 1.5rem;
+    font-size: 0.9rem;
     th, td {
-        padding: 1rem;
+        padding: 0.82rem 0.9rem;
         text-align: left;
         border-bottom: 1px solid ${({ theme }) => theme.border};
+        vertical-align: middle;
+        white-space: nowrap;
     }
-    th { background-color: ${({ theme }) => theme.background}; }
+    th {
+        background-color: ${({ theme }) => theme.background};
+        font-size: 0.84rem;
+        letter-spacing: 0.02em;
+    }
     td.actions {
         display: flex;
         align-items: center;
         flex-wrap: wrap;
-        gap: 1.5rem;
+        gap: 0.9rem;
         font-size: 1.1rem;
         svg {
             cursor: pointer;
@@ -57,9 +92,9 @@ const InlineActionButton = styled.button`
     background-color: ${({ theme }) => theme.primary};
     color: #fff;
     border: none;
-    border-radius: 4px;
-    padding: 0.45rem 0.7rem;
-    font-size: 0.8rem;
+    border-radius: 8px;
+    padding: 0.42rem 0.65rem;
+    font-size: 0.78rem;
     font-weight: 600;
     display: inline-flex;
     align-items: center;
@@ -115,13 +150,22 @@ const StatusBadge = styled.span`
     }};
 `;
 const ScheduleInfo = styled.div`font-size: 0.9rem; span { display: block; color: #6B7C93; font-size: 0.8rem; }`;
-const ModalForm = styled.form`display: flex; flex-direction: column; gap: 1.5rem;`;
+const ModalForm = styled.form`display: flex; flex-direction: column; gap: 1rem;`;
 const InputGroup = styled.div`display: flex; flex-direction: column; gap: 0.5rem;`;
 const Label = styled.label`font-weight: 500;`;
-const Input = styled.input`padding: 0.75rem; border: 1px solid ${({ theme }) => theme.border}; border-radius: 4px; font-size: 1rem;`;
-const Select = styled.select`padding: 0.75rem; border: 1px solid ${({ theme }) => theme.border}; border-radius: 4px; font-size: 1rem; background: #fff;`;
-const Fieldset = styled.fieldset`border: 1px solid #eee; border-radius: 4px; padding: 1rem; display: flex; flex-wrap: wrap; gap: 1rem;`;
+const Input = styled.input`padding: 0.68rem 0.74rem; border: 1px solid ${({ theme }) => theme.border}; border-radius: 8px; font-size: 0.95rem;`;
+const Select = styled.select`padding: 0.68rem 0.74rem; border: 1px solid ${({ theme }) => theme.border}; border-radius: 8px; font-size: 0.95rem; background: #fff;`;
+const Fieldset = styled.fieldset`border: 1px solid #eee; border-radius: 8px; padding: 0.85rem; display: flex; flex-wrap: wrap; gap: 0.75rem;`;
 const Legend = styled.legend`padding: 0 0.5em; font-weight: 500; color: #6B7C93;`;
+const FormRow = styled.div`
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+
+    @media (max-width: 700px) {
+        grid-template-columns: 1fr;
+    }
+`;
 const DayButton = styled.button`
     padding: 0.5rem 0.75rem;
     border: 1px solid ${({ theme, selected }) => selected ? theme.secondary : theme.border};
@@ -361,77 +405,79 @@ const ScheduledWithdrawalsPage = () => {
                     )}
                 </Header>
                 <Card>
-                    <p>Balances are fetched live every 5 seconds. Manual withdraw supports all-in or custom amount with security confirmation.</p>
-                    <Table>
-                        <thead>
-                            <tr>
-                                <th>Active</th>
-                                <th>Subaccount</th>
-                                <th>Live Balance</th>
-                                <th>Schedule</th>
-                                <th>Last Run</th>
-                                <th>Last Status</th>
-                                {(canUpdate || canDelete) && <th>Actions</th>}
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {loading ? (
-                                <tr><td colSpan={tableColumnCount}>Loading...</td></tr>
-                            ) : schedules.length === 0 ? (
-                                <tr><td colSpan={tableColumnCount}>No scheduled withdrawals found.</td></tr>
-                            ) : (
-                                schedules.map((schedule) => (
-                                    <tr key={schedule.id}>
-                                        <td>
-                                            <SwitchContainer>
-                                                <SwitchInput
-                                                    type="checkbox"
-                                                    checked={!!schedule.is_active}
-                                                    onChange={() => handleToggle(schedule)}
-                                                    disabled={!canUpdate}
-                                                />
-                                                <Slider />
-                                            </SwitchContainer>
-                                        </td>
-                                        <td>
-                                            <strong>{schedule.subaccount_name}</strong>
-                                            <ScheduleInfo>
-                                                <span>#{schedule.subaccount_number}</span>
-                                            </ScheduleInfo>
-                                        </td>
-                                        <td>{renderBalance(schedule)}</td>
-                                        <td>
-                                            <ScheduleInfo>
-                                                {formatSchedule(schedule)}
-                                                <span>Timezone: {schedule.timezone}</span>
-                                            </ScheduleInfo>
-                                        </td>
-                                        <td>{schedule.last_run_at ? format(new Date(schedule.last_run_at), 'dd/MM/yyyy HH:mm') : '-'}</td>
-                                        <td>
-                                            {schedule.last_status ? <StatusBadge status={schedule.last_status}>{schedule.last_status}</StatusBadge> : '-'}
-                                        </td>
-                                        {(canUpdate || canDelete) && (
-                                            <td className="actions">
-                                                {canUpdate && (
-                                                    <InlineActionButton
-                                                        type="button"
-                                                        onClick={() => handleWithdrawNow(schedule)}
-                                                        disabled={withdrawingId === schedule.id}
-                                                        title="Execute all-in withdraw immediately"
-                                                    >
-                                                        <FaBolt />
-                                                        {withdrawingId === schedule.id ? 'Withdrawing...' : 'Withdraw Now'}
-                                                    </InlineActionButton>
-                                                )}
-                                                {canUpdate && <FaEdit title="Edit" onClick={() => handleOpenModal(schedule)} />}
-                                                {canDelete && <FaTrash title="Delete" onClick={() => handleDelete(schedule.id)} />}
+                    <Hint>Balances are fetched live every 5 seconds. Manual withdraw supports all-in or custom amount with security confirmation.</Hint>
+                    <TableWrapper>
+                        <Table>
+                            <thead>
+                                <tr>
+                                    <th>Active</th>
+                                    <th>Subaccount</th>
+                                    <th>Live Balance</th>
+                                    <th>Schedule</th>
+                                    <th>Last Run</th>
+                                    <th>Last Status</th>
+                                    {(canUpdate || canDelete) && <th>Actions</th>}
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {loading ? (
+                                    <tr><td colSpan={tableColumnCount}>Loading...</td></tr>
+                                ) : schedules.length === 0 ? (
+                                    <tr><td colSpan={tableColumnCount}>No scheduled withdrawals found.</td></tr>
+                                ) : (
+                                    schedules.map((schedule) => (
+                                        <tr key={schedule.id}>
+                                            <td>
+                                                <SwitchContainer>
+                                                    <SwitchInput
+                                                        type="checkbox"
+                                                        checked={!!schedule.is_active}
+                                                        onChange={() => handleToggle(schedule)}
+                                                        disabled={!canUpdate}
+                                                    />
+                                                    <Slider />
+                                                </SwitchContainer>
                                             </td>
-                                        )}
-                                    </tr>
-                                ))
-                            )}
-                        </tbody>
-                    </Table>
+                                            <td>
+                                                <strong>{schedule.subaccount_name}</strong>
+                                                <ScheduleInfo>
+                                                    <span>#{schedule.subaccount_number}</span>
+                                                </ScheduleInfo>
+                                            </td>
+                                            <td>{renderBalance(schedule)}</td>
+                                            <td>
+                                                <ScheduleInfo>
+                                                    {formatSchedule(schedule)}
+                                                    <span>Timezone: {schedule.timezone}</span>
+                                                </ScheduleInfo>
+                                            </td>
+                                            <td>{schedule.last_run_at ? format(new Date(schedule.last_run_at), 'dd/MM/yyyy HH:mm') : '-'}</td>
+                                            <td>
+                                                {schedule.last_status ? <StatusBadge status={schedule.last_status}>{schedule.last_status}</StatusBadge> : '-'}
+                                            </td>
+                                            {(canUpdate || canDelete) && (
+                                                <td className="actions">
+                                                    {canUpdate && (
+                                                        <InlineActionButton
+                                                            type="button"
+                                                            onClick={() => handleWithdrawNow(schedule)}
+                                                            disabled={withdrawingId === schedule.id}
+                                                            title="Execute all-in withdraw immediately"
+                                                        >
+                                                            <FaBolt />
+                                                            {withdrawingId === schedule.id ? 'Withdrawing...' : 'Withdraw Now'}
+                                                        </InlineActionButton>
+                                                    )}
+                                                    {canUpdate && <FaEdit title="Edit" onClick={() => handleOpenModal(schedule)} />}
+                                                    {canDelete && <FaTrash title="Delete" onClick={() => handleDelete(schedule.id)} />}
+                                                </td>
+                                            )}
+                                        </tr>
+                                    ))
+                                )}
+                            </tbody>
+                        </Table>
+                    </TableWrapper>
                 </Card>
             </PageContainer>
             {(canCreate || canUpdate) && (
@@ -525,7 +571,7 @@ const ScheduledWithdrawalModal = ({ isOpen, onClose, onSave, schedule, subaccoun
                     <label><input type="radio" name="schedule_type" value="WEEKLY" checked={formData.schedule_type === 'WEEKLY'} onChange={handleChange} /> Weekly</label>
                 </Fieldset>
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem' }}>
+                <FormRow>
                     <InputGroup>
                         <Label>Time ({formData.timezone})</Label>
                         <Input type="time" name="scheduled_at_time" value={formData.scheduled_at_time} onChange={handleChange} required />
@@ -536,7 +582,7 @@ const ScheduledWithdrawalModal = ({ isOpen, onClose, onSave, schedule, subaccoun
                             <Input type="date" name="scheduled_at_date" value={formData.scheduled_at_date} onChange={handleChange} required />
                         </InputGroup>
                     )}
-                </div>
+                </FormRow>
 
                 {formData.schedule_type === 'WEEKLY' && (
                     <Fieldset>

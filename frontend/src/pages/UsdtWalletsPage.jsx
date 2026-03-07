@@ -8,34 +8,37 @@ import {
     toggleUsdtWallet 
 } from '../services/api';
 import Modal from '../components/Modal';
-import { usePermissions } from '../context/PermissionContext'; // 1. IMPORT PERMISSIONS HOOK
+import { usePermissions } from '../context/PermissionContext';
 import { FaPlus, FaEdit, FaTrash, FaExclamationTriangle } from 'react-icons/fa';
 
 const PageContainer = styled.div`
     display: flex;
     flex-direction: column;
-    gap: 2rem;
+    gap: 1.2rem;
 `;
 
 const Header = styled.div`
     display: flex;
     justify-content: space-between;
     align-items: center;
+    gap: 1rem;
+    flex-wrap: wrap;
 `;
 
 const Card = styled.div`
     background: #fff;
-    padding: 1.5rem 2rem;
-    border-radius: 8px;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    padding: 1.1rem 1.25rem 1rem;
+    border-radius: 14px;
+    border: 1px solid rgba(9, 30, 66, 0.08);
+    box-shadow: 0 14px 30px rgba(9, 30, 66, 0.08);
 `;
 
 const Button = styled.button`
     background-color: ${({ theme }) => theme.secondary};
     color: white;
     border: none;
-    padding: 0.75rem 1.5rem;
-    border-radius: 4px;
+    padding: 0.66rem 1rem;
+    border-radius: 8px;
     cursor: pointer;
     font-weight: bold;
     display: flex;
@@ -43,17 +46,29 @@ const Button = styled.button`
     gap: 0.5rem;
 `;
 
+const TableWrapper = styled.div`
+    width: 100%;
+    overflow-x: auto;
+    border: 1px solid ${({ theme }) => theme.border};
+    border-radius: 10px;
+`;
+
 const Table = styled.table`
     width: 100%;
+    min-width: 900px;
     border-collapse: collapse;
-    margin-top: 1.5rem;
+    margin-top: 0.85rem;
+    font-size: 0.9rem;
     th, td {
-        padding: 1rem;
+        padding: 0.78rem 0.85rem;
         text-align: left;
         border-bottom: 1px solid ${({ theme }) => theme.border};
+        white-space: nowrap;
     }
     th {
         background-color: ${({ theme }) => theme.background};
+        font-size: 0.84rem;
+        letter-spacing: 0.01em;
     }
     .actions {
         display: flex;
@@ -117,7 +132,7 @@ const Slider = styled.span`
 const ModalForm = styled.form`
     display: flex;
     flex-direction: column;
-    gap: 1.5rem;
+    gap: 1rem;
 `;
 
 const InputGroup = styled.div`
@@ -131,14 +146,14 @@ const Label = styled.label`
 `;
 
 const Input = styled.input`
-    padding: 0.75rem;
+    padding: 0.68rem 0.72rem;
     border: 1px solid ${({ theme }) => theme.border};
-    border-radius: 4px;
-    font-size: 1rem;
+    border-radius: 8px;
+    font-size: 0.95rem;
 `;
 
 const UsdtWalletsPage = () => {
-    const { hasPermission } = usePermissions(); // 2. GET PERMISSION CHECKER
+    const { hasPermission } = usePermissions();
     const canView = hasPermission('usdt_wallets:view');
     const canCreate = hasPermission('usdt_wallets:create');
     const canUpdate = hasPermission('usdt_wallets:update');
@@ -218,58 +233,57 @@ const UsdtWalletsPage = () => {
             <PageContainer>
                 <Header>
                     <h2>USDT Wallet Management</h2>
-                    {/* 4. WRAP "ADD WALLET" BUTTON IN PERMISSION CHECK */}
                     {canCreate && (
                         <Button onClick={() => handleOpenModal(null)}><FaPlus /> Add Wallet</Button>
                     )}
                 </Header>
                 <Card>
                     <p>Add and manage the TRC-20 wallet addresses that the system should monitor for automated USDT confirmations.</p>
-                    <Table>
-                        <thead>
-                            <tr>
-                                <th>Enabled</th>
-                                <th>Wallet Name</th>
-                                <th>Wallet Address (TRC-20)</th>
-                                {(canUpdate || canDelete) && <th>Actions</th>}
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {loading ? (
-                                <tr><td colSpan="4">Loading wallets...</td></tr>
-                            ) : wallets.length === 0 ? (
-                                <tr><td colSpan="4">No wallets configured. Click "Add Wallet" to begin.</td></tr>
-                            ) : (
-                                wallets.map((wallet) => (
-                                    <tr key={wallet.id}>
-                                        <td>
-                                            <SwitchContainer>
-                                                <SwitchInput 
-                                                    type="checkbox" 
-                                                    checked={!!wallet.is_enabled}
-                                                    onChange={() => handleToggle(wallet)}
-                                                    disabled={!canToggle} // 5. DISABLE INTERACTIVE ELEMENTS
-                                                />
-                                                <Slider />
-                                            </SwitchContainer>
-                                        </td>
-                                        <td>{wallet.wallet_name}</td>
-                                        <td>{wallet.wallet_address}</td>
-                                        {/* 6. WRAP ACTIONS COLUMN IN PERMISSION CHECK */}
-                                        {(canUpdate || canDelete) && (
-                                            <td className="actions">
-                                                {canUpdate && <FaEdit onClick={() => handleOpenModal(wallet)} title="Edit Name"/>}
-                                                {canDelete && <FaTrash onClick={() => handleDelete(wallet.id)} title="Delete"/>}
+                    <TableWrapper>
+                        <Table>
+                            <thead>
+                                <tr>
+                                    <th>Enabled</th>
+                                    <th>Wallet Name</th>
+                                    <th>Wallet Address (TRC-20)</th>
+                                    {(canUpdate || canDelete) && <th>Actions</th>}
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {loading ? (
+                                    <tr><td colSpan="4">Loading wallets...</td></tr>
+                                ) : wallets.length === 0 ? (
+                                    <tr><td colSpan="4">No wallets configured. Click "Add Wallet" to begin.</td></tr>
+                                ) : (
+                                    wallets.map((wallet) => (
+                                        <tr key={wallet.id}>
+                                            <td>
+                                                <SwitchContainer>
+                                                    <SwitchInput 
+                                                        type="checkbox" 
+                                                        checked={!!wallet.is_enabled}
+                                                        onChange={() => handleToggle(wallet)}
+                                                        disabled={!canToggle}
+                                                    />
+                                                    <Slider />
+                                                </SwitchContainer>
                                             </td>
-                                        )}
-                                    </tr>
-                                ))
-                            )}
-                        </tbody>
-                    </Table>
+                                            <td>{wallet.wallet_name}</td>
+                                            <td>{wallet.wallet_address}</td>
+                                            {(canUpdate || canDelete) && (
+                                                <td className="actions">
+                                                    {canUpdate && <FaEdit onClick={() => handleOpenModal(wallet)} title="Edit Name"/>}
+                                                    {canDelete && <FaTrash onClick={() => handleDelete(wallet.id)} title="Delete"/>}
+                                                </td>
+                                            )}
+                                        </tr>
+                                    ))
+                                )}
+                            </tbody>
+                        </Table>
+                    </TableWrapper>
                 </Card>
             </PageContainer>
-            {/* Modal is implicitly protected */}
             {(canCreate || canUpdate) && (
                 <WalletModal
                     isOpen={isModalOpen}

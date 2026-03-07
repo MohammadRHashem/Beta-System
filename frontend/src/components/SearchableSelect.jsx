@@ -9,17 +9,17 @@ const Container = styled.div`
 `;
 
 const Input = styled.input`
-    padding: 0.75rem;
+    padding: 0.66rem 0.72rem;
     border: 1px solid ${({ theme }) => theme.border};
-    border-radius: 4px;
-    font-size: 1rem;
+    border-radius: 8px;
+    font-size: 0.95rem;
 `;
 
 const Select = styled.select`
-    padding: 0.75rem;
+    padding: 0.66rem 0.72rem;
     border: 1px solid ${({ theme }) => theme.border};
-    border-radius: 4px;
-    font-size: 1rem;
+    border-radius: 8px;
+    font-size: 0.95rem;
 `;
 
 const SearchableSelect = ({ options, value, onChange, placeholder, searchPlaceholder }) => {

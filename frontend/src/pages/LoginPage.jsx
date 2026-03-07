@@ -7,6 +7,8 @@ import { FaWhatsapp } from 'react-icons/fa';
 const AuthPageContainer = styled.div`
     width: 100vw;
     height: 100vh;
+    padding: 1rem;
+    box-sizing: border-box;
     display: flex;
     justify-content: center;
     align-items: center;
@@ -16,10 +18,11 @@ const AuthPageContainer = styled.div`
 const AuthFormContainer = styled.div`
     width: 100%;
     max-width: 400px;
-    padding: 2.5rem;
+    padding: 2rem 1.7rem 1.6rem;
     background: #fff;
-    border-radius: 8px;
-    box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+    border-radius: 14px;
+    border: 1px solid rgba(9, 30, 66, 0.08);
+    box-shadow: 0 14px 30px rgba(9, 30, 66, 0.12);
 `;
 
 const Title = styled.h1`
@@ -27,9 +30,9 @@ const Title = styled.h1`
   align-items: center;
   justify-content: center;
   gap: 0.75rem;
-  font-size: 1.8rem;
+  font-size: 1.7rem;
   color: ${({ theme }) => theme.primary};
-  margin-bottom: 2rem;
+  margin-bottom: 1.5rem;
   svg { color: ${({ theme }) => theme.secondary}; }
 `;
 
@@ -40,20 +43,20 @@ const Form = styled.form`
 `;
 
 const Input = styled.input`
-    padding: 0.8rem 1rem;
+    padding: 0.72rem 0.85rem;
     border: 1px solid ${({ theme }) => theme.border};
-    border-radius: 4px;
-    font-size: 1rem;
+    border-radius: 8px;
+    font-size: 0.95rem;
 `;
 
 const Button = styled.button`
-    padding: 0.8rem 1rem;
+    padding: 0.72rem 0.9rem;
     border: none;
     background-color: ${({ theme }) => theme.primary};
     color: white;
-    font-size: 1rem;
+    font-size: 0.95rem;
     font-weight: bold;
-    border-radius: 4px;
+    border-radius: 8px;
     cursor: pointer;
     transition: background-color 0.2s;
     &:hover { background-color: #081e35; }

@@ -1,5 +1,11 @@
 import React, { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import styled from 'styled-components';
+
+const LoadingView = styled.div`
+    padding: 2rem;
+    color: ${({ theme }) => theme.lightText};
+`;
 
 const PortalImpersonate = () => {
     const navigate = useNavigate();
@@ -31,7 +37,7 @@ const PortalImpersonate = () => {
         navigate('/portal/dashboard', { replace: true });
     }, [navigate]);
 
-    return <div style={{ padding: '2rem' }}>Launching client portal...</div>;
+    return <LoadingView>Launching client portal...</LoadingView>;
 };
 
 export default PortalImpersonate;

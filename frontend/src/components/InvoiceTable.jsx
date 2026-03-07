@@ -18,15 +18,16 @@ const formatDisplayDateTime = (dbDateString) => {
 
 const TableWrapper = styled.div`
     background: #fff;
-    border-radius: 8px;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-    max-height: 70vh; 
-    overflow-y: auto;
-    border: 1px solid ${({ theme }) => theme.border};
+    border-radius: 14px;
+    border: 1px solid rgba(9, 30, 66, 0.08);
+    box-shadow: 0 14px 30px rgba(9, 30, 66, 0.08);
+    max-height: 68vh;
+    overflow: auto;
 `;
 
 const Table = styled.table`
     width: 100%;
+    min-width: 1100px;
     border-collapse: collapse;
     font-size: 0.9rem;
 `;
@@ -38,10 +39,11 @@ const Thead = styled.thead`
 `;
 
 const Th = styled.th`
-    padding: 0.8rem 1rem;
+    padding: 0.72rem 0.85rem;
     text-align: left;
     background-color: ${({ theme }) => theme.background};
     font-weight: 600;
+    font-size: 0.82rem;
     white-space: nowrap;
     border-bottom: 2px solid ${({ theme }) => theme.border};
 `;
@@ -67,11 +69,11 @@ const Tr = styled.tr`
 `;
 
 const Td = styled.td`
-    padding: 0.8rem 1rem;
+    padding: 0.72rem 0.85rem;
     vertical-align: middle;
     &.actions {
         display: flex;
-        gap: 1.2rem;
+        gap: 0.8rem;
         font-size: 1rem;
         white-space: nowrap;
         svg {
@@ -109,16 +111,6 @@ const InvoiceTable = ({ invoices, loading, onEdit, onLink, onDelete, pagination,
         });
         return counts;
     }, [invoices]);
-
-    const handleDelete = async (id) => {
-        if (window.confirm('Are you sure you want to PERMANENTLY delete this invoice? This action cannot be undone.')) {
-            try {
-                await deleteInvoice(id);
-            } catch (error) {
-                alert('Failed to delete invoice.');
-            }
-        }
-    };
 
     const handleViewMedia = async (id) => {
         try {

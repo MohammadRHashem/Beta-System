@@ -7,14 +7,15 @@ import { FaEdit, FaTrash } from 'react-icons/fa';
 const PageContainer = styled.div`
     display: flex;
     flex-direction: column;
-    gap: 2rem;
+    gap: 1.25rem;
 `;
 
 const Card = styled.div`
     background: #fff;
-    padding: 1.5rem;
-    border-radius: 8px;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    padding: 1.1rem 1.2rem 1rem;
+    border-radius: 14px;
+    border: 1px solid rgba(9, 30, 66, 0.08);
+    box-shadow: 0 14px 30px rgba(9, 30, 66, 0.08);
 `;
 
 const Form = styled.form`
@@ -38,33 +39,45 @@ const Label = styled.label`
 `;
 
 const Input = styled.input`
-    padding: 0.75rem;
+    padding: 0.68rem 0.72rem;
     border: 1px solid ${({ theme }) => theme.border};
-    border-radius: 4px;
-    font-size: 1rem;
+    border-radius: 8px;
+    font-size: 0.95rem;
 `;
 
 const Button = styled.button`
     background-color: ${({ theme }) => theme.secondary};
     color: white;
     border: none;
-    padding: 0.75rem 1.5rem;
-    border-radius: 4px;
+    padding: 0.66rem 1rem;
+    border-radius: 8px;
     cursor: pointer;
     font-weight: bold;
 `;
 
+const TableWrapper = styled.div`
+    width: 100%;
+    overflow-x: auto;
+    border: 1px solid ${({ theme }) => theme.border};
+    border-radius: 10px;
+`;
+
 const RulesTable = styled.table`
     width: 100%;
+    min-width: 720px;
     border-collapse: collapse;
-    margin-top: 1rem;
+    margin-top: 0.8rem;
+    font-size: 0.9rem;
     th, td {
-        padding: 1rem;
+        padding: 0.78rem 0.85rem;
         text-align: left;
         border-bottom: 1px solid ${({ theme }) => theme.border};
+        white-space: nowrap;
     }
     th {
         background-color: ${({ theme }) => theme.background};
+        font-size: 0.84rem;
+        letter-spacing: 0.01em;
     }
     .actions {
         display: flex;
@@ -176,27 +189,29 @@ const ChavePixPage = () => {
 
                 <Card>
                     <h3>Existing PIX Keys</h3>
-                    <RulesTable>
-                        <thead>
-                            <tr>
-                                <th>Name</th>
-                                <th>PIX Key</th>
-                                <th>Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {keys.map(key => (
-                                <tr key={key.id}>
-                                    <td>{key.name}</td>
-                                    <td>{key.pix_key}</td>
-                                    <td className="actions">
-                                        <FaEdit onClick={() => openEditModal(key)} />
-                                        <FaTrash onClick={() => handleDelete(key.id)} />
-                                    </td>
+                    <TableWrapper>
+                        <RulesTable>
+                            <thead>
+                                <tr>
+                                    <th>Name</th>
+                                    <th>PIX Key</th>
+                                    <th>Actions</th>
                                 </tr>
-                            ))}
-                        </tbody>
-                    </RulesTable>
+                            </thead>
+                            <tbody>
+                                {keys.map(key => (
+                                    <tr key={key.id}>
+                                        <td>{key.name}</td>
+                                        <td>{key.pix_key}</td>
+                                        <td className="actions">
+                                            <FaEdit onClick={() => openEditModal(key)} />
+                                            <FaTrash onClick={() => handleDelete(key.id)} />
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </RulesTable>
+                    </TableWrapper>
                 </Card>
             </PageContainer>
 

@@ -2,20 +2,21 @@ import React, { useState, useEffect } from 'react';
 import styled from 'styled-components';
 import api from '../services/api';
 import Modal from '../components/Modal';
-import { usePermissions } from '../context/PermissionContext'; // 1. IMPORT PERMISSIONS HOOK
+import { usePermissions } from '../context/PermissionContext';
 import { FaEdit, FaTrash } from 'react-icons/fa';
 
 const PageContainer = styled.div`
     display: flex;
     flex-direction: column;
-    gap: 2rem;
+    gap: 1.25rem;
 `;
 
 const Card = styled.div`
     background: #fff;
-    padding: 1.5rem;
-    border-radius: 8px;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    padding: 1.1rem 1.2rem 1rem;
+    border-radius: 14px;
+    border: 1px solid rgba(9, 30, 66, 0.08);
+    box-shadow: 0 14px 30px rgba(9, 30, 66, 0.08);
 `;
 
 const Form = styled.form`
@@ -39,18 +40,18 @@ const Label = styled.label`
 `;
 
 const Input = styled.input`
-    padding: 0.75rem;
+    padding: 0.68rem 0.72rem;
     border: 1px solid ${({ theme }) => theme.border};
-    border-radius: 4px;
-    font-size: 1rem;
+    border-radius: 8px;
+    font-size: 0.95rem;
 `;
 
 const Button = styled.button`
     background-color: ${({ theme }) => theme.secondary};
     color: white;
     border: none;
-    padding: 0.75rem 1.5rem;
-    border-radius: 4px;
+    padding: 0.66rem 1rem;
+    border-radius: 8px;
     cursor: pointer;
     font-weight: bold;
     &:disabled {
@@ -59,17 +60,34 @@ const Button = styled.button`
     }
 `;
 
+const TableWrapper = styled.div`
+    width: 100%;
+    overflow-x: auto;
+    border: 1px solid ${({ theme }) => theme.border};
+    border-radius: 10px;
+`;
+
 const RulesTable = styled.table`
     width: 100%;
+    min-width: 760px;
     border-collapse: collapse;
-    margin-top: 1rem;
+    margin-top: 0.8rem;
+    font-size: 0.9rem;
     th, td {
-        padding: 1rem;
+        padding: 0.78rem 0.85rem;
         text-align: left;
         border-bottom: 1px solid ${({ theme }) => theme.border};
+        vertical-align: middle;
+        white-space: nowrap;
+    }
+    td:nth-child(2) {
+        white-space: normal;
+        word-break: break-word;
     }
     th {
         background-color: ${({ theme }) => theme.background};
+        font-size: 0.84rem;
+        letter-spacing: 0.01em;
     }
     .actions {
         display: flex;
@@ -82,17 +100,18 @@ const RulesTable = styled.table`
     }
 `;
 const Textarea = styled.textarea`
-    padding: 0.75rem;
+    padding: 0.68rem 0.72rem;
     border: 1px solid ${({ theme }) => theme.border};
-    border-radius: 4px;
-    font-size: 1rem;
+    border-radius: 8px;
+    font-size: 0.95rem;
     min-height: 100px;
     font-family: inherit;
 `;
+const ModalContentForm = styled.form``;
 
 const AbbreviationsPage = () => {
-    const { hasPermission } = usePermissions(); // 2. GET PERMISSION CHECKER
-    const canEdit = hasPermission('settings:edit_abbreviations'); // 3. DEFINE EDIT CAPABILITY
+    const { hasPermission } = usePermissions();
+    const canEdit = hasPermission('settings:edit_abbreviations');
 
     const [abbreviations, setAbbreviations] = useState([]);
     const [trigger, setTrigger] = useState('');
@@ -165,7 +184,6 @@ const AbbreviationsPage = () => {
     return (
         <>
             <PageContainer>
-                {/* 4. WRAP CREATION FORM IN PERMISSION CHECK */}
                 {canEdit && (
                     <Card>
                         <h3>Create New Abbreviation</h3>
@@ -194,37 +212,37 @@ const AbbreviationsPage = () => {
 
                 <Card>
                     <h3>Existing Abbreviations</h3>
-                    <RulesTable>
-                        <thead>
-                            <tr>
-                                <th>Trigger</th>
-                                <th>Response</th>
-                                {canEdit && <th>Actions</th>}
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {abbreviations.map(abbr => (
-                                <tr key={abbr.id}>
-                                    <td>{abbr.trigger}</td>
-                                    <td>{abbr.response}</td>
-                                    {/* 5. WRAP ACTIONS IN PERMISSION CHECK */}
-                                    {canEdit && (
-                                        <td className="actions">
-                                            <FaEdit onClick={() => openEditModal(abbr)} title="Edit"/>
-                                            <FaTrash onClick={() => handleDelete(abbr.id)} title="Delete"/>
-                                        </td>
-                                    )}
+                    <TableWrapper>
+                        <RulesTable>
+                            <thead>
+                                <tr>
+                                    <th>Trigger</th>
+                                    <th>Response</th>
+                                    {canEdit && <th>Actions</th>}
                                 </tr>
-                            ))}
-                        </tbody>
-                    </RulesTable>
+                            </thead>
+                            <tbody>
+                                {abbreviations.map(abbr => (
+                                    <tr key={abbr.id}>
+                                        <td>{abbr.trigger}</td>
+                                        <td>{abbr.response}</td>
+                                        {canEdit && (
+                                            <td className="actions">
+                                                <FaEdit onClick={() => openEditModal(abbr)} title="Edit"/>
+                                                <FaTrash onClick={() => handleDelete(abbr.id)} title="Delete"/>
+                                            </td>
+                                        )}
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </RulesTable>
+                    </TableWrapper>
                 </Card>
             </PageContainer>
 
-            {/* Modal remains the same, as it can only be opened by a user with edit permissions */}
             <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)}>
                 {editingAbbr && (
-                    <form onSubmit={handleUpdate}>
+                    <ModalContentForm onSubmit={handleUpdate}>
                         <h2>Edit Abbreviation</h2>
                         <InputGroup style={{marginBottom: '1rem'}}>
                             <Label>Trigger</Label>
@@ -242,7 +260,7 @@ const AbbreviationsPage = () => {
                             />
                         </InputGroup>
                         <Button type="submit" style={{width: '100%'}}>Save Changes</Button>
-                    </form>
+                    </ModalContentForm>
                 )}
             </Modal>
         </>

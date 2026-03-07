@@ -13,9 +13,15 @@ import AttachmentManagerModal from "../components/AttachmentManagerModal";
 
 const MainContent = styled.div`
   display: grid;
-  grid-template-columns: 450px 1fr;
+  grid-template-columns: minmax(320px, 390px) 1fr;
   gap: 1.5rem;
   align-items: flex-start;
+  min-height: 0;
+
+  @media (max-width: 1400px) and (min-width: 1201px) {
+    grid-template-columns: minmax(300px, 360px) 1fr;
+  }
+
   @media (max-width: 1200px) {
     grid-template-columns: 1fr;
   }
@@ -25,7 +31,7 @@ const LeftPanel = styled.div`
   flex-direction: column;
   gap: 1.5rem;
   position: sticky;
-  top: 1.5rem;
+  top: 0.75rem;
 `;
 const RightPanel = styled.div`
   display: flex;

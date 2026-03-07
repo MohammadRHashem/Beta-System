@@ -1,8 +1,6 @@
-// frontend/src/components/PasscodeModal.jsx
-
 import React, { useState, useEffect } from 'react';
 import styled, { keyframes, css } from 'styled-components';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import { FaBackspace } from 'react-icons/fa';
 import Modal from './Modal';
 
@@ -17,7 +15,7 @@ const Container = styled.div`
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 1.5rem;
+    gap: 1rem;
 `;
 
 const Title = styled.h3`
@@ -27,15 +25,15 @@ const Title = styled.h3`
 
 const PinDisplay = styled.div`
     display: flex;
-    gap: 1rem;
+    gap: 0.8rem;
     height: 40px;
     align-items: center;
     ${({ error }) => error && css`animation: ${shakeAnimation} 0.82s cubic-bezier(.36,.07,.19,.97) both;`}
 `;
 
 const PinDot = styled.div`
-    width: 20px;
-    height: 20px;
+    width: 18px;
+    height: 18px;
     border-radius: 50%;
     background-color: ${({ active, theme }) => (active ? theme.primary : theme.border)};
     transition: background-color 0.2s;
@@ -51,16 +49,16 @@ const ErrorMessage = styled.p`
 const Keypad = styled.div`
     display: grid;
     grid-template-columns: repeat(3, 1fr);
-    gap: 1rem;
+    gap: 0.75rem;
 `;
 
 const Key = styled(motion.button)`
-    width: 70px;
-    height: 70px;
+    width: 62px;
+    height: 62px;
     border-radius: 50%;
     border: 1px solid ${({ theme }) => theme.border};
     background: #fff;
-    font-size: 1.8rem;
+    font-size: 1.5rem;
     font-weight: 300;
     color: ${({ theme }) => theme.primary};
     cursor: pointer;

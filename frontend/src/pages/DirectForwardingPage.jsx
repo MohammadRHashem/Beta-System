@@ -1,27 +1,28 @@
 import React, { useState, useEffect } from 'react';
 import styled from 'styled-components';
 import api from '../services/api';
-import { usePermissions } from '../context/PermissionContext'; // 1. IMPORT PERMISSIONS HOOK
+import { usePermissions } from '../context/PermissionContext';
 import { FaTrash, FaArrowRight } from 'react-icons/fa';
 import ComboBox from '../components/ComboBox';
 
 const PageContainer = styled.div`
     display: flex;
     flex-direction: column;
-    gap: 2rem;
+    gap: 1.25rem;
 `;
 
 const Card = styled.div`
     background: #fff;
-    padding: 1.5rem 2rem;
-    border-radius: 8px;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    padding: 1.1rem 1.25rem 1rem;
+    border-radius: 14px;
+    border: 1px solid rgba(9, 30, 66, 0.08);
+    box-shadow: 0 14px 30px rgba(9, 30, 66, 0.08);
 `;
 
 const Form = styled.form`
     display: grid;
     grid-template-columns: 1fr auto 1fr auto;
-    gap: 1.5rem;
+    gap: 1rem;
     align-items: flex-end;
     @media (max-width: 768px) {
         grid-template-columns: 1fr;
@@ -43,8 +44,8 @@ const Button = styled.button`
     background-color: ${({ theme }) => theme.secondary};
     color: white;
     border: none;
-    padding: 0.75rem 1.5rem;
-    border-radius: 4px;
+    padding: 0.66rem 1rem;
+    border-radius: 8px;
     cursor: pointer;
     font-weight: bold;
     height: fit-content;
@@ -54,17 +55,29 @@ const Button = styled.button`
     }
 `;
 
+const TableWrapper = styled.div`
+    width: 100%;
+    overflow-x: auto;
+    border: 1px solid ${({ theme }) => theme.border};
+    border-radius: 10px;
+`;
+
 const RulesTable = styled.table`
     width: 100%;
+    min-width: 760px;
     border-collapse: collapse;
-    margin-top: 1.5rem;
+    margin-top: 0.85rem;
+    font-size: 0.9rem;
     th, td {
-        padding: 1rem;
+        padding: 0.78rem 0.85rem;
         text-align: left;
         border-bottom: 1px solid ${({ theme }) => theme.border};
+        white-space: nowrap;
     }
     th {
         background-color: ${({ theme }) => theme.background};
+        font-size: 0.84rem;
+        letter-spacing: 0.01em;
     }
     .actions {
         font-size: 1.1rem;
@@ -86,8 +99,8 @@ const ArrowIcon = styled(FaArrowRight)`
 `;
 
 const DirectForwardingPage = ({ allGroups }) => {
-    const { hasPermission } = usePermissions(); // 2. GET PERMISSION CHECKER
-    const canEdit = hasPermission('settings:edit_rules'); // 3. DEFINE EDIT CAPABILITY
+    const { hasPermission } = usePermissions();
+    const canEdit = hasPermission('settings:edit_rules');
 
     const [rules, setRules] = useState([]);
     const [sourceJid, setSourceJid] = useState('');
@@ -140,7 +153,6 @@ const DirectForwardingPage = ({ allGroups }) => {
 
     return (
         <PageContainer>
-            {/* 4. WRAP THE ENTIRE CREATION CARD IN A PERMISSION CHECK */}
             {canEdit && (
                 <Card>
                     <h3>Create New Direct Group Forwarding Rule</h3>
@@ -173,33 +185,34 @@ const DirectForwardingPage = ({ allGroups }) => {
             <Card>
                 <h3>Existing Direct Rules</h3>
                 {loading ? <p>Loading rules...</p> : (
-                    <RulesTable>
-                        <thead>
-                            <tr>
-                                <th>Source Group</th>
-                                <th>Destination Group</th>
-                                {canEdit && <th className="actions">Action</th>}
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {rules.length === 0 ? (
-                                <tr><td colSpan={canEdit ? 3 : 2}>No direct forwarding rules found.</td></tr>
-                            ) : (
-                                rules.map(rule => (
-                                    <tr key={rule.id}>
-                                        <td>{rule.source_group_name}</td>
-                                        <td>{rule.destination_group_name}</td>
-                                        {/* 5. WRAP THE ACTION CELL IN A PERMISSION CHECK */}
-                                        {canEdit && (
-                                            <td className="actions">
-                                                <FaTrash onClick={() => handleDelete(rule.id)} title="Delete" />
-                                            </td>
-                                        )}
-                                    </tr>
-                                ))
-                            )}
-                        </tbody>
-                    </RulesTable>
+                    <TableWrapper>
+                        <RulesTable>
+                            <thead>
+                                <tr>
+                                    <th>Source Group</th>
+                                    <th>Destination Group</th>
+                                    {canEdit && <th className="actions">Action</th>}
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {rules.length === 0 ? (
+                                    <tr><td colSpan={canEdit ? 3 : 2}>No direct forwarding rules found.</td></tr>
+                                ) : (
+                                    rules.map(rule => (
+                                        <tr key={rule.id}>
+                                            <td>{rule.source_group_name}</td>
+                                            <td>{rule.destination_group_name}</td>
+                                            {canEdit && (
+                                                <td className="actions">
+                                                    <FaTrash onClick={() => handleDelete(rule.id)} title="Delete" />
+                                                </td>
+                                            )}
+                                        </tr>
+                                    ))
+                                )}
+                            </tbody>
+                        </RulesTable>
+                    </TableWrapper>
                 )}
             </Card>
         </PageContainer>

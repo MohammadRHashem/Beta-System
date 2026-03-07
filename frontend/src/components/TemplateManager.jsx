@@ -5,26 +5,25 @@ import Modal from './Modal';
 import AttachmentManagerModal from './AttachmentManagerModal';
 import { updateTemplate, deleteTemplate } from '../services/api';
 
-const Container = styled.div` background: #fff; padding: 1.5rem; border: 1px solid ${({ theme }) => theme.border}; border-radius: 8px; `;
+const Container = styled.div` background: #fff; padding: 1.1rem 1rem 1rem; border: 1px solid ${({ theme }) => theme.border}; border-radius: 12px; `;
 const Title = styled.h3` display: flex; align-items: center; gap: 0.5rem; margin-bottom: 1rem; `;
-const SearchInput = styled.input` width: 100%; padding: 0.75rem; border: 1px solid ${({ theme }) => theme.border}; border-radius: 4px; margin-bottom: 1rem; `;
+const SearchInput = styled.input` width: 100%; padding: 0.62rem 0.72rem; border: 1px solid ${({ theme }) => theme.border}; border-radius: 8px; margin-bottom: 0.85rem; `;
 const TemplateList = styled.ul` list-style: none; max-height: 250px; overflow-y: auto; `;
-const TemplateItem = styled.li` display: flex; justify-content: space-between; align-items: center; padding: 0.75rem; border-radius: 4px; cursor: pointer; font-weight: 500; &:hover { background-color: ${({ theme }) => theme.background}; } `;
+const TemplateItem = styled.li` display: flex; justify-content: space-between; align-items: center; padding: 0.62rem 0.7rem; border-radius: 8px; cursor: pointer; font-weight: 500; &:hover { background-color: ${({ theme }) => theme.background}; } `;
 const ItemName = styled.span` flex-grow: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; `;
 const ActionsContainer = styled.div` display: flex; gap: 0.75rem; color: ${({ theme }) => theme.lightText}; padding-left: 1rem; svg { &:hover { color: ${({ theme }) => theme.primary}; } } `;
 const ModalForm = styled.div` display: flex; flex-direction: column; gap: 1rem; `;
 const InputGroup = styled.div` display: flex; flex-direction: column; gap: 0.5rem; `;
 const Label = styled.label` font-weight: 500; `;
-const Input = styled.input` width: 100%; padding: 0.75rem; border: 1px solid ${({ theme }) => theme.border}; border-radius: 4px; font-family: inherit; font-size: 1rem; `;
-const Textarea = styled.textarea` width: 100%; padding: 0.75rem; border: 1px solid ${({ theme }) => theme.border}; border-radius: 4px; min-height: 120px; font-family: inherit; font-size: 1rem; `;
-const SaveButton = styled.button` background-color: ${({ theme }) => theme.primary}; color: white; border: none; padding: 0.75rem 1.5rem; border-radius: 4px; cursor: pointer; font-weight: bold; align-self: flex-end; `;
+const Input = styled.input` width: 100%; padding: 0.68rem 0.72rem; border: 1px solid ${({ theme }) => theme.border}; border-radius: 8px; font-family: inherit; font-size: 0.95rem; `;
+const Textarea = styled.textarea` width: 100%; padding: 0.68rem 0.72rem; border: 1px solid ${({ theme }) => theme.border}; border-radius: 8px; min-height: 120px; font-family: inherit; font-size: 0.95rem; `;
+const SaveButton = styled.button` background-color: ${({ theme }) => theme.primary}; color: white; border: none; padding: 0.66rem 0.95rem; border-radius: 8px; cursor: pointer; font-weight: bold; align-self: flex-end; `;
 const AttachmentPreview = styled.div` padding: 1rem; background: #f6f9fc; border: 1px solid ${({ theme }) => theme.border}; border-radius: 8px; display: flex; align-items: center; justify-content: space-between; `;
 const FileInfo = styled.div` display: flex; align-items: center; gap: 1rem; .icon { font-size: 2rem; color: #666; } `;
 const RemoveButton = styled(FaTimesCircle)` cursor: pointer; color: #999; &:hover { color: ${({ theme }) => theme.error}; } `;
 const AttachmentControls = styled.div` display: flex; gap: 1rem; `;
-const ControlButton = styled.button` display: flex; align-items: center; gap: 0.5rem; padding: 0.6rem 1rem; border: 1px solid ${({ theme }) => theme.border}; background: #fff; border-radius: 4px; font-weight: 600; cursor: pointer; &:hover { background: #f9f9f9; } `;
+const ControlButton = styled.button` display: flex; align-items: center; gap: 0.5rem; padding: 0.56rem 0.82rem; border: 1px solid ${({ theme }) => theme.border}; background: #fff; border-radius: 8px; font-weight: 600; cursor: pointer; &:hover { background: #f9f9f9; } `;
 
-// 1. ACCEPT THE NEW PERMISSION PROP
 const TemplateManager = ({ templates, onTemplateSelect, onTemplatesUpdate, canEditTemplate, canDeleteTemplate, canViewAttachments, canUploadAttachments, canDeleteAttachments }) => {
     const [isEditModalOpen, setIsEditModalOpen] = useState(false);
     const [isAttachmentModalOpen, setIsAttachmentModalOpen] = useState(false);
@@ -100,7 +99,6 @@ const TemplateManager = ({ templates, onTemplateSelect, onTemplatesUpdate, canEd
                             <ItemName title={template.name}>
                                 {template.name}
                             </ItemName>
-                            {/* 2. WRAP ACTIONS IN PERMISSION CHECK */}
                             {(canEditTemplate || canDeleteTemplate) && (
                                 <ActionsContainer>
                                     {canEditTemplate && <FaEdit onClick={(e) => { e.stopPropagation(); handleEditClick(template); }} title="Edit"/>}
@@ -112,7 +110,6 @@ const TemplateManager = ({ templates, onTemplateSelect, onTemplatesUpdate, canEd
                 </TemplateList>
             </Container>
             
-            {/* Modal is implicitly protected */}
             {canEditTemplate && (
                 <>
                     <Modal isOpen={isEditModalOpen} onClose={() => setIsEditModalOpen(false)} maxWidth="600px">

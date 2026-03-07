@@ -5,8 +5,9 @@ import { useAuth } from "../context/AuthContext";
 const ProtectedRoute = ({ children }) => {
   const { isAuthenticated } = useAuth();
   const location = useLocation();
+  const canAccess = Boolean(isAuthenticated);
 
-  if (!isAuthenticated) {
+  if (!canAccess) {
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
 

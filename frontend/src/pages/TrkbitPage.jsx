@@ -27,7 +27,7 @@ const CROSS_ACTIVE_TAB_STORAGE_KEY = 'cross_statement_active_tab_v1';
 const PageContainer = styled.div`
     display: flex;
     flex-direction: column;
-    gap: 1rem;
+    gap: 0.8rem;
 `;
 
 const Header = styled.div`
@@ -45,13 +45,14 @@ const Title = styled.h2`
 const HeaderActions = styled.div`
     display: flex;
     gap: 0.65rem;
+    flex-wrap: wrap;
 `;
 
 const ActionButton = styled.button`
     display: inline-flex;
     align-items: center;
     gap: 0.5rem;
-    padding: 0.62rem 1rem;
+    padding: 0.52rem 0.9rem;
     border: none;
     border-radius: 6px;
     font-weight: 700;
@@ -111,8 +112,8 @@ const TabOrderButton = styled.button`
 
 const TableWrapper = styled.div`
     background: #fff;
-    border-radius: 8px;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+    border-radius: 12px;
+    box-shadow: ${({ theme }) => theme.shadowSm};
     overflow-x: auto;
     border: 1px solid ${({ theme }) => theme.border};
 `;
@@ -124,7 +125,7 @@ const Table = styled.table`
 
     th,
     td {
-        padding: 0.8rem 0.85rem;
+        padding: 0.72rem 0.8rem;
         text-align: left;
         border-bottom: 1px solid ${({ theme }) => theme.border};
         white-space: nowrap;

@@ -5,9 +5,9 @@ import { deleteBatch } from '../services/api';
 
 const Container = styled.div`
     background: #fff;
-    padding: 1.5rem;
+    padding: 1.05rem 1rem 0.95rem;
     border: 1px solid ${({ theme }) => theme.border};
-    border-radius: 8px;
+    border-radius: 12px;
 `;
 
 const Title = styled.h3`
@@ -19,10 +19,10 @@ const Title = styled.h3`
 
 const SearchInput = styled.input`
     width: 100%;
-    padding: 0.75rem;
+    padding: 0.62rem 0.72rem;
     border: 1px solid ${({ theme }) => theme.border};
-    border-radius: 4px;
-    margin-bottom: 1rem;
+    border-radius: 8px;
+    margin-bottom: 0.75rem;
 `;
 
 const BatchList = styled.ul`
@@ -35,8 +35,8 @@ const BatchItem = styled.li`
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 0.75rem;
-    border-radius: 4px;
+    padding: 0.62rem 0.7rem;
+    border-radius: 8px;
     cursor: pointer;
     font-weight: 500;
     &:hover {
@@ -65,7 +65,6 @@ const ActionsContainer = styled.div`
     }
 `;
 
-// 1. ACCEPT THE NEW PERMISSION PROP
 const BatchManager = ({ batches, onBatchSelect, onBatchEdit, onBatchesUpdate, canEditBatch, canDeleteBatch }) => {
     const [searchTerm, setSearchTerm] = useState('');
 
@@ -106,7 +105,6 @@ const BatchManager = ({ batches, onBatchSelect, onBatchEdit, onBatchesUpdate, ca
                         <ItemName title={batch.name}>
                             {batch.name}
                         </ItemName>
-                        {/* 2. WRAP THE ACTIONS IN A PERMISSION CHECK */}
                         {(canEditBatch || canDeleteBatch) && (
                             <ActionsContainer>
                                 {canEditBatch && <FaEdit onClick={(e) => { e.stopPropagation(); onBatchEdit(batch); }} title="Edit"/>}

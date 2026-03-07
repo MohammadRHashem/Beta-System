@@ -5,16 +5,17 @@ import Pagination from './Pagination';
 
 const TableWrapper = styled.div`
     background: #fff;
-    border-radius: 8px;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-    border: 1px solid ${({ theme }) => theme.border};
+    border-radius: 14px;
+    border: 1px solid rgba(9, 30, 66, 0.08);
+    box-shadow: 0 14px 30px rgba(9, 30, 66, 0.08);
     flex-grow: 1;
-    overflow-y: auto;
+    overflow: auto;
     position: relative;
 `;
 
 const Table = styled.table`
     width: 100%;
+    min-width: 980px;
     border-collapse: collapse;
     font-size: 0.9rem;
 `;
@@ -26,10 +27,11 @@ const Thead = styled.thead`
 `;
 
 const Th = styled.th`
-    padding: 0.8rem 1rem;
+    padding: 0.72rem 0.85rem;
     text-align: left;
     background-color: ${({ theme }) => theme.background};
     font-weight: 600;
+    font-size: 0.84rem;
     white-space: nowrap;
     border-bottom: 2px solid ${({ theme }) => theme.border};
 `;
@@ -45,7 +47,7 @@ const Tr = styled.tr`
 `;
 
 const Td = styled.td`
-    padding: 0.8rem 1rem;
+    padding: 0.72rem 0.85rem;
     vertical-align: middle;
     white-space: nowrap;
 
@@ -57,13 +59,19 @@ const Td = styled.td`
             &:hover { color: ${({ theme }) => theme.primary}; }
         }
     }
-    
+
     &.currency {
         text-align: right;
         font-family: 'Courier New', Courier, monospace;
         font-weight: 600;
         ${({ isCredit }) => isCredit ? css`color: ${({ theme }) => theme.success};` : css`color: ${({ theme }) => theme.error};`}
     }
+`;
+
+const ActionsCell = styled(Td)`
+    display: flex;
+    gap: 0.8rem;
+    align-items: center;
 `;
 
 const ActionIcon = styled.span`
@@ -75,7 +83,6 @@ const ActionIcon = styled.span`
     }
 `;
 
-// 1. UPDATE THE COMPONENT TO ACCEPT THE `canLinkInvoices` PROP
 const AlfaTrustTable = ({ transactions, loading, pagination, setPagination, onLinkClick, canLinkInvoices }) => {
     const formatDateTime = (isoString) => {
         if (!isoString) return 'N/A';
@@ -87,10 +94,6 @@ const AlfaTrustTable = ({ transactions, loading, pagination, setPagination, onLi
         } catch (e) {
             return isoString;
         }
-    };
-    
-    const handleDownloadReceipt = (tx) => {
-        alert(`Receipt download for individual transactions is not supported by the bank's API at this time.`);
     };
 
     if (loading) return <p>Loading transactions...</p>;
@@ -105,24 +108,19 @@ const AlfaTrustTable = ({ transactions, loading, pagination, setPagination, onLi
                             <Th>Date/Time</Th>
                             <Th>Transaction ID</Th>
                             <Th>Counterparty Name</Th>
-                            <Th className="currency" style={{color: '#32325D'}}>Amount</Th>
+                            <Th className="currency" style={{ color: '#32325D' }}>Amount</Th>
                             <Th>Actions</Th>
                         </tr>
                     </Thead>
                     <tbody>
                         {transactions.map((tx) => {
                             let counterpartyName = 'N/A';
-                            // ... (counterparty logic remains the same)
                             if (tx.operation === 'C') {
                                 counterpartyName = tx.payer_name || tx.description || 'N/A';
                             } else {
                                 let details = null;
                                 try {
-                                    if (tx.raw_details && typeof tx.raw_details === 'string') {
-                                        details = JSON.parse(tx.raw_details);
-                                    } else {
-                                        details = tx.raw_details;
-                                    }
+                                    details = typeof tx.raw_details === 'string' ? JSON.parse(tx.raw_details) : tx.raw_details;
                                 } catch (e) {
                                     details = null;
                                 }
@@ -138,8 +136,7 @@ const AlfaTrustTable = ({ transactions, loading, pagination, setPagination, onLi
                                         {tx.operation === 'D' ? '-' : ''}
                                         {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(tx.value)}
                                     </Td>
-                                    <Td className="actions" style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
-                                        {/* 2. WRAP THE LINKING UI IN THE PERMISSION CHECK */}
+                                    <ActionsCell className="actions">
                                         {canLinkInvoices && tx.operation === 'C' && (
                                             tx.linked_invoice_id ? (
                                                 <ActionIcon linked={true} title={`Linked to Invoice ID: ${tx.linked_invoice_id}`}>
@@ -152,7 +149,7 @@ const AlfaTrustTable = ({ transactions, loading, pagination, setPagination, onLi
                                             )
                                         )}
                                         <FaDownload title="Download Receipt (Not Available)" />
-                                    </Td>
+                                    </ActionsCell>
                                 </Tr>
                             );
                         })}

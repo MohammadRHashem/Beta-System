@@ -6,16 +6,20 @@ import { createInvoice } from '../services/api';
 const Form = styled.form`
     display: flex;
     flex-direction: column;
-    gap: 1.5rem;
+    gap: 1rem;
 `;
 
 const FieldSet = styled.fieldset`
     border: 1px solid ${({ theme }) => theme.border};
-    border-radius: 6px;
-    padding: 1rem 1.5rem 1.5rem 1.5rem;
+    border-radius: 8px;
+    padding: 0.85rem 1rem 1rem;
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 1rem 1.5rem;
+    gap: 0.85rem;
+
+    @media (max-width: 760px) {
+        grid-template-columns: 1fr;
+    }
 `;
 
 const Legend = styled.legend`
@@ -38,9 +42,9 @@ const Label = styled.label`
 `;
 
 const Input = styled.input`
-    padding: 0.75rem;
+    padding: 0.68rem 0.72rem;
     border: 1px solid ${({ theme }) => theme.border};
-    border-radius: 4px;
+    border-radius: 8px;
     width: 100%;
 `;
 
@@ -48,11 +52,11 @@ const Button = styled.button`
     background-color: ${({ theme }) => theme.primary};
     color: white;
     border: none;
-    padding: 0.8rem 1.5rem;
-    border-radius: 4px;
+    padding: 0.72rem 0.95rem;
+    border-radius: 8px;
     cursor: pointer;
     font-weight: bold;
-    font-size: 1rem;
+    font-size: 0.95rem;
     align-self: flex-end;
 `;
 
@@ -85,7 +89,6 @@ const InsertTransactionModal = ({ isOpen, onClose, insertAfterId, onSave }) => {
 
         try {
             await createInvoice(payload);
-            // DEFINITIVE FIX: Call onSave() only AFTER the API call succeeds.
             onSave(); 
         } catch (error) {
             alert(`Error: ${error.response?.data?.message || 'Failed to insert transaction.'}`);

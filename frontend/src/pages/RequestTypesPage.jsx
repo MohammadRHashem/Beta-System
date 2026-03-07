@@ -5,20 +5,22 @@ import Modal from '../components/Modal';
 import { usePermissions } from '../context/PermissionContext';
 import { FaEdit, FaTrash, FaPlus, FaCodeBranch } from 'react-icons/fa';
 
-const PageContainer = styled.div` display: flex; flex-direction: column; gap: 2rem; `;
-const Card = styled.div` background: #fff; padding: 1.5rem; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); `;
-const Header = styled.div` display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; `;
-const Button = styled.button` background-color: ${({ theme }) => theme.secondary}; color: white; border: none; padding: 0.75rem 1.5rem; border-radius: 4px; cursor: pointer; font-weight: bold; display: flex; align-items: center; gap: 0.5rem; `;
-const RulesTable = styled.table` width: 100%; border-collapse: collapse; margin-top: 1rem; th, td { padding: 1rem; text-align: left; border-bottom: 1px solid ${({ theme }) => theme.border}; vertical-align: middle; } th { background-color: ${({ theme }) => theme.background}; } td.actions { display: flex; gap: 1rem; font-size: 1.1rem; svg { cursor: pointer; &:hover { color: ${({ theme }) => theme.primary}; } } } `;
-const Form = styled.form` display: flex; flex-direction: column; gap: 1rem; `;
+const PageContainer = styled.div` display: flex; flex-direction: column; gap: 1.25rem; `;
+const Card = styled.div` background: #fff; padding: 1.1rem 1.2rem 1rem; border-radius: 14px; border: 1px solid rgba(9, 30, 66, 0.08); box-shadow: 0 14px 30px rgba(9, 30, 66, 0.08); `;
+const Header = styled.div` display: flex; justify-content: space-between; align-items: center; gap: 1rem; margin-bottom: 0.75rem; flex-wrap: wrap; `;
+const Title = styled.h2` display: flex; align-items: center; gap: 0.5rem; margin: 0; line-height: 1.2; `;
+const Button = styled.button` background-color: ${({ theme }) => theme.secondary}; color: white; border: none; padding: 0.66rem 1rem; border-radius: 8px; cursor: pointer; font-weight: 700; display: flex; align-items: center; gap: 0.5rem; `;
+const TableWrapper = styled.div` width: 100%; overflow-x: auto; border: 1px solid ${({ theme }) => theme.border}; border-radius: 10px; `;
+const RulesTable = styled.table` width: 100%; min-width: 1080px; border-collapse: collapse; margin-top: 0; font-size: 0.9rem; th, td { padding: 0.78rem 0.85rem; text-align: left; border-bottom: 1px solid ${({ theme }) => theme.border}; vertical-align: middle; white-space: nowrap; } td:nth-child(4) { white-space: normal; } th { background-color: ${({ theme }) => theme.background}; font-size: 0.84rem; letter-spacing: 0.01em; } td.actions { display: flex; gap: 0.9rem; font-size: 1rem; svg { cursor: pointer; &:hover { color: ${({ theme }) => theme.primary}; } } } `;
+const Form = styled.form` display: flex; flex-direction: column; gap: 0.9rem; `;
 const InputGroup = styled.div` display: flex; flex-direction: column; gap: 0.5rem; `;
 const Label = styled.label` font-weight: 500; color: ${({ theme }) => theme.text}; `;
-const Input = styled.input` padding: 0.75rem; border: 1px solid ${({ theme }) => theme.border}; border-radius: 4px; font-size: 1rem; `;
+const Input = styled.input` padding: 0.68rem 0.72rem; border: 1px solid ${({ theme }) => theme.border}; border-radius: 8px; font-size: 0.95rem; `;
 const ColorInput = styled.input.attrs({ type: 'color' })`
     width: 100%;
-    height: 45px;
+    height: 42px;
     border: 1px solid ${({ theme }) => theme.border};
-    border-radius: 4px;
+    border-radius: 8px;
     cursor: pointer;
 `;
 const Code = styled.code` background: #eee; padding: 0.2rem 0.4rem; border-radius: 4px; font-family: 'Courier New', Courier, monospace; `;
@@ -28,6 +30,28 @@ const ColorPreview = styled.div`
     border-radius: 50%;
     background-color: ${props => props.color};
     border: 1px solid #ccc;
+`;
+const FormRow = styled.div`
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.85rem;
+
+    &.wide {
+        grid-template-columns: 1fr 2fr;
+    }
+
+    @media (max-width: 760px) {
+        grid-template-columns: 1fr;
+
+        &.wide {
+            grid-template-columns: 1fr;
+        }
+    }
+`;
+const CheckRow = styled(InputGroup)`
+    flex-direction: row;
+    align-items: center;
+    gap: 0.5rem;
 `;
 
 const normalizeDraft = (type) => ({
@@ -104,7 +128,7 @@ const RequestTypesPage = () => {
             <PageContainer>
                 <Card>
                     <Header>
-                        <h2 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}><FaCodeBranch /> Client Request Triggers</h2>
+                        <Title><FaCodeBranch /> Client Request Triggers</Title>
                         {canEdit && (
                             <Button onClick={() => openEditModal({
                                 name: '',
@@ -122,41 +146,43 @@ const RequestTypesPage = () => {
                         )}
                     </Header>
                     <p>Configure regular expressions to capture requests from chat. Use history tracking only for types where repeated content matters (for example wallet addresses).</p>
-                    <RulesTable>
-                        <thead>
-                            <tr>
-                                <th>Enabled</th>
-                                <th>Color</th>
-                                <th>Name</th>
-                                <th>Trigger Regex</th>
-                                <th>Reaction</th>
-                                <th>New Reaction</th>
-                                <th>Track History</th>
-                                <th>Content Label</th>
-                                {canEdit && <th>Actions</th>}
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {types.map(type => (
-                                <tr key={type.id}>
-                                    <td>{type.is_enabled ? 'Yes' : 'No'}</td>
-                                    <td><ColorPreview color={type.color} /></td>
-                                    <td>{type.name}</td>
-                                    <td><Code>{type.trigger_regex}</Code></td>
-                                    <td>{type.acknowledgement_reaction}</td>
-                                    <td>{type.new_content_reaction || '\uD83C\uDD95'}</td>
-                                    <td>{type.track_content_history ? 'On' : 'Off'}</td>
-                                    <td>{type.content_label || '-'}</td>
-                                    {canEdit && (
-                                        <td className="actions">
-                                            <FaEdit onClick={() => openEditModal(type)} title="Edit" />
-                                            <FaTrash onClick={() => handleDelete(type.id)} title="Delete" />
-                                        </td>
-                                    )}
+                    <TableWrapper>
+                        <RulesTable>
+                            <thead>
+                                <tr>
+                                    <th>Enabled</th>
+                                    <th>Color</th>
+                                    <th>Name</th>
+                                    <th>Trigger Regex</th>
+                                    <th>Reaction</th>
+                                    <th>New Reaction</th>
+                                    <th>Track History</th>
+                                    <th>Content Label</th>
+                                    {canEdit && <th>Actions</th>}
                                 </tr>
-                            ))}
-                        </tbody>
-                    </RulesTable>
+                            </thead>
+                            <tbody>
+                                {types.map(type => (
+                                    <tr key={type.id}>
+                                        <td>{type.is_enabled ? 'Yes' : 'No'}</td>
+                                        <td><ColorPreview color={type.color} /></td>
+                                        <td>{type.name}</td>
+                                        <td><Code>{type.trigger_regex}</Code></td>
+                                        <td>{type.acknowledgement_reaction}</td>
+                                        <td>{type.new_content_reaction || '\uD83C\uDD95'}</td>
+                                        <td>{type.track_content_history ? 'On' : 'Off'}</td>
+                                        <td>{type.content_label || '-'}</td>
+                                        {canEdit && (
+                                            <td className="actions">
+                                                <FaEdit onClick={() => openEditModal(type)} title="Edit" />
+                                                <FaTrash onClick={() => handleDelete(type.id)} title="Delete" />
+                                            </td>
+                                        )}
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </RulesTable>
+                    </TableWrapper>
                 </Card>
             </PageContainer>
 
@@ -179,11 +205,11 @@ const RequestTypesPage = () => {
                                 placeholder="Example: USDT Address"
                             />
                         </InputGroup>
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                        <FormRow>
                             <InputGroup><Label>Acknowledgement Reaction</Label><Input type="text" value={editingType.acknowledgement_reaction} onChange={e => setEditingType({ ...editingType, acknowledgement_reaction: e.target.value })} /></InputGroup>
                             <InputGroup><Label>Highlight Color</Label><ColorInput value={editingType.color} onChange={e => setEditingType({ ...editingType, color: e.target.value })} /></InputGroup>
-                        </div>
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '1rem' }}>
+                        </FormRow>
+                        <FormRow className="wide">
                             <InputGroup>
                                 <Label>New Content Reaction</Label>
                                 <Input
@@ -202,8 +228,8 @@ const RequestTypesPage = () => {
                                     placeholder="Request received. Everything is okay. If you need anything, call us."
                                 />
                             </InputGroup>
-                        </div>
-                        <InputGroup style={{ flexDirection: 'row', alignItems: 'center' }}>
+                        </FormRow>
+                        <CheckRow>
                             <input
                                 type="checkbox"
                                 id="track_content_history"
@@ -211,8 +237,8 @@ const RequestTypesPage = () => {
                                 onChange={e => setEditingType({ ...editingType, track_content_history: e.target.checked ? 1 : 0 })}
                             />
                             <Label htmlFor="track_content_history">Track history by captured information value</Label>
-                        </InputGroup>
-                        <InputGroup style={{ flexDirection: 'row', alignItems: 'center' }}>
+                        </CheckRow>
+                        <CheckRow>
                             <input
                                 type="checkbox"
                                 id="is_enabled"
@@ -220,7 +246,7 @@ const RequestTypesPage = () => {
                                 onChange={e => setEditingType({ ...editingType, is_enabled: e.target.checked ? 1 : 0 })}
                             />
                             <Label htmlFor="is_enabled">Enabled</Label>
-                        </InputGroup>
+                        </CheckRow>
                         <Button type="submit" style={{ alignSelf: 'flex-end' }}>Save Changes</Button>
                     </Form>
                 )}

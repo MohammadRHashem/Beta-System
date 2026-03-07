@@ -4,7 +4,7 @@ import { getAlfaTransactions, exportAlfaPdf, exportAlfaExcel } from '../services
 import AlfaTrustFilter from '../components/AlfaTrustFilter';
 import AlfaTrustTable from '../components/AlfaTrustTable';
 import Modal from '../components/Modal';
-import { usePermissions } from '../context/PermissionContext'; // 1. IMPORT PERMISSIONS HOOK
+import { usePermissions } from '../context/PermissionContext';
 import { FaFilePdf, FaSyncAlt, FaFileExcel } from 'react-icons/fa';
 import { format, subDays } from 'date-fns';
 import { useSocket } from '../context/SocketContext';
@@ -23,7 +23,7 @@ const useDebounce = (value, delay) => {
 const PageContainer = styled.div`
     display: flex;
     flex-direction: column;
-    gap: 1.5rem;
+    gap: 1.1rem;
     height: calc(100vh - 120px);
 `;
 
@@ -36,15 +36,21 @@ const Header = styled.div`
     flex-shrink: 0;
 `;
 
-const Title = styled.h2` margin: 0; `;
+const Title = styled.h2` margin: 0; line-height: 1.2; `;
+
+const HeaderActions = styled.div`
+    display: flex;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+`;
 
 const Button = styled.button`
     display: inline-flex;
     align-items: center;
     gap: 0.5rem;
-    padding: 0.6rem 1.2rem;
+    padding: 0.62rem 1rem;
     border: none;
-    border-radius: 6px;
+    border-radius: 8px;
     font-weight: 600;
     cursor: pointer;
     background-color: ${({ theme, color }) => color === 'excel' ? '#217346' : theme.error};
@@ -61,8 +67,8 @@ const SyncButton = styled(Button)`
 const RefreshBanner = styled.div`
     background-color: ${({ theme }) => theme.secondary};
     color: white;
-    padding: 0.75rem 1rem;
-    border-radius: 6px;
+    padding: 0.7rem 1rem;
+    border-radius: 8px;
     text-align: center;
     font-weight: 600;
     cursor: pointer;
@@ -76,19 +82,19 @@ const RefreshBanner = styled.div`
 const ExportForm = styled.div`
     display: flex;
     flex-direction: column;
-    gap: 1.5rem;
+    gap: 1rem;
     label { display: flex; flex-direction: column; font-weight: 500; gap: 0.5rem; }
-    input { padding: 0.75rem; border: 1px solid ${({ theme }) => theme.border}; border-radius: 4px; font-size: 1rem; }
+    input { padding: 0.68rem 0.72rem; border: 1px solid ${({ theme }) => theme.border}; border-radius: 8px; font-size: 0.95rem; }
     button {
         background-color: ${({ theme }) => theme.primary};
-        color: white; border: none; padding: 0.8rem; border-radius: 4px;
-        font-weight: bold; cursor: pointer; font-size: 1rem; &:hover { opacity: 0.9; }
+        color: white; border: none; padding: 0.72rem; border-radius: 8px;
+        font-weight: bold; cursor: pointer; font-size: 0.95rem; &:hover { opacity: 0.9; }
     }
 `;
 
 
 const AlfaTrustPage = () => {
-    const { hasPermission } = usePermissions(); // 2. GET PERMISSION CHECKER
+    const { hasPermission } = usePermissions();
     const canLinkInvoices = hasPermission('invoice:link');
 
     const socket = useSocket();
@@ -174,7 +180,6 @@ const AlfaTrustPage = () => {
     const handleManualSync = async () => { window.alert("Manual sync is not available for Alfa Trust at this time."); return;};
 
     const openLinkModal = (tx) => {
-        // 3. CHECK PERMISSION BEFORE ALLOWING ACTION
         if (!canLinkInvoices) {
             alert("You do not have permission to link invoices.");
             return;
@@ -188,7 +193,7 @@ const AlfaTrustPage = () => {
             <PageContainer>
                 <Header>
                     <Title>Alfa Trust Statement</Title>
-                    <div style={{ display: 'flex', gap: '1rem' }}>
+                    <HeaderActions>
                         <SyncButton onClick={handleManualSync} disabled={isSyncing}>
                             <FaSyncAlt style={{ animation: isSyncing ? 'spin 1s linear infinite' : 'none' }} /> 
                             {isSyncing ? 'Syncing...' : 'Refresh Data'}
@@ -197,7 +202,7 @@ const AlfaTrustPage = () => {
                             <FaFileExcel /> {isExporting ? 'Exporting...' : 'Export Excel'}
                         </Button>
                         <Button onClick={() => setIsExportModalOpen(true)}><FaFilePdf/> Export PDF</Button>
-                    </div>
+                    </HeaderActions>
                 </Header>
                 {hasNewData && (
                     <RefreshBanner onClick={() => fetchTransactions()}>
@@ -211,7 +216,6 @@ const AlfaTrustPage = () => {
                     pagination={pagination}
                     setPagination={setPagination}
                     onLinkClick={openLinkModal}
-                    // 4. PASS PERMISSION DOWN TO THE TABLE COMPONENT
                     canLinkInvoices={canLinkInvoices}
                 />
             </PageContainer>

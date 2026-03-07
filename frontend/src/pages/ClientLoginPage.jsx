@@ -8,6 +8,8 @@ import BetaLogo from '../assets/betaLogo.png'; // Make sure this path is correct
 const PageContainer = styled.div`
     width: 100vw;
     height: 100vh;
+    padding: 1rem;
+    box-sizing: border-box;
     display: flex;
     justify-content: center;
     align-items: center;
@@ -18,40 +20,40 @@ const PageContainer = styled.div`
 const FormContainer = styled(motion.div)`
     width: 100%;
     max-width: 420px;
-    padding: 3rem;
+    padding: 2.1rem 1.8rem 1.7rem;
     background: #fff;
-    border-radius: 12px;
+    border-radius: 14px;
     box-shadow: 0 15px 35px rgba(0,0,0,0.15);
     text-align: center;
 `;
 
 const Logo = styled.img`
-    max-width: 180px;
-    margin-bottom: 2rem;
+    max-width: 170px;
+    margin-bottom: 1.35rem;
 `;
 
 const Title = styled.h2`
     margin-bottom: 0.5rem;
     color: ${({ theme }) => theme.primary};
-    font-size: 1.8rem;
+    font-size: 1.55rem;
 `;
 
 const Subtitle = styled.p`
-    margin-bottom: 2.5rem;
+    margin-bottom: 1.4rem;
     color: ${({ theme }) => theme.lightText};
 `;
 
 const Form = styled.form`
     display: flex;
     flex-direction: column;
-    gap: 1.25rem;
+    gap: 0.9rem;
 `;
 
 const Input = styled.input`
-    padding: 1rem;
+    padding: 0.72rem 0.82rem;
     border: 1px solid ${({ theme }) => theme.border};
-    border-radius: 6px;
-    font-size: 1rem;
+    border-radius: 8px;
+    font-size: 0.95rem;
     transition: all 0.2s ease-in-out;
 
     &:focus {
@@ -62,11 +64,11 @@ const Input = styled.input`
 `;
 
 const Button = styled.button`
-    padding: 1rem;
+    padding: 0.72rem 0.9rem;
     border: none;
     background: linear-gradient(45deg, #00C49A, #00A885);
     color: white;
-    font-size: 1.1rem;
+    font-size: 0.98rem;
     font-weight: bold;
     border-radius: 6px;
     cursor: pointer;

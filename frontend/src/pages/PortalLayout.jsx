@@ -20,23 +20,28 @@ const PageContainer = styled.div`
   min-height: 100vh;
   background-color: #f6f9fc;
   background-image: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23E6EBF1' fill-opacity='0.4'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
+  display: flex;
+  flex-direction: column;
 `;
 const Header = styled.header`
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 1rem 1.5rem;
+  gap: 1rem;
+  padding: 0.85rem 1rem;
   background: #fff;
   border-bottom: 1px solid ${({ theme }) => theme.border};
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+  box-shadow: ${({ theme }) => theme.shadowSm};
+  min-height: ${({ theme }) => theme.appHeaderHeight};
+  z-index: 10;
   @media (max-width: 768px) {
-    padding: 0.75rem 1rem;
+    padding: 0.7rem 0.9rem;
   }
 `;
 const Logo = styled.img`
-  height: 60px;
+  height: 54px;
   @media (max-width: 768px) {
-    height: 45px;
+    height: 40px;
   }
 `;
 const ClientName = styled.div`
@@ -45,7 +50,7 @@ const ClientName = styled.div`
   transform: translateX(-50%);
   color: ${({ theme }) => theme.text};
   font-weight: 600;
-  font-size: 1.2rem;
+  font-size: 1.1rem;
   text-align: center;
   white-space: nowrap;
   overflow: hidden;
@@ -106,7 +111,7 @@ const MobileNav = styled(motion.nav)`
   position: fixed;
   top: 0;
   right: 0;
-  width: 250px;
+  width: 260px;
   height: 100%;
   background: #fff;
   box-shadow: -5px 0 15px rgba(0, 0, 0, 0.1);
@@ -117,9 +122,14 @@ const MobileNav = styled(motion.nav)`
   z-index: 1000;
 `;
 const Content = styled.main`
-  padding: 1.5rem;
+  padding: clamp(0.8rem, 1.6vw, 1.4rem);
+  min-height: 0;
+  flex: 1;
   @media (min-width: 768px) {
-    padding: 2rem;
+    padding: clamp(0.95rem, 1.8vw, 1.6rem);
+  }
+  @media (max-height: 800px) and (min-width: 1024px) {
+    padding: 0.8rem;
   }
 `;
 const ExportModalContent = styled.div`
@@ -167,6 +177,12 @@ const ImpersonationBanner = styled.div`
   align-items: center;
   font-weight: 600;
   font-size: 0.9rem;
+  gap: 0.6rem;
+
+  @media (max-width: 768px) {
+    padding: 0.55rem 0.9rem;
+    font-size: 0.82rem;
+  }
 `;
 
 const ImpersonationButton = styled.button`

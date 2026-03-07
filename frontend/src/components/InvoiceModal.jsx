@@ -3,21 +3,25 @@ import styled from 'styled-components';
 import Modal from './Modal';
 import { createInvoice, updateInvoice } from '../services/api';
 import { format, toZonedTime } from 'date-fns-tz';
-import ComboBox from './ComboBox'; // Import ComboBox
+import ComboBox from './ComboBox';
 
 const Form = styled.form`
     display: flex;
     flex-direction: column;
-    gap: 1.5rem;
+    gap: 1rem;
 `;
 
 const FieldSet = styled.fieldset`
     border: 1px solid ${({ theme }) => theme.border};
-    border-radius: 6px;
-    padding: 1rem 1.5rem 1.5rem 1.5rem;
+    border-radius: 8px;
+    padding: 0.85rem 1rem 1rem;
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 1rem 1.5rem;
+    gap: 0.85rem;
+
+    @media (max-width: 760px) {
+        grid-template-columns: 1fr;
+    }
 `;
 
 const Legend = styled.legend`
@@ -40,16 +44,16 @@ const Label = styled.label`
 `;
 
 const Input = styled.input`
-    padding: 0.75rem;
+    padding: 0.68rem 0.72rem;
     border: 1px solid ${({ theme }) => theme.border};
-    border-radius: 4px;
+    border-radius: 8px;
     width: 100%;
 `;
 
 const Textarea = styled.textarea`
-    padding: 0.75rem;
+    padding: 0.68rem 0.72rem;
     border: 1px solid ${({ theme }) => theme.border};
-    border-radius: 4px;
+    border-radius: 8px;
     min-height: 80px;
     font-family: inherit;
 `;
@@ -58,11 +62,11 @@ const Button = styled.button`
     background-color: ${({ theme }) => theme.primary};
     color: white;
     border: none;
-    padding: 0.8rem 1.5rem;
-    border-radius: 4px;
+    padding: 0.72rem 0.95rem;
+    border-radius: 8px;
     cursor: pointer;
     font-weight: bold;
-    font-size: 1rem;
+    font-size: 0.95rem;
     align-self: flex-end;
 `;
 
@@ -82,7 +86,7 @@ const SAO_PAULO_TIMEZONE = 'America/Sao_Paulo';
 
 const InvoiceModal = ({ isOpen, onClose, invoice, onSave, allGroups }) => {
     const isEditMode = !!invoice;
-    
+
     const [formData, setFormData] = useState({});
     const [date, setDate] = useState('');
     const [time, setTime] = useState('');
@@ -91,10 +95,8 @@ const InvoiceModal = ({ isOpen, onClose, invoice, onSave, allGroups }) => {
         if (isOpen) {
             let initialDate;
             if (isEditMode && invoice.received_at) {
-                // The date string from the DB is already the correct local time
                 initialDate = new Date(invoice.received_at);
             } else {
-                // Get current time in São Paulo for new entries
                 initialDate = toZonedTime(new Date(), SAO_PAULO_TIMEZONE);
             }
 
@@ -102,16 +104,21 @@ const InvoiceModal = ({ isOpen, onClose, invoice, onSave, allGroups }) => {
             setTime(format(initialDate, 'HH:mm:ss'));
 
             setFormData(isEditMode ? { ...invoice } : {
-                sender_name: '', recipient_name: '', transaction_id: '',
-                pix_key: '', amount: '', notes: '', is_deleted: false,
-                source_group_jid: '' // Initialize source group
+                sender_name: '',
+                recipient_name: '',
+                transaction_id: '',
+                pix_key: '',
+                amount: '',
+                notes: '',
+                is_deleted: false,
+                source_group_jid: ''
             });
         }
     }, [invoice, isEditMode, isOpen]);
 
     const handleChange = (e) => {
         const { name, value, type, checked } = e.target;
-        setFormData(prev => ({
+        setFormData((prev) => ({
             ...prev,
             [name]: type === 'checkbox' ? checked : value
         }));
@@ -119,14 +126,13 @@ const InvoiceModal = ({ isOpen, onClose, invoice, onSave, allGroups }) => {
 
     const handleSubmit = async (e) => {
         e.preventDefault();
-        
+
         if (!date || !time) {
             alert('Date and Time are required.');
             return;
         }
 
         const fullTimestamp = `${date} ${time}`;
-        
         const payload = { ...formData, received_at: fullTimestamp };
 
         try {
@@ -135,10 +141,8 @@ const InvoiceModal = ({ isOpen, onClose, invoice, onSave, allGroups }) => {
             } else {
                 await createInvoice(payload);
             }
-            // Ensure onSave handles the state refresh cleanly
-            onSave(); 
+            onSave();
         } catch (error) {
-            // Improved error alerting
             const msg = error.response?.data?.message || 'Failed to save invoice.';
             alert(`Error: ${msg}`);
         }
@@ -149,7 +153,7 @@ const InvoiceModal = ({ isOpen, onClose, invoice, onSave, allGroups }) => {
             <h2>{isEditMode ? 'Edit Invoice' : 'Add New Entry'}</h2>
             <Form onSubmit={handleSubmit}>
                 <FieldSet>
-                    <Legend>Date & Time (GMT-03:00 São Paulo)</Legend>
+                    <Legend>Date & Time (GMT-03:00 Sao Paulo)</Legend>
                     <InputGroup>
                         <Label>Date</Label>
                         <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
@@ -169,11 +173,10 @@ const InvoiceModal = ({ isOpen, onClose, invoice, onSave, allGroups }) => {
                         <Label>Recipient Name</Label>
                         <Input type="text" name="recipient_name" value={formData.recipient_name || ''} onChange={handleChange} />
                     </InputGroup>
-                    
-                    {/* === NEW: Source Group Selector === */}
+
                     <InputGroup full>
                         <Label>Source Group</Label>
-                        <ComboBox 
+                        <ComboBox
                             options={allGroups || []}
                             value={formData.source_group_jid || ''}
                             onChange={(e) => handleChange({ target: { name: 'source_group_jid', value: e.target.value } })}
@@ -192,7 +195,7 @@ const InvoiceModal = ({ isOpen, onClose, invoice, onSave, allGroups }) => {
                         <Label>Amount</Label>
                         <Input type="text" name="amount" value={formData.amount || ''} onChange={handleChange} placeholder="e.g., 1,250.00" />
                     </InputGroup>
-                     <CheckboxContainer>
+                    <CheckboxContainer>
                         <Checkbox name="is_deleted" checked={!!formData.is_deleted} onChange={handleChange} />
                         <Label>Mark as Deleted</Label>
                     </CheckboxContainer>

@@ -9,11 +9,11 @@ const ListContainer = styled.div`
     max-height: 400px;
     overflow-y: auto;
     border: 1px solid ${({ theme }) => theme.border};
-    border-radius: 6px;
+    border-radius: 8px;
 `;
 
 const InvoiceItem = styled.div`
-    padding: 1rem;
+    padding: 0.85rem;
     border-bottom: 1px solid ${({ theme }) => theme.border};
     cursor: pointer;
     display: flex;
@@ -39,10 +39,15 @@ const LinkButton = styled.button`
     background-color: ${({ theme }) => theme.secondary};
     color: white;
     border: none;
-    padding: 0.5rem 1rem;
-    border-radius: 4px;
+    padding: 0.46rem 0.72rem;
+    border-radius: 8px;
     font-weight: bold;
     cursor: pointer;
+`;
+
+const EmptyState = styled.p`
+    padding: 1rem;
+    text-align: center;
 `;
 
 const LinkInvoiceModal = ({ isOpen, onClose, transaction, recipientPrefix = '' }) => {
@@ -93,7 +98,7 @@ const LinkInvoiceModal = ({ isOpen, onClose, transaction, recipientPrefix = '' }
             <ListContainer>
                 {loading ? <p>Loading...</p> : (
                     candidates.length === 0 ? (
-                        <p style={{padding: '1rem', textAlign: 'center'}}>No pending invoices found for this amount.</p>
+                        <EmptyState>No pending invoices found for this amount.</EmptyState>
                     ) : (
                         candidates.map(inv => (
                             <InvoiceItem key={inv.id}>

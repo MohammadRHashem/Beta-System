@@ -2,21 +2,22 @@ import React, { useState, useEffect } from 'react';
 import styled from 'styled-components';
 import api, { toggleForwardingRule, toggleReplyRule } from '../services/api';
 import Modal from '../components/Modal';
-import { usePermissions } from '../context/PermissionContext'; // 1. IMPORT PERMISSIONS HOOK
+import { usePermissions } from '../context/PermissionContext';
 import { FaEdit, FaTrash } from 'react-icons/fa';
 import ComboBox from '../components/ComboBox';
 
 const PageContainer = styled.div`
     display: flex;
     flex-direction: column;
-    gap: 2rem;
+    gap: 1.25rem;
 `;
 
 const Card = styled.div`
     background: #fff;
-    padding: 1.5rem;
-    border-radius: 8px;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    padding: 1.1rem 1.2rem 1rem;
+    border-radius: 14px;
+    border: 1px solid rgba(9, 30, 66, 0.08);
+    box-shadow: 0 14px 30px rgba(9, 30, 66, 0.08);
 `;
 
 const Form = styled.form`
@@ -40,18 +41,18 @@ const Label = styled.label`
 `;
 
 const Input = styled.input`
-    padding: 0.75rem;
+    padding: 0.68rem 0.72rem;
     border: 1px solid ${({ theme }) => theme.border};
-    border-radius: 4px;
-    font-size: 1rem;
+    border-radius: 8px;
+    font-size: 0.95rem;
 `;
 
 const Button = styled.button`
     background-color: ${({ theme }) => theme.secondary};
     color: white;
     border: none;
-    padding: 0.75rem 1.5rem;
-    border-radius: 4px;
+    padding: 0.66rem 1rem;
+    border-radius: 8px;
     cursor: pointer;
     font-weight: bold;
     height: fit-content;
@@ -61,18 +62,30 @@ const Button = styled.button`
     }
 `;
 
+const TableWrapper = styled.div`
+    width: 100%;
+    overflow-x: auto;
+    border: 1px solid ${({ theme }) => theme.border};
+    border-radius: 10px;
+`;
+
 const RulesTable = styled.table`
     width: 100%;
+    min-width: 980px;
     border-collapse: collapse;
-    margin-top: 1rem;
+    margin-top: 0.8rem;
+    font-size: 0.9rem;
     th, td {
-        padding: 1rem;
+        padding: 0.78rem 0.85rem;
         text-align: left;
         border-bottom: 1px solid ${({ theme }) => theme.border};
         vertical-align: middle;
+        white-space: nowrap;
     }
     th {
         background-color: ${({ theme }) => theme.background};
+        font-size: 0.84rem;
+        letter-spacing: 0.01em;
     }
     td.actions {
         display: flex;
@@ -133,8 +146,8 @@ const Slider = styled.span`
 `;
 
 const AiForwardingPage = ({ allGroups }) => {
-    const { hasPermission } = usePermissions(); // 2. GET PERMISSION CHECKER
-    const canEdit = hasPermission('settings:edit_rules'); // 3. DEFINE EDIT CAPABILITY
+    const { hasPermission } = usePermissions();
+    const canEdit = hasPermission('settings:edit_rules');
 
     const [rules, setRules] = useState([]);
     const [trigger, setTrigger] = useState('');
@@ -235,7 +248,6 @@ const AiForwardingPage = ({ allGroups }) => {
     return (
         <>
             <PageContainer>
-                {/* 4. WRAP CREATION FORM IN PERMISSION CHECK */}
                 {canEdit && (
                     <Card>
                         <h3>Create New Forwarding Rule</h3>
@@ -265,58 +277,58 @@ const AiForwardingPage = ({ allGroups }) => {
 
                 <Card>
                     <h3>Existing Rules</h3>
-                    <RulesTable>
-                        <thead>
-                            <tr>
-                                <th>Enabled</th>
-                                <th>Trigger Keyword</th>
-                                <th>Destination Group</th>
-                                <th>Reply with Group Name?</th>
-                                {canEdit && <th>Actions</th>}
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {rules.map(rule => (
-                                <tr key={rule.id}>
-                                    <td>
-                                        <SwitchContainer>
-                                            <SwitchInput 
-                                                type="checkbox" 
-                                                checked={!!rule.is_enabled}
-                                                onChange={() => handleToggleEnabled(rule)}
-                                                disabled={!canEdit} // 5. DISABLE INTERACTIVE ELEMENTS
-                                            />
-                                            <Slider />
-                                        </SwitchContainer>
-                                    </td>
-                                    <td>{rule.trigger_keyword}</td>
-                                    <td>{rule.destination_group_name || rule.destination_group_jid}</td>
-                                    <td>
-                                        <SwitchContainer>
-                                            <SwitchInput 
-                                                type="checkbox" 
-                                                checked={!!rule.reply_with_group_name}
-                                                onChange={() => handleToggleReply(rule)}
-                                                disabled={!canEdit} // 5. DISABLE INTERACTIVE ELEMENTS
-                                            />
-                                            <Slider />
-                                        </SwitchContainer>
-                                    </td>
-                                    {/* 6. WRAP ACTIONS IN PERMISSION CHECK */}
-                                    {canEdit && (
-                                        <td className="actions">
-                                            <FaEdit onClick={() => openEditModal(rule)} title="Edit"/>
-                                            <FaTrash onClick={() => handleDelete(rule.id)} title="Delete"/>
-                                        </td>
-                                    )}
+                    <TableWrapper>
+                        <RulesTable>
+                            <thead>
+                                <tr>
+                                    <th>Enabled</th>
+                                    <th>Trigger Keyword</th>
+                                    <th>Destination Group</th>
+                                    <th>Reply with Group Name?</th>
+                                    {canEdit && <th>Actions</th>}
                                 </tr>
-                            ))}
-                        </tbody>
-                    </RulesTable>
+                            </thead>
+                            <tbody>
+                                {rules.map(rule => (
+                                    <tr key={rule.id}>
+                                        <td>
+                                            <SwitchContainer>
+                                                <SwitchInput 
+                                                    type="checkbox" 
+                                                    checked={!!rule.is_enabled}
+                                                    onChange={() => handleToggleEnabled(rule)}
+                                                    disabled={!canEdit}
+                                                />
+                                                <Slider />
+                                            </SwitchContainer>
+                                        </td>
+                                        <td>{rule.trigger_keyword}</td>
+                                        <td>{rule.destination_group_name || rule.destination_group_jid}</td>
+                                        <td>
+                                            <SwitchContainer>
+                                                <SwitchInput 
+                                                    type="checkbox" 
+                                                    checked={!!rule.reply_with_group_name}
+                                                    onChange={() => handleToggleReply(rule)}
+                                                    disabled={!canEdit}
+                                                />
+                                                <Slider />
+                                            </SwitchContainer>
+                                        </td>
+                                        {canEdit && (
+                                            <td className="actions">
+                                                <FaEdit onClick={() => openEditModal(rule)} title="Edit"/>
+                                                <FaTrash onClick={() => handleDelete(rule.id)} title="Delete"/>
+                                            </td>
+                                        )}
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </RulesTable>
+                    </TableWrapper>
                 </Card>
             </PageContainer>
 
-            {/* Modal is only opened by users with `canEdit`, so it's implicitly protected */}
             <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)}>
                 {editingRule && (
                     <form onSubmit={handleUpdate}>

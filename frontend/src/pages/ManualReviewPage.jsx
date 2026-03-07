@@ -9,7 +9,7 @@ import {
     clearAllPendingInvoices
 } from '../services/api';
 import { useSocket } from '../context/SocketContext';
-import { usePermissions } from '../context/PermissionContext'; // 1. IMPORT PERMISSIONS HOOK
+import { usePermissions } from '../context/PermissionContext';
 import Modal from '../components/Modal';
 import { FaCheck, FaTimes, FaBroom } from 'react-icons/fa';
 import { formatInTimeZone } from 'date-fns-tz';
@@ -17,7 +17,7 @@ import { formatInTimeZone } from 'date-fns-tz';
 const PageContainer = styled.div`
     display: flex;
     flex-direction: column;
-    gap: 1.5rem;
+    gap: 1.2rem;
 `;
 
 const Header = styled.div`
@@ -28,18 +28,28 @@ const Header = styled.div`
     gap: 1rem;
 `;
 
+const SummaryBadge = styled.div`
+    background: #e3fcef;
+    color: #006644;
+    padding: 0.5rem 0.85rem;
+    border-radius: 999px;
+    font-weight: 700;
+`;
+
 const ActionButtonContainer = styled.div`
     display: flex;
     align-items: center;
-    gap: 1rem;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+    justify-content: flex-end;
 `;
 
 const HeaderButton = styled.button`
     background-color: ${({ theme, danger }) => danger ? theme.error : theme.primary};
     color: white;
     border: none;
-    padding: 0.6rem 1.2rem;
-    border-radius: 6px;
+    padding: 0.58rem 0.9rem;
+    border-radius: 8px;
     font-weight: 600;
     cursor: pointer;
     font-size: 0.9rem;
@@ -54,21 +64,32 @@ const HeaderButton = styled.button`
 
 const Card = styled.div`
     background: #fff;
-    padding: 1.5rem;
-    border-radius: 8px;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    padding: 1.1rem 1.2rem 1rem;
+    border-radius: 14px;
+    border: 1px solid rgba(9, 30, 66, 0.08);
+    box-shadow: 0 14px 30px rgba(9, 30, 66, 0.08);
+`;
+
+const TableWrapper = styled.div`
+    width: 100%;
+    overflow-x: auto;
+    border: 1px solid ${({ theme }) => theme.border};
+    border-radius: 10px;
 `;
 
 const Table = styled.table`
     width: 100%;
+    min-width: 1080px;
     border-collapse: collapse;
+    font-size: 0.9rem;
     th, td {
-        padding: 1rem;
+        padding: 0.78rem 0.85rem;
         text-align: left;
         border-bottom: 1px solid #eee;
         vertical-align: middle;
+        white-space: nowrap;
     }
-    th { background: #f9f9f9; }
+    th { background: #f9f9f9; font-size: 0.84rem; letter-spacing: 0.01em; }
 `;
 
 const TableRow = styled.tr`
@@ -78,8 +99,8 @@ const TableRow = styled.tr`
 
 const ActionCellButton = styled.button`
     border: none;
-    padding: 0.5rem 1rem;
-    border-radius: 4px;
+    padding: 0.46rem 0.72rem;
+    border-radius: 8px;
     cursor: pointer;
     font-weight: bold;
     display: inline-flex;
@@ -130,7 +151,7 @@ const formatSaoPauloDateTime = (dbDateString, formatString) => {
 };
 
 const ManualReviewPage = () => {
-    const { hasPermission } = usePermissions(); // 2. GET PERMISSION CHECKER
+    const { hasPermission } = usePermissions();
     const canConfirm = hasPermission('manual_review:confirm');
     const canReject = hasPermission('manual_review:reject');
     const canClear = hasPermission('manual_review:clear');
@@ -162,7 +183,6 @@ const ManualReviewPage = () => {
         }
     }, [socket]);
     
-    // --- START: NEW HANDLER FUNCTIONS ---
     const handleSelectRow = (messageId) => {
         const newSelection = new Set(selectedRows);
         if (newSelection.has(messageId)) {
@@ -242,12 +262,13 @@ const ManualReviewPage = () => {
         return invoices.length > 0 && selectedRows.size === invoices.length;
     }, [selectedRows, invoices]);
 
+    const tableColumnCount = (canClear ? 1 : 0) + 6 + ((canConfirm || canReject) ? 1 : 0) + (canClear ? 1 : 0);
+
     return (
         <PageContainer>
             <Header>
                 <h2>Manual Confirmation Center</h2>
                 <ActionButtonContainer>
-                    {/* 3. WRAP HEADER BUTTONS IN PERMISSION CHECK */}
                     {canClear && (
                         <>
                             <HeaderButton onClick={() => handleClear(Array.from(selectedRows), true)} disabled={selectedRows.size === 0}>
@@ -258,73 +279,74 @@ const ManualReviewPage = () => {
                             </HeaderButton>
                         </>
                     )}
-                    <div style={{background: '#E3FCEF', color: '#006644', padding: '0.5rem 1rem', borderRadius: '20px', fontWeight: 'bold'}}>
+                    <SummaryBadge>
                         {invoices.length} Pending
-                    </div>
+                    </SummaryBadge>
                 </ActionButtonContainer>
             </Header>
             
             <Card>
                 {loading ? <p>Loading...</p> : (
-                    <Table>
-                        <thead>
-                            <tr>
-                                {canClear && <th><Checkbox onChange={handleSelectAll} checked={areAllSelected} /></th>}
-                                <th>Date</th>
-                                <th>Source Group</th>
-                                <th>Sender</th>
-                                <th>Recipient</th>
-                                <th>Amount</th>
-                                <th>Media</th>
-                                {(canConfirm || canReject) && <th>Confirm/Reject</th>}
-                                {canClear && <th>Actions</th>}
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {invoices.length === 0 ? (<tr><td colSpan="9" style={{textAlign: 'center'}}>All caught up!</td></tr>) :
-                            invoices.map(inv => (
-                                <tr key={inv.id} isSelected={selectedRows.has(inv.message_id)}>
-                                    {canClear && (
-                                        <td>
-                                            <Checkbox 
-                                                checked={selectedRows.has(inv.message_id)} 
-                                                onChange={() => handleSelectRow(inv.message_id)} 
-                                            />
-                                        </td>
-                                    )}
-                                    <td>{formatSaoPauloDateTime(inv.received_at, 'dd/MM HH:mm')}</td>
-                                    <td>{inv.source_group_name}</td>
-                                    <td>{inv.sender_name}</td>
-                                    <td>{inv.recipient_name}</td>
-                                    <td style={{fontWeight: 'bold'}}>{inv.amount}</td>
-                                    <td><MediaLink onClick={() => viewInvoiceMedia(inv.id)}>View Image</MediaLink></td>
-                                    
-                                    {/* 4. WRAP ACTION BUTTONS IN PERMISSION CHECKS */}
-                                    {(canConfirm || canReject) && (
-                                        <td>
-                                            {canConfirm && (
-                                                <ActionCellButton className="confirm" onClick={() => openConfirmModal(inv)}>
-                                                    <FaCheck /> Confirm
-                                                </ActionCellButton>
-                                            )}
-                                            {canReject && (
-                                                <ActionCellButton className="reject" onClick={() => handleReject(inv)}>
-                                                    <FaTimes /> Reject
-                                                </ActionCellButton>
-                                            )}
-                                        </td>
-                                    )}
-                                    {canClear && (
-                                        <td style={{textAlign: 'center'}}>
-                                            <ClearRowButton title="Clear this item" onClick={() => handleClear([inv.message_id], false)}>
-                                                <FaBroom />
-                                            </ClearRowButton>
-                                        </td>
-                                    )}
+                    <TableWrapper>
+                        <Table>
+                            <thead>
+                                <tr>
+                                    {canClear && <th><Checkbox onChange={handleSelectAll} checked={areAllSelected} /></th>}
+                                    <th>Date</th>
+                                    <th>Source Group</th>
+                                    <th>Sender</th>
+                                    <th>Recipient</th>
+                                    <th>Amount</th>
+                                    <th>Media</th>
+                                    {(canConfirm || canReject) && <th>Confirm/Reject</th>}
+                                    {canClear && <th>Actions</th>}
                                 </tr>
-                            ))}
-                        </tbody>
-                    </Table>
+                            </thead>
+                            <tbody>
+                                {invoices.length === 0 ? (<tr><td colSpan={tableColumnCount} style={{textAlign: 'center'}}>All caught up!</td></tr>) :
+                                invoices.map(inv => (
+                                    <TableRow key={inv.id} isSelected={selectedRows.has(inv.message_id)}>
+                                        {canClear && (
+                                            <td>
+                                                <Checkbox 
+                                                    checked={selectedRows.has(inv.message_id)} 
+                                                    onChange={() => handleSelectRow(inv.message_id)} 
+                                                />
+                                            </td>
+                                        )}
+                                        <td>{formatSaoPauloDateTime(inv.received_at, 'dd/MM HH:mm')}</td>
+                                        <td>{inv.source_group_name}</td>
+                                        <td>{inv.sender_name}</td>
+                                        <td>{inv.recipient_name}</td>
+                                        <td style={{fontWeight: 'bold'}}>{inv.amount}</td>
+                                        <td><MediaLink onClick={() => viewInvoiceMedia(inv.id)}>View Image</MediaLink></td>
+                                        
+                                        {(canConfirm || canReject) && (
+                                            <td>
+                                                {canConfirm && (
+                                                    <ActionCellButton className="confirm" onClick={() => openConfirmModal(inv)}>
+                                                        <FaCheck /> Confirm
+                                                    </ActionCellButton>
+                                                )}
+                                                {canReject && (
+                                                    <ActionCellButton className="reject" onClick={() => handleReject(inv)}>
+                                                        <FaTimes /> Reject
+                                                    </ActionCellButton>
+                                                )}
+                                            </td>
+                                        )}
+                                        {canClear && (
+                                            <td style={{textAlign: 'center'}}>
+                                                <ClearRowButton title="Clear this item" onClick={() => handleClear([inv.message_id], false)}>
+                                                    <FaBroom />
+                                                </ClearRowButton>
+                                            </td>
+                                        )}
+                                    </TableRow>
+                                ))}
+                            </tbody>
+                        </Table>
+                    </TableWrapper>
                 )}
             </Card>
 

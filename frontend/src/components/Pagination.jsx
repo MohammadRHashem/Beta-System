@@ -5,12 +5,13 @@ const PaginationContainer = styled.div`
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 1rem;
-    background: #fff;
+    padding: 0.85rem;
+    background: ${({ theme }) => theme.surface};
     border-top: 1px solid ${({ theme }) => theme.border};
     border-radius: 0 0 8px 8px;
     flex-wrap: wrap;
-    gap: 1.5rem;
+    gap: 0.8rem;
+    row-gap: 0.6rem;
 `;
 
 const PageInfo = styled.span`
@@ -22,12 +23,12 @@ const PageInfo = styled.span`
 const PageControls = styled.div`
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: 0.35rem;
 `;
 
 const PageButton = styled.button`
-    padding: 0.5rem 1rem;
-    min-width: 40px;
+    padding: 0.4rem 0.75rem;
+    min-width: 36px;
     border: 1px solid ${({ theme }) => theme.border};
     background-color: #fff;
     cursor: pointer;
@@ -70,11 +71,16 @@ const GoToPageForm = styled.form`
     display: flex;
     align-items: center;
     gap: 0.5rem;
+
+    @media (max-width: 680px) {
+      width: 100%;
+      justify-content: flex-end;
+    }
 `;
 
 const GoToPageInput = styled.input`
-    width: 60px;
-    padding: 0.5rem;
+    width: 56px;
+    padding: 0.4rem;
     border-radius: 4px;
     border: 1px solid ${({ theme }) => theme.border};
     text-align: center;
@@ -82,7 +88,7 @@ const GoToPageInput = styled.input`
 `;
 
 const GoToPageButton = styled.button`
-    padding: 0.5rem 1rem;
+    padding: 0.4rem 0.85rem;
     border: 1px solid ${({ theme }) => theme.border};
     background-color: ${({ theme }) => theme.background};
     cursor: pointer;

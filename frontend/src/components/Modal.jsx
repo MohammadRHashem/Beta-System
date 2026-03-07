@@ -16,18 +16,25 @@ const ModalOverlay = styled.div`
   opacity: ${({ isOpen }) => (isOpen ? 1 : 0)};
   visibility: ${({ isOpen }) => (isOpen ? 'visible' : 'hidden')};
   transition: opacity 0.3s ease, visibility 0.3s ease;
+  padding: 1rem;
 `;
 
 // DEFINITIVE UI FIX: The ModalContent now accepts a `maxWidth` prop.
 // If no prop is given, it defaults to 500px.
 const ModalContent = styled.div`
-  background: white;
-  padding: 2rem;
-  border-radius: 8px;
+  background: ${({ theme }) => theme.surface};
+  padding: 1.2rem 1.2rem 1rem;
+  border-radius: ${({ theme }) => theme.radiusMd};
   width: 90%;
   max-width: ${({ maxWidth }) => maxWidth || '500px'};
+  max-height: min(86vh, 780px);
+  overflow: auto;
   position: relative;
-  box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+  box-shadow: ${({ theme }) => theme.shadowMd};
+
+  @media (min-width: 768px) {
+    padding: 1.5rem;
+  }
 `;
 
 const CloseButton = styled.button`
@@ -39,6 +46,17 @@ const CloseButton = styled.button`
   font-size: 1.5rem;
   cursor: pointer;
   color: ${({ theme }) => theme.lightText};
+  border-radius: 6px;
+  width: 2rem;
+  height: 2rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  &:hover {
+    background: ${({ theme }) => theme.surfaceAlt};
+    color: ${({ theme }) => theme.primary};
+  }
 `;
 
 const Modal = ({ isOpen, onClose, children, maxWidth }) => {

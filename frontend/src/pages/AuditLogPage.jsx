@@ -6,11 +6,10 @@ import Modal from '../components/Modal';
 import { FaHistory, FaInfoCircle } from 'react-icons/fa';
 import { format } from 'date-fns';
 
-// Styled Components
 const PageContainer = styled.div`
     display: flex;
     flex-direction: column;
-    gap: 1.5rem;
+    gap: 1.2rem;
 `;
 
 const Title = styled.h2`
@@ -23,17 +22,18 @@ const Title = styled.h2`
 
 const Card = styled.div`
     background: #fff;
-    padding: 1.5rem 2rem;
-    border-radius: 8px;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    padding: 1.1rem 1.2rem 1rem;
+    border-radius: 14px;
+    border: 1px solid rgba(9, 30, 66, 0.08);
+    box-shadow: 0 14px 30px rgba(9, 30, 66, 0.08);
 `;
 
 const FilterContainer = styled.div`
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-    gap: 1.5rem;
+    gap: 0.9rem;
     align-items: flex-end;
-    margin-bottom: 1.5rem;
+    margin-bottom: 0.9rem;
 `;
 
 const InputGroup = styled.div`
@@ -48,24 +48,24 @@ const Label = styled.label`
 `;
 
 const Input = styled.input`
-    padding: 0.75rem;
+    padding: 0.68rem 0.72rem;
     border: 1px solid ${({ theme }) => theme.border};
-    border-radius: 4px;
+    border-radius: 8px;
 `;
 
 const Select = styled.select`
-    padding: 0.75rem;
+    padding: 0.68rem 0.72rem;
     border: 1px solid ${({ theme }) => theme.border};
-    border-radius: 4px;
+    border-radius: 8px;
     background-color: white;
 `;
 
 const ClearButton = styled.button`
-    padding: 0.75rem;
+    padding: 0.68rem 0.72rem;
     border: 1px solid ${({ theme }) => theme.lightText};
     color: ${({ theme }) => theme.lightText};
     background: transparent;
-    border-radius: 4px;
+    border-radius: 8px;
     cursor: pointer;
     font-weight: 600;
     
@@ -74,18 +74,30 @@ const ClearButton = styled.button`
     }
 `;
 
+const TableWrapper = styled.div`
+    width: 100%;
+    overflow-x: auto;
+    border: 1px solid ${({ theme }) => theme.border};
+    border-radius: 10px;
+`;
+
 const Table = styled.table`
     width: 100%;
+    min-width: 980px;
     border-collapse: collapse;
-    margin-top: 1rem;
+    margin-top: 0.8rem;
+    font-size: 0.9rem;
     th, td {
-        padding: 1rem;
+        padding: 0.78rem 0.85rem;
         text-align: left;
         border-bottom: 1px solid ${({ theme }) => theme.border};
         vertical-align: middle;
+        white-space: nowrap;
     }
     th {
         background-color: ${({ theme }) => theme.background};
+        font-size: 0.84rem;
+        letter-spacing: 0.01em;
     }
 `;
 
@@ -103,7 +115,7 @@ const DetailsJson = styled.pre`
     background: #f6f9fc;
     border: 1px solid ${({ theme }) => theme.border};
     padding: 1rem;
-    border-radius: 4px;
+    border-radius: 8px;
     white-space: pre-wrap;
     word-break: break-all;
     font-size: 0.85rem;
@@ -111,8 +123,6 @@ const DetailsJson = styled.pre`
     overflow-y: auto;
 `;
 
-
-// --- Component Logic ---
 const AuditLogPage = () => {
     const [logs, setLogs] = useState([]);
     const [users, setUsers] = useState([]);
@@ -141,7 +151,6 @@ const AuditLogPage = () => {
     }, [fetchLogs]);
 
     useEffect(() => {
-        // Fetch the list of users for the filter dropdown
         getAllUsers().then(res => setUsers(res.data)).catch(() => console.error("Could not fetch users for filter."));
     }, []);
 
@@ -192,40 +201,42 @@ const AuditLogPage = () => {
                         <ClearButton onClick={handleClearFilters}>Clear Filters</ClearButton>
                     </FilterContainer>
 
-                    <Table>
-                        <thead>
-                            <tr>
-                                <th>Timestamp</th>
-                                <th>User</th>
-                                <th>Action</th>
-                                <th>Target</th>
-                                <th>Details</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {loading ? (
-                                <tr><td colSpan="5">Loading logs...</td></tr>
-                            ) : logs.length === 0 ? (
-                                <tr><td colSpan="5" style={{ textAlign: 'center', padding: '2rem' }}>No logs found for the selected criteria.</td></tr>
-                            ) : (
-                                logs.map(log => (
-                                    <tr key={log.id}>
-                                        <td>{formatTimestamp(log.timestamp)}</td>
-                                        <td>{log.username}</td>
-                                        <td>{log.action}</td>
-                                        <td>{log.target_type && `${log.target_type} #${log.target_id}`}</td>
-                                        <td>
-                                            {log.details && (
-                                                <DetailsButton onClick={() => handleViewDetails(log.details)} title="View Details">
-                                                    <FaInfoCircle />
-                                                </DetailsButton>
-                                            )}
-                                        </td>
-                                    </tr>
-                                ))
-                            )}
-                        </tbody>
-                    </Table>
+                    <TableWrapper>
+                        <Table>
+                            <thead>
+                                <tr>
+                                    <th>Timestamp</th>
+                                    <th>User</th>
+                                    <th>Action</th>
+                                    <th>Target</th>
+                                    <th>Details</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {loading ? (
+                                    <tr><td colSpan="5">Loading logs...</td></tr>
+                                ) : logs.length === 0 ? (
+                                    <tr><td colSpan="5" style={{ textAlign: 'center', padding: '2rem' }}>No logs found for the selected criteria.</td></tr>
+                                ) : (
+                                    logs.map(log => (
+                                        <tr key={log.id}>
+                                            <td>{formatTimestamp(log.timestamp)}</td>
+                                            <td>{log.username}</td>
+                                            <td>{log.action}</td>
+                                            <td>{log.target_type && `${log.target_type} #${log.target_id}`}</td>
+                                            <td>
+                                                {log.details && (
+                                                    <DetailsButton onClick={() => handleViewDetails(log.details)} title="View Details">
+                                                        <FaInfoCircle />
+                                                    </DetailsButton>
+                                                )}
+                                            </td>
+                                        </tr>
+                                    ))
+                                )}
+                            </tbody>
+                        </Table>
+                    </TableWrapper>
                     <Pagination pagination={pagination} setPagination={setPagination} />
                 </Card>
             </PageContainer>

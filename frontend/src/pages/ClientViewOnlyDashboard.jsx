@@ -39,8 +39,8 @@ const ConfirmationButton = styled.button`
 
 const StatusText = styled.span`
     font-weight: 600;
-    font-size: 0.9rem;
-    width: 82px;
+    font-size: 0.86rem;
+    min-width: 78px;
     color: ${({ confirmed, theme }) => confirmed ? theme.success : theme.lightText};
 `;
 
@@ -68,22 +68,35 @@ const NotesCell = styled.div`
 `;
 
 const NoteInput = styled.input`
-    padding: 0.5rem;
+    padding: 0.48rem 0.58rem;
     border: 1px solid ${({ theme }) => theme.secondary};
-    border-radius: 4px;
+    border-radius: 6px;
     width: 100%;
     max-width: 180px;
 `;
 
-const PageContainer = styled(motion.div)``;
+const PageContainer = styled(motion.div)`
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+`;
+
+const PageTitle = styled.h2`
+    color: ${({ theme }) => theme.primary};
+    margin: 0;
+    line-height: 1.25;
+`;
 
 const ControlsContainer = styled.div`
     display: flex;
     justify-content: space-between;
     align-items: center;
     gap: 1rem;
-    margin-bottom: 1.5rem;
     flex-wrap: wrap;
+
+    @media (max-width: 900px) {
+        align-items: stretch;
+    }
 `;
 
 const FilterGroup = styled.div`
@@ -91,58 +104,77 @@ const FilterGroup = styled.div`
     align-items: center;
     gap: 0.8rem;
     flex-wrap: wrap;
+
+    @media (max-width: 900px) {
+        width: 100%;
+    }
 `;
 
 const SelectInput = styled.select`
-    padding: 0.65rem 0.8rem;
+    padding: 0.6rem 0.76rem;
     border: 1px solid ${({ theme }) => theme.border};
-    border-radius: 8px;
-    font-size: 0.95rem;
+    border-radius: 10px;
+    font-size: 0.9rem;
     background: #fff;
 `;
 
 const RefreshButton = styled.button`
-    padding: 0.75rem 1.5rem;
+    padding: 0.7rem 1.15rem;
     border: none;
     background: ${({ theme }) => theme.secondary};
     color: white;
     font-weight: 600;
-    border-radius: 8px;
+    border-radius: 10px;
     cursor: pointer;
     display: flex;
     align-items: center;
     gap: 0.5rem;
-    transition: all 0.2s;
+    transition: transform 0.2s ease, opacity 0.2s ease;
     &:hover {
-        transform: translateY(-2px);
+        transform: translateY(-1px);
+    }
+    &:active {
+        transform: translateY(0);
+    }
+    @media (max-width: 900px) {
+        margin-left: auto;
     }
 `;
 
 const Card = styled.div`
     background: #fff;
-    border-radius: 12px;
-    box-shadow: 0 4px 20px rgba(0,0,0,0.06);
+    border-radius: 16px;
+    box-shadow: 0 16px 36px rgba(9, 30, 66, 0.08);
+    border: 1px solid rgba(9, 30, 66, 0.08);
     overflow: hidden;
+
+    @media (max-height: 800px) and (min-width: 1024px) {
+        border-radius: 12px;
+    }
 `;
 
 const TableWrapper = styled.div`
     overflow-x: auto;
+    padding: 0 0.25rem 0.5rem;
     @media (max-width: 768px) { display: none; }
 `;
 
 const Table = styled.table`
     width: 100%;
+    min-width: 980px;
     border-collapse: collapse;
-    font-size: 0.95rem;
+    font-size: 0.9rem;
     th, td {
-        padding: 1rem 1.5rem;
+        padding: 0.85rem 1.1rem;
         text-align: left;
         border-bottom: 1px solid ${({ theme }) => theme.border};
+        white-space: nowrap;
     }
     th {
         background-color: #F6F9FC;
         font-weight: 600;
         color: ${({ theme }) => theme.lightText};
+        letter-spacing: 0.01em;
     }
     tr:last-child td {
         border-bottom: none;
@@ -150,12 +182,25 @@ const Table = styled.table`
     tr:hover {
         background-color: #F6F9FC;
     }
+
+    @media (max-height: 800px) and (min-width: 1024px) {
+        font-size: 0.84rem;
+        th, td {
+            padding: 0.7rem 0.9rem;
+        }
+    }
 `;
 
 const AmountCell = styled.td`
     font-weight: 600;
     font-family: 'Courier New', Courier, monospace;
     color: ${({ isCredit, theme }) => isCredit ? theme.success : theme.error};
+`;
+
+const ConfirmationCell = styled.td`
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
 `;
 
 const TypeCell = styled.td`
@@ -166,7 +211,7 @@ const TypeCell = styled.td`
 
 const EmptyStateContainer = styled.div`
     text-align: center;
-    padding: 4rem;
+    padding: 3rem;
     color: ${({ theme }) => theme.lightText};
 `;
 
@@ -202,7 +247,7 @@ const MobileListContainer = styled.div`
     flex-direction: column;
     @media (max-width: 768px) {
         display: flex;
-        padding: 0 1rem;
+        padding: 0 0.85rem;
     }
 `;
 
@@ -211,7 +256,7 @@ const MobileCard = styled(motion.div)`
     box-shadow: none;
     border-radius: 0;
     border-bottom: 1px solid ${({ theme }) => theme.border};
-    padding: 1rem 0.5rem;
+    padding: 0.9rem 0.4rem;
     &:last-child {
         border-bottom: none;
     }
@@ -243,6 +288,12 @@ const MobileRow = styled.div`
     .label {
         font-weight: 600;
         color: ${({ theme }) => theme.primary};
+    }
+
+    @media (max-width: 420px) {
+        align-items: flex-start;
+        flex-direction: column;
+        gap: 0.45rem;
     }
 `;
 
@@ -406,9 +457,9 @@ const ClientViewOnlyDashboard = () => {
     return (
         <PageContainer initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
             <ControlsContainer>
-                <h2 style={{ color: '#0A2540', margin: 0 }}>
+                <PageTitle>
                     Transactions for Today ({format(new Date(todayDate), 'dd/MM/yyyy')})
-                </h2>
+                </PageTitle>
                 <FilterGroup>
                     <SelectInput
                         value={filters.confirmation}
@@ -463,7 +514,7 @@ const ClientViewOnlyDashboard = () => {
                                             <AmountCell isCredit={isCredit}>
                                                 {isCredit ? '+' : '-'}{formatCurrency(tx.amount)}
                                             </AmountCell>
-                                            <td style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                                            <ConfirmationCell>
                                                 {isUpdatingConfirmation ? (
                                                     <LoadingSpinner />
                                                 ) : isConfirmedByPortal ? (
@@ -478,7 +529,7 @@ const ClientViewOnlyDashboard = () => {
                                                 <StatusText confirmed={isConfirmedByPortal}>
                                                     {isConfirmedByPortal ? 'Confirmed' : 'Pending'}
                                                 </StatusText>
-                                            </td>
+                                            </ConfirmationCell>
                                             <td>
                                                 {isEditingNote ? (
                                                     <NoteInput

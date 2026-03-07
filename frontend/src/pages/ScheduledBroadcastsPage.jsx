@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import styled from 'styled-components';
 import { FaPlus, FaEdit, FaTrash, FaPaperclip, FaFolderOpen, FaTimesCircle, FaImage, FaFilePdf, FaFile } from 'react-icons/fa';
 import { format, parseISO } from 'date-fns';
-import { usePermissions } from '../context/PermissionContext'; // 1. IMPORT PERMISSIONS HOOK
+import { usePermissions } from '../context/PermissionContext';
 import {
     getScheduledBroadcasts, createSchedule, updateSchedule,
     deleteSchedule, toggleSchedule, getBatches, getTemplates,
@@ -11,23 +11,24 @@ import {
 import Modal from '../components/Modal';
 import AttachmentManagerModal from '../components/AttachmentManagerModal';
 
-const PageContainer = styled.div` display: flex; flex-direction: column; gap: 2rem; `;
-const Header = styled.div` display: flex; justify-content: space-between; align-items: center; `;
-const Card = styled.div` background: #fff; padding: 1.5rem 2rem; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); `;
-const Button = styled.button` background-color: ${({ theme, color }) => color === 'primary' ? theme.primary : theme.secondary}; color: white; border: none; padding: 0.75rem 1.5rem; border-radius: 4px; cursor: pointer; font-weight: bold; display: flex; align-items: center; gap: 0.5rem; `;
-const Table = styled.table` width: 100%; border-collapse: collapse; margin-top: 1.5rem; th, td { padding: 1rem; text-align: left; border-bottom: 1px solid ${({ theme }) => theme.border}; } th { background-color: ${({ theme }) => theme.background}; } td.actions { display: flex; gap: 1.5rem; font-size: 1.1rem; svg { cursor: pointer; color: ${({ theme }) => theme.lightText}; &:hover { color: ${({ theme }) => theme.primary}; } } } `;
+const PageContainer = styled.div` display: flex; flex-direction: column; gap: 1.25rem; `;
+const Header = styled.div` display: flex; justify-content: space-between; align-items: center; gap: 1rem; flex-wrap: wrap; `;
+const Card = styled.div` background: #fff; padding: 1.1rem 1.25rem 1rem; border-radius: 14px; border: 1px solid rgba(9, 30, 66, 0.08); box-shadow: 0 14px 30px rgba(9, 30, 66, 0.08); `;
+const Button = styled.button` background-color: ${({ theme, color }) => color === 'primary' ? theme.primary : theme.secondary}; color: white; border: none; padding: 0.66rem 1rem; border-radius: 8px; cursor: pointer; font-weight: 700; display: flex; align-items: center; gap: 0.5rem; `;
+const TableWrapper = styled.div` width: 100%; overflow-x: auto; border: 1px solid ${({ theme }) => theme.border}; border-radius: 10px; `;
+const Table = styled.table` width: 100%; min-width: 980px; border-collapse: collapse; margin-top: 0.8rem; font-size: 0.9rem; th, td { padding: 0.78rem 0.9rem; text-align: left; border-bottom: 1px solid ${({ theme }) => theme.border}; vertical-align: middle; white-space: nowrap; } th { background-color: ${({ theme }) => theme.background}; font-size: 0.84rem; letter-spacing: 0.01em; } td.actions { display: flex; gap: 0.9rem; font-size: 1rem; svg { cursor: pointer; color: ${({ theme }) => theme.lightText}; &:hover { color: ${({ theme }) => theme.primary}; } } } `;
 const SwitchContainer = styled.label` position: relative; display: inline-block; width: 50px; height: 28px; `;
 const SwitchInput = styled.input` opacity: 0; width: 0; height: 0; &:checked + span { background-color: ${({ theme }) => theme.secondary}; } &:checked + span:before { transform: translateX(22px); } &:disabled + span { cursor: not-allowed; background-color: #e9ecef; opacity: 0.7; }`;
 const Slider = styled.span` position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #ccc; transition: .4s; border-radius: 34px; &:before { position: absolute; content: ""; height: 20px; width: 20px; left: 4px; bottom: 4px; background-color: white; transition: .4s; border-radius: 50%; } `;
 const ScheduleInfo = styled.div` font-size: 0.9rem; span { display: block; color: #6B7C93; font-size: 0.8rem; } `;
 const MessageContent = styled.td` max-width: 300px; .content-wrapper { display: flex; align-items: center; gap: 0.5rem; } .text { white-space: pre-wrap; word-break: break-word; } `;
-const ModalForm = styled.form` display: flex; flex-direction: column; gap: 1.5rem; `;
+const ModalForm = styled.form` display: flex; flex-direction: column; gap: 1rem; `;
 const InputGroup = styled.div` display: flex; flex-direction: column; gap: 0.5rem; `;
 const Label = styled.label` font-weight: 500; `;
-const Input = styled.input` padding: 0.75rem; border: 1px solid ${({ theme }) => theme.border}; border-radius: 4px; font-size: 1rem; `;
-const Select = styled.select` padding: 0.75rem; border: 1px solid ${({ theme }) => theme.border}; border-radius: 4px; font-size: 1rem; background: #fff; `;
-const Textarea = styled.textarea` padding: 0.75rem; border: 1px solid ${({ theme }) => theme.border}; border-radius: 4px; font-size: 1rem; min-height: 120px; font-family: inherit; `;
-const Fieldset = styled.fieldset` border: 1px solid #eee; border-radius: 4px; padding: 1rem; display: flex; flex-wrap: wrap; gap: 1rem; `;
+const Input = styled.input` padding: 0.68rem 0.72rem; border: 1px solid ${({ theme }) => theme.border}; border-radius: 8px; font-size: 0.95rem; `;
+const Select = styled.select` padding: 0.68rem 0.72rem; border: 1px solid ${({ theme }) => theme.border}; border-radius: 8px; font-size: 0.95rem; background: #fff; `;
+const Textarea = styled.textarea` padding: 0.68rem 0.72rem; border: 1px solid ${({ theme }) => theme.border}; border-radius: 8px; font-size: 0.95rem; min-height: 120px; font-family: inherit; `;
+const Fieldset = styled.fieldset` border: 1px solid #eee; border-radius: 8px; padding: 0.85rem; display: flex; flex-wrap: wrap; gap: 0.75rem; `;
 const Legend = styled.legend` padding: 0 0.5em; font-weight: 500; color: #6B7C93; `;
 const DayButton = styled.button` padding: 0.5rem 0.75rem; border: 1px solid ${({ theme, selected }) => selected ? theme.secondary : theme.border}; background: ${({ theme, selected }) => selected ? '#e6fff9' : '#fff'}; color: ${({ theme, selected }) => selected ? theme.secondary : theme.text}; border-radius: 20px; font-weight: 600; cursor: pointer; `;
 const AttachmentControls = styled.div` display: flex; gap: 1rem; `;
@@ -36,12 +37,21 @@ const HiddenInput = styled.input.attrs({ type: 'file' })` display: none; `;
 const AttachmentPreview = styled.div` margin-top: 1rem; padding: 1rem; background: #f6f9fc; border: 1px solid ${({ theme }) => theme.border}; border-radius: 8px; display: flex; align-items: center; justify-content: space-between; `;
 const FileInfo = styled.div` display: flex; align-items: center; gap: 1rem; .icon { font-size: 2rem; color: #666; } `;
 const RemoveButton = styled(FaTimesCircle)` cursor: pointer; color: #999; &:hover { color: ${({ theme }) => theme.error}; } `;
+const FormRow = styled.div`
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.9rem;
+
+    @media (max-width: 760px) {
+        grid-template-columns: 1fr;
+    }
+`;
 
 const daysOfWeek = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const daysOfWeekFull = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
 const ScheduledBroadcastsPage = () => {
-    const { hasPermission } = usePermissions(); // 2. GET PERMISSION CHECKER
+    const { hasPermission } = usePermissions();
     const canView = hasPermission('broadcast:schedules:view');
     const canCreate = hasPermission('broadcast:schedules:create');
     const canUpdate = hasPermission('broadcast:schedules:update');
@@ -147,51 +157,51 @@ const ScheduledBroadcastsPage = () => {
             <PageContainer>
                 <Header>
                     <h2>Scheduled Broadcasts</h2>
-                    {/* 4. WRAP "NEW SCHEDULE" BUTTON IN PERMISSION CHECK */}
                     {canCreate && (
                         <Button onClick={() => handleOpenModal(null)}><FaPlus /> New Schedule</Button>
                     )}
                 </Header>
                 <Card>
                     <p>Automate your broadcasts by setting them to run at specific times or on a recurring basis.</p>
-                    <Table>
-                        <thead><tr><th>Active</th><th>Batch Name</th><th>Schedule</th><th>Content</th>{(canUpdate || canDelete) && <th>Actions</th>}</tr></thead>
-                        <tbody>
-                            {loading ? ( <tr><td colSpan="5">Loading...</td></tr> ) 
-                            : schedules.length === 0 ? ( <tr><td colSpan="5">No schedules created.</td></tr> ) 
-                            : ( schedules.map(s => (
-                                    <tr key={s.id}>
-                                        <td>
-                                            <SwitchContainer>
-                                                <SwitchInput 
-                                                    type="checkbox" 
-                                                    checked={!!s.is_active} 
-                                                    onChange={() => handleToggle(s)} 
-                                                    disabled={!canUpdate} // 5. DISABLE INTERACTIVE ELEMENTS
-                                                />
-                                                <Slider />
-                                            </SwitchContainer>
-                                        </td>
-                                        <td>{s.batch_name}</td>
-                                        <td><ScheduleInfo>{formatSchedule(s)}<span>Timezone: {s.timezone}</span></ScheduleInfo></td>
-                                        <MessageContent>
-                                            <div className='content-wrapper'>
-                                                {s.upload_id && <FaPaperclip title={s.original_filename} />}
-                                                <span className='text'>{s.message}</span>
-                                            </div>
-                                        </MessageContent>
-                                        {/* 6. WRAP ACTIONS COLUMN IN PERMISSION CHECK */}
-                                        {(canUpdate || canDelete) && (
-                                            <td className="actions">
-                                                {canUpdate && <FaEdit onClick={() => handleOpenModal(s)} title="Edit"/>}
-                                                {canDelete && <FaTrash onClick={() => handleDelete(s.id)} title="Delete"/>}
+                    <TableWrapper>
+                        <Table>
+                            <thead><tr><th>Active</th><th>Batch Name</th><th>Schedule</th><th>Content</th>{(canUpdate || canDelete) && <th>Actions</th>}</tr></thead>
+                            <tbody>
+                                {loading ? ( <tr><td colSpan={(canUpdate || canDelete) ? 5 : 4}>Loading...</td></tr> )
+                                : schedules.length === 0 ? ( <tr><td colSpan={(canUpdate || canDelete) ? 5 : 4}>No schedules created.</td></tr> )
+                                : ( schedules.map(s => (
+                                        <tr key={s.id}>
+                                            <td>
+                                                <SwitchContainer>
+                                                    <SwitchInput
+                                                        type="checkbox"
+                                                        checked={!!s.is_active}
+                                                        onChange={() => handleToggle(s)}
+                                                        disabled={!canUpdate}
+                                                    />
+                                                    <Slider />
+                                                </SwitchContainer>
                                             </td>
-                                        )}
-                                    </tr>
-                                ))
-                            )}
-                        </tbody>
-                    </Table>
+                                            <td>{s.batch_name}</td>
+                                            <td><ScheduleInfo>{formatSchedule(s)}<span>Timezone: {s.timezone}</span></ScheduleInfo></td>
+                                            <MessageContent>
+                                                <div className='content-wrapper'>
+                                                    {s.upload_id && <FaPaperclip title={s.original_filename} />}
+                                                    <span className='text'>{s.message}</span>
+                                                </div>
+                                            </MessageContent>
+                                            {(canUpdate || canDelete) && (
+                                                <td className="actions">
+                                                    {canUpdate && <FaEdit onClick={() => handleOpenModal(s)} title="Edit"/>}
+                                                    {canDelete && <FaTrash onClick={() => handleDelete(s.id)} title="Delete"/>}
+                                                </td>
+                                            )}
+                                        </tr>
+                                    ))
+                                )}
+                            </tbody>
+                        </Table>
+                    </TableWrapper>
                 </Card>
             </PageContainer>
             {/* Modal is implicitly protected */}
@@ -334,7 +344,7 @@ const ScheduleModal = ({ isOpen, onClose, onSave, schedule, batches, templates, 
                     <label><input type="radio" name="schedule_type" value="DAILY" checked={formData.schedule_type === 'DAILY'} onChange={handleChange} /> Daily</label>
                     <label><input type="radio" name="schedule_type" value="WEEKLY" checked={formData.schedule_type === 'WEEKLY'} onChange={handleChange} /> Weekly</label>
                     </Fieldset>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem' }}>
+                    <FormRow>
                         <InputGroup>
                             <Label>Time ({formData.timezone})</Label>
                             <Input type="time" name="scheduled_at_time" value={formData.scheduled_at_time} onChange={handleChange} required />
@@ -342,10 +352,10 @@ const ScheduleModal = ({ isOpen, onClose, onSave, schedule, batches, templates, 
                         {formData.schedule_type === 'ONCE' && (
                             <InputGroup>
                                 <Label>Date</Label>
-                                <Input type="date" name="scheduled_at_date" value={formData.scheduled_at_date} onChange={handleChange} required />
+                            <Input type="date" name="scheduled_at_date" value={formData.scheduled_at_date} onChange={handleChange} required />
                             </InputGroup>
                         )}
-                    </div>
+                    </FormRow>
                     {formData.schedule_type === 'WEEKLY' && (
                         <Fieldset>
                             <Legend>Days of the Week</Legend>

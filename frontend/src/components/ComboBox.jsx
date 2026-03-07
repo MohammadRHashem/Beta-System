@@ -13,7 +13,7 @@ const InputContainer = styled.div`
     align-items: center;
     background: #fff;
     border: 1px solid ${({ theme }) => theme.border};
-    border-radius: 4px;
+    border-radius: 8px;
     padding-right: 0.5rem;
     &:focus-within {
         border-color: ${({ theme }) => theme.primary};
@@ -23,10 +23,10 @@ const InputContainer = styled.div`
 
 const Input = styled.input`
     width: 100%;
-    padding: 0.75rem;
+    padding: 0.66rem 0.72rem;
     border: none;
-    border-radius: 4px;
-    font-size: 1rem;
+    border-radius: 8px;
+    font-size: 0.95rem;
     outline: none;
 `;
 
@@ -37,7 +37,7 @@ const Dropdown = styled.ul`
     width: 100%;
     background: #fff;
     border: 1px solid ${({ theme }) => theme.border};
-    border-radius: 4px;
+    border-radius: 8px;
     box-shadow: 0 4px 8px rgba(0,0,0,0.1);
     list-style: none;
     max-height: 200px;
@@ -46,7 +46,7 @@ const Dropdown = styled.ul`
 `;
 
 const DropdownItem = styled.li`
-    padding: 0.75rem;
+    padding: 0.62rem 0.72rem;
     cursor: pointer;
     &:hover, &.selected {
         background-color: ${({ theme }) => theme.background};

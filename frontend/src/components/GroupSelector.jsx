@@ -5,9 +5,9 @@ import { FaSyncAlt } from 'react-icons/fa';
 
 const Container = styled.div`
     background: #fff;
-    padding: 1.5rem;
+    padding: 1.1rem 1rem 1rem;
     border: 1px solid ${({ theme }) => theme.border};
-    border-radius: 8px;
+    border-radius: 12px;
     height: fit-content;
     display: flex;
     flex-direction: column;
@@ -25,7 +25,7 @@ const SyncButton = styled.button`
     border: 1px solid ${({ theme }) => theme.primary};
     color: ${({ theme }) => theme.primary};
     padding: 0.5rem 0.75rem;
-    border-radius: 4px;
+    border-radius: 8px;
     display: flex;
     align-items: center;
     gap: 0.5rem;
@@ -48,10 +48,10 @@ const SyncButton = styled.button`
 
 const SearchInput = styled.input`
     width: 100%;
-    padding: 0.75rem;
+    padding: 0.62rem 0.72rem;
     border: 1px solid ${({ theme }) => theme.border};
-    border-radius: 4px;
-    margin-bottom: 0.5rem;
+    border-radius: 8px;
+    margin-bottom: 0.45rem;
 `;
 
 const GroupList = styled.ul`
@@ -59,8 +59,8 @@ const GroupList = styled.ul`
     max-height: 400px;
     overflow-y: auto;
     border: 1px solid ${({ theme }) => theme.border};
-    border-radius: 4px;
-    padding: 0.5rem;
+    border-radius: 8px;
+    padding: 0.4rem;
     flex-grow: 1;
 `;
 
@@ -68,8 +68,8 @@ const GroupItem = styled.li`
     display: flex;
     align-items: center;
     gap: 0.75rem;
-    padding: 0.75rem;
-    border-radius: 4px;
+    padding: 0.62rem;
+    border-radius: 8px;
     cursor: pointer;
     &:hover {
         background-color: ${({ theme }) => theme.background};
@@ -83,16 +83,16 @@ const Checkbox = styled.input.attrs({ type: 'checkbox' })`
 `;
 
 const BatchCreationContainer = styled.div`
-    margin-top: 1.5rem;
-    padding-top: 1.5rem;
+    margin-top: 1rem;
+    padding-top: 1rem;
     border-top: 1px solid ${({ theme }) => theme.border};
 `;
 
 const BatchInput = styled.input`
     width: 100%;
-    padding: 0.75rem;
+    padding: 0.62rem 0.72rem;
     border: 1px solid ${({ theme }) => theme.border};
-    border-radius: 4px;
+    border-radius: 8px;
     margin-bottom: 0.5rem;
 `;
 
@@ -102,7 +102,7 @@ const SaveButton = styled.button`
     color: white;
     border: none;
     padding: 0.6rem 1rem;
-    border-radius: 4px;
+    border-radius: 8px;
     cursor: ${({ disabled }) => disabled ? 'not-allowed' : 'pointer'};
     font-weight: bold;
 `;
@@ -114,7 +114,7 @@ const CancelButton = styled.button`
     border: 1px solid ${({ theme }) => theme.lightText};
     color: ${({ theme }) => theme.lightText};
     padding: 0.6rem 1rem;
-    border-radius: 4px;
+    border-radius: 8px;
     cursor: pointer;
     font-weight: bold;
     
@@ -131,14 +131,13 @@ const SelectAllButton = styled.button`
     background: ${({ theme }) => theme.background};
     font-weight: 600;
     cursor: pointer;
-    border-radius: 4px;
+    border-radius: 8px;
 
     &:hover {
         background: #e9ecef;
     }
 `;
 
-// 1. ACCEPT PERMISSION PROPS
 const GroupSelector = ({ allGroups, selectedGroups, setSelectedGroups, onBatchUpdate, editingBatch, setEditingBatch, onSync, isSyncing, canCreateBatch, canEditBatch, canSyncGroups }) => {
     const [searchTerm, setSearchTerm] = useState('');
     const [batchName, setBatchName] = useState('');
@@ -236,7 +235,6 @@ const GroupSelector = ({ allGroups, selectedGroups, setSelectedGroups, onBatchUp
         <Container>
             <HeaderContainer>
                 <h3>Select Groups ({selectedGroups.size} selected)</h3>
-                {/* 2. WRAP SYNC BUTTON IN PERMISSION CHECK */}
                 {canSyncGroups && (
                     <SyncButton onClick={onSync} disabled={isSyncing}>
                         <FaSyncAlt className={isSyncing ? 'spin' : ''} />
@@ -268,7 +266,6 @@ const GroupSelector = ({ allGroups, selectedGroups, setSelectedGroups, onBatchUp
                 ))}
             </GroupList>
 
-            {/* 3. WRAP ENTIRE BATCH CREATION SECTION IN PERMISSION CHECK */}
             {(canCreateBatch || canEditBatch) && (
                 <BatchCreationContainer>
                     <h4>{isEditMode ? `Editing: ${editingBatch.name}` : 'Create New Batch'}</h4>

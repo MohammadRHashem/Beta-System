@@ -14,20 +14,27 @@ import Select from 'react-select';
 const PageContainer = styled.div`
   display: flex;
   flex-direction: column;
-  gap: 2rem;
+  gap: 1.25rem;
 `;
 
 const Header = styled.div`
   display: flex;
   justify-content: space-between;
   align-items: center;
+  flex-wrap: wrap;
+  gap: 0.75rem;
 `;
 
 const Card = styled.div`
   background: #fff;
-  padding: 1.5rem 2rem;
-  border-radius: 8px;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+  padding: 1.05rem 1.2rem;
+  border-radius: 12px;
+  box-shadow: ${({ theme }) => theme.shadowSm};
+  border: 1px solid ${({ theme }) => theme.border};
+
+  @media (min-width: 1100px) {
+    padding: 1.2rem 1.4rem;
+  }
 `;
 
 const Button = styled.button`
@@ -53,12 +60,15 @@ const ResetButton = styled(Button)`
 
 const Table = styled.table`
   width: 100%;
+  display: block;
+  overflow-x: auto;
   border-collapse: collapse;
-  margin-top: 1.5rem;
+  margin-top: 1rem;
   th, td {
-    padding: 1rem;
+    padding: 0.75rem;
     text-align: left;
     border-bottom: 1px solid ${({ theme }) => theme.border};
+    white-space: nowrap;
   }
   th {
     background-color: ${({ theme }) => theme.background};

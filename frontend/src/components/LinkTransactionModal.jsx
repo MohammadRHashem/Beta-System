@@ -9,12 +9,11 @@ const ListContainer = styled.div`
     max-height: 400px;
     overflow-y: auto;
     border: 1px solid ${({ theme }) => theme.border};
-    border-radius: 6px;
+    border-radius: 8px;
 `;
 
-// === FIX #1: Renamed from InvoiceItem to TransactionItem for clarity and to match usage ===
 const TransactionItem = styled.div`
-    padding: 1rem;
+    padding: 0.85rem;
     border-bottom: 1px solid ${({ theme }) => theme.border};
     cursor: pointer;
     display: flex;
@@ -30,7 +29,6 @@ const TransactionItem = styled.div`
     }
 `;
 
-// === FIX #2: Renamed from InvoiceInfo to TransactionInfo for clarity ===
 const TransactionInfo = styled.div`
     p { margin: 0; }
     strong { color: ${({ theme }) => theme.primary}; }
@@ -41,10 +39,15 @@ const LinkButton = styled.button`
     background-color: ${({ theme }) => theme.secondary};
     color: white;
     border: none;
-    padding: 0.5rem 1rem;
-    border-radius: 4px;
+    padding: 0.46rem 0.72rem;
+    border-radius: 8px;
     font-weight: bold;
     cursor: pointer;
+`;
+
+const EmptyState = styled.p`
+    padding: 1rem;
+    text-align: center;
 `;
 
 const LinkTransactionModal = ({ isOpen, onClose, invoice }) => {
@@ -96,7 +99,7 @@ const LinkTransactionModal = ({ isOpen, onClose, invoice }) => {
             <ListContainer>
                 {loading ? <p>Loading...</p> : (
                     candidates.length === 0 ? (
-                        <p style={{padding: '1rem', textAlign: 'center'}}>No unused bank transactions found for this amount.</p>
+                        <EmptyState>No unused bank transactions found for this amount.</EmptyState>
                     ) : (
                         candidates.map(tx => (
                             <TransactionItem key={`${tx.source}-${tx.id}`}>

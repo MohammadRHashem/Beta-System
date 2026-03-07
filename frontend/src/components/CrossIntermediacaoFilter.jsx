@@ -4,8 +4,9 @@ import { FaBroom, FaSearch, FaSyncAlt } from 'react-icons/fa';
 
 const FilterCard = styled.div`
     background: #fff;
-    border: 1px solid ${({ theme }) => theme.border};
-    border-radius: 10px;
+    border: 1px solid rgba(9, 30, 66, 0.08);
+    border-radius: 14px;
+    box-shadow: 0 14px 30px rgba(9, 30, 66, 0.08);
     padding: 1rem;
     display: flex;
     flex-direction: column;
@@ -45,7 +46,7 @@ const BaseInput = styled.input`
     width: 100%;
     padding: 0.68rem 0.75rem;
     border: 1px solid ${({ theme }) => theme.border};
-    border-radius: 6px;
+    border-radius: 8px;
     font-size: 0.9rem;
     background: #fff;
 `;
@@ -54,7 +55,7 @@ const Select = styled.select`
     width: 100%;
     padding: 0.68rem 0.75rem;
     border: 1px solid ${({ theme }) => theme.border};
-    border-radius: 6px;
+    border-radius: 8px;
     font-size: 0.9rem;
     background: #fff;
 `;
@@ -86,7 +87,7 @@ const ActionButton = styled.button`
     display: inline-flex;
     align-items: center;
     gap: 0.45rem;
-    border-radius: 6px;
+    border-radius: 8px;
     padding: 0.62rem 0.95rem;
     font-size: 0.86rem;
     font-weight: 700;
