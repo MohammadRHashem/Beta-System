@@ -30,7 +30,7 @@ import {
 import { formatInTimeZone } from 'date-fns-tz';
 import Modal from '../components/Modal';
 
-const PageContainer = styled.div` display: flex; flex-direction: column; gap: 1.25rem; `;
+const PageContainer = styled.div` display: flex; flex-direction: column; gap: 1.25rem; height: 100%; min-height: 0; overflow: hidden; `;
 const Header = styled.div` display: flex; justify-content: space-between; align-items: center; gap: 1rem; flex-wrap: wrap; `;
 const Card = styled.div`
     background: #fff;
@@ -38,14 +38,20 @@ const Card = styled.div`
     border-radius: 14px;
     border: 1px solid rgba(9, 30, 66, 0.08);
     box-shadow: 0 14px 30px rgba(9, 30, 66, 0.08);
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    flex: 1;
 `;
 const Title = styled.h2` display: flex; align-items: center; gap: 0.7rem; margin: 0; color: ${({ theme }) => theme.primary}; line-height: 1.2; `;
 const CardTopBar = styled.div` display: flex; justify-content: space-between; align-items: center; gap: 0.75rem; flex-wrap: wrap; `;
 const TableWrapper = styled.div`
     width: 100%;
-    overflow-x: auto;
+    overflow: auto;
     border: 1px solid ${({ theme }) => theme.border};
     border-radius: 10px;
+    min-height: 0;
+    flex: 1;
 `;
 const Table = styled.table`
     width: 100%;

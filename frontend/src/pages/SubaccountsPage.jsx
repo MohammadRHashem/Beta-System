@@ -15,6 +15,9 @@ const PageContainer = styled.div`
   display: flex;
   flex-direction: column;
   gap: 1.25rem;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
 `;
 
 const Header = styled.div`
@@ -31,6 +34,10 @@ const Card = styled.div`
   border-radius: 12px;
   box-shadow: ${({ theme }) => theme.shadowSm};
   border: 1px solid ${({ theme }) => theme.border};
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1;
 
   @media (min-width: 1100px) {
     padding: 1.2rem 1.4rem;
@@ -61,7 +68,9 @@ const ResetButton = styled(Button)`
 const Table = styled.table`
   width: 100%;
   display: block;
-  overflow-x: auto;
+  overflow: auto;
+  min-height: 0;
+  flex: 1;
   border-collapse: collapse;
   margin-top: 1rem;
   th, td {

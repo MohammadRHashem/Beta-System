@@ -10,6 +10,9 @@ const PageContainer = styled.div`
     display: flex;
     flex-direction: column;
     gap: 1.2rem;
+    height: 100%;
+    min-height: 0;
+    overflow: hidden;
 `;
 
 const Header = styled.div`
@@ -40,6 +43,9 @@ const CountersGrid = styled.div`
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
     gap: 1rem;
+    min-height: 0;
+    overflow: auto;
+    padding-right: 0.15rem;
 `;
 
 const PositionPage = () => {

@@ -7,6 +7,9 @@ const PageContainer = styled.div`
     display: flex;
     flex-direction: column;
     gap: 1.25rem;
+    height: 100%;
+    min-height: 0;
+    overflow: hidden;
 `;
 
 const Card = styled.div`
@@ -15,6 +18,13 @@ const Card = styled.div`
     border-radius: 14px;
     border: 1px solid rgba(9, 30, 66, 0.08);
     box-shadow: 0 14px 30px rgba(9, 30, 66, 0.08);
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+
+    &:last-child {
+        flex: 1;
+    }
 `;
 
 const SearchInput = styled.input`
@@ -29,9 +39,11 @@ const SearchInput = styled.input`
 
 const TableWrapper = styled.div`
     width: 100%;
-    overflow-x: auto;
+    overflow: auto;
     border: 1px solid ${({ theme }) => theme.border};
     border-radius: 10px;
+    min-height: 0;
+    flex: 1;
 `;
 
 const SettingsTable = styled.table`

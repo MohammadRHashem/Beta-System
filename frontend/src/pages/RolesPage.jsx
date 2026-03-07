@@ -9,6 +9,9 @@ const PageContainer = styled.div`
     display: flex;
     flex-direction: column;
     gap: 1.2rem;
+    height: 100%;
+    min-height: 0;
+    overflow: hidden;
 `;
 
 const Title = styled.h2`
@@ -24,6 +27,8 @@ const MainLayout = styled.div`
     grid-template-columns: minmax(260px, 320px) 1fr;
     gap: 1rem;
     align-items: flex-start;
+    min-height: 0;
+    flex: 1;
 
     @media (max-width: 992px) {
         grid-template-columns: 1fr;
@@ -36,13 +41,17 @@ const Card = styled.div`
     border-radius: 14px;
     border: 1px solid rgba(9, 30, 66, 0.08);
     box-shadow: 0 14px 30px rgba(9, 30, 66, 0.08);
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
 `;
 
 const RoleList = styled.ul`
     list-style: none;
     padding: 0;
     margin: 0;
-    max-height: calc(100vh - 280px);
+    min-height: 0;
+    flex: 1;
     overflow-y: auto;
 
     @media (max-width: 992px) {
@@ -73,8 +82,9 @@ const RoleListItem = styled.li`
 `;
 
 const PermissionsPanel = styled.div`
-    position: sticky;
-    top: 1rem;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
 
     @media (max-width: 992px) {
         position: static;
@@ -215,12 +225,13 @@ const Input = styled.input`
 `;
 
 const PermissionsScrollArea = styled.div`
-    max-height: calc(100vh - 250px);
+    min-height: 0;
+    flex: 1;
     overflow-y: auto;
     padding-right: 0.5rem;
 
     @media (max-height: 800px) and (min-width: 1024px) {
-        max-height: calc(100vh - 220px);
+        max-height: none;
     }
 
     @media (max-width: 992px) {

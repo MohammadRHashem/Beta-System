@@ -126,7 +126,14 @@ const LoadingSpinner = styled(FaSpinner)`
     animation: ${spin} 1s linear infinite;
 `;
 
-const PageContainer = styled(motion.div)``;
+const PageContainer = styled(motion.div)`
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+`;
 const ControlsContainer = styled.div`
   display: flex;
   flex-direction: column;
@@ -272,9 +279,15 @@ const Card = styled.div`
   border-radius: 12px;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.06);
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1;
 `;
 const TableWrapper = styled.div`
-  overflow-x: auto;
+  overflow: auto;
+  min-height: 0;
+  flex: 1;
   @media (max-width: 768px) {
     display: none;
   }
@@ -418,6 +431,8 @@ const MobileListContainer = styled.div`
   @media (max-width: 768px) {
     display: flex;
     padding: 0 1rem;
+    min-height: 0;
+    overflow: auto;
   }
 `;
 const MobileCard = styled(motion.div)`

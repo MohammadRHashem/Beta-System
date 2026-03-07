@@ -79,6 +79,9 @@ const PageContainer = styled(motion.div)`
     display: flex;
     flex-direction: column;
     gap: 1.25rem;
+    height: 100%;
+    min-height: 0;
+    overflow: hidden;
 `;
 
 const PageTitle = styled.h2`
@@ -147,6 +150,10 @@ const Card = styled.div`
     box-shadow: 0 16px 36px rgba(9, 30, 66, 0.08);
     border: 1px solid rgba(9, 30, 66, 0.08);
     overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    flex: 1;
 
     @media (max-height: 800px) and (min-width: 1024px) {
         border-radius: 12px;
@@ -154,7 +161,9 @@ const Card = styled.div`
 `;
 
 const TableWrapper = styled.div`
-    overflow-x: auto;
+    overflow: auto;
+    min-height: 0;
+    flex: 1;
     padding: 0 0.25rem 0.5rem;
     @media (max-width: 768px) { display: none; }
 `;
@@ -248,6 +257,8 @@ const MobileListContainer = styled.div`
     @media (max-width: 768px) {
         display: flex;
         padding: 0 0.85rem;
+        min-height: 0;
+        overflow: auto;
     }
 `;
 

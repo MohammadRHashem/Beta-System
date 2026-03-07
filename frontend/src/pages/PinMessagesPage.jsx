@@ -12,7 +12,9 @@ const MainContent = styled.div`
   grid-template-columns: minmax(320px, 390px) 1fr;
   gap: 1.5rem;
   align-items: flex-start;
+  height: 100%;
   min-height: 0;
+  overflow: hidden;
 
   @media (max-width: 1400px) and (min-width: 1201px) {
     grid-template-columns: minmax(300px, 360px) 1fr;
@@ -27,14 +29,16 @@ const LeftPanel = styled.div`
   display: flex;
   flex-direction: column;
   gap: 1.5rem;
-  position: sticky;
-  top: 0.75rem;
+  min-height: 0;
+  overflow: auto;
 `;
 
 const RightPanel = styled.div`
   display: flex;
   flex-direction: column;
   gap: 1.5rem;
+  min-height: 0;
+  overflow: auto;
 `;
 
 const Card = styled.div`
@@ -42,6 +46,7 @@ const Card = styled.div`
   padding: 1.2rem;
   border: 1px solid ${({ theme }) => theme.border};
   border-radius: 12px;
+  overflow: auto;
 `;
 
 const Field = styled.div`

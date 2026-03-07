@@ -5,6 +5,10 @@ import { usePermissions } from '../context/PermissionContext';
 
 const PageContainer = styled.div`
     max-width: 860px;
+    height: 100%;
+    min-height: 0;
+    overflow: auto;
+    padding-right: 0.15rem;
 `;
 
 const Card = styled.div`

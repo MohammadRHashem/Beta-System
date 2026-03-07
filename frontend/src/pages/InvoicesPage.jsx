@@ -32,6 +32,8 @@ const PageContainer = styled.div`
   flex-direction: column;
   gap: 1.1rem;
   height: 100%;
+  min-height: 0;
+  overflow: hidden;
 `;
 
 const Header = styled.div`
@@ -91,6 +93,13 @@ const RefreshBanner = styled.div`
   align-items: center;
   justify-content: center;
   gap: 0.75rem;
+`;
+
+const TableArea = styled.div`
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1;
 `;
 
 const InvoicesPage = ({ allGroups }) => {
@@ -239,16 +248,18 @@ const InvoicesPage = ({ allGroups }) => {
           recipientNames={recipientNames}
         />
 
-        <InvoiceTable
-          invoices={invoices}
-          loading={loading}
-          onEdit={openEditModal}
-          onLink={openLinkModal}
-          onDelete={handleDelete} // Pass delete handler
-          pagination={pagination}
-          setPagination={setPagination}
-          hasPermission={hasPermission} // Pass the permission checker function down
-        />
+        <TableArea>
+          <InvoiceTable
+            invoices={invoices}
+            loading={loading}
+            onEdit={openEditModal}
+            onLink={openLinkModal}
+            onDelete={handleDelete} // Pass delete handler
+            pagination={pagination}
+            setPagination={setPagination}
+            hasPermission={hasPermission} // Pass the permission checker function down
+          />
+        </TableArea>
       </PageContainer>
       
       {/* Modals are implicitly protected since buttons that open them are checked */}

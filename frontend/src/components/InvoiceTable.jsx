@@ -16,12 +16,20 @@ const formatDisplayDateTime = (dbDateString) => {
     }
 };
 
+const TableSection = styled.div`
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    flex: 1;
+`;
+
 const TableWrapper = styled.div`
     background: #fff;
     border-radius: 14px;
     border: 1px solid rgba(9, 30, 66, 0.08);
     box-shadow: 0 14px 30px rgba(9, 30, 66, 0.08);
-    max-height: 68vh;
+    min-height: 0;
+    flex: 1;
     overflow: auto;
 `;
 
@@ -130,72 +138,74 @@ const InvoiceTable = ({ invoices, loading, onEdit, onLink, onDelete, pagination,
 
     return (
         <>
-            <TableWrapper>
-                <Table>
-                    <Thead>
-                        <tr>
-                            <Th>Received At</Th>
-                            <Th>Transaction ID</Th>
-                            <Th>Sender</Th>
-                            <Th>Recipient</Th>
-                            <Th>Source Group</Th>
-                            <Th className="currency">Amount</Th>
-                            <Th>Link Status</Th>
-                            <Th>Actions</Th>
-                        </tr>
-                    </Thead>
-                    <tbody>
-                        {invoices.map((inv) => {
-                            // ... (isDuplicate and needsReview logic is unchanged) ...
-                            let isDuplicate = false;
-                            if (inv.transaction_id && !inv.is_manual) {
-                                const compositeKey = `${inv.transaction_id}|${inv.amount}|${inv.sender_name}`;
-                                if (duplicateCounts[compositeKey] > 1) {
-                                    isDuplicate = true;
+            <TableSection>
+                <TableWrapper>
+                    <Table>
+                        <Thead>
+                            <tr>
+                                <Th>Received At</Th>
+                                <Th>Transaction ID</Th>
+                                <Th>Sender</Th>
+                                <Th>Recipient</Th>
+                                <Th>Source Group</Th>
+                                <Th className="currency">Amount</Th>
+                                <Th>Link Status</Th>
+                                <Th>Actions</Th>
+                            </tr>
+                        </Thead>
+                        <tbody>
+                            {invoices.map((inv) => {
+                                // ... (isDuplicate and needsReview logic is unchanged) ...
+                                let isDuplicate = false;
+                                if (inv.transaction_id && !inv.is_manual) {
+                                    const compositeKey = `${inv.transaction_id}|${inv.amount}|${inv.sender_name}`;
+                                    if (duplicateCounts[compositeKey] > 1) {
+                                        isDuplicate = true;
+                                    }
                                 }
-                            }
-                            const needsReview = !inv.is_manual && (!inv.sender_name || !inv.recipient_name || !inv.amount || inv.amount === '0.00');
+                                const needsReview = !inv.is_manual && (!inv.sender_name || !inv.recipient_name || !inv.amount || inv.amount === '0.00');
 
-                            return (
-                                <Tr key={inv.id} isDuplicate={isDuplicate} isDeleted={!!inv.is_deleted}>
-                                    <Td>{formatDisplayDateTime(inv.received_at)}</Td>
-                                    <Td>{inv.transaction_id || ''}</Td>
-                                    <Td>{inv.sender_name || (needsReview && 'REVIEW')}</Td>
-                                    <Td>{inv.recipient_name || (needsReview && 'REVIEW')}</Td>
-                                    <Td>{inv.source_group_name || ''}</Td>
-                                    <Td className={`currency ${needsReview && 'review'}`}>{inv.amount || ''}</Td>
-                                    <Td style={{ textAlign: 'center' }}>
-                                        {inv.linked_transaction_source ? (
-                                            <FaLink 
-                                                style={{ color: '#00C49A', fontSize: '1.1rem' }} 
-                                                title={`Linked to: ${inv.linked_transaction_source} - ${inv.linked_transaction_id}`} 
-                                            />
-                                        ) : (
-                                            // 2. WRAP THE LINK ICON IN A PERMISSION CHECK
-                                            hasPermission('invoice:link') && !inv.is_deleted && inv.message_id && (
-                                                <FaUnlink 
-                                                    style={{ cursor: 'pointer', color: '#6B7C93', fontSize: '1.1rem' }} 
-                                                    title="Link to a bank transaction"
-                                                    onClick={() => onLink(inv)}
+                                return (
+                                    <Tr key={inv.id} isDuplicate={isDuplicate} isDeleted={!!inv.is_deleted}>
+                                        <Td>{formatDisplayDateTime(inv.received_at)}</Td>
+                                        <Td>{inv.transaction_id || ''}</Td>
+                                        <Td>{inv.sender_name || (needsReview && 'REVIEW')}</Td>
+                                        <Td>{inv.recipient_name || (needsReview && 'REVIEW')}</Td>
+                                        <Td>{inv.source_group_name || ''}</Td>
+                                        <Td className={`currency ${needsReview && 'review'}`}>{inv.amount || ''}</Td>
+                                        <Td style={{ textAlign: 'center' }}>
+                                            {inv.linked_transaction_source ? (
+                                                <FaLink
+                                                    style={{ color: '#00C49A', fontSize: '1.1rem' }}
+                                                    title={`Linked to: ${inv.linked_transaction_source} - ${inv.linked_transaction_id}`}
                                                 />
-                                            )
-                                        )}
-                                    </Td>
-                                    <Td className="actions">
-                                        <div className="actions-wrap">
-                                            {inv.media_path && <FaEye onClick={() => handleViewMedia(inv.id)} title="View Media"/>}
-                                            {/* 3. WRAP EDIT AND DELETE ICONS IN PERMISSION CHECKS */}
-                                            {hasPermission('invoice:edit') && <FaEdit onClick={() => onEdit(inv)} title="Edit"/>}
-                                            {hasPermission('invoice:delete') && <FaTrashAlt onClick={() => onDelete(inv.id)} title="Delete"/>}
-                                        </div>
-                                    </Td>
-                                </Tr>
-                            );
-                        })}
-                    </tbody>
-                </Table>
-            </TableWrapper>
-            <Pagination pagination={pagination} setPagination={setPagination} />
+                                            ) : (
+                                                // 2. WRAP THE LINK ICON IN A PERMISSION CHECK
+                                                hasPermission('invoice:link') && !inv.is_deleted && inv.message_id && (
+                                                    <FaUnlink
+                                                        style={{ cursor: 'pointer', color: '#6B7C93', fontSize: '1.1rem' }}
+                                                        title="Link to a bank transaction"
+                                                        onClick={() => onLink(inv)}
+                                                    />
+                                                )
+                                            )}
+                                        </Td>
+                                        <Td className="actions">
+                                            <div className="actions-wrap">
+                                                {inv.media_path && <FaEye onClick={() => handleViewMedia(inv.id)} title="View Media"/>}
+                                                {/* 3. WRAP EDIT AND DELETE ICONS IN PERMISSION CHECKS */}
+                                                {hasPermission('invoice:edit') && <FaEdit onClick={() => onEdit(inv)} title="Edit"/>}
+                                                {hasPermission('invoice:delete') && <FaTrashAlt onClick={() => onDelete(inv.id)} title="Delete"/>}
+                                            </div>
+                                        </Td>
+                                    </Tr>
+                                );
+                            })}
+                        </tbody>
+                    </Table>
+                </TableWrapper>
+                <Pagination pagination={pagination} setPagination={setPagination} />
+            </TableSection>
         </>
     );
 };

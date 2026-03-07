@@ -24,7 +24,9 @@ const PageContainer = styled.div`
     display: flex;
     flex-direction: column;
     gap: 1.1rem;
-    height: calc(100vh - 120px);
+    height: 100%;
+    min-height: 0;
+    overflow: hidden;
 `;
 
 const Header = styled.div`
@@ -90,6 +92,13 @@ const ExportForm = styled.div`
         color: white; border: none; padding: 0.72rem; border-radius: 8px;
         font-weight: bold; cursor: pointer; font-size: 0.95rem; &:hover { opacity: 0.9; }
     }
+`;
+
+const TableArea = styled.div`
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    flex: 1;
 `;
 
 
@@ -210,14 +219,16 @@ const AlfaTrustPage = () => {
                     </RefreshBanner>
                 )}
                 <AlfaTrustFilter filters={filters} onFilterChange={handleFilterChange} />
-                <AlfaTrustTable 
-                    transactions={transactions}
-                    loading={loading}
-                    pagination={pagination}
-                    setPagination={setPagination}
-                    onLinkClick={openLinkModal}
-                    canLinkInvoices={canLinkInvoices}
-                />
+                <TableArea>
+                    <AlfaTrustTable
+                        transactions={transactions}
+                        loading={loading}
+                        pagination={pagination}
+                        setPagination={setPagination}
+                        onLinkClick={openLinkModal}
+                        canLinkInvoices={canLinkInvoices}
+                    />
+                </TableArea>
             </PageContainer>
             
             <ExportPdfModal 

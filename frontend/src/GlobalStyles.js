@@ -47,11 +47,13 @@ export const GlobalStyles = createGlobalStyle`
   }
   
   html {
+    height: 100%;
     font-size: 16px;
     text-rendering: optimizeLegibility;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     scroll-behavior: smooth;
+    overflow: hidden;
 
     @media (max-width: 768px) {
       font-size: 14px;
@@ -68,11 +70,15 @@ export const GlobalStyles = createGlobalStyle`
     background-color: ${theme.background};
     color: ${theme.text};
     line-height: 1.45;
-    min-height: 100vh;
+    min-height: 100dvh;
+    height: 100%;
+    overflow: hidden;
   }
 
   #root {
-    min-height: 100vh;
+    min-height: 100dvh;
+    height: 100%;
+    overflow: hidden;
   }
 
   h1, h2, h3, h4 {

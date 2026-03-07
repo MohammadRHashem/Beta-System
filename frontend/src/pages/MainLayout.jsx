@@ -51,7 +51,7 @@ const ProtectedPage = ({ permission, children }) => {
 // --- Styled Components ---
 const AppLayout = styled.div`
   display: flex;
-  height: 100vh;
+  height: 100dvh;
   background-color: ${({ theme }) => theme.background};
   overflow: hidden;
 `;
@@ -60,9 +60,10 @@ const ContentArea = styled.main`
   flex-grow: 1;
   display: flex;
   flex-direction: column;
-  height: 100dvh;
-  overflow-y: hidden;
+  height: 100%;
+  overflow: hidden;
   min-width: 0;
+  min-height: 0;
 `;
 
 const Header = styled.header`
@@ -108,9 +109,15 @@ const HeaderLeft = styled.div`
 
 const PageContent = styled.div`
   padding: clamp(0.8rem, 1.3vw, 1.35rem);
-  overflow-y: auto;
+  overflow: hidden;
   flex-grow: 1;
   min-height: 0;
+  display: flex;
+  flex-direction: column;
+
+  > * {
+    min-height: 0;
+  }
 `;
 
 const QRContainer = styled.div`

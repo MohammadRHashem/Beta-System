@@ -28,6 +28,9 @@ const PageContainer = styled.div`
     display: flex;
     flex-direction: column;
     gap: 0.8rem;
+    height: 100%;
+    min-height: 0;
+    overflow: hidden;
 `;
 
 const Header = styled.div`
@@ -114,8 +117,10 @@ const TableWrapper = styled.div`
     background: #fff;
     border-radius: 12px;
     box-shadow: ${({ theme }) => theme.shadowSm};
-    overflow-x: auto;
+    overflow: auto;
     border: 1px solid ${({ theme }) => theme.border};
+    min-height: 0;
+    flex: 1;
 `;
 
 const Table = styled.table`

@@ -3,12 +3,20 @@ import styled, { css } from 'styled-components';
 import { FaDownload, FaLink, FaUnlink } from 'react-icons/fa';
 import Pagination from './Pagination';
 
+const TableSection = styled.div`
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    flex: 1;
+`;
+
 const TableWrapper = styled.div`
     background: #fff;
     border-radius: 14px;
     border: 1px solid rgba(9, 30, 66, 0.08);
     box-shadow: 0 14px 30px rgba(9, 30, 66, 0.08);
     flex-grow: 1;
+    min-height: 0;
     overflow: auto;
     position: relative;
 `;
@@ -101,64 +109,66 @@ const AlfaTrustTable = ({ transactions, loading, pagination, setPagination, onLi
 
     return (
         <>
-            <TableWrapper>
-                <Table>
-                    <Thead>
-                        <tr>
-                            <Th>Date/Time</Th>
-                            <Th>Transaction ID</Th>
-                            <Th>Counterparty Name</Th>
-                            <Th className="currency" style={{ color: '#32325D' }}>Amount</Th>
-                            <Th>Actions</Th>
-                        </tr>
-                    </Thead>
-                    <tbody>
-                        {transactions.map((tx) => {
-                            let counterpartyName = 'N/A';
-                            if (tx.operation === 'C') {
-                                counterpartyName = tx.payer_name || tx.description || 'N/A';
-                            } else {
-                                let details = null;
-                                try {
-                                    details = typeof tx.raw_details === 'string' ? JSON.parse(tx.raw_details) : tx.raw_details;
-                                } catch (e) {
-                                    details = null;
+            <TableSection>
+                <TableWrapper>
+                    <Table>
+                        <Thead>
+                            <tr>
+                                <Th>Date/Time</Th>
+                                <Th>Transaction ID</Th>
+                                <Th>Counterparty Name</Th>
+                                <Th className="currency" style={{ color: '#32325D' }}>Amount</Th>
+                                <Th>Actions</Th>
+                            </tr>
+                        </Thead>
+                        <tbody>
+                            {transactions.map((tx) => {
+                                let counterpartyName = 'N/A';
+                                if (tx.operation === 'C') {
+                                    counterpartyName = tx.payer_name || tx.description || 'N/A';
+                                } else {
+                                    let details = null;
+                                    try {
+                                        details = typeof tx.raw_details === 'string' ? JSON.parse(tx.raw_details) : tx.raw_details;
+                                    } catch (e) {
+                                        details = null;
+                                    }
+                                    counterpartyName = details?.detalhes?.nomeRecebedor || tx.description || 'N/A';
                                 }
-                                counterpartyName = details?.detalhes?.nomeRecebedor || tx.description || 'N/A';
-                            }
 
-                            return (
-                                <Tr key={tx.id}>
-                                    <Td>{formatDateTime(tx.inclusion_date)}</Td>
-                                    <Td>{tx.transaction_id || tx.end_to_end_id}</Td>
-                                    <Td>{counterpartyName}</Td>
-                                    <Td className="currency" isCredit={tx.operation === 'C'}>
-                                        {tx.operation === 'D' ? '-' : ''}
-                                        {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(tx.value)}
-                                    </Td>
-                                    <Td className="actions">
-                                        <div className="actions-wrap">
-                                            {canLinkInvoices && tx.operation === 'C' && (
-                                                tx.linked_invoice_id ? (
-                                                    <ActionIcon linked={true} title={`Linked to Invoice ID: ${tx.linked_invoice_id}`}>
-                                                        <FaLink />
-                                                    </ActionIcon>
-                                                ) : (
-                                                    <ActionIcon linked={false} onClick={() => onLinkClick(tx)} title="Link to Invoice">
-                                                        <FaUnlink />
-                                                    </ActionIcon>
-                                                )
-                                            )}
-                                            <FaDownload title="Download Receipt (Not Available)" />
-                                        </div>
-                                    </Td>
-                                </Tr>
-                            );
-                        })}
-                    </tbody>
-                </Table>
-            </TableWrapper>
-            <Pagination pagination={pagination} setPagination={setPagination} />
+                                return (
+                                    <Tr key={tx.id}>
+                                        <Td>{formatDateTime(tx.inclusion_date)}</Td>
+                                        <Td>{tx.transaction_id || tx.end_to_end_id}</Td>
+                                        <Td>{counterpartyName}</Td>
+                                        <Td className="currency" isCredit={tx.operation === 'C'}>
+                                            {tx.operation === 'D' ? '-' : ''}
+                                            {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(tx.value)}
+                                        </Td>
+                                        <Td className="actions">
+                                            <div className="actions-wrap">
+                                                {canLinkInvoices && tx.operation === 'C' && (
+                                                    tx.linked_invoice_id ? (
+                                                        <ActionIcon linked={true} title={`Linked to Invoice ID: ${tx.linked_invoice_id}`}>
+                                                            <FaLink />
+                                                        </ActionIcon>
+                                                    ) : (
+                                                        <ActionIcon linked={false} onClick={() => onLinkClick(tx)} title="Link to Invoice">
+                                                            <FaUnlink />
+                                                        </ActionIcon>
+                                                    )
+                                                )}
+                                                <FaDownload title="Download Receipt (Not Available)" />
+                                            </div>
+                                        </Td>
+                                    </Tr>
+                                );
+                            })}
+                        </tbody>
+                    </Table>
+                </TableWrapper>
+                <Pagination pagination={pagination} setPagination={setPagination} />
+            </TableSection>
         </>
     );
 };

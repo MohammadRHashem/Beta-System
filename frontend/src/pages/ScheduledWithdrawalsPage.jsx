@@ -19,6 +19,9 @@ const PageContainer = styled.div`
     display: flex;
     flex-direction: column;
     gap: 1.25rem;
+    height: 100%;
+    min-height: 0;
+    overflow: hidden;
 `;
 const Header = styled.div`
     display: flex;
@@ -33,6 +36,10 @@ const Card = styled.div`
     border-radius: 14px;
     border: 1px solid rgba(9, 30, 66, 0.08);
     box-shadow: 0 14px 30px rgba(9, 30, 66, 0.08);
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    flex: 1;
 `;
 const Button = styled.button`
     background-color: ${({ theme, color }) => color === 'primary' ? theme.primary : theme.secondary};
@@ -53,10 +60,12 @@ const Hint = styled.p`
 `;
 const TableWrapper = styled.div`
     width: 100%;
-    overflow-x: auto;
+    overflow: auto;
     border: 1px solid ${({ theme }) => theme.border};
     border-radius: 10px;
     background: #fff;
+    min-height: 0;
+    flex: 1;
 `;
 const Table = styled.table`
     width: 100%;
