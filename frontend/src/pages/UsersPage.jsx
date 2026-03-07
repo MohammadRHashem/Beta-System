@@ -74,17 +74,22 @@ const Table = styled.table`
         font-size: 0.84rem;
         letter-spacing: 0.01em;
     }
-    .actions {
+    td.actions {
+        vertical-align: middle;
+    }
+    td.actions .actions-wrap {
         font-size: 1rem;
         color: ${({ theme }) => theme.lightText};
         display: inline-flex;
+        align-items: center;
         gap: 0.9rem;
-        svg {
-            cursor: pointer;
-            &:hover {
-                color: ${({ theme }) => theme.primary};
-            }
-        }
+        line-height: 1;
+    }
+    td.actions .actions-wrap svg {
+        cursor: pointer;
+    }
+    td.actions .actions-wrap svg:hover {
+        color: ${({ theme }) => theme.primary};
     }
 `;
 
@@ -335,8 +340,10 @@ const UsersPage = () => {
                                             <td>{formatTimestamp(user.last_login)}</td>
                                             {canManage && (
                                                 <td className="actions">
-                                                    <FaEdit onClick={() => handleOpenModal(user)} title="Edit User" />
-                                                    <FaTrash onClick={() => handleDelete(user)} title="Delete User" />
+                                                    <div className="actions-wrap">
+                                                        <FaEdit onClick={() => handleOpenModal(user)} title="Edit User" />
+                                                        <FaTrash onClick={() => handleDelete(user)} title="Delete User" />
+                                                    </div>
                                                 </td>
                                             )}
                                         </tr>

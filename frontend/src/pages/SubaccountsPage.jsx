@@ -73,17 +73,22 @@ const Table = styled.table`
   th {
     background-color: ${({ theme }) => theme.background};
   }
-  .actions {
-    display: flex;
+  td.actions {
+    vertical-align: middle;
+  }
+  td.actions .actions-wrap {
+    display: inline-flex;
+    align-items: center;
     gap: 1.5rem;
     font-size: 1.1rem;
-    svg {
-      cursor: pointer;
-      color: ${({ theme }) => theme.lightText};
-      &:hover {
-        color: ${({ theme }) => theme.primary};
-      }
-    }
+    line-height: 1;
+  }
+  td.actions .actions-wrap svg {
+    cursor: pointer;
+    color: ${({ theme }) => theme.lightText};
+  }
+  td.actions .actions-wrap svg:hover {
+    color: ${({ theme }) => theme.primary};
   }
 `;
 
@@ -385,16 +390,18 @@ const SubaccountsPage = ({ allGroups }) => {
                     {/* 4. WRAP ACTION ICONS IN PERMISSION CHECKS */}
                     {(canManageSubaccounts || canManageCredentials || canPortalAccess || canCrossDebit) && (
                         <td className="actions">
-                          {canManageCredentials && <FaKey onClick={() => handleCredentials(acc)} title="Manage Credentials" />}
-                          {canPortalAccess && <FaExternalLinkAlt onClick={() => handleOpenPortal(acc)} title="Open Client Portal (Full Access)" />}
-                          {canCrossDebit && acc.account_type === 'cross' && (
-                            <FaMinusCircle onClick={() => handleOpenDebitModal(acc)} title="Add Cross Debit" />
-                          )}
-                          {canManageSubaccounts && acc.account_type === 'xpayz' && (
-                            <FaHistory onClick={() => handleHardRefresh(acc)} title="Hard Refresh History" />
-                          )}
-                          {canManageSubaccounts && <FaEdit onClick={() => handleOpenModal(acc)} title="Edit" />}
-                          {canManageSubaccounts && <FaTrash onClick={() => handleDelete(acc.id)} title="Delete" />}
+                          <div className="actions-wrap">
+                            {canManageCredentials && <FaKey onClick={() => handleCredentials(acc)} title="Manage Credentials" />}
+                            {canPortalAccess && <FaExternalLinkAlt onClick={() => handleOpenPortal(acc)} title="Open Client Portal (Full Access)" />}
+                            {canCrossDebit && acc.account_type === 'cross' && (
+                              <FaMinusCircle onClick={() => handleOpenDebitModal(acc)} title="Add Cross Debit" />
+                            )}
+                            {canManageSubaccounts && acc.account_type === 'xpayz' && (
+                              <FaHistory onClick={() => handleHardRefresh(acc)} title="Hard Refresh History" />
+                            )}
+                            {canManageSubaccounts && <FaEdit onClick={() => handleOpenModal(acc)} title="Edit" />}
+                            {canManageSubaccounts && <FaTrash onClick={() => handleDelete(acc.id)} title="Delete" />}
+                          </div>
                         </td>
                     )}
                   </tr>

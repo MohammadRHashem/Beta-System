@@ -76,16 +76,22 @@ const Table = styled.table`
         letter-spacing: 0.02em;
     }
     td.actions {
-        display: flex;
+        vertical-align: middle;
+    }
+    td.actions .actions-wrap {
+        display: inline-flex;
         align-items: center;
         flex-wrap: wrap;
         gap: 0.9rem;
         font-size: 1.1rem;
-        svg {
-            cursor: pointer;
-            color: ${({ theme }) => theme.lightText};
-            &:hover { color: ${({ theme }) => theme.primary}; }
-        }
+        line-height: 1;
+    }
+    td.actions .actions-wrap svg {
+        cursor: pointer;
+        color: ${({ theme }) => theme.lightText};
+    }
+    td.actions .actions-wrap svg:hover {
+        color: ${({ theme }) => theme.primary};
     }
 `;
 const InlineActionButton = styled.button`
@@ -457,19 +463,21 @@ const ScheduledWithdrawalsPage = () => {
                                             </td>
                                             {(canUpdate || canDelete) && (
                                                 <td className="actions">
-                                                    {canUpdate && (
-                                                        <InlineActionButton
-                                                            type="button"
-                                                            onClick={() => handleWithdrawNow(schedule)}
-                                                            disabled={withdrawingId === schedule.id}
-                                                            title="Execute all-in withdraw immediately"
-                                                        >
-                                                            <FaBolt />
-                                                            {withdrawingId === schedule.id ? 'Withdrawing...' : 'Withdraw Now'}
-                                                        </InlineActionButton>
-                                                    )}
-                                                    {canUpdate && <FaEdit title="Edit" onClick={() => handleOpenModal(schedule)} />}
-                                                    {canDelete && <FaTrash title="Delete" onClick={() => handleDelete(schedule.id)} />}
+                                                    <div className="actions-wrap">
+                                                        {canUpdate && (
+                                                            <InlineActionButton
+                                                                type="button"
+                                                                onClick={() => handleWithdrawNow(schedule)}
+                                                                disabled={withdrawingId === schedule.id}
+                                                                title="Execute all-in withdraw immediately"
+                                                            >
+                                                                <FaBolt />
+                                                                {withdrawingId === schedule.id ? 'Withdrawing...' : 'Withdraw Now'}
+                                                            </InlineActionButton>
+                                                        )}
+                                                        {canUpdate && <FaEdit title="Edit" onClick={() => handleOpenModal(schedule)} />}
+                                                        {canDelete && <FaTrash title="Delete" onClick={() => handleDelete(schedule.id)} />}
+                                                    </div>
                                                 </td>
                                             )}
                                         </tr>

@@ -70,15 +70,22 @@ const Table = styled.table`
         font-size: 0.84rem;
         letter-spacing: 0.01em;
     }
-    .actions {
-        display: flex;
+    td.actions {
+        vertical-align: middle;
+    }
+    td.actions .actions-wrap {
+        display: inline-flex;
+        align-items: center;
         gap: 1.5rem;
         font-size: 1.1rem;
-        svg {
-            cursor: pointer;
-            color: ${({ theme }) => theme.lightText};
-            &:hover { color: ${({ theme }) => theme.primary}; }
-        }
+        line-height: 1;
+    }
+    td.actions .actions-wrap svg {
+        cursor: pointer;
+        color: ${({ theme }) => theme.lightText};
+    }
+    td.actions .actions-wrap svg:hover {
+        color: ${({ theme }) => theme.primary};
     }
 `;
 
@@ -272,8 +279,10 @@ const UsdtWalletsPage = () => {
                                             <td>{wallet.wallet_address}</td>
                                             {(canUpdate || canDelete) && (
                                                 <td className="actions">
-                                                    {canUpdate && <FaEdit onClick={() => handleOpenModal(wallet)} title="Edit Name"/>}
-                                                    {canDelete && <FaTrash onClick={() => handleDelete(wallet.id)} title="Delete"/>}
+                                                    <div className="actions-wrap">
+                                                        {canUpdate && <FaEdit onClick={() => handleOpenModal(wallet)} title="Edit Name"/>}
+                                                        {canDelete && <FaTrash onClick={() => handleDelete(wallet.id)} title="Delete"/>}
+                                                    </div>
                                                 </td>
                                             )}
                                         </tr>

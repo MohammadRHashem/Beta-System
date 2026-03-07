@@ -79,13 +79,22 @@ const RulesTable = styled.table`
         font-size: 0.84rem;
         letter-spacing: 0.01em;
     }
-    .actions {
+    td.actions {
+        vertical-align: middle;
+    }
+    td.actions .actions-wrap {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.9rem;
         font-size: 1.1rem;
-        svg {
-            cursor: pointer;
-            color: ${({ theme }) => theme.lightText};
-            &:hover { color: ${({ theme }) => theme.error}; }
-        }
+        line-height: 1;
+    }
+    td.actions .actions-wrap svg {
+        cursor: pointer;
+        color: ${({ theme }) => theme.lightText};
+    }
+    td.actions .actions-wrap svg:hover {
+        color: ${({ theme }) => theme.error};
     }
 `;
 
@@ -191,7 +200,7 @@ const DirectForwardingPage = ({ allGroups }) => {
                                 <tr>
                                     <th>Source Group</th>
                                     <th>Destination Group</th>
-                                    {canEdit && <th className="actions">Action</th>}
+                                    {canEdit && <th>Action</th>}
                                 </tr>
                             </thead>
                             <tbody>
@@ -204,7 +213,9 @@ const DirectForwardingPage = ({ allGroups }) => {
                                             <td>{rule.destination_group_name}</td>
                                             {canEdit && (
                                                 <td className="actions">
-                                                    <FaTrash onClick={() => handleDelete(rule.id)} title="Delete" />
+                                                    <div className="actions-wrap">
+                                                        <FaTrash onClick={() => handleDelete(rule.id)} title="Delete" />
+                                                    </div>
                                                 </td>
                                             )}
                                         </tr>

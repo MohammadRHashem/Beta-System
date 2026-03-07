@@ -88,14 +88,20 @@ const RulesTable = styled.table`
         letter-spacing: 0.01em;
     }
     td.actions {
-        display: flex;
-        gap: 1rem;
+        vertical-align: middle;
+    }
+    td.actions .actions-wrap {
+        display: inline-flex;
         align-items: center;
+        gap: 1rem;
         font-size: 1.1rem;
-        svg {
-            cursor: pointer;
-            &:hover { color: ${({ theme }) => theme.primary}; }
-        }
+        line-height: 1;
+    }
+    td.actions .actions-wrap svg {
+        cursor: pointer;
+    }
+    td.actions .actions-wrap svg:hover {
+        color: ${({ theme }) => theme.primary};
     }
 `;
 
@@ -317,8 +323,10 @@ const AiForwardingPage = ({ allGroups }) => {
                                         </td>
                                         {canEdit && (
                                             <td className="actions">
-                                                <FaEdit onClick={() => openEditModal(rule)} title="Edit"/>
-                                                <FaTrash onClick={() => handleDelete(rule.id)} title="Delete"/>
+                                                <div className="actions-wrap">
+                                                    <FaEdit onClick={() => openEditModal(rule)} title="Edit"/>
+                                                    <FaTrash onClick={() => handleDelete(rule.id)} title="Delete"/>
+                                                </div>
                                             </td>
                                         )}
                                     </tr>

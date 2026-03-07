@@ -89,14 +89,21 @@ const RulesTable = styled.table`
         font-size: 0.84rem;
         letter-spacing: 0.01em;
     }
-    .actions {
-        display: flex;
+    td.actions {
+        vertical-align: middle;
+    }
+    td.actions .actions-wrap {
+        display: inline-flex;
+        align-items: center;
         gap: 1rem;
         font-size: 1.1rem;
-        svg {
-            cursor: pointer;
-            &:hover { color: ${({ theme }) => theme.primary}; }
-        }
+        line-height: 1;
+    }
+    td.actions .actions-wrap svg {
+        cursor: pointer;
+    }
+    td.actions .actions-wrap svg:hover {
+        color: ${({ theme }) => theme.primary};
     }
 `;
 const Textarea = styled.textarea`
@@ -228,8 +235,10 @@ const AbbreviationsPage = () => {
                                         <td>{abbr.response}</td>
                                         {canEdit && (
                                             <td className="actions">
-                                                <FaEdit onClick={() => openEditModal(abbr)} title="Edit"/>
-                                                <FaTrash onClick={() => handleDelete(abbr.id)} title="Delete"/>
+                                                <div className="actions-wrap">
+                                                    <FaEdit onClick={() => openEditModal(abbr)} title="Edit"/>
+                                                    <FaTrash onClick={() => handleDelete(abbr.id)} title="Delete"/>
+                                                </div>
                                             </td>
                                         )}
                                     </tr>

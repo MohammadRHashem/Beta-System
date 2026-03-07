@@ -72,11 +72,15 @@ const Td = styled.td`
     padding: 0.72rem 0.85rem;
     vertical-align: middle;
     &.actions {
-        display: flex;
-        gap: 0.8rem;
-        font-size: 1rem;
         white-space: nowrap;
-        svg {
+        font-size: 1rem;
+        .actions-wrap {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.8rem;
+            line-height: 1;
+        }
+        .actions-wrap svg {
             cursor: pointer;
             color: ${({ theme }) => theme.lightText};
             &:hover { color: ${({ theme }) => theme.primary}; }
@@ -178,10 +182,12 @@ const InvoiceTable = ({ invoices, loading, onEdit, onLink, onDelete, pagination,
                                         )}
                                     </Td>
                                     <Td className="actions">
-                                        {inv.media_path && <FaEye onClick={() => handleViewMedia(inv.id)} title="View Media"/>}
-                                        {/* 3. WRAP EDIT AND DELETE ICONS IN PERMISSION CHECKS */}
-                                        {hasPermission('invoice:edit') && <FaEdit onClick={() => onEdit(inv)} title="Edit"/>}
-                                        {hasPermission('invoice:delete') && <FaTrashAlt onClick={() => onDelete(inv.id)} title="Delete"/>}
+                                        <div className="actions-wrap">
+                                            {inv.media_path && <FaEye onClick={() => handleViewMedia(inv.id)} title="View Media"/>}
+                                            {/* 3. WRAP EDIT AND DELETE ICONS IN PERMISSION CHECKS */}
+                                            {hasPermission('invoice:edit') && <FaEdit onClick={() => onEdit(inv)} title="Edit"/>}
+                                            {hasPermission('invoice:delete') && <FaTrashAlt onClick={() => onDelete(inv.id)} title="Delete"/>}
+                                        </div>
                                     </Td>
                                 </Tr>
                             );

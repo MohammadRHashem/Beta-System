@@ -54,7 +54,13 @@ const Td = styled.td`
     &.actions {
         font-size: 1rem;
         color: ${({ theme }) => theme.lightText};
-        svg {
+        .actions-wrap {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.8rem;
+            line-height: 1;
+        }
+        .actions-wrap svg {
             cursor: pointer;
             &:hover { color: ${({ theme }) => theme.primary}; }
         }
@@ -66,12 +72,6 @@ const Td = styled.td`
         font-weight: 600;
         ${({ isCredit }) => isCredit ? css`color: ${({ theme }) => theme.success};` : css`color: ${({ theme }) => theme.error};`}
     }
-`;
-
-const ActionsCell = styled(Td)`
-    display: flex;
-    gap: 0.8rem;
-    align-items: center;
 `;
 
 const ActionIcon = styled.span`
@@ -136,20 +136,22 @@ const AlfaTrustTable = ({ transactions, loading, pagination, setPagination, onLi
                                         {tx.operation === 'D' ? '-' : ''}
                                         {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(tx.value)}
                                     </Td>
-                                    <ActionsCell className="actions">
-                                        {canLinkInvoices && tx.operation === 'C' && (
-                                            tx.linked_invoice_id ? (
-                                                <ActionIcon linked={true} title={`Linked to Invoice ID: ${tx.linked_invoice_id}`}>
-                                                    <FaLink />
-                                                </ActionIcon>
-                                            ) : (
-                                                <ActionIcon linked={false} onClick={() => onLinkClick(tx)} title="Link to Invoice">
-                                                    <FaUnlink />
-                                                </ActionIcon>
-                                            )
-                                        )}
-                                        <FaDownload title="Download Receipt (Not Available)" />
-                                    </ActionsCell>
+                                    <Td className="actions">
+                                        <div className="actions-wrap">
+                                            {canLinkInvoices && tx.operation === 'C' && (
+                                                tx.linked_invoice_id ? (
+                                                    <ActionIcon linked={true} title={`Linked to Invoice ID: ${tx.linked_invoice_id}`}>
+                                                        <FaLink />
+                                                    </ActionIcon>
+                                                ) : (
+                                                    <ActionIcon linked={false} onClick={() => onLinkClick(tx)} title="Link to Invoice">
+                                                        <FaUnlink />
+                                                    </ActionIcon>
+                                                )
+                                            )}
+                                            <FaDownload title="Download Receipt (Not Available)" />
+                                        </div>
+                                    </Td>
                                 </Tr>
                             );
                         })}

@@ -11,7 +11,44 @@ const Header = styled.div` display: flex; justify-content: space-between; align-
 const Title = styled.h2` display: flex; align-items: center; gap: 0.5rem; margin: 0; line-height: 1.2; `;
 const Button = styled.button` background-color: ${({ theme }) => theme.secondary}; color: white; border: none; padding: 0.66rem 1rem; border-radius: 8px; cursor: pointer; font-weight: 700; display: flex; align-items: center; gap: 0.5rem; `;
 const TableWrapper = styled.div` width: 100%; overflow-x: auto; border: 1px solid ${({ theme }) => theme.border}; border-radius: 10px; `;
-const RulesTable = styled.table` width: 100%; min-width: 1080px; border-collapse: collapse; margin-top: 0; font-size: 0.9rem; th, td { padding: 0.78rem 0.85rem; text-align: left; border-bottom: 1px solid ${({ theme }) => theme.border}; vertical-align: middle; white-space: nowrap; } td:nth-child(4) { white-space: normal; } th { background-color: ${({ theme }) => theme.background}; font-size: 0.84rem; letter-spacing: 0.01em; } td.actions { display: flex; gap: 0.9rem; font-size: 1rem; svg { cursor: pointer; &:hover { color: ${({ theme }) => theme.primary}; } } } `;
+const RulesTable = styled.table`
+    width: 100%;
+    min-width: 1080px;
+    border-collapse: collapse;
+    margin-top: 0;
+    font-size: 0.9rem;
+    th, td {
+        padding: 0.78rem 0.85rem;
+        text-align: left;
+        border-bottom: 1px solid ${({ theme }) => theme.border};
+        vertical-align: middle;
+        white-space: nowrap;
+    }
+    td:nth-child(4) {
+        white-space: normal;
+    }
+    th {
+        background-color: ${({ theme }) => theme.background};
+        font-size: 0.84rem;
+        letter-spacing: 0.01em;
+    }
+    td.actions {
+        vertical-align: middle;
+    }
+    td.actions .actions-wrap {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.9rem;
+        font-size: 1rem;
+        line-height: 1;
+    }
+    td.actions .actions-wrap svg {
+        cursor: pointer;
+    }
+    td.actions .actions-wrap svg:hover {
+        color: ${({ theme }) => theme.primary};
+    }
+`;
 const Form = styled.form` display: flex; flex-direction: column; gap: 0.9rem; `;
 const InputGroup = styled.div` display: flex; flex-direction: column; gap: 0.5rem; `;
 const Label = styled.label` font-weight: 500; color: ${({ theme }) => theme.text}; `;
@@ -174,8 +211,10 @@ const RequestTypesPage = () => {
                                         <td>{type.content_label || '-'}</td>
                                         {canEdit && (
                                             <td className="actions">
-                                                <FaEdit onClick={() => openEditModal(type)} title="Edit" />
-                                                <FaTrash onClick={() => handleDelete(type.id)} title="Delete" />
+                                                <div className="actions-wrap">
+                                                    <FaEdit onClick={() => openEditModal(type)} title="Edit" />
+                                                    <FaTrash onClick={() => handleDelete(type.id)} title="Delete" />
+                                                </div>
                                             </td>
                                         )}
                                     </tr>

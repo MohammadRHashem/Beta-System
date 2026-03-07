@@ -16,7 +16,42 @@ const Header = styled.div` display: flex; justify-content: space-between; align-
 const Card = styled.div` background: #fff; padding: 1.1rem 1.25rem 1rem; border-radius: 14px; border: 1px solid rgba(9, 30, 66, 0.08); box-shadow: 0 14px 30px rgba(9, 30, 66, 0.08); `;
 const Button = styled.button` background-color: ${({ theme, color }) => color === 'primary' ? theme.primary : theme.secondary}; color: white; border: none; padding: 0.66rem 1rem; border-radius: 8px; cursor: pointer; font-weight: 700; display: flex; align-items: center; gap: 0.5rem; `;
 const TableWrapper = styled.div` width: 100%; overflow-x: auto; border: 1px solid ${({ theme }) => theme.border}; border-radius: 10px; `;
-const Table = styled.table` width: 100%; min-width: 980px; border-collapse: collapse; margin-top: 0.8rem; font-size: 0.9rem; th, td { padding: 0.78rem 0.9rem; text-align: left; border-bottom: 1px solid ${({ theme }) => theme.border}; vertical-align: middle; white-space: nowrap; } th { background-color: ${({ theme }) => theme.background}; font-size: 0.84rem; letter-spacing: 0.01em; } td.actions { display: flex; gap: 0.9rem; font-size: 1rem; svg { cursor: pointer; color: ${({ theme }) => theme.lightText}; &:hover { color: ${({ theme }) => theme.primary}; } } } `;
+const Table = styled.table`
+    width: 100%;
+    min-width: 980px;
+    border-collapse: collapse;
+    margin-top: 0.8rem;
+    font-size: 0.9rem;
+    th, td {
+        padding: 0.78rem 0.9rem;
+        text-align: left;
+        border-bottom: 1px solid ${({ theme }) => theme.border};
+        vertical-align: middle;
+        white-space: nowrap;
+    }
+    th {
+        background-color: ${({ theme }) => theme.background};
+        font-size: 0.84rem;
+        letter-spacing: 0.01em;
+    }
+    td.actions {
+        vertical-align: middle;
+    }
+    td.actions .actions-wrap {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.9rem;
+        font-size: 1rem;
+        line-height: 1;
+    }
+    td.actions .actions-wrap svg {
+        cursor: pointer;
+        color: ${({ theme }) => theme.lightText};
+    }
+    td.actions .actions-wrap svg:hover {
+        color: ${({ theme }) => theme.primary};
+    }
+`;
 const SwitchContainer = styled.label` position: relative; display: inline-block; width: 50px; height: 28px; `;
 const SwitchInput = styled.input` opacity: 0; width: 0; height: 0; &:checked + span { background-color: ${({ theme }) => theme.secondary}; } &:checked + span:before { transform: translateX(22px); } &:disabled + span { cursor: not-allowed; background-color: #e9ecef; opacity: 0.7; }`;
 const Slider = styled.span` position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #ccc; transition: .4s; border-radius: 34px; &:before { position: absolute; content: ""; height: 20px; width: 20px; left: 4px; bottom: 4px; background-color: white; transition: .4s; border-radius: 50%; } `;
@@ -192,8 +227,10 @@ const ScheduledBroadcastsPage = () => {
                                             </MessageContent>
                                             {(canUpdate || canDelete) && (
                                                 <td className="actions">
-                                                    {canUpdate && <FaEdit onClick={() => handleOpenModal(s)} title="Edit"/>}
-                                                    {canDelete && <FaTrash onClick={() => handleDelete(s.id)} title="Delete"/>}
+                                                    <div className="actions-wrap">
+                                                        {canUpdate && <FaEdit onClick={() => handleOpenModal(s)} title="Edit"/>}
+                                                        {canDelete && <FaTrash onClick={() => handleDelete(s.id)} title="Delete"/>}
+                                                    </div>
                                                 </td>
                                             )}
                                         </tr>
