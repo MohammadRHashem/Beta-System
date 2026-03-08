@@ -5,7 +5,7 @@ import Modal from './Modal';
 import AttachmentManagerModal from './AttachmentManagerModal';
 import { updateTemplate, deleteTemplate } from '../services/api';
 
-const Container = styled.div` background: #fff; padding: 1.1rem 1rem 1rem; border: 1px solid ${({ theme }) => theme.border}; border-radius: 12px; `;
+const Container = styled.div` background: ${({ theme }) => theme.surface}; padding: 1.1rem 1rem 1rem; border: 1px solid ${({ theme }) => theme.border}; border-radius: 12px; `;
 const Title = styled.h3` display: flex; align-items: center; gap: 0.5rem; margin-bottom: 1rem; `;
 const SearchInput = styled.input` width: 100%; padding: 0.62rem 0.72rem; border: 1px solid ${({ theme }) => theme.border}; border-radius: 8px; margin-bottom: 0.85rem; `;
 const TemplateList = styled.ul` list-style: none; max-height: 250px; overflow-y: auto; `;
@@ -18,11 +18,11 @@ const Label = styled.label` font-weight: 500; `;
 const Input = styled.input` width: 100%; padding: 0.68rem 0.72rem; border: 1px solid ${({ theme }) => theme.border}; border-radius: 8px; font-family: inherit; font-size: 0.95rem; `;
 const Textarea = styled.textarea` width: 100%; padding: 0.68rem 0.72rem; border: 1px solid ${({ theme }) => theme.border}; border-radius: 8px; min-height: 120px; font-family: inherit; font-size: 0.95rem; `;
 const SaveButton = styled.button` background-color: ${({ theme }) => theme.primary}; color: white; border: none; padding: 0.66rem 0.95rem; border-radius: 8px; cursor: pointer; font-weight: bold; align-self: flex-end; `;
-const AttachmentPreview = styled.div` padding: 1rem; background: #f6f9fc; border: 1px solid ${({ theme }) => theme.border}; border-radius: 8px; display: flex; align-items: center; justify-content: space-between; `;
+const AttachmentPreview = styled.div` padding: 1rem; background: ${({ theme }) => theme.surfaceAlt}; border: 1px solid ${({ theme }) => theme.border}; border-radius: 8px; display: flex; align-items: center; justify-content: space-between; `;
 const FileInfo = styled.div` display: flex; align-items: center; gap: 1rem; .icon { font-size: 2rem; color: #666; } `;
 const RemoveButton = styled(FaTimesCircle)` cursor: pointer; color: #999; &:hover { color: ${({ theme }) => theme.error}; } `;
 const AttachmentControls = styled.div` display: flex; gap: 1rem; `;
-const ControlButton = styled.button` display: flex; align-items: center; gap: 0.5rem; padding: 0.56rem 0.82rem; border: 1px solid ${({ theme }) => theme.border}; background: #fff; border-radius: 8px; font-weight: 600; cursor: pointer; &:hover { background: #f9f9f9; } `;
+const ControlButton = styled.button` display: flex; align-items: center; gap: 0.5rem; padding: 0.56rem 0.82rem; border: 1px solid ${({ theme }) => theme.border}; background: ${({ theme }) => theme.surface}; border-radius: 8px; font-weight: 600; cursor: pointer; &:hover { background: ${({ theme }) => theme.surfaceAlt}; } `;
 
 const TemplateManager = ({ templates, onTemplateSelect, onTemplatesUpdate, canEditTemplate, canDeleteTemplate, canViewAttachments, canUploadAttachments, canDeleteAttachments }) => {
     const [isEditModalOpen, setIsEditModalOpen] = useState(false);

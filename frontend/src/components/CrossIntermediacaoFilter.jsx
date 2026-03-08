@@ -3,10 +3,10 @@ import styled from 'styled-components';
 import { FaBroom, FaSearch, FaSyncAlt } from 'react-icons/fa';
 
 const FilterCard = styled.div`
-    background: #fff;
-    border: 1px solid rgba(9, 30, 66, 0.08);
+    background: ${({ theme }) => theme.surface};
+    border: 1px solid ${({ theme }) => theme.border};
     border-radius: 14px;
-    box-shadow: 0 14px 30px rgba(9, 30, 66, 0.08);
+    box-shadow: ${({ theme }) => theme.shadowMd};
     padding: 1rem;
     display: flex;
     flex-direction: column;
@@ -48,7 +48,7 @@ const BaseInput = styled.input`
     border: 1px solid ${({ theme }) => theme.border};
     border-radius: 8px;
     font-size: 0.9rem;
-    background: #fff;
+    background: ${({ theme }) => theme.surface};
 `;
 
 const Select = styled.select`
@@ -57,7 +57,7 @@ const Select = styled.select`
     border: 1px solid ${({ theme }) => theme.border};
     border-radius: 8px;
     font-size: 0.9rem;
-    background: #fff;
+    background: ${({ theme }) => theme.surface};
 `;
 
 const SearchWrap = styled.div`

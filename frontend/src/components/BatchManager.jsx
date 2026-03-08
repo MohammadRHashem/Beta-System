@@ -4,7 +4,7 @@ import { FaLayerGroup, FaEdit, FaTrash } from 'react-icons/fa';
 import { deleteBatch } from '../services/api';
 
 const Container = styled.div`
-    background: #fff;
+    background: ${({ theme }) => theme.surface};
     padding: 1.05rem 1rem 0.95rem;
     border: 1px solid ${({ theme }) => theme.border};
     border-radius: 12px;

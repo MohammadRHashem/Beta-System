@@ -2,9 +2,11 @@ import React, { useState, useEffect, useCallback } from "react";
 import styled from "styled-components";
 import { Routes, Route, useLocation, Navigate } from "react-router-dom";
 import { FaBars, FaTimes } from "react-icons/fa";
+import { FiMoon, FiSun } from "react-icons/fi";
 import api from "../services/api";
 import { useAuth } from "../context/AuthContext";
 import { usePermissions } from '../context/PermissionContext';
+import { useThemeMode } from "../context/ThemeModeContext";
 
 // --- Component Imports ---
 import Sidebar from "../components/Sidebar";
@@ -72,9 +74,10 @@ const Header = styled.header`
   align-items: center;
   gap: 1rem;
   min-height: ${({ theme }) => theme.appHeaderHeight};
-  padding: 0.9rem 1.25rem;
+  padding: 0.9rem 1.1rem;
   border-bottom: 1px solid ${({ theme }) => theme.border};
-  background-color: ${({ theme }) => theme.surface};
+  background: ${({ theme }) => theme.headerGradient};
+  backdrop-filter: blur(8px);
   flex-shrink: 0;
   box-shadow: ${({ theme }) => theme.shadowSm};
   z-index: 20;
@@ -93,7 +96,9 @@ const PageTitle = styled.h2`
   color: ${({ theme }) => theme.primary};
   text-transform: capitalize;
   margin: 0;
-  font-size: clamp(1rem, 1.3vw, 1.35rem);
+  font-size: clamp(1rem, 1.26vw, 1.4rem);
+  font-weight: 800;
+  letter-spacing: 0.01em;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -117,6 +122,33 @@ const PageContent = styled.div`
 
   > * {
     min-height: 0;
+  }
+`;
+
+const HeaderActions = styled.div`
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  min-width: 0;
+`;
+
+const ThemeToggle = styled.button`
+  width: 2.35rem;
+  height: 2.35rem;
+  border-radius: 999px;
+  border: 1px solid ${({ theme }) => theme.borderStrong};
+  background: ${({ theme }) => theme.surface};
+  color: ${({ theme }) => theme.primary};
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1rem;
+  cursor: pointer;
+  flex-shrink: 0;
+  box-shadow: ${({ theme }) => theme.shadowSm};
+
+  &:hover {
+    transform: translateY(-1px);
   }
 `;
 
@@ -153,9 +185,9 @@ const SidebarBackdrop = styled.button`
 const MobileMenuButton = styled.button`
   width: 2.2rem;
   height: 2.2rem;
-  border-radius: 8px;
+  border-radius: 999px;
   border: 1px solid ${({ theme }) => theme.border};
-  background: ${({ theme }) => theme.surfaceAlt};
+  background: ${({ theme }) => theme.surface};
   color: ${({ theme }) => theme.primary};
   display: inline-flex;
   align-items: center;
@@ -179,11 +211,12 @@ const MainLayout = () => {
   const location = useLocation();
   const { logout } = useAuth();
   const { hasPermission } = usePermissions(); // Get permission checker for the default route
+  const { toggleMode, isDark } = useThemeMode();
 
   // Dynamically generate the page name from the URL path, with custom labels where needed.
   const pageName = location.pathname.replace("/", "").replace(/-/g, " ") || "invoices";
   const pageTitleOverrides = {
-    '/trkbit': 'Cross Intermediação'
+    '/trkbit': 'Cross Intermediacao'
   };
   const displayPageName = pageTitleOverrides[location.pathname] || pageName;
 
@@ -257,7 +290,17 @@ const MainLayout = () => {
             </MobileMenuButton>
             <PageTitle>{displayPageName}</PageTitle>
           </HeaderLeft>
-          <StatusIndicator status={status} onLogout={handleLogout} />
+          <HeaderActions>
+            <ThemeToggle
+              type="button"
+              onClick={toggleMode}
+              title={isDark ? "Switch to light mode" : "Switch to dark mode"}
+              aria-label={isDark ? "Switch to light mode" : "Switch to dark mode"}
+            >
+              {isDark ? <FiSun /> : <FiMoon />}
+            </ThemeToggle>
+            <StatusIndicator status={status} onLogout={handleLogout} />
+          </HeaderActions>
         </Header>
         <PageContent>
           {status === "qr" ? (
@@ -316,3 +359,4 @@ const MainLayout = () => {
 };
 
 export default MainLayout;
+

@@ -24,10 +24,10 @@ const TableSection = styled.div`
 `;
 
 const TableWrapper = styled.div`
-    background: #fff;
+    background: ${({ theme }) => theme.surface};
     border-radius: 14px;
-    border: 1px solid rgba(9, 30, 66, 0.08);
-    box-shadow: 0 14px 30px rgba(9, 30, 66, 0.08);
+    border: 1px solid ${({ theme }) => theme.border};
+    box-shadow: ${({ theme }) => theme.shadowMd};
     min-height: 0;
     flex: 1;
     overflow: auto;
@@ -64,7 +64,7 @@ const Tr = styled.tr`
         border-bottom: none;
     }
     &:hover {
-        background-color: #f6f9fc;
+        background-color: ${({ theme }) => theme.surfaceAlt};
     }
     ${({ isDuplicate }) => isDuplicate && css`
         background-color: #fff0f0;

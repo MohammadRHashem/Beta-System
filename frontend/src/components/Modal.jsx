@@ -8,7 +8,8 @@ const ModalOverlay = styled.div`
   left: 0;
   width: 100%;
   height: 100%;
-  background: rgba(0, 0, 0, 0.6);
+  background: rgba(7, 14, 27, 0.58);
+  backdrop-filter: blur(7px);
   display: flex;
   justify-content: center;
   align-items: center;
@@ -24,16 +25,29 @@ const ModalOverlay = styled.div`
 const ModalContent = styled.div`
   background: ${({ theme }) => theme.surface};
   padding: 1.2rem 1.2rem 1rem;
-  border-radius: ${({ theme }) => theme.radiusMd};
+  border-radius: 18px;
+  border: 1px solid ${({ theme }) => theme.border};
   width: 90%;
   max-width: ${({ maxWidth }) => maxWidth || '500px'};
   max-height: min(86vh, 780px);
   overflow: auto;
   position: relative;
   box-shadow: ${({ theme }) => theme.shadowMd};
+  animation: modalEnter 0.18s ease-out;
 
   @media (min-width: 768px) {
     padding: 1.5rem;
+  }
+
+  @keyframes modalEnter {
+    from {
+      opacity: 0;
+      transform: translateY(8px) scale(0.985);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
   }
 `;
 
@@ -42,11 +56,11 @@ const CloseButton = styled.button`
   top: 1rem;
   right: 1rem;
   background: transparent;
-  border: none;
-  font-size: 1.5rem;
+  border: 1px solid ${({ theme }) => theme.border};
+  font-size: 1.22rem;
   cursor: pointer;
   color: ${({ theme }) => theme.lightText};
-  border-radius: 6px;
+  border-radius: 999px;
   width: 2rem;
   height: 2rem;
   display: inline-flex;

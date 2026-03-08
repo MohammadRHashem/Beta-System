@@ -14,11 +14,11 @@ const PageContainer = styled.div`
 `;
 
 const Card = styled.div`
-    background: #fff;
+    background: ${({ theme }) => theme.surface};
     padding: 1.1rem 1.2rem 1rem;
     border-radius: 14px;
-    border: 1px solid rgba(9, 30, 66, 0.08);
-    box-shadow: 0 14px 30px rgba(9, 30, 66, 0.08);
+    border: 1px solid ${({ theme }) => theme.border};
+    box-shadow: ${({ theme }) => theme.shadowMd};
     display: flex;
     flex-direction: column;
     min-height: 0;

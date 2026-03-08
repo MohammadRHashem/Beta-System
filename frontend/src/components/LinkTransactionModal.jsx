@@ -25,7 +25,7 @@ const TransactionItem = styled.div`
     }
 
     &:hover {
-        background-color: #f6f9fc;
+        background-color: ${({ theme }) => theme.surfaceAlt};
     }
 `;
 

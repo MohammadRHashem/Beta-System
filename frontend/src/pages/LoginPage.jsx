@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import styled from 'styled-components';
-import { FaWhatsapp } from 'react-icons/fa';
+import { FiGrid, FiLock, FiUser } from 'react-icons/fi';
 
 const AuthPageContainer = styled.div`
     width: 100vw;
@@ -12,17 +12,20 @@ const AuthPageContainer = styled.div`
     display: flex;
     justify-content: center;
     align-items: center;
-    background-color: ${({ theme }) => theme.background};
+    background:
+      radial-gradient(circle at 14% 0%, rgba(13, 168, 143, 0.2), transparent 36%),
+      radial-gradient(circle at 88% 14%, rgba(65, 120, 224, 0.16), transparent 30%),
+      ${({ theme }) => theme.background};
 `;
 
 const AuthFormContainer = styled.div`
     width: 100%;
-    max-width: 400px;
+    max-width: 430px;
     padding: 2rem 1.7rem 1.6rem;
-    background: #fff;
-    border-radius: 14px;
-    border: 1px solid rgba(9, 30, 66, 0.08);
-    box-shadow: 0 14px 30px rgba(9, 30, 66, 0.12);
+    background: ${({ theme }) => theme.surface};
+    border-radius: 22px;
+    border: 1px solid ${({ theme }) => theme.border};
+    box-shadow: ${({ theme }) => theme.shadowMd};
 `;
 
 const Title = styled.h1`
@@ -30,9 +33,9 @@ const Title = styled.h1`
   align-items: center;
   justify-content: center;
   gap: 0.75rem;
-  font-size: 1.7rem;
+  font-size: 1.6rem;
   color: ${({ theme }) => theme.primary};
-  margin-bottom: 1.5rem;
+  margin-bottom: 1.7rem;
   svg { color: ${({ theme }) => theme.secondary}; }
 `;
 
@@ -42,24 +45,42 @@ const Form = styled.form`
     gap: 1rem;
 `;
 
+const InputWrap = styled.div`
+    position: relative;
+    display: flex;
+    align-items: center;
+`;
+
+const InputIcon = styled.span`
+    position: absolute;
+    left: 0.75rem;
+    display: inline-flex;
+    color: ${({ theme }) => theme.lightText};
+`;
+
 const Input = styled.input`
     padding: 0.72rem 0.85rem;
     border: 1px solid ${({ theme }) => theme.border};
-    border-radius: 8px;
+    border-radius: 10px;
     font-size: 0.95rem;
+    width: 100%;
+    padding-left: 2.3rem;
 `;
 
 const Button = styled.button`
     padding: 0.72rem 0.9rem;
-    border: none;
+    border: 1px solid transparent;
     background-color: ${({ theme }) => theme.primary};
     color: white;
     font-size: 0.95rem;
-    font-weight: bold;
-    border-radius: 8px;
+    font-weight: 800;
+    border-radius: 10px;
     cursor: pointer;
-    transition: background-color 0.2s;
-    &:hover { background-color: #081e35; }
+    transition: transform 0.2s ease, filter 0.2s ease;
+    &:hover {
+      transform: translateY(-1px);
+      filter: brightness(1.05);
+    }
 `;
 
 const ErrorMessage = styled.p`
@@ -90,10 +111,16 @@ const LoginPage = () => {
     return (
         <AuthPageContainer>
             <AuthFormContainer>
-                <Title><FaWhatsapp /> Beta Suite</Title>
+                <Title><FiGrid /> Beta Suite</Title>
                 <Form onSubmit={handleSubmit}>
-                    <Input type="text" value={username} onChange={e => setUsername(e.target.value)} placeholder="Username" required />
-                    <Input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Password" required />
+                    <InputWrap>
+                        <InputIcon><FiUser /></InputIcon>
+                        <Input type="text" value={username} onChange={e => setUsername(e.target.value)} placeholder="Username" required />
+                    </InputWrap>
+                    <InputWrap>
+                        <InputIcon><FiLock /></InputIcon>
+                        <Input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Password" required />
+                    </InputWrap>
                     <Button type="submit">Login</Button>
                     {error && <ErrorMessage>{error}</ErrorMessage>}
                 </Form>

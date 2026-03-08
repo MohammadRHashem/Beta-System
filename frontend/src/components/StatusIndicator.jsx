@@ -1,30 +1,44 @@
 import React from 'react';
 import styled from 'styled-components';
-import { FaSignOutAlt } from 'react-icons/fa';
+import { FiLogOut, FiRadio } from 'react-icons/fi';
 
 const StatusWrapper = styled.div`
     display: flex;
     align-items: center;
-    gap: 0.55rem;
+    gap: 0.5rem;
     min-width: 0;
 `;
 
-const Dot = styled.span`
-    width: 12px;
-    height: 12px;
-    border-radius: 50%;
-    background-color: ${({ status, theme }) => {
+const StatusBadge = styled.div`
+    padding: 0.34rem 0.62rem;
+    border-radius: 999px;
+    border: 1px solid ${({ status, theme }) => {
+        if (status === 'connected') return 'rgba(19, 184, 135, 0.4)';
+        if (status === 'qr') return 'rgba(245, 158, 11, 0.4)';
+        return 'rgba(229, 72, 77, 0.42)';
+    }};
+    background: ${({ status }) => {
+        if (status === 'connected') return 'rgba(19, 184, 135, 0.16)';
+        if (status === 'qr') return 'rgba(245, 158, 11, 0.18)';
+        return 'rgba(229, 72, 77, 0.18)';
+    }};
+    color: ${({ status, theme }) => {
         if (status === 'connected') return theme.success;
-        if (status === 'qr') return '#f39c12';
+        if (status === 'qr') return theme.warning;
         return theme.error;
     }};
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-weight: 700;
+    font-size: 0.8rem;
 `;
 
 const StatusText = styled.span`
     text-transform: capitalize;
-    font-weight: 600;
-    font-size: 0.9rem;
-    color: ${({ theme }) => theme.lightText};
+    font-weight: 700;
+    font-size: 0.78rem;
+    color: currentColor;
     white-space: nowrap;
 
     @media (max-width: 680px) {
@@ -35,16 +49,16 @@ const StatusText = styled.span`
 const LogoutButton = styled.button`
   background-color: ${({ theme }) => theme.error};
   color: white;
-  border: none;
-  padding: 0.45rem 0.7rem;
-  border-radius: 8px;
+  border: 1px solid transparent;
+  padding: 0.46rem 0.72rem;
+  border-radius: 999px;
   cursor: pointer;
   font-weight: 700;
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
   &:hover {
-    opacity: 0.9;
+    filter: brightness(1.05);
   }
 `;
 
@@ -57,11 +71,13 @@ const LogoutLabel = styled.span`
 const StatusIndicator = ({ status, onLogout }) => {
     return (
         <StatusWrapper>
-            <Dot status={status} />
-            <StatusText>{status}</StatusText>
+            <StatusBadge status={status}>
+                <FiRadio />
+                <StatusText>{status}</StatusText>
+            </StatusBadge>
             {onLogout && (
               <LogoutButton onClick={onLogout}>
-                <FaSignOutAlt />
+                <FiLogOut />
                 <LogoutLabel>Logout</LogoutLabel>
               </LogoutButton>
             )}

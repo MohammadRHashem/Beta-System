@@ -31,11 +31,11 @@ const Header = styled.div`
     flex-wrap: wrap;
 `;
 const Card = styled.div`
-    background: #fff;
+    background: ${({ theme }) => theme.surface};
     padding: 1.15rem 1.25rem 1rem;
     border-radius: 14px;
-    border: 1px solid rgba(9, 30, 66, 0.08);
-    box-shadow: 0 14px 30px rgba(9, 30, 66, 0.08);
+    border: 1px solid ${({ theme }) => theme.border};
+    box-shadow: ${({ theme }) => theme.shadowMd};
     display: flex;
     flex-direction: column;
     min-height: 0;
@@ -63,7 +63,7 @@ const TableWrapper = styled.div`
     overflow: auto;
     border: 1px solid ${({ theme }) => theme.border};
     border-radius: 10px;
-    background: #fff;
+    background: ${({ theme }) => theme.surface};
     min-height: 0;
     flex: 1;
 `;
@@ -127,7 +127,7 @@ const SwitchInput = styled.input`
     height: 0;
     &:checked + span { background-color: ${({ theme }) => theme.secondary}; }
     &:checked + span:before { transform: translateX(22px); }
-    &:disabled + span { cursor: not-allowed; background-color: #e9ecef; opacity: 0.7; }
+    &:disabled + span { cursor: not-allowed; background-color: ${({ theme }) => theme.surfaceAlt}; opacity: 0.7; }
 `;
 const Slider = styled.span`
     position: absolute;
@@ -169,8 +169,8 @@ const ModalForm = styled.form`display: flex; flex-direction: column; gap: 1rem;`
 const InputGroup = styled.div`display: flex; flex-direction: column; gap: 0.5rem;`;
 const Label = styled.label`font-weight: 500;`;
 const Input = styled.input`padding: 0.68rem 0.74rem; border: 1px solid ${({ theme }) => theme.border}; border-radius: 8px; font-size: 0.95rem;`;
-const Select = styled.select`padding: 0.68rem 0.74rem; border: 1px solid ${({ theme }) => theme.border}; border-radius: 8px; font-size: 0.95rem; background: #fff;`;
-const Fieldset = styled.fieldset`border: 1px solid #eee; border-radius: 8px; padding: 0.85rem; display: flex; flex-wrap: wrap; gap: 0.75rem;`;
+const Select = styled.select`padding: 0.68rem 0.74rem; border: 1px solid ${({ theme }) => theme.border}; border-radius: 8px; font-size: 0.95rem; background: ${({ theme }) => theme.surface};`;
+const Fieldset = styled.fieldset`border: 1px solid ${({ theme }) => theme.border}; border-radius: 8px; padding: 0.85rem; display: flex; flex-wrap: wrap; gap: 0.75rem;`;
 const Legend = styled.legend`padding: 0 0.5em; font-weight: 500; color: #6B7C93;`;
 const FormRow = styled.div`
     display: grid;

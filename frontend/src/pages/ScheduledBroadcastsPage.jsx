@@ -13,7 +13,7 @@ import AttachmentManagerModal from '../components/AttachmentManagerModal';
 
 const PageContainer = styled.div` display: flex; flex-direction: column; gap: 1.25rem; height: 100%; min-height: 0; overflow: hidden; `;
 const Header = styled.div` display: flex; justify-content: space-between; align-items: center; gap: 1rem; flex-wrap: wrap; `;
-const Card = styled.div` background: #fff; padding: 1.1rem 1.25rem 1rem; border-radius: 14px; border: 1px solid rgba(9, 30, 66, 0.08); box-shadow: 0 14px 30px rgba(9, 30, 66, 0.08); display: flex; flex-direction: column; min-height: 0; flex: 1; `;
+const Card = styled.div` background: ${({ theme }) => theme.surface}; padding: 1.1rem 1.25rem 1rem; border-radius: 14px; border: 1px solid ${({ theme }) => theme.border}; box-shadow: ${({ theme }) => theme.shadowMd}; display: flex; flex-direction: column; min-height: 0; flex: 1; `;
 const Button = styled.button` background-color: ${({ theme, color }) => color === 'primary' ? theme.primary : theme.secondary}; color: white; border: none; padding: 0.66rem 1rem; border-radius: 8px; cursor: pointer; font-weight: 700; display: flex; align-items: center; gap: 0.5rem; `;
 const TableWrapper = styled.div` width: 100%; overflow: auto; border: 1px solid ${({ theme }) => theme.border}; border-radius: 10px; min-height: 0; flex: 1; `;
 const Table = styled.table`
@@ -53,7 +53,7 @@ const Table = styled.table`
     }
 `;
 const SwitchContainer = styled.label` position: relative; display: inline-block; width: 50px; height: 28px; `;
-const SwitchInput = styled.input` opacity: 0; width: 0; height: 0; &:checked + span { background-color: ${({ theme }) => theme.secondary}; } &:checked + span:before { transform: translateX(22px); } &:disabled + span { cursor: not-allowed; background-color: #e9ecef; opacity: 0.7; }`;
+const SwitchInput = styled.input` opacity: 0; width: 0; height: 0; &:checked + span { background-color: ${({ theme }) => theme.secondary}; } &:checked + span:before { transform: translateX(22px); } &:disabled + span { cursor: not-allowed; background-color: ${({ theme }) => theme.surfaceAlt}; opacity: 0.7; }`;
 const Slider = styled.span` position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #ccc; transition: .4s; border-radius: 34px; &:before { position: absolute; content: ""; height: 20px; width: 20px; left: 4px; bottom: 4px; background-color: white; transition: .4s; border-radius: 50%; } `;
 const ScheduleInfo = styled.div` font-size: 0.9rem; span { display: block; color: #6B7C93; font-size: 0.8rem; } `;
 const MessageContent = styled.td` max-width: 300px; .content-wrapper { display: flex; align-items: center; gap: 0.5rem; } .text { white-space: pre-wrap; word-break: break-word; } `;
@@ -61,15 +61,15 @@ const ModalForm = styled.form` display: flex; flex-direction: column; gap: 1rem;
 const InputGroup = styled.div` display: flex; flex-direction: column; gap: 0.5rem; `;
 const Label = styled.label` font-weight: 500; `;
 const Input = styled.input` padding: 0.68rem 0.72rem; border: 1px solid ${({ theme }) => theme.border}; border-radius: 8px; font-size: 0.95rem; `;
-const Select = styled.select` padding: 0.68rem 0.72rem; border: 1px solid ${({ theme }) => theme.border}; border-radius: 8px; font-size: 0.95rem; background: #fff; `;
+const Select = styled.select` padding: 0.68rem 0.72rem; border: 1px solid ${({ theme }) => theme.border}; border-radius: 8px; font-size: 0.95rem; background: ${({ theme }) => theme.surface}; `;
 const Textarea = styled.textarea` padding: 0.68rem 0.72rem; border: 1px solid ${({ theme }) => theme.border}; border-radius: 8px; font-size: 0.95rem; min-height: 120px; font-family: inherit; `;
-const Fieldset = styled.fieldset` border: 1px solid #eee; border-radius: 8px; padding: 0.85rem; display: flex; flex-wrap: wrap; gap: 0.75rem; `;
+const Fieldset = styled.fieldset` border: 1px solid ${({ theme }) => theme.border}; border-radius: 8px; padding: 0.85rem; display: flex; flex-wrap: wrap; gap: 0.75rem; `;
 const Legend = styled.legend` padding: 0 0.5em; font-weight: 500; color: #6B7C93; `;
 const DayButton = styled.button` padding: 0.5rem 0.75rem; border: 1px solid ${({ theme, selected }) => selected ? theme.secondary : theme.border}; background: ${({ theme, selected }) => selected ? '#e6fff9' : '#fff'}; color: ${({ theme, selected }) => selected ? theme.secondary : theme.text}; border-radius: 20px; font-weight: 600; cursor: pointer; `;
 const AttachmentControls = styled.div` display: flex; gap: 1rem; `;
-const ControlButton = styled.button` display: flex; align-items: center; gap: 0.5rem; padding: 0.6rem 1rem; border: 1px solid ${({ theme }) => theme.border}; background: #fff; border-radius: 4px; font-weight: 600; cursor: pointer; &:hover { background: #f9f9f9; } `;
+const ControlButton = styled.button` display: flex; align-items: center; gap: 0.5rem; padding: 0.6rem 1rem; border: 1px solid ${({ theme }) => theme.border}; background: ${({ theme }) => theme.surface}; border-radius: 4px; font-weight: 600; cursor: pointer; &:hover { background: ${({ theme }) => theme.surfaceAlt}; } `;
 const HiddenInput = styled.input.attrs({ type: 'file' })` display: none; `;
-const AttachmentPreview = styled.div` margin-top: 1rem; padding: 1rem; background: #f6f9fc; border: 1px solid ${({ theme }) => theme.border}; border-radius: 8px; display: flex; align-items: center; justify-content: space-between; `;
+const AttachmentPreview = styled.div` margin-top: 1rem; padding: 1rem; background: ${({ theme }) => theme.surfaceAlt}; border: 1px solid ${({ theme }) => theme.border}; border-radius: 8px; display: flex; align-items: center; justify-content: space-between; `;
 const FileInfo = styled.div` display: flex; align-items: center; gap: 1rem; .icon { font-size: 2rem; color: #666; } `;
 const RemoveButton = styled(FaTimesCircle)` cursor: pointer; color: #999; &:hover { color: ${({ theme }) => theme.error}; } `;
 const FormRow = styled.div`

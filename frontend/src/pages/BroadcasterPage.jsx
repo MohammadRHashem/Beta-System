@@ -71,7 +71,7 @@ const ComposeLayout = styled.div`
 `;
 
 const CompactCard = styled.div`
-  background: #fff;
+  background: ${({ theme }) => theme.surface};
   border: 1px solid ${({ theme }) => theme.border};
   border-radius: 12px;
   padding: 0.9rem;
@@ -136,7 +136,7 @@ const Select = styled.select`
   border: 1px solid ${({ theme }) => theme.border};
   border-radius: 8px;
   padding: 0.58rem 0.66rem;
-  background: #fff;
+  background: ${({ theme }) => theme.surface};
   min-height: 38px;
 `;
 

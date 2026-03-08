@@ -99,7 +99,7 @@ const TabButton = styled.button`
 const TabOrderButton = styled.button`
     border: 1px solid ${({ theme }) => theme.border};
     border-radius: 5px;
-    background: #fff;
+    background: ${({ theme }) => theme.surface};
     color: ${({ theme }) => theme.lightText};
     font-weight: 700;
     width: 26px;
@@ -114,7 +114,7 @@ const TabOrderButton = styled.button`
 `;
 
 const TableWrapper = styled.div`
-    background: #fff;
+    background: ${({ theme }) => theme.surface};
     border-radius: 12px;
     box-shadow: ${({ theme }) => theme.shadowSm};
     overflow: auto;

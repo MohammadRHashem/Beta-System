@@ -57,7 +57,7 @@ const Key = styled(motion.button)`
     height: 62px;
     border-radius: 50%;
     border: 1px solid ${({ theme }) => theme.border};
-    background: #fff;
+    background: ${({ theme }) => theme.surface};
     font-size: 1.5rem;
     font-weight: 300;
     color: ${({ theme }) => theme.primary};
@@ -67,7 +67,7 @@ const Key = styled(motion.button)`
     align-items: center;
     
     &:hover {
-        background: #f6f9fc;
+        background: ${({ theme }) => theme.surfaceAlt};
     }
 `;
 

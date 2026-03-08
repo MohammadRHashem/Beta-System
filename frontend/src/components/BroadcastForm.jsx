@@ -3,13 +3,13 @@ import styled from 'styled-components';
 import { createTemplate, uploadBroadcastAttachment } from '../services/api';
 import { FaPaperclip, FaFolderOpen, FaTimesCircle, FaImage, FaFilePdf, FaFile } from 'react-icons/fa';
 
-const FormContainer = styled.div` background: #fff; padding: 1.1rem 1rem 1rem; border: 1px solid ${({ theme }) => theme.border}; border-radius: 12px; `;
+const FormContainer = styled.div` background: ${({ theme }) => theme.surface}; padding: 1.1rem 1rem 1rem; border: 1px solid ${({ theme }) => theme.border}; border-radius: 12px; `;
 const TextArea = styled.textarea` width: 100%; min-height: 150px; padding: 0.68rem 0.72rem; border: 1px solid ${({ theme }) => theme.border}; border-radius: 8px; font-family: inherit; font-size: 0.95rem; `;
 const SendButton = styled.button` background-color: ${({ theme, disabled }) => disabled ? theme.lightText : theme.secondary}; color: white; border: none; padding: 0.68rem 1rem; border-radius: 8px; cursor: ${({ disabled }) => disabled ? 'not-allowed' : 'pointer'}; font-weight: bold; font-size: 0.95rem; width: 100%; transition: background-color 0.2s; &:hover { opacity: ${({ disabled }) => disabled ? 1 : 0.9}; } `;
 const AttachmentControls = styled.div` display: flex; gap: 0.75rem; margin-top: 0.9rem; padding-top: 0.9rem; border-top: 1px solid ${({ theme }) => theme.border}; flex-wrap: wrap; `;
-const ControlButton = styled.button` display: flex; align-items: center; gap: 0.5rem; padding: 0.56rem 0.82rem; border: 1px solid ${({ theme }) => theme.border}; background: #fff; border-radius: 8px; font-weight: 600; cursor: pointer; &:hover { background: #f9f9f9; } `;
+const ControlButton = styled.button` display: flex; align-items: center; gap: 0.5rem; padding: 0.56rem 0.82rem; border: 1px solid ${({ theme }) => theme.border}; background: ${({ theme }) => theme.surface}; border-radius: 8px; font-weight: 600; cursor: pointer; &:hover { background: ${({ theme }) => theme.surfaceAlt}; } `;
 const HiddenInput = styled.input.attrs({ type: 'file' })` display: none; `;
-const AttachmentPreview = styled.div` margin-top: 1rem; padding: 1rem; background: #f6f9fc; border: 1px solid ${({ theme }) => theme.border}; border-radius: 8px; display: flex; align-items: center; justify-content: space-between; `;
+const AttachmentPreview = styled.div` margin-top: 1rem; padding: 1rem; background: ${({ theme }) => theme.surfaceAlt}; border: 1px solid ${({ theme }) => theme.border}; border-radius: 8px; display: flex; align-items: center; justify-content: space-between; `;
 const FileInfo = styled.div` display: flex; align-items: center; gap: 1rem; .icon { font-size: 2rem; color: #666; } `;
 const RemoveButton = styled(FaTimesCircle)` cursor: pointer; color: #999; &:hover { color: ${({ theme }) => theme.error}; } `;
 const TemplateSaveContainer = styled.div` margin-top: 0.85rem; display: flex; gap: 0.5rem; flex-wrap: wrap; `;

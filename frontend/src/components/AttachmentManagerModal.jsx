@@ -11,7 +11,7 @@ const Gallery = styled.div`
     max-height: 60vh;
     overflow-y: auto;
     padding: 0.75rem;
-    background: #f9f9f9;
+    background: ${({ theme }) => theme.surfaceAlt};
     border: 1px solid ${({ theme }) => theme.border};
     border-radius: 10px;
 `;
@@ -19,7 +19,7 @@ const FileCard = styled.div`
     position: relative;
     border: 1px solid ${({ theme }) => theme.border};
     border-radius: 8px;
-    background: #fff;
+    background: ${({ theme }) => theme.surface};
     overflow: hidden;
     cursor: pointer;
     &:hover .overlay {

@@ -11,7 +11,7 @@ const InputContainer = styled.div`
     position: relative;
     display: flex;
     align-items: center;
-    background: #fff;
+    background: ${({ theme }) => theme.surface};
     border: 1px solid ${({ theme }) => theme.border};
     border-radius: 8px;
     padding-right: 0.5rem;
@@ -35,7 +35,7 @@ const Dropdown = styled.ul`
     top: calc(100% + 4px);
     left: 0;
     width: 100%;
-    background: #fff;
+    background: ${({ theme }) => theme.surface};
     border: 1px solid ${({ theme }) => theme.border};
     border-radius: 8px;
     box-shadow: 0 4px 8px rgba(0,0,0,0.1);

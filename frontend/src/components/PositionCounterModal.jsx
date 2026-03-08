@@ -39,7 +39,7 @@ const Button = styled.button`
 `;
 
 const Fieldset = styled.fieldset`
-  border: 1px solid #eee;
+  border: 1px solid ${({ theme }) => theme.border};
   border-radius: 8px;
   padding: 0.85rem;
   display: flex;
@@ -56,7 +56,7 @@ const Legend = styled.legend`
 const GroupList = styled.div`
   max-height: 160px;
   overflow: auto;
-  border: 1px solid #eee;
+  border: 1px solid ${({ theme }) => theme.border};
   border-radius: 8px;
   padding: 0.5rem;
   display: grid;
@@ -68,7 +68,7 @@ const Select = styled.select`
     border: 1px solid ${({ theme }) => theme.border};
     border-radius: 8px;
     font-size: 0.95rem;
-    background: #fff;
+    background: ${({ theme }) => theme.surface};
 `;
 
 const PositionCounterModal = ({ isOpen, onClose, onSave, editingCounter, crossSubaccounts, whatsappGroups }) => {

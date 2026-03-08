@@ -4,7 +4,7 @@ import { createBatch, updateBatch } from '../services/api';
 import { FaSyncAlt } from 'react-icons/fa';
 
 const Container = styled.div`
-    background: #fff;
+    background: ${({ theme }) => theme.surface};
     padding: 1.1rem 1rem 1rem;
     border: 1px solid ${({ theme }) => theme.border};
     border-radius: 12px;

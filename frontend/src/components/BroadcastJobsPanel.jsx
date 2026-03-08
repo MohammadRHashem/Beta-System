@@ -12,7 +12,7 @@ import {
 } from "react-icons/fa";
 
 const Container = styled.div`
-  background: #fff;
+  background: ${({ theme }) => theme.surface};
   border: 1px solid ${({ theme }) => theme.border};
   border-radius: 12px;
   padding: 1rem;

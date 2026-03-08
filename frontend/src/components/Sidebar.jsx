@@ -2,40 +2,42 @@ import React from "react";
 import { NavLink } from "react-router-dom";
 import styled from "styled-components";
 import {
-  FaWhatsapp,
-  FaBullhorn,
-  FaRobot,
-  FaCog,
-  FaKeyboard,
-  FaFileInvoiceDollar,
-  FaChartLine,
-  FaCheckCircle,
-  FaRoute,
-  FaUniversity,
-  FaUsers,
-  FaBitcoin,
-  FaCalendarAlt,
-  FaUserFriends,
-  FaCheckDouble,
-  FaClipboardList,
-  FaCodeBranch,
-  FaShieldAlt,
-  FaHistory,
-  FaThumbtack,
-  FaExchangeAlt,
-} from "react-icons/fa";
+  FiActivity,
+  FiCalendar,
+  FiCheckCircle,
+  FiCheckSquare,
+  FiClock,
+  FiClipboard,
+  FiCpu,
+  FiDollarSign,
+  FiFileText,
+  FiGitBranch,
+  FiGrid,
+  FiMapPin,
+  FiRepeat,
+  FiSend,
+  FiSettings,
+  FiShare2,
+  FiShield,
+  FiSliders,
+  FiType,
+  FiUser,
+  FiUserPlus,
+  FiUsers,
+} from "react-icons/fi";
 import { usePermissions } from "../context/PermissionContext";
 
 const SidebarContainer = styled.nav`
   width: ${({ theme }) => theme.sidebarWidth};
   height: 100vh;
-  background-color: ${({ theme }) => theme.surface};
-  padding: 1rem 0;
+  background: ${({ theme }) => theme.sidebarGradient};
+  color: rgba(255, 255, 255, 0.9);
+  padding: 1rem 0.75rem;
   display: flex;
   flex-direction: column;
-  border-right: 1px solid ${({ theme }) => theme.border};
+  border-right: 1px solid ${({ theme }) => theme.borderStrong};
   flex-shrink: 0;
-  box-shadow: ${({ theme }) => theme.shadowSm};
+  box-shadow: ${({ theme }) => theme.shadowMd};
   overflow-y: auto;
   z-index: 40;
 
@@ -47,80 +49,124 @@ const SidebarContainer = styled.nav`
     position: fixed;
     top: 0;
     left: 0;
+    width: min(82vw, ${({ theme }) => theme.sidebarWidth});
     transform: translateX(${({ $isOpen }) => ($isOpen ? "0" : "-100%")});
     transition: transform 0.24s ease;
     box-shadow: ${({ theme }) => theme.shadowMd};
   }
 `;
 
+const Brand = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  padding: 0.3rem 0.75rem 1rem;
+  margin-bottom: 0.35rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.16);
+`;
+
+const BrandIcon = styled.div`
+  width: 2.1rem;
+  height: 2.1rem;
+  border-radius: 0.7rem;
+  background: linear-gradient(150deg, rgba(41, 211, 179, 0.95), rgba(41, 211, 179, 0.72));
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #0a2337;
+  flex-shrink: 0;
+`;
+
 const Title = styled.h1`
   display: flex;
   align-items: center;
-  gap: 0.75rem;
-  font-size: 1.35rem;
-  color: ${({ theme }) => theme.primary};
-  padding: 0 1.5rem;
-  margin-bottom: 1rem;
-
-  svg {
-    color: ${({ theme }) => theme.secondary};
-    font-size: 1.9rem;
-  }
+  gap: 0.4rem;
+  font-size: 1.08rem;
+  color: #ecf5ff;
+  margin: 0;
+  letter-spacing: 0.01em;
 
   @media (max-height: 800px) {
-    margin-bottom: 0.7rem;
-    font-size: 1.2rem;
+    font-size: 1rem;
   }
+`;
+
+const SectionLabel = styled.p`
+  margin: 0.95rem 0.5rem 0.45rem;
+  font-size: 0.73rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  font-weight: 700;
+  color: rgba(208, 225, 245, 0.65);
 `;
 
 const NavItem = styled(NavLink)`
   display: flex;
   align-items: center;
-  gap: 1rem;
-  padding: 0.8rem 1.2rem;
-  color: ${({ theme }) => theme.lightText};
+  gap: 0.72rem;
+  padding: 0.66rem 0.72rem;
+  color: rgba(218, 230, 248, 0.9);
   text-decoration: none;
-  font-weight: 600;
-  font-size: 0.95rem;
-  border-left: 4px solid transparent;
+  font-weight: 700;
+  font-size: 0.9rem;
   transition: all 0.2s ease-in-out;
-  border-radius: 0 999px 999px 0;
-  margin-right: 0.7rem;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  margin: 0.16rem 0.3rem;
+  position: relative;
 
-  svg {
-    font-size: 1rem;
+  .icon {
+    width: 1.8rem;
+    height: 1.8rem;
+    border-radius: 9px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255, 255, 255, 0.11);
+    color: rgba(232, 243, 255, 0.95);
+    font-size: 0.95rem;
+    flex-shrink: 0;
   }
 
   &:hover {
-    background-color: ${({ theme }) => theme.surfaceAlt};
-    color: ${({ theme }) => theme.primary};
+    background-color: rgba(255, 255, 255, 0.09);
+    border-color: rgba(255, 255, 255, 0.16);
+    color: #ffffff;
   }
 
   &.active {
-    color: ${({ theme }) => theme.primary};
-    border-left-color: ${({ theme }) => theme.secondary};
-    background: linear-gradient(
-      90deg,
-      rgba(0, 196, 154, 0.18),
-      rgba(0, 196, 154, 0.04)
-    );
+    color: #ffffff;
+    background: linear-gradient(105deg, rgba(41, 211, 179, 0.28), rgba(41, 211, 179, 0.12));
+    border-color: rgba(41, 211, 179, 0.42);
+    box-shadow: inset 0 0 0 1px rgba(41, 211, 179, 0.28);
+
+    .icon {
+      background: rgba(41, 211, 179, 0.26);
+      color: #dffcf6;
+    }
   }
 
   @media (max-height: 800px) {
-    padding: 0.65rem 1rem;
+    padding: 0.54rem 0.66rem;
     font-size: 0.9rem;
   }
 `;
 
 const SectionDivider = styled.div`
   height: 1px;
-  margin: 0.9rem 1rem;
-  background: ${({ theme }) => theme.border};
+  margin: 0.8rem 0.5rem;
+  background: rgba(255, 255, 255, 0.18);
 `;
 
 const BottomSection = styled.div`
   margin-top: auto;
   padding-top: 0.5rem;
+`;
+
+const NavBody = styled.div`
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
 `;
 
 const Sidebar = ({ isOpen = true, onNavigate = null }) => {
@@ -133,145 +179,154 @@ const Sidebar = ({ isOpen = true, onNavigate = null }) => {
 
   return (
     <SidebarContainer $isOpen={isOpen}>
-      <Title>
-        <FaWhatsapp /> Beta Suite
-      </Title>
+      <Brand>
+        <BrandIcon><FiGrid /></BrandIcon>
+        <Title>Beta Suite</Title>
+      </Brand>
 
-      {hasPermission("broadcast:send") && (
-        <NavItem to="/broadcaster" onClick={handleNavigate}>
-          <FaBullhorn />
-          <span>Broadcaster</span>
-        </NavItem>
-      )}
-      {hasPermission("subaccount:view") && (
-        <NavItem to="/subaccounts" onClick={handleNavigate}>
-          <FaUsers />
-          <span>Subaccounts</span>
-        </NavItem>
-      )}
-      {hasPermission("finance:view_dashboards") && (
-        <NavItem to="/sub-customers" onClick={handleNavigate}>
-          <FaUserFriends />
-          <span>Sub Customers</span>
-        </NavItem>
-      )}
-      {hasPermission("usdt_wallets:view") && (
-        <NavItem to="/usdt-wallets" onClick={handleNavigate}>
-          <FaBitcoin />
-          <span>USDT Wallets</span>
-        </NavItem>
-      )}
-      {hasPermission("client_requests:view") && (
-        <NavItem to="/client-requests" onClick={handleNavigate}>
-          <FaClipboardList />
-          <span>Client Requests</span>
-        </NavItem>
-      )}
-      {hasPermission("settings:edit_request_triggers") && (
-        <NavItem to="/request-types" onClick={handleNavigate}>
-          <FaCodeBranch />
-          <span>Request Triggers</span>
-        </NavItem>
-      )}
-      {hasPermission("broadcast:schedules:view") && (
-        <NavItem to="/scheduled-broadcasts" onClick={handleNavigate}>
-          <FaCalendarAlt />
-          <span>Schedules</span>
-        </NavItem>
-      )}
-      {hasPermission("subaccount:withdrawals:view") && (
-        <NavItem to="/scheduled-withdrawals" onClick={handleNavigate}>
-          <FaExchangeAlt />
-          <span>Withdrawals</span>
-        </NavItem>
-      )}
-      {hasPermission("pin:view") && (
-        <NavItem to="/pin-messages" onClick={handleNavigate}>
-          <FaThumbtack />
-          <span>Pin Messages</span>
-        </NavItem>
-      )}
+      <NavBody>
+        <SectionLabel>Operations</SectionLabel>
 
-      {hasPermission("settings:view") && (
-        <>
-          <SectionDivider />
-          <NavItem to="/ai-forwarding" onClick={handleNavigate}>
-            <FaRobot />
-            <span>AI Forwarding</span>
+        {hasPermission("broadcast:send") && (
+          <NavItem to="/broadcaster" onClick={handleNavigate}>
+            <span className="icon"><FiSend /></span>
+            <span>Broadcaster</span>
           </NavItem>
-          <NavItem to="/auto-confirmation" onClick={handleNavigate}>
-            <FaCheckCircle />
-            <span>Auto Confirmation</span>
+        )}
+        {hasPermission("subaccount:view") && (
+          <NavItem to="/subaccounts" onClick={handleNavigate}>
+            <span className="icon"><FiUsers /></span>
+            <span>Subaccounts</span>
           </NavItem>
-          <NavItem to="/direct-forwarding" onClick={handleNavigate}>
-            <FaRoute />
-            <span>Direct Forwarding</span>
+        )}
+        {hasPermission("finance:view_dashboards") && (
+          <NavItem to="/sub-customers" onClick={handleNavigate}>
+            <span className="icon"><FiUserPlus /></span>
+            <span>Sub Customers</span>
           </NavItem>
-          <NavItem to="/abbreviations" onClick={handleNavigate}>
-            <FaKeyboard />
-            <span>Abbreviations</span>
+        )}
+        {hasPermission("usdt_wallets:view") && (
+          <NavItem to="/usdt-wallets" onClick={handleNavigate}>
+            <span className="icon"><FiDollarSign /></span>
+            <span>USDT Wallets</span>
           </NavItem>
-        </>
-      )}
+        )}
+        {hasPermission("client_requests:view") && (
+          <NavItem to="/client-requests" onClick={handleNavigate}>
+            <span className="icon"><FiClipboard /></span>
+            <span>Client Requests</span>
+          </NavItem>
+        )}
+        {hasPermission("settings:edit_request_triggers") && (
+          <NavItem to="/request-types" onClick={handleNavigate}>
+            <span className="icon"><FiGitBranch /></span>
+            <span>Request Triggers</span>
+          </NavItem>
+        )}
+        {hasPermission("broadcast:schedules:view") && (
+          <NavItem to="/scheduled-broadcasts" onClick={handleNavigate}>
+            <span className="icon"><FiCalendar /></span>
+            <span>Schedules</span>
+          </NavItem>
+        )}
+        {hasPermission("subaccount:withdrawals:view") && (
+          <NavItem to="/scheduled-withdrawals" onClick={handleNavigate}>
+            <span className="icon"><FiRepeat /></span>
+            <span>Withdrawals</span>
+          </NavItem>
+        )}
+        {hasPermission("pin:view") && (
+          <NavItem to="/pin-messages" onClick={handleNavigate}>
+            <span className="icon"><FiMapPin /></span>
+            <span>Pin Messages</span>
+          </NavItem>
+        )}
 
-      {hasPermission("finance:view_dashboards") && (
-        <NavItem to="/position" onClick={handleNavigate}>
-          <FaChartLine />
-          <span>Position</span>
-        </NavItem>
-      )}
-      {hasPermission("invoice:view") && (
-        <NavItem to="/invoices" onClick={handleNavigate}>
-          <FaFileInvoiceDollar />
-          <span>Invoices</span>
-        </NavItem>
-      )}
-
-      {hasPermission("finance:view_bank_statements") && (
-        <NavItem to="/trkbit" onClick={handleNavigate}>
-          <FaUniversity />
-          <span>Cross Intermediacao</span>
-        </NavItem>
-      )}
-
-      {hasPermission("manual_review:view") && (
-        <NavItem to="/manual-review" onClick={handleNavigate}>
-          <FaCheckDouble />
-          <span>Manual Confirmation</span>
-        </NavItem>
-      )}
-      {hasPermission("settings:edit_rules") && (
-        <NavItem to="/group-settings" onClick={handleNavigate}>
-          <FaCog />
-          <span>Group Settings</span>
-        </NavItem>
-      )}
-
-      {(hasPermission("admin:view_users") ||
-        hasPermission("admin:view_roles") ||
-        hasPermission("admin:view_audit_log")) && (
-        <BottomSection>
-          <SectionDivider />
-          {hasPermission("admin:view_users") && (
-            <NavItem to="/users" onClick={handleNavigate}>
-              <FaUsers />
-              <span>Users</span>
+        {hasPermission("settings:view") && (
+          <>
+            <SectionDivider />
+            <SectionLabel>Automation</SectionLabel>
+            <NavItem to="/ai-forwarding" onClick={handleNavigate}>
+              <span className="icon"><FiCpu /></span>
+              <span>AI Forwarding</span>
             </NavItem>
-          )}
-          {hasPermission("admin:view_roles") && (
-            <NavItem to="/roles" onClick={handleNavigate}>
-              <FaShieldAlt />
-              <span>Roles</span>
+            <NavItem to="/auto-confirmation" onClick={handleNavigate}>
+              <span className="icon"><FiCheckCircle /></span>
+              <span>Auto Confirmation</span>
             </NavItem>
-          )}
-          {hasPermission("admin:view_audit_log") && (
-            <NavItem to="/audit-log" onClick={handleNavigate}>
-              <FaHistory />
-              <span>Audit Log</span>
+            <NavItem to="/direct-forwarding" onClick={handleNavigate}>
+              <span className="icon"><FiShare2 /></span>
+              <span>Direct Forwarding</span>
             </NavItem>
-          )}
-        </BottomSection>
-      )}
+            <NavItem to="/abbreviations" onClick={handleNavigate}>
+              <span className="icon"><FiType /></span>
+              <span>Abbreviations</span>
+            </NavItem>
+          </>
+        )}
+
+        <SectionDivider />
+        <SectionLabel>Finance</SectionLabel>
+        {hasPermission("finance:view_dashboards") && (
+          <NavItem to="/position" onClick={handleNavigate}>
+            <span className="icon"><FiActivity /></span>
+            <span>Position</span>
+          </NavItem>
+        )}
+        {hasPermission("invoice:view") && (
+          <NavItem to="/invoices" onClick={handleNavigate}>
+            <span className="icon"><FiFileText /></span>
+            <span>Invoices</span>
+          </NavItem>
+        )}
+
+        {hasPermission("finance:view_bank_statements") && (
+          <NavItem to="/trkbit" onClick={handleNavigate}>
+            <span className="icon"><FiSettings /></span>
+            <span>Cross Intermediacao</span>
+          </NavItem>
+        )}
+
+        {hasPermission("manual_review:view") && (
+          <NavItem to="/manual-review" onClick={handleNavigate}>
+            <span className="icon"><FiCheckSquare /></span>
+            <span>Manual Confirmation</span>
+          </NavItem>
+        )}
+        {hasPermission("settings:edit_rules") && (
+          <NavItem to="/group-settings" onClick={handleNavigate}>
+            <span className="icon"><FiSliders /></span>
+            <span>Group Settings</span>
+          </NavItem>
+        )}
+
+        {(hasPermission("admin:view_users") ||
+          hasPermission("admin:view_roles") ||
+          hasPermission("admin:view_audit_log")) && (
+          <BottomSection>
+            <SectionDivider />
+            <SectionLabel>Administration</SectionLabel>
+            {hasPermission("admin:view_users") && (
+              <NavItem to="/users" onClick={handleNavigate}>
+                <span className="icon"><FiUser /></span>
+                <span>Users</span>
+              </NavItem>
+            )}
+            {hasPermission("admin:view_roles") && (
+              <NavItem to="/roles" onClick={handleNavigate}>
+                <span className="icon"><FiShield /></span>
+                <span>Roles</span>
+              </NavItem>
+            )}
+            {hasPermission("admin:view_audit_log") && (
+              <NavItem to="/audit-log" onClick={handleNavigate}>
+                <span className="icon"><FiClock /></span>
+                <span>Audit Log</span>
+              </NavItem>
+            )}
+          </BottomSection>
+        )}
+      </NavBody>
     </SidebarContainer>
   );
 };

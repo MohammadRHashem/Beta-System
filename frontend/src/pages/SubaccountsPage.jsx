@@ -29,7 +29,7 @@ const Header = styled.div`
 `;
 
 const Card = styled.div`
-  background: #fff;
+  background: ${({ theme }) => theme.surface};
   padding: 1.05rem 1.2rem;
   border-radius: 12px;
   box-shadow: ${({ theme }) => theme.shadowSm};
@@ -566,7 +566,7 @@ const CredentialsModal = ({ isOpen, onClose, credentials, onReset, loading }) =>
   if (!credentials) return null;
 
   const CredentialBox = styled.div`
-    background: #f6f9fc;
+    background: ${({ theme }) => theme.surfaceAlt};
     padding: 1rem;
     border-radius: 6px;
     border: 1px solid #e6ebf1;

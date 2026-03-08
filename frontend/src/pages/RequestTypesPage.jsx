@@ -6,7 +6,7 @@ import { usePermissions } from '../context/PermissionContext';
 import { FaEdit, FaTrash, FaPlus, FaCodeBranch } from 'react-icons/fa';
 
 const PageContainer = styled.div` display: flex; flex-direction: column; gap: 1.25rem; height: 100%; min-height: 0; overflow: hidden; `;
-const Card = styled.div` background: #fff; padding: 1.1rem 1.2rem 1rem; border-radius: 14px; border: 1px solid rgba(9, 30, 66, 0.08); box-shadow: 0 14px 30px rgba(9, 30, 66, 0.08); display: flex; flex-direction: column; min-height: 0; flex: 1; `;
+const Card = styled.div` background: ${({ theme }) => theme.surface}; padding: 1.1rem 1.2rem 1rem; border-radius: 14px; border: 1px solid ${({ theme }) => theme.border}; box-shadow: ${({ theme }) => theme.shadowMd}; display: flex; flex-direction: column; min-height: 0; flex: 1; `;
 const Header = styled.div` display: flex; justify-content: space-between; align-items: center; gap: 1rem; margin-bottom: 0.75rem; flex-wrap: wrap; `;
 const Title = styled.h2` display: flex; align-items: center; gap: 0.5rem; margin: 0; line-height: 1.2; `;
 const Button = styled.button` background-color: ${({ theme }) => theme.secondary}; color: white; border: none; padding: 0.66rem 1rem; border-radius: 8px; cursor: pointer; font-weight: 700; display: flex; align-items: center; gap: 0.5rem; `;

@@ -5,10 +5,10 @@ import { format } from 'date-fns';
 import { FaEdit, FaTrash, FaSyncAlt } from 'react-icons/fa';
 
 const Card = styled.div`
-    background: #fff;
+    background: ${({ theme }) => theme.surface};
     padding: 1.1rem;
     border-radius: 14px;
-    box-shadow: 0 14px 30px rgba(9, 30, 66, 0.08);
+    box-shadow: ${({ theme }) => theme.shadowMd};
     border-top: 4px solid ${({ theme }) => theme.secondary};
     position: relative;
 `;

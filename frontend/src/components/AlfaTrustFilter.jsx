@@ -3,11 +3,11 @@ import styled from 'styled-components';
 import { format } from 'date-fns';
 
 const FilterContainer = styled.div`
-    background: #fff;
+    background: ${({ theme }) => theme.surface};
     padding: 1.05rem 1.15rem;
     border-radius: 14px;
-    border: 1px solid rgba(9, 30, 66, 0.08);
-    box-shadow: 0 14px 30px rgba(9, 30, 66, 0.08);
+    border: 1px solid ${({ theme }) => theme.border};
+    box-shadow: ${({ theme }) => theme.shadowMd};
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
     gap: 0.85rem;
@@ -30,7 +30,7 @@ const InputGroup = styled.div`
         border-radius: 8px;
         font-size: 0.9rem;
         width: 100%;
-        background: #fff;
+        background: ${({ theme }) => theme.surface};
     }
 `;
 

@@ -33,11 +33,11 @@ import Modal from '../components/Modal';
 const PageContainer = styled.div` display: flex; flex-direction: column; gap: 1.25rem; height: 100%; min-height: 0; overflow: hidden; `;
 const Header = styled.div` display: flex; justify-content: space-between; align-items: center; gap: 1rem; flex-wrap: wrap; `;
 const Card = styled.div`
-    background: #fff;
+    background: ${({ theme }) => theme.surface};
     padding: 1.1rem 1.25rem 1rem;
     border-radius: 14px;
-    border: 1px solid rgba(9, 30, 66, 0.08);
-    box-shadow: 0 14px 30px rgba(9, 30, 66, 0.08);
+    border: 1px solid ${({ theme }) => theme.border};
+    box-shadow: ${({ theme }) => theme.shadowMd};
     display: flex;
     flex-direction: column;
     min-height: 0;
@@ -138,7 +138,7 @@ const Tab = styled.button`
 `;
 const ConfigButton = styled.button` background: transparent; border: none; color: ${({ theme }) => theme.lightText}; cursor: pointer; font-size: 1.2rem; &:hover { color: ${({ theme }) => theme.primary}; } `;
 const ModalList = styled.ul` list-style: none; margin: 1rem 0; padding: 0; `;
-const ModalListItem = styled.li` display: flex; justify-content: space-between; align-items: center; padding: 0.75rem; border: 1px solid ${({ theme }) => theme.border}; border-radius: 4px; margin-bottom: 0.5rem; background: #f9f9f9; `;
+const ModalListItem = styled.li` display: flex; justify-content: space-between; align-items: center; padding: 0.75rem; border: 1px solid ${({ theme }) => theme.border}; border-radius: 4px; margin-bottom: 0.5rem; background: ${({ theme }) => theme.surfaceAlt}; `;
 const ArrowButton = styled.button` background: transparent; border: none; font-size: 1.2rem; cursor: pointer; color: ${({ theme }) => theme.text}; &:disabled { color: #ccc; cursor: not-allowed; } `;
 const SaveOrderButton = styled.button` background-color: ${({ theme }) => theme.primary}; color: white; border: none; padding: 0.75rem 1.5rem; border-radius: 4px; cursor: pointer; font-weight: bold; display: block; margin-left: auto; `;
 const SearchRow = styled.div` display: flex; justify-content: flex-end; align-items: center; gap: 1rem; margin-top: 0.7rem; flex-wrap: wrap; `;

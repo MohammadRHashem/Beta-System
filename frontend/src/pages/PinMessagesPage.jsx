@@ -42,7 +42,7 @@ const RightPanel = styled.div`
 `;
 
 const Card = styled.div`
-  background: #fff;
+  background: ${({ theme }) => theme.surface};
   padding: 1.2rem;
   border: 1px solid ${({ theme }) => theme.border};
   border-radius: 12px;

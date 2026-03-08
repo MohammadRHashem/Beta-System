@@ -5,10 +5,10 @@ const PaginationContainer = styled.div`
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 0.85rem;
+    padding: 0.82rem 0.88rem;
     background: ${({ theme }) => theme.surface};
     border-top: 1px solid ${({ theme }) => theme.border};
-    border-radius: 0 0 8px 8px;
+    border-radius: 0 0 12px 12px;
     flex-wrap: wrap;
     gap: 0.8rem;
     row-gap: 0.6rem;
@@ -27,19 +27,19 @@ const PageControls = styled.div`
 `;
 
 const PageButton = styled.button`
-    padding: 0.4rem 0.75rem;
+    padding: 0.4rem 0.72rem;
     min-width: 36px;
     border: 1px solid ${({ theme }) => theme.border};
-    background-color: #fff;
+    background-color: ${({ theme }) => theme.surface};
     cursor: pointer;
-    border-radius: 4px;
+    border-radius: 8px;
     font-weight: 600;
     transition: all 0.2s ease;
     color: ${({ theme }) => theme.primary};
 
     &:hover:not(:disabled) {
-        background-color: ${({ theme }) => theme.background};
-        border-color: ${({ theme }) => theme.primary};
+        background-color: ${({ theme }) => theme.surfaceAlt};
+        border-color: ${({ theme }) => theme.borderStrong};
     }
 
     &:disabled {
@@ -81,7 +81,7 @@ const GoToPageForm = styled.form`
 const GoToPageInput = styled.input`
     width: 56px;
     padding: 0.4rem;
-    border-radius: 4px;
+    border-radius: 8px;
     border: 1px solid ${({ theme }) => theme.border};
     text-align: center;
     font-weight: 600;
@@ -90,13 +90,13 @@ const GoToPageInput = styled.input`
 const GoToPageButton = styled.button`
     padding: 0.4rem 0.85rem;
     border: 1px solid ${({ theme }) => theme.border};
-    background-color: ${({ theme }) => theme.background};
+    background-color: ${({ theme }) => theme.surfaceAlt};
     cursor: pointer;
-    border-radius: 4px;
+    border-radius: 8px;
     font-weight: 600;
 
     &:hover {
-        background-color: #e6e6e6;
+        border-color: ${({ theme }) => theme.borderStrong};
     }
 `;
 
