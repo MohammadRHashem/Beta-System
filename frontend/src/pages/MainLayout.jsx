@@ -125,6 +125,58 @@ const PageContent = styled.div`
   }
 `;
 
+const AdminViewport = styled.section`
+  flex: 1;
+  min-height: 0;
+  border-radius: 18px;
+  border: 1px solid ${({ theme }) => theme.border};
+  background: ${({ theme }) =>
+    theme.mode === "dark"
+      ? "linear-gradient(160deg, rgba(15,26,45,0.98), rgba(20,35,59,0.94))"
+      : "linear-gradient(160deg, rgba(255,255,255,0.98), rgba(246,250,255,0.95))"};
+  box-shadow: ${({ theme }) => theme.shadowSm};
+  padding: clamp(0.7rem, 1.1vw, 1rem);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+
+  > * {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+
+  > div > div {
+    border-radius: 16px;
+    border: 1px solid ${({ theme }) => theme.border};
+    background: ${({ theme }) => theme.surface};
+    box-shadow: ${({ theme }) => theme.shadowSm};
+  }
+
+  > div > div > div {
+    border-radius: 14px;
+  }
+
+  form {
+    gap: 0.85rem;
+  }
+
+  button {
+    border-radius: 11px;
+  }
+
+  table {
+    border-radius: 14px;
+    overflow: hidden;
+  }
+
+  th {
+    font-size: 0.77rem;
+    text-transform: uppercase;
+  }
+`;
+
 const HeaderActions = styled.div`
   display: inline-flex;
   align-items: center;
@@ -303,13 +355,14 @@ const MainLayout = () => {
           </HeaderActions>
         </Header>
         <PageContent>
-          {status === "qr" ? (
-            <QRContainer>
-              <h2>Scan to Connect WhatsApp...</h2>
-              {qrCode && <img src={qrCode} alt="QR Code" />}
-            </QRContainer>
-          ) : (
-            <Routes>
+          <AdminViewport>
+            {status === "qr" ? (
+              <QRContainer>
+                <h2>Scan to Connect WhatsApp...</h2>
+                {qrCode && <img src={qrCode} alt="QR Code" />}
+              </QRContainer>
+            ) : (
+              <Routes>
               {/* === CORE OPERATIONAL ROUTES === */}
               <Route path="/invoices" element={<ProtectedPage permission="invoice:view"><InvoicesPage allGroups={allGroups} /></ProtectedPage>} />
               <Route path="/manual-review" element={<ProtectedPage permission="manual_review:view"><ManualReviewPage allGroups={allGroups} /></ProtectedPage>} />
@@ -349,9 +402,10 @@ const MainLayout = () => {
               <Route path="/chave-pix" element={<Navigate to="/subaccounts" replace />} />
               
               {/* Default route redirects to user's permitted landing page */}
-              <Route path="*" element={<Navigate to={getDefaultRoute()} replace />} />
-            </Routes>
-          )}
+                <Route path="*" element={<Navigate to={getDefaultRoute()} replace />} />
+              </Routes>
+            )}
+          </AdminViewport>
         </PageContent>
       </ContentArea>
     </AppLayout>

@@ -7,9 +7,9 @@ const breakpoints = {
 };
 
 const baseTheme = {
-  success: '#13b887',
+  success: '#16a34a',
   warning: '#f59e0b',
-  error: '#e5484d',
+  error: '#dc2626',
   radiusSm: '10px',
   radiusMd: '16px',
   radiusLg: '24px',
@@ -27,41 +27,57 @@ const baseTheme = {
 export const lightTheme = {
   ...baseTheme,
   mode: 'light',
-  primary: '#0d1f3a',
-  primarySoft: '#233b68',
-  secondary: '#0da88f',
-  secondarySoft: '#d9f7f2',
-  background: '#eff4fb',
+  primary: '#111827',
+  primarySoft: '#334155',
+  secondary: '#2563eb',
+  secondarySoft: '#dbeafe',
+  background: '#eef2ff',
   surface: '#ffffff',
-  surfaceAlt: '#f7faff',
-  text: '#1c2c45',
-  lightText: '#5f7090',
-  border: '#d7e1ef',
-  borderStrong: '#bccde3',
-  sidebarGradient: 'linear-gradient(180deg, #0b1830 0%, #0f284d 55%, #113761 100%)',
+  surfaceAlt: '#f8faff',
+  text: '#1f2937',
+  lightText: '#64748b',
+  border: '#d9e2f0',
+  borderStrong: '#bfcee4',
+  sidebarGradient: 'linear-gradient(180deg, #f8fbff 0%, #edf3ff 100%)',
+  sidebarText: '#1f2f4f',
+  sidebarMuted: '#7086a6',
+  sidebarHover: 'rgba(37, 99, 235, 0.08)',
+  sidebarBorder: 'rgba(37, 99, 235, 0.15)',
+  sidebarIconBg: 'rgba(37, 99, 235, 0.1)',
+  sidebarIconText: '#23438a',
+  sidebarActiveBg: 'linear-gradient(100deg, rgba(37, 99, 235, 0.14), rgba(37, 99, 235, 0.06))',
+  sidebarActiveBorder: 'rgba(37, 99, 235, 0.32)',
   headerGradient: 'linear-gradient(130deg, rgba(255, 255, 255, 0.92), rgba(248, 251, 255, 0.86))',
-  glow: 'radial-gradient(circle at 10% 10%, rgba(13, 168, 143, 0.18), transparent 34%), radial-gradient(circle at 92% 0%, rgba(16, 82, 158, 0.16), transparent 30%)',
-  shadowSm: '0 6px 20px rgba(13, 31, 58, 0.08)',
-  shadowMd: '0 22px 52px rgba(13, 31, 58, 0.14)',
+  glow: 'radial-gradient(circle at 8% 12%, rgba(37, 99, 235, 0.18), transparent 36%), radial-gradient(circle at 90% 3%, rgba(14, 165, 233, 0.16), transparent 32%)',
+  shadowSm: '0 8px 24px rgba(15, 23, 42, 0.08)',
+  shadowMd: '0 24px 56px rgba(15, 23, 42, 0.14)',
 };
 
 export const darkTheme = {
   ...baseTheme,
   mode: 'dark',
-  primary: '#e8eefb',
-  primarySoft: '#c9d7ef',
-  secondary: '#29d3b3',
-  secondarySoft: '#173d37',
-  background: '#070d19',
-  surface: '#0f1728',
-  surfaceAlt: '#151f34',
-  text: '#d4def0',
-  lightText: '#9ab0cd',
-  border: '#24324b',
-  borderStrong: '#334762',
+  primary: '#e5ecff',
+  primarySoft: '#bac9ea',
+  secondary: '#60a5fa',
+  secondarySoft: '#1e3a8a',
+  background: '#050b17',
+  surface: '#0f1a2d',
+  surfaceAlt: '#15243b',
+  text: '#d2ddf1',
+  lightText: '#8fa6c7',
+  border: '#2b3d5a',
+  borderStrong: '#395174',
   sidebarGradient: 'linear-gradient(180deg, #060b15 0%, #0d172b 58%, #142544 100%)',
+  sidebarText: '#e6efff',
+  sidebarMuted: '#b8c7e1',
+  sidebarHover: 'rgba(255, 255, 255, 0.1)',
+  sidebarBorder: 'rgba(255, 255, 255, 0.16)',
+  sidebarIconBg: 'rgba(255, 255, 255, 0.12)',
+  sidebarIconText: '#e6efff',
+  sidebarActiveBg: 'linear-gradient(100deg, rgba(96, 165, 250, 0.28), rgba(96, 165, 250, 0.13))',
+  sidebarActiveBorder: 'rgba(96, 165, 250, 0.42)',
   headerGradient: 'linear-gradient(130deg, rgba(14, 23, 38, 0.94), rgba(16, 29, 48, 0.88))',
-  glow: 'radial-gradient(circle at 14% 8%, rgba(41, 211, 179, 0.18), transparent 38%), radial-gradient(circle at 88% 4%, rgba(58, 130, 246, 0.2), transparent 35%)',
+  glow: 'radial-gradient(circle at 14% 8%, rgba(96, 165, 250, 0.22), transparent 38%), radial-gradient(circle at 88% 4%, rgba(14, 165, 233, 0.2), transparent 35%)',
   shadowSm: '0 8px 22px rgba(0, 0, 0, 0.35)',
   shadowMd: '0 26px 58px rgba(0, 0, 0, 0.44)',
 };
@@ -155,8 +171,8 @@ export const GlobalStyles = createGlobalStyle`
 
   button {
     touch-action: manipulation;
-    border-radius: 10px;
-    border: 1px solid ${({ theme }) => theme.border};
+    border-radius: 12px;
+    border: 1px solid ${({ theme }) => theme.borderStrong};
     background: ${({ theme }) => theme.surfaceAlt};
     color: ${({ theme }) => theme.primary};
     font-weight: 700;
@@ -222,5 +238,32 @@ export const GlobalStyles = createGlobalStyle`
 
   table {
     width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+  }
+
+  th {
+    background: ${({ theme }) => theme.surfaceAlt};
+    color: ${({ theme }) => theme.primary};
+    font-weight: 800;
+    letter-spacing: 0.02em;
+  }
+
+  td, th {
+    border-color: ${({ theme }) => theme.border};
+  }
+
+  tbody tr:nth-child(even) {
+    background: ${({ theme }) => theme.mode === 'dark' ? 'rgba(255,255,255,0.02)' : 'rgba(15, 23, 42, 0.02)'};
+  }
+
+  tbody tr:hover {
+    background: ${({ theme }) => theme.mode === 'dark' ? 'rgba(96,165,250,0.12)' : 'rgba(37,99,235,0.08)'};
+  }
+
+  @media (max-width: 768px) {
+    input, select, textarea, button {
+      min-height: 42px;
+    }
   }
 `;

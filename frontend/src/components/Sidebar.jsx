@@ -31,7 +31,7 @@ const SidebarContainer = styled.nav`
   width: ${({ theme }) => theme.sidebarWidth};
   height: 100vh;
   background: ${({ theme }) => theme.sidebarGradient};
-  color: rgba(255, 255, 255, 0.9);
+  color: ${({ theme }) => theme.sidebarText};
   padding: 1rem 0.75rem;
   display: flex;
   flex-direction: column;
@@ -62,18 +62,18 @@ const Brand = styled.div`
   gap: 0.8rem;
   padding: 0.3rem 0.75rem 1rem;
   margin-bottom: 0.35rem;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.16);
+  border-bottom: 1px solid ${({ theme }) => theme.sidebarBorder};
 `;
 
 const BrandIcon = styled.div`
   width: 2.1rem;
   height: 2.1rem;
   border-radius: 0.7rem;
-  background: linear-gradient(150deg, rgba(41, 211, 179, 0.95), rgba(41, 211, 179, 0.72));
+  background: linear-gradient(145deg, ${({ theme }) => theme.secondary}, ${({ theme }) => theme.primarySoft});
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  color: #0a2337;
+  color: ${({ theme }) => (theme.mode === 'dark' ? '#041022' : '#f8fbff')};
   flex-shrink: 0;
 `;
 
@@ -82,7 +82,7 @@ const Title = styled.h1`
   align-items: center;
   gap: 0.4rem;
   font-size: 1.08rem;
-  color: #ecf5ff;
+  color: ${({ theme }) => theme.sidebarText};
   margin: 0;
   letter-spacing: 0.01em;
 
@@ -97,7 +97,7 @@ const SectionLabel = styled.p`
   text-transform: uppercase;
   letter-spacing: 0.1em;
   font-weight: 700;
-  color: rgba(208, 225, 245, 0.65);
+  color: ${({ theme }) => theme.sidebarMuted};
 `;
 
 const NavItem = styled(NavLink)`
@@ -105,7 +105,7 @@ const NavItem = styled(NavLink)`
   align-items: center;
   gap: 0.72rem;
   padding: 0.66rem 0.72rem;
-  color: rgba(218, 230, 248, 0.9);
+  color: ${({ theme }) => theme.sidebarText};
   text-decoration: none;
   font-weight: 700;
   font-size: 0.9rem;
@@ -122,27 +122,27 @@ const NavItem = styled(NavLink)`
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    background: rgba(255, 255, 255, 0.11);
-    color: rgba(232, 243, 255, 0.95);
+    background: ${({ theme }) => theme.sidebarIconBg};
+    color: ${({ theme }) => theme.sidebarIconText};
     font-size: 0.95rem;
     flex-shrink: 0;
   }
 
   &:hover {
-    background-color: rgba(255, 255, 255, 0.09);
-    border-color: rgba(255, 255, 255, 0.16);
-    color: #ffffff;
+    background-color: ${({ theme }) => theme.sidebarHover};
+    border-color: ${({ theme }) => theme.sidebarBorder};
+    color: ${({ theme }) => theme.sidebarText};
   }
 
   &.active {
-    color: #ffffff;
-    background: linear-gradient(105deg, rgba(41, 211, 179, 0.28), rgba(41, 211, 179, 0.12));
-    border-color: rgba(41, 211, 179, 0.42);
-    box-shadow: inset 0 0 0 1px rgba(41, 211, 179, 0.28);
+    color: ${({ theme }) => theme.sidebarText};
+    background: ${({ theme }) => theme.sidebarActiveBg};
+    border-color: ${({ theme }) => theme.sidebarActiveBorder};
+    box-shadow: inset 0 0 0 1px ${({ theme }) => theme.sidebarActiveBorder};
 
     .icon {
-      background: rgba(41, 211, 179, 0.26);
-      color: #dffcf6;
+      background: ${({ theme }) => theme.secondarySoft};
+      color: ${({ theme }) => theme.secondary};
     }
   }
 
@@ -155,7 +155,7 @@ const NavItem = styled(NavLink)`
 const SectionDivider = styled.div`
   height: 1px;
   margin: 0.8rem 0.5rem;
-  background: rgba(255, 255, 255, 0.18);
+  background: ${({ theme }) => theme.sidebarBorder};
 `;
 
 const BottomSection = styled.div`
