@@ -1,161 +1,375 @@
-import React, { useState, useEffect, useCallback } from "react";
-import styled from "styled-components";
-import { usePermissions } from '../context/PermissionContext'; // 1. IMPORT PERMISSIONS HOOK
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import styled, { css, useTheme } from "styled-components";
+import { usePermissions } from "../context/PermissionContext";
 import {
-  getSubaccounts, createSubaccount, updateSubaccount, deleteSubaccount,
-  getSubaccountCredentials, resetSubaccountPassword, getRecibosTransactions,
-  reassignTransaction, triggerHardRefresh, createPortalAccessSession, createCrossDebit
+  createCrossDebit,
+  createPortalAccessSession,
+  createSubaccount,
+  deleteSubaccount,
+  getRecibosTransactions,
+  getSubaccountCredentials,
+  getSubaccounts,
+  reassignTransaction,
+  resetSubaccountPassword,
+  triggerHardRefresh,
+  updateSubaccount,
 } from "../services/api";
 import Modal from "../components/Modal";
-import { FaPlus, FaEdit, FaTrash, FaKey, FaExchangeAlt, FaMagic, FaHistory, FaExternalLinkAlt, FaMinusCircle } from "react-icons/fa";
+import {
+  FaEdit,
+  FaExchangeAlt,
+  FaExternalLinkAlt,
+  FaHistory,
+  FaKey,
+  FaMagic,
+  FaMinusCircle,
+  FaPlus,
+  FaTrash,
+} from "react-icons/fa";
 import ComboBox from "../components/ComboBox";
-import Select from 'react-select';
+import Select from "react-select";
 
 const PageContainer = styled.div`
-  display: flex;
-  flex-direction: column;
-  gap: 1.25rem;
   height: 100%;
   min-height: 0;
-  overflow: hidden;
-`;
-
-const Header = styled.div`
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 0.75rem;
-`;
-
-const Card = styled.div`
-  background: ${({ theme }) => theme.surface};
-  padding: 1.05rem 1.2rem;
-  border-radius: 12px;
-  box-shadow: ${({ theme }) => theme.shadowSm};
-  border: 1px solid ${({ theme }) => theme.border};
   display: flex;
   flex-direction: column;
-  min-height: 0;
-  flex: 1;
-
-  @media (min-width: 1100px) {
-    padding: 1.2rem 1.4rem;
-  }
+  gap: 0.55rem;
+  overflow: auto;
+  padding-right: 0.08rem;
 `;
 
-const Button = styled.button`
-  background-color: ${({ theme }) => theme.secondary};
-  color: white;
-  border: none;
-  padding: 0.75rem 1.5rem;
-  border-radius: 4px;
-  cursor: pointer;
-  font-weight: bold;
+const PageCard = styled.section`
+  border: 1px solid ${({ theme }) => theme.border};
+  border-radius: 10px;
+  background: ${({ theme }) => theme.surface};
+  box-shadow: ${({ theme }) => theme.shadowSm};
+  min-height: 0;
   display: flex;
-  align-items: center;
+  flex-direction: column;
+`;
+
+const Header = styled(PageCard)`
+  padding: 0.66rem 0.74rem;
   gap: 0.5rem;
 `;
 
-const ResetButton = styled(Button)`
-  background-color: ${({ theme }) => theme.error};
-  margin-top: 0.5rem;
-  width: 100%;
-  justify-content: center; 
-  font-size: 0.9rem;
+const HeaderTop = styled.div`
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.72rem;
+  flex-wrap: wrap;
+`;
+
+const TitleBlock = styled.div`
+  min-width: 0;
+
+  h2 {
+    margin: 0;
+    font-size: 1.06rem;
+    font-weight: 800;
+  }
+
+  p {
+    margin: 0.25rem 0 0;
+    color: ${({ theme }) => theme.lightText};
+    font-size: 0.78rem;
+  }
+`;
+
+const ActionsRow = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+`;
+
+const Button = styled.button`
+  border: 1px solid transparent;
+  background: ${({ theme }) => theme.secondary};
+  color: #fff;
+  font-weight: 800;
+  font-size: 0.78rem;
+  padding: 0.36rem 0.68rem;
+  border-radius: 8px;
+  min-height: 30px;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.42rem;
+  cursor: pointer;
+
+  ${({ $variant, theme }) =>
+    $variant === "danger" &&
+    css`
+      background: ${theme.error};
+    `}
+
+  ${({ $variant, theme }) =>
+    $variant === "dark" &&
+    css`
+      background: ${theme.primary};
+    `}
+`;
+
+const DataCard = styled(PageCard)`
+  flex: 1;
+  min-height: 0;
+  padding: 0.52rem;
+  overflow: auto;
+`;
+
+const TableWrap = styled.div`
+  border: 1px solid ${({ theme }) => theme.border};
+  border-radius: 8px;
+  background: ${({ theme }) => theme.surface};
+  min-height: 0;
+  flex: 1;
+  overflow: auto;
 `;
 
 const Table = styled.table`
   width: 100%;
-  display: block;
-  overflow: auto;
-  min-height: 0;
-  flex: 1;
+  min-width: 930px;
   border-collapse: collapse;
-  margin-top: 1rem;
-  th, td {
-    padding: 0.75rem;
-    text-align: left;
+
+  th,
+  td {
+    padding: 0.4rem 0.46rem;
     border-bottom: 1px solid ${({ theme }) => theme.border};
+    text-align: left;
     white-space: nowrap;
+    font-size: 0.77rem;
+    line-height: 1.2;
   }
+
   th {
-    background-color: ${({ theme }) => theme.background};
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background: ${({ theme }) => theme.surfaceAlt};
+    font-size: 0.67rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
   }
-  td.actions {
-    vertical-align: middle;
-  }
-  td.actions .actions-wrap {
-    display: inline-flex;
-    align-items: center;
-    gap: 1.5rem;
-    font-size: 1.1rem;
-    line-height: 1;
-  }
-  td.actions .actions-wrap svg {
-    cursor: pointer;
-    color: ${({ theme }) => theme.lightText};
-  }
-  td.actions .actions-wrap svg:hover {
-    color: ${({ theme }) => theme.primary};
+
+  tbody tr:hover {
+    background: ${({ theme }) =>
+      theme.mode === "dark" ? "rgba(96,165,250,0.12)" : "rgba(37,99,235,0.08)"};
   }
 `;
 
-const SuggestionBadge = styled.div`
-    background-color: #e6fffa;
-    color: #00C49A;
-    border: 1px solid #00C49A;
-    padding: 0.3rem 0.6rem;
-    border-radius: 20px;
-    font-size: 0.8rem;
-    font-weight: 600;
-    display: inline-flex;
-    align-items: center;
-    gap: 0.3rem;
-    cursor: pointer;
-    margin-bottom: 0.3rem;
-    transition: all 0.2s;
+const TypeChip = styled.span`
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  font-weight: 800;
+  font-size: 0.7rem;
+  padding: 0.12rem 0.44rem;
+  border: 1px solid transparent;
 
-    &:hover {
-        background-color: #00C49A;
-        color: white;
-    }
+  ${({ $type, theme }) =>
+    $type === "cross"
+      ? css`
+          color: ${theme.success};
+          background: rgba(22, 163, 74, 0.12);
+          border-color: rgba(22, 163, 74, 0.28);
+        `
+      : css`
+          color: ${theme.secondary};
+          background: ${theme.secondarySoft};
+          border-color: rgba(37, 99, 235, 0.22);
+        `}
+`;
+
+const EmptyText = styled.span`
+  color: ${({ theme }) => theme.lightText};
+  font-size: 0.78rem;
+`;
+
+const ActionIcons = styled.div`
+  display: inline-flex;
+  align-items: center;
+  gap: 0.28rem;
+`;
+
+const IconButton = styled.button`
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border-radius: 6px;
+  border: 1px solid ${({ theme }) => theme.border};
+  background: ${({ theme }) => theme.surfaceAlt};
+  color: ${({ theme }) => theme.primary};
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+
+  &:hover {
+    border-color: ${({ theme }) => theme.borderStrong};
+  }
+`;
+
+const ModalTitle = styled.h2`
+  margin: 0 0 0.7rem;
+  font-size: 1.04rem;
 `;
 
 const ModalForm = styled.form`
   display: flex;
   flex-direction: column;
-  gap: 1.5rem;
+  gap: 0.86rem;
 `;
 
 const InputGroup = styled.div`
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: 0.3rem;
 `;
 
 const Label = styled.label`
-  font-weight: 500;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: ${({ theme }) => theme.primarySoft};
 `;
 
 const Input = styled.input`
-  padding: 0.75rem;
-  border: 1px solid ${({ theme }) => theme.border};
-  border-radius: 4px;
-  font-size: 1rem;
+  width: 100%;
 `;
 
+const RadioWrap = styled.div`
+  display: flex;
+  gap: 0.8rem;
+  flex-wrap: wrap;
+`;
+
+const RadioOption = styled.label`
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.8rem;
+  color: ${({ theme }) => theme.text};
+`;
+
+const InlineBox = styled.div`
+  padding: 0.56rem 0.64rem;
+  border: 1px solid ${({ theme }) => theme.border};
+  border-radius: 8px;
+  background: ${({ theme }) => theme.surfaceAlt};
+  font-size: 0.8rem;
+`;
+
+const CredentialCard = styled.div`
+  border: 1px solid ${({ theme }) => theme.border};
+  border-radius: 8px;
+  padding: 0.68rem;
+  background: ${({ theme }) => theme.surfaceAlt};
+
+  h4 {
+    margin: 0 0 0.45rem;
+    font-size: 0.86rem;
+  }
+
+  p {
+    margin: 0;
+    font-size: 0.8rem;
+    color: ${({ theme }) => theme.lightText};
+  }
+
+  strong {
+    font-family: "IBM Plex Mono", Consolas, monospace;
+    color: ${({ theme }) => theme.primary};
+    font-size: 0.8rem;
+  }
+`;
+
+const HelperText = styled.p`
+  margin: 0;
+  font-size: 0.77rem;
+  color: ${({ theme }) => theme.lightText};
+`;
+
+const RecibosTableWrap = styled.div`
+  border: 1px solid ${({ theme }) => theme.border};
+  border-radius: 8px;
+  overflow: auto;
+  max-height: 56vh;
+`;
+
+const RecibosTable = styled.table`
+  width: 100%;
+  min-width: 840px;
+
+  th,
+  td {
+    padding: 0.5rem;
+    border-bottom: 1px solid ${({ theme }) => theme.border};
+    font-size: 0.78rem;
+    text-align: left;
+    vertical-align: middle;
+  }
+
+  th {
+    position: sticky;
+    top: 0;
+    background: ${({ theme }) => theme.surfaceAlt};
+    z-index: 1;
+    text-transform: uppercase;
+    font-size: 0.68rem;
+    letter-spacing: 0.05em;
+  }
+`;
+
+const AssignCell = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+
+  .select {
+    min-width: 180px;
+    width: 220px;
+  }
+`;
+
+const SuggestionBadge = styled.button`
+  border: 1px solid rgba(37, 99, 235, 0.28);
+  border-radius: 999px;
+  background: ${({ theme }) => theme.secondarySoft};
+  color: ${({ theme }) => theme.secondary};
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 0.2rem 0.48rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  cursor: pointer;
+`;
+
+const FooterActions = styled.div`
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+`;
+
+const modalSelectStyles = {
+  menuPortal: (base) => ({ ...base, zIndex: 10000 }),
+  control: (base) => ({ ...base, minHeight: 32 }),
+  valueContainer: (base) => ({ ...base, paddingTop: 0, paddingBottom: 0 }),
+};
+
 const SubaccountsPage = ({ allGroups }) => {
-  const { hasPermission } = usePermissions(); // 2. GET PERMISSION CHECKER
-  const canManageSubaccounts = hasPermission('subaccount:manage');
-  const canManageCredentials = hasPermission('subaccount:manage_credentials');
-  const canReassign = hasPermission('subaccount:reassign_transactions');
-  const canPortalAccess = hasPermission('client_portal:access');
-  const canCrossDebit = hasPermission('subaccount:debit_cross');
+  const { hasPermission } = usePermissions();
+  const canManageSubaccounts = hasPermission("subaccount:manage");
+  const canManageCredentials = hasPermission("subaccount:manage_credentials");
+  const canReassign = hasPermission("subaccount:reassign_transactions");
+  const canPortalAccess = hasPermission("client_portal:access");
+  const canCrossDebit = hasPermission("subaccount:debit_cross");
 
   const [subaccounts, setSubaccounts] = useState([]);
   const [loading, setLoading] = useState(true);
-  
+
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingSubaccount, setEditingSubaccount] = useState(null);
   const [isCredsModalOpen, setIsCredsModalOpen] = useState(false);
@@ -167,25 +381,14 @@ const SubaccountsPage = ({ allGroups }) => {
   const [recibosLoading, setRecibosLoading] = useState(false);
   const [isDebitModalOpen, setIsDebitModalOpen] = useState(false);
   const [debitSubaccount, setDebitSubaccount] = useState(null);
-  const [debitForm, setDebitForm] = useState({ amount: '', tx_date: '', description: 'USD BETA OUT / C' });
-
-  const handleHardRefresh = async (subaccount) => {
-    if (window.confirm(`This will perform a full historical re-sync for "${subaccount.name}" to find and add any missing transactions. This is a safe, non-destructive operation that will not break existing links. Continue?`)) {
-      try {
-        const { data } = await triggerHardRefresh(subaccount.id);
-        alert(data.message);
-      } catch (error) {
-        alert(error.response?.data?.message || 'Failed to start the refresh process.');
-      }
-    }
-  };
+  const [debitForm, setDebitForm] = useState({ amount: "", tx_date: "", description: "USD BETA OUT / C" });
 
   const fetchSubaccounts = useCallback(async () => {
     setLoading(true);
     try {
       const { data } = await getSubaccounts();
       setSubaccounts(data);
-    } catch (error) {
+    } catch (_error) {
       alert("Failed to fetch subaccounts.");
     } finally {
       setLoading(false);
@@ -212,13 +415,14 @@ const SubaccountsPage = ({ allGroups }) => {
   };
 
   const handleDelete = async (id) => {
-    if (window.confirm("Are you sure? This will also delete any associated client portal credentials.")) {
-      try {
-        await deleteSubaccount(id);
-        fetchSubaccounts();
-      } catch (error) {
-        alert("Failed to delete.");
-      }
+    if (!window.confirm("Are you sure? This will also delete any associated client portal credentials.")) {
+      return;
+    }
+    try {
+      await deleteSubaccount(id);
+      fetchSubaccounts();
+    } catch (_error) {
+      alert("Failed to delete.");
     }
   };
 
@@ -232,7 +436,7 @@ const SubaccountsPage = ({ allGroups }) => {
         subaccountId: subaccount.id,
         subaccountName: subaccount.name,
       });
-    } catch (error) {
+    } catch (_error) {
       alert("Failed to get credentials.");
       handleCloseModals();
     } finally {
@@ -241,17 +445,17 @@ const SubaccountsPage = ({ allGroups }) => {
   };
 
   const handleResetPassword = async (subaccountId, type) => {
-    if (!window.confirm(`Reset ${type === 'master' ? 'Full Access' : 'View-Only'} password? A new password will be generated.`)) {
+    if (!window.confirm(`Reset ${type === "master" ? "Full Access" : "View-Only"} password?`)) {
       return;
     }
     setCredsLoading(true);
     try {
       const { data } = await resetSubaccountPassword(subaccountId, type);
       setCurrentCreds((prev) => {
-          if (type === 'master') return { ...prev, masterPassword: data.password };
-          return { ...prev, viewOnlyPassword: data.password };
+        if (type === "master") return { ...prev, masterPassword: data.password };
+        return { ...prev, viewOnlyPassword: data.password };
       });
-    } catch (error) {
+    } catch (_error) {
       alert("Failed to reset password.");
     } finally {
       setCredsLoading(false);
@@ -259,62 +463,79 @@ const SubaccountsPage = ({ allGroups }) => {
   };
 
   const fetchRecibosData = async (subNumber) => {
-      if (!subNumber) return;
-      setRecibosLoading(true);
-      try {
-          const { data } = await getRecibosTransactions(subNumber);
-          setRecibosTransactions(data);
-      } catch (error) {
-          alert("Failed to fetch Recibos transactions.");
-      } finally {
-          setRecibosLoading(false);
-      }
+    if (!subNumber) return;
+    setRecibosLoading(true);
+    try {
+      const { data } = await getRecibosTransactions(subNumber);
+      setRecibosTransactions(data);
+    } catch (_error) {
+      alert("Failed to fetch Recibos transactions.");
+    } finally {
+      setRecibosLoading(false);
+    }
   };
 
   const handleReassign = async (txId, targetSubaccountNumber) => {
-      if (!confirm(`Move this transaction to the selected client?`)) return;
-      try {
-          await reassignTransaction(txId, targetSubaccountNumber);
-          setRecibosTransactions(prev => prev.filter(tx => tx.id !== txId));
-      } catch (error) {
-          alert("Failed to reassign transaction.");
-      }
+    if (!window.confirm("Move this transaction to the selected client?")) return;
+    try {
+      await reassignTransaction(txId, targetSubaccountNumber);
+      setRecibosTransactions((prev) => prev.filter((tx) => tx.id !== txId));
+    } catch (_error) {
+      alert("Failed to reassign transaction.");
+    }
+  };
+
+  const handleHardRefresh = async (subaccount) => {
+    if (
+      !window.confirm(
+        `This will perform a full historical re-sync for "${subaccount.name}" to find and add missing transactions. Continue?`,
+      )
+    ) {
+      return;
+    }
+    try {
+      const { data } = await triggerHardRefresh(subaccount.id);
+      alert(data.message);
+    } catch (error) {
+      alert(error.response?.data?.message || "Failed to start refresh.");
+    }
   };
 
   const handleOpenPortal = async (subaccount) => {
-    if (!window.confirm(`Open the client portal for "${subaccount.name}" in FULL access? This opens a new tab.`)) {
+    if (!window.confirm(`Open portal for "${subaccount.name}" in FULL access?`)) {
       return;
     }
 
-    const portalWindow = window.open('about:blank', '_blank');
+    const portalWindow = window.open("about:blank", "_blank");
     if (!portalWindow) {
-      alert('Pop-up blocked. Please allow pop-ups for this site.');
+      alert("Pop-up blocked. Please allow pop-ups for this site.");
       return;
     }
 
     try {
       portalWindow.opener = null;
-      portalWindow.document.title = 'Opening client portal...';
-      portalWindow.document.body.innerHTML = '<p style="font-family: sans-serif; padding: 24px;">Opening client portal...</p>';
-    } catch (error) {
-      // Ignore cross-origin or write access issues.
+      portalWindow.document.title = "Opening client portal...";
+      portalWindow.document.body.innerHTML =
+        '<p style="font-family: sans-serif; padding: 24px;">Opening client portal...</p>';
+    } catch (_error) {
+      // noop
     }
 
     try {
       const { data } = await createPortalAccessSession(subaccount.id);
       const params = new URLSearchParams();
-      params.set('token', data.token);
-      params.set('client', JSON.stringify(data.client));
+      params.set("token", data.token);
+      params.set("client", JSON.stringify(data.client));
       portalWindow.location.href = `${window.location.origin}/portal/impersonate#${params.toString()}`;
       portalWindow.focus();
     } catch (error) {
       portalWindow.close();
-      alert(error.response?.data?.message || 'Failed to open client portal.');
+      alert(error.response?.data?.message || "Failed to open client portal.");
     }
   };
 
   const formatLocalDateTime = (date) => {
-    const pad = (value) => `${value}`.padStart(2, '0');
+    const pad = (value) => `${value}`.padStart(2, "0");
     const year = date.getFullYear();
     const month = pad(date.getMonth() + 1);
     const day = pad(date.getDate());
@@ -326,32 +547,32 @@ const SubaccountsPage = ({ allGroups }) => {
   const handleOpenDebitModal = (subaccount) => {
     setDebitSubaccount(subaccount);
     setDebitForm({
-      amount: '',
+      amount: "",
       tx_date: formatLocalDateTime(new Date()),
-      description: 'USD BETA OUT / C'
+      description: "USD BETA OUT / C",
     });
     setIsDebitModalOpen(true);
   };
 
-  const handleDebitSubmit = async (e) => {
-    e.preventDefault();
+  const handleDebitSubmit = async (event) => {
+    event.preventDefault();
     if (!debitSubaccount) return;
 
-    const trimmedDate = (debitForm.tx_date || '').trim();
-    const formattedDate = trimmedDate.includes('T')
-      ? `${trimmedDate.replace('T', ' ')}:00`.replace(':00:00', ':00')
+    const trimmedDate = (debitForm.tx_date || "").trim();
+    const formattedDate = trimmedDate.includes("T")
+      ? `${trimmedDate.replace("T", " ")}:00`.replace(":00:00", ":00")
       : trimmedDate;
 
     try {
       await createCrossDebit(debitSubaccount.id, {
         amount: debitForm.amount,
         tx_date: formattedDate,
-        description: debitForm.description
+        description: debitForm.description,
       });
-      alert('Debit added successfully.');
+      alert("Debit added successfully.");
       handleCloseModals();
     } catch (error) {
-      alert(error.response?.data?.message || 'Failed to add debit.');
+      alert(error.response?.data?.message || "Failed to add debit.");
     }
   };
 
@@ -359,77 +580,144 @@ const SubaccountsPage = ({ allGroups }) => {
     <>
       <PageContainer>
         <Header>
-          <h2>Subaccount Management</h2>
-          <div style={{display: 'flex', gap: '1rem'}}>
-            {/* 3. WRAP BUTTONS IN PERMISSION CHECKS */}
-            {canReassign && (
-                <Button onClick={() => setIsRecibosModalOpen(true)} style={{backgroundColor: '#0A2540'}}>
-                    <FaExchangeAlt /> Manage Recibos
+          <HeaderTop>
+            <TitleBlock>
+              <h2>Subaccount Management</h2>
+              <p>
+                Manage XPayz and Cross subaccounts, credentials, and internal "Recibos" transfers.
+              </p>
+            </TitleBlock>
+            <ActionsRow>
+              {canReassign && (
+                <Button type="button" $variant="dark" onClick={() => setIsRecibosModalOpen(true)}>
+                  <FaExchangeAlt /> Manage Recibos
                 </Button>
-            )}
-            {canManageSubaccounts && (
-                <Button onClick={() => handleOpenModal(null)}>
-                    <FaPlus /> Add Subaccount
+              )}
+              {canManageSubaccounts && (
+                <Button type="button" onClick={() => handleOpenModal(null)}>
+                  <FaPlus /> Add Subaccount
                 </Button>
-            )}
-          </div>
+              )}
+            </ActionsRow>
+          </HeaderTop>
         </Header>
-        <Card>
-          <p>Manage XPayz and Cross subaccounts, generate credentials, and manage internal "Recibos" transfers.</p>
-          <Table>
-            <thead>
-              <tr>
-                <th>Name</th>
-                <th>Type</th>
-                <th>Identifier (Number/PIX)</th>
-                <th>Assigned Group</th>
-                {/* Conditionally render actions header */}
-                {(canManageSubaccounts || canManageCredentials || canPortalAccess || canCrossDebit) && <th>Actions</th>}
-              </tr>
-            </thead>
-            <tbody>
-              {loading ? (
-                <tr><td colSpan="5">Loading...</td></tr>
-              ) : subaccounts.map((acc) => (
-                  <tr key={acc.id}>
-                    <td>{acc.name}</td>
-                    <td><span style={{ fontWeight: 'bold', color: acc.account_type === 'cross' ? '#217346' : '#7b1fa2' }}>{acc.account_type.toUpperCase()}</span></td>
-                    <td>{acc.account_type === 'cross' ? acc.chave_pix : acc.subaccount_number}</td>
-                    <td>{acc.assigned_group_name || <span style={{ color: "#999" }}>None</span>}</td>
-                    {/* 4. WRAP ACTION ICONS IN PERMISSION CHECKS */}
-                    {(canManageSubaccounts || canManageCredentials || canPortalAccess || canCrossDebit) && (
-                        <td className="actions">
-                          <div className="actions-wrap">
-                            {canManageCredentials && <FaKey onClick={() => handleCredentials(acc)} title="Manage Credentials" />}
-                            {canPortalAccess && <FaExternalLinkAlt onClick={() => handleOpenPortal(acc)} title="Open Client Portal (Full Access)" />}
-                            {canCrossDebit && acc.account_type === 'cross' && (
-                              <FaMinusCircle onClick={() => handleOpenDebitModal(acc)} title="Add Cross Debit" />
-                            )}
-                            {canManageSubaccounts && acc.account_type === 'xpayz' && (
-                              <FaHistory onClick={() => handleHardRefresh(acc)} title="Hard Refresh History" />
-                            )}
-                            {canManageSubaccounts && <FaEdit onClick={() => handleOpenModal(acc)} title="Edit" />}
-                            {canManageSubaccounts && <FaTrash onClick={() => handleDelete(acc.id)} title="Delete" />}
-                          </div>
-                        </td>
-                    )}
+
+        <DataCard>
+          <TableWrap>
+            <Table>
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Type</th>
+                  <th>Identifier (Number/PIX)</th>
+                  <th>Assigned Group</th>
+                  {(canManageSubaccounts || canManageCredentials || canPortalAccess || canCrossDebit) && (
+                    <th>Actions</th>
+                  )}
+                </tr>
+              </thead>
+              <tbody>
+                {loading && (
+                  <tr>
+                    <td colSpan="5">Loading...</td>
                   </tr>
-              ))}
-            </tbody>
-          </Table>
-        </Card>
+                )}
+                {!loading && subaccounts.length === 0 && (
+                  <tr>
+                    <td colSpan="5">
+                      <EmptyText>No subaccounts found.</EmptyText>
+                    </td>
+                  </tr>
+                )}
+                {!loading &&
+                  subaccounts.map((acc) => (
+                    <tr key={acc.id}>
+                      <td>{acc.name}</td>
+                      <td>
+                        <TypeChip $type={acc.account_type}>{acc.account_type.toUpperCase()}</TypeChip>
+                      </td>
+                      <td>{acc.account_type === "cross" ? acc.chave_pix : acc.subaccount_number}</td>
+                      <td>{acc.assigned_group_name || <EmptyText>None</EmptyText>}</td>
+                      {(canManageSubaccounts || canManageCredentials || canPortalAccess || canCrossDebit) && (
+                        <td>
+                          <ActionIcons>
+                            {canManageCredentials && (
+                              <IconButton type="button" onClick={() => handleCredentials(acc)} title="Manage Credentials">
+                                <FaKey />
+                              </IconButton>
+                            )}
+                            {canPortalAccess && (
+                              <IconButton type="button" onClick={() => handleOpenPortal(acc)} title="Open Client Portal">
+                                <FaExternalLinkAlt />
+                              </IconButton>
+                            )}
+                            {canCrossDebit && acc.account_type === "cross" && (
+                              <IconButton type="button" onClick={() => handleOpenDebitModal(acc)} title="Add Cross Debit">
+                                <FaMinusCircle />
+                              </IconButton>
+                            )}
+                            {canManageSubaccounts && acc.account_type === "xpayz" && (
+                              <IconButton type="button" onClick={() => handleHardRefresh(acc)} title="Hard Refresh History">
+                                <FaHistory />
+                              </IconButton>
+                            )}
+                            {canManageSubaccounts && (
+                              <IconButton type="button" onClick={() => handleOpenModal(acc)} title="Edit">
+                                <FaEdit />
+                              </IconButton>
+                            )}
+                            {canManageSubaccounts && (
+                              <IconButton type="button" onClick={() => handleDelete(acc.id)} title="Delete">
+                                <FaTrash />
+                              </IconButton>
+                            )}
+                          </ActionIcons>
+                        </td>
+                      )}
+                    </tr>
+                  ))}
+              </tbody>
+            </Table>
+          </TableWrap>
+        </DataCard>
       </PageContainer>
 
-      {/* Modals are implicitly protected as they can only be opened by users with correct permissions */}
       {canManageSubaccounts && (
-        <SubaccountModal isOpen={isModalOpen} onClose={handleCloseModals} onSave={fetchSubaccounts} subaccount={editingSubaccount} allGroups={allGroups} />
+        <SubaccountModal
+          isOpen={isModalOpen}
+          onClose={handleCloseModals}
+          onSave={fetchSubaccounts}
+          subaccount={editingSubaccount}
+          allGroups={allGroups}
+        />
       )}
+
       {canManageCredentials && (
-        <CredentialsModal isOpen={isCredsModalOpen} onClose={handleCloseModals} credentials={currentCreds} onReset={handleResetPassword} loading={credsLoading} />
+        <CredentialsModal
+          isOpen={isCredsModalOpen}
+          onClose={handleCloseModals}
+          credentials={currentCreds}
+          onReset={handleResetPassword}
+          loading={credsLoading}
+        />
       )}
+
       {canReassign && (
-        <RecibosModal isOpen={isRecibosModalOpen} onClose={handleCloseModals} subaccounts={subaccounts} loading={recibosLoading} transactions={recibosTransactions} onSelectAccount={(id) => { setRecibosAccountId(id); fetchRecibosData(id); }} selectedAccountId={recibosAccountId} onReassign={handleReassign} />
+        <RecibosModal
+          isOpen={isRecibosModalOpen}
+          onClose={handleCloseModals}
+          subaccounts={subaccounts}
+          loading={recibosLoading}
+          transactions={recibosTransactions}
+          onSelectAccount={(id) => {
+            setRecibosAccountId(id);
+            fetchRecibosData(id);
+          }}
+          selectedAccountId={recibosAccountId}
+          onReassign={handleReassign}
+        />
       )}
+
       {canCrossDebit && (
         <CrossDebitModal
           isOpen={isDebitModalOpen}
@@ -440,70 +728,47 @@ const SubaccountsPage = ({ allGroups }) => {
           onSubmit={handleDebitSubmit}
         />
       )}
-
-      <SubaccountModal
-        isOpen={isModalOpen}
-        onClose={handleCloseModals}
-        onSave={fetchSubaccounts}
-        subaccount={editingSubaccount}
-        allGroups={allGroups}
-      />
-
-      <CredentialsModal
-        isOpen={isCredsModalOpen}
-        onClose={handleCloseModals}
-        credentials={currentCreds}
-        onReset={handleResetPassword}
-        loading={credsLoading}
-      />
-
-      <RecibosModal 
-        isOpen={isRecibosModalOpen}
-        onClose={handleCloseModals}
-        subaccounts={subaccounts}
-        loading={recibosLoading}
-        transactions={recibosTransactions}
-        onSelectAccount={(id) => { setRecibosAccountId(id); fetchRecibosData(id); }}
-        selectedAccountId={recibosAccountId}
-        onReassign={handleReassign}
-      />
     </>
   );
 };
 
-// --- MODALS ---
-
 const SubaccountModal = ({ isOpen, onClose, onSave, subaccount, allGroups }) => {
   const [formData, setFormData] = useState({
-    name: "", account_type: "xpayz", subaccount_number: "",
-    chave_pix: "", assigned_group_jid: "",
+    name: "",
+    account_type: "xpayz",
+    subaccount_number: "",
+    chave_pix: "",
+    assigned_group_jid: "",
   });
 
   useEffect(() => {
-    if (isOpen) {
-        if (subaccount) {
-            setFormData({
-                name: subaccount.name || "",
-                account_type: subaccount.account_type || 'xpayz',
-                subaccount_number: subaccount.subaccount_number || "",
-                chave_pix: subaccount.chave_pix || "",
-                assigned_group_jid: subaccount.assigned_group_jid || "",
-            });
-        } else {
-            setFormData({
-                name: "", account_type: "xpayz", subaccount_number: "",
-                chave_pix: "", assigned_group_jid: "",
-            });
-        }
+    if (!isOpen) return;
+    if (subaccount) {
+      setFormData({
+        name: subaccount.name || "",
+        account_type: subaccount.account_type || "xpayz",
+        subaccount_number: subaccount.subaccount_number || "",
+        chave_pix: subaccount.chave_pix || "",
+        assigned_group_jid: subaccount.assigned_group_jid || "",
+      });
+      return;
     }
+
+    setFormData({
+      name: "",
+      account_type: "xpayz",
+      subaccount_number: "",
+      chave_pix: "",
+      assigned_group_jid: "",
+    });
   }, [subaccount, isOpen]);
 
-  const handleChange = (e) => {
-    setFormData({ ...formData, [e.target.name]: e.target.value });
+  const handleChange = (event) => {
+    setFormData({ ...formData, [event.target.name]: event.target.value });
   };
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
+  const handleSubmit = async (event) => {
+    event.preventDefault();
     try {
       if (subaccount) {
         await updateSubaccount(subaccount.id, formData);
@@ -518,45 +783,90 @@ const SubaccountModal = ({ isOpen, onClose, onSave, subaccount, allGroups }) => 
   };
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} maxWidth="600px">
-      <h2>{subaccount ? "Edit Subaccount" : "Create Subaccount"}</h2>
+    <Modal isOpen={isOpen} onClose={onClose} maxWidth="560px">
+      <ModalTitle>{subaccount ? "Edit Subaccount" : "Create Subaccount"}</ModalTitle>
       <ModalForm onSubmit={handleSubmit}>
         <InputGroup>
           <Label>Subaccount Name</Label>
-          <Input name="name" value={formData.name} onChange={handleChange} placeholder="e.g., Jupeter" required />
+          <Input
+            name="name"
+            value={formData.name}
+            onChange={handleChange}
+            placeholder="e.g., Jupeter"
+            required
+          />
         </InputGroup>
 
         <InputGroup>
-            <Label>Account Type</Label>
-            <div style={{ display: 'flex', gap: '1rem', marginTop: '0.5rem' }}>
-                <label style={{cursor: 'pointer'}}><input type="radio" name="account_type" value="xpayz" checked={formData.account_type === 'xpayz'} onChange={handleChange} /> XPayz</label>
-                <label style={{cursor: 'pointer'}}><input type="radio" name="account_type" value="cross" checked={formData.account_type === 'cross'} onChange={handleChange} /> Cross</label>
-            </div>
+          <Label>Account Type</Label>
+          <RadioWrap>
+            <RadioOption>
+              <input
+                type="radio"
+                name="account_type"
+                value="xpayz"
+                checked={formData.account_type === "xpayz"}
+                onChange={handleChange}
+              />
+              XPayz
+            </RadioOption>
+            <RadioOption>
+              <input
+                type="radio"
+                name="account_type"
+                value="cross"
+                checked={formData.account_type === "cross"}
+                onChange={handleChange}
+              />
+              Cross
+            </RadioOption>
+          </RadioWrap>
         </InputGroup>
 
-        {formData.account_type === 'xpayz' && (
-            <InputGroup>
-                <Label>Subaccount Number (ID)</Label>
-                <Input name="subaccount_number" value={formData.subaccount_number} onChange={handleChange} placeholder="e.g., 110030" required={formData.account_type === 'xpayz'} />
-            </InputGroup>
+        {formData.account_type === "xpayz" && (
+          <InputGroup>
+            <Label>Subaccount Number (ID)</Label>
+            <Input
+              name="subaccount_number"
+              value={formData.subaccount_number}
+              onChange={handleChange}
+              placeholder="e.g., 110030"
+              required
+            />
+          </InputGroup>
         )}
-        {formData.account_type === 'cross' && (
-            <InputGroup>
-                <Label>Chave PIX</Label>
-                <Input name="chave_pix" value={formData.chave_pix} onChange={handleChange} placeholder="e.g., financeirojk@cross-otc.com" required={formData.account_type === 'cross'} />
-            </InputGroup>
+
+        {formData.account_type === "cross" && (
+          <InputGroup>
+            <Label>Chave PIX</Label>
+            <Input
+              name="chave_pix"
+              value={formData.chave_pix}
+              onChange={handleChange}
+              placeholder="e.g., financeiro@cross.com"
+              required
+            />
+          </InputGroup>
         )}
 
         <InputGroup>
           <Label>Assign to WhatsApp Group (Optional)</Label>
           <ComboBox
-            options={[{ id: "", name: "None" }, ...allGroups]}
+            options={[{ id: "", name: "None" }, ...(allGroups || [])]}
             value={formData.assigned_group_jid}
-            onChange={(e) => setFormData({ ...formData, assigned_group_jid: e.target.value })}
+            onChange={(event) =>
+              setFormData({ ...formData, assigned_group_jid: event.target.value })
+            }
             placeholder="Select a group to assign..."
           />
         </InputGroup>
-        <Button type="submit" style={{ alignSelf: "flex-end", marginTop: "1rem" }}>Save Changes</Button>
+
+        <FooterActions>
+          <Button type="button" $variant="dark" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button type="submit">Save Changes</Button>
+        </FooterActions>
       </ModalForm>
     </Modal>
   );
@@ -565,134 +875,194 @@ const SubaccountModal = ({ isOpen, onClose, onSave, subaccount, allGroups }) => 
 const CredentialsModal = ({ isOpen, onClose, credentials, onReset, loading }) => {
   if (!credentials) return null;
 
-  const CredentialBox = styled.div`
-    background: ${({ theme }) => theme.surfaceAlt};
-    padding: 1rem;
-    border-radius: 6px;
-    border: 1px solid #e6ebf1;
-    margin-bottom: 1rem;
-    
-    h4 { margin: 0 0 0.5rem 0; color: #0A2540; font-size: 0.95rem; }
-    div { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.25rem; }
-    span { font-size: 0.85rem; color: #6b7c93; }
-    strong { font-family: "Courier New", Courier, monospace; color: #0a2540; }
-  `;
-
   return (
-    <Modal isOpen={isOpen} onClose={onClose} maxWidth="550px">
-      {loading ? ( <p>Loading...</p> ) : (
+    <Modal isOpen={isOpen} onClose={onClose} maxWidth="520px">
+      {loading ? (
+        <p>Loading...</p>
+      ) : (
         <>
-          <h2>Credentials for {credentials.subaccountName}</h2>
-          <div style={{marginBottom: '1rem', padding: '0.5rem', background: '#e3f2fd', borderRadius: '4px'}}>
-             <strong>Username:</strong> {credentials.username}
-          </div>
-          <CredentialBox>
+          <ModalTitle>Credentials for {credentials.subaccountName}</ModalTitle>
+          <InlineBox>
+            <strong>Username:</strong> {credentials.username}
+          </InlineBox>
+
+          <CredentialCard>
             <h4>Full Access (Master)</h4>
-            <div><span>Password:</span> <strong>{credentials.masterPassword}</strong></div>
-            <ResetButton onClick={() => onReset(credentials.subaccountId, 'master')}>Reset Master Password</ResetButton>
-          </CredentialBox>
-          <CredentialBox>
-            <h4>View Only (Restricted)</h4>
-            <div><span>Password:</span> <strong>{credentials.viewOnlyPassword}</strong></div>
-            <ResetButton onClick={() => onReset(credentials.subaccountId, 'view_only')}>Reset View-Only Password</ResetButton>
-          </CredentialBox>
-          <p style={{ color: "#6b7c93", fontSize: '0.85rem' }}>
-            Note: If a password is hidden (••••••••••), you must reset it to see a new one.
-          </p>
+            <p>
+              Password: <strong>{credentials.masterPassword}</strong>
+            </p>
+            <Button
+              type="button"
+              $variant="danger"
+              style={{ marginTop: "0.55rem", width: "100%", justifyContent: "center" }}
+              onClick={() => onReset(credentials.subaccountId, "master")}
+            >
+              Reset Master Password
+            </Button>
+          </CredentialCard>
+
+          <CredentialCard>
+            <h4>View-Only Access</h4>
+            <p>
+              Password: <strong>{credentials.viewOnlyPassword}</strong>
+            </p>
+            <Button
+              type="button"
+              $variant="danger"
+              style={{ marginTop: "0.55rem", width: "100%", justifyContent: "center" }}
+              onClick={() => onReset(credentials.subaccountId, "view_only")}
+            >
+              Reset View-Only Password
+            </Button>
+          </CredentialCard>
+
+          <HelperText>
+            If a password appears masked, reset it to generate and reveal a new one.
+          </HelperText>
         </>
       )}
     </Modal>
   );
 };
 
-const RecibosModal = ({ isOpen, onClose, subaccounts, loading, transactions, onSelectAccount, selectedAccountId, onReassign }) => {
-    const subOptions = subaccounts.map(s => ({ value: s.subaccount_number, label: s.name }));
+const RecibosModal = ({
+  isOpen,
+  onClose,
+  subaccounts,
+  loading,
+  transactions,
+  onSelectAccount,
+  selectedAccountId,
+  onReassign,
+}) => {
+  const theme = useTheme();
+  const subOptions = useMemo(
+    () => subaccounts.map((s) => ({ value: s.subaccount_number, label: s.name })),
+    [subaccounts],
+  );
 
-    return (
-        <Modal isOpen={isOpen} onClose={onClose} maxWidth="900px">
-            <h2>Recibos / Internal Transfer Manager</h2>
-            <p>Select your "Recibos" or "Catch-all" account to distribute transactions to the correct clients.</p>
-            <div style={{marginBottom: '1.5rem'}}>
-                <label style={{fontWeight: 'bold', display: 'block', marginBottom: '0.5rem'}}>Select Source Account (Recibos)</label>
-                <Select 
-                    options={subOptions}
-                    onChange={(opt) => onSelectAccount(opt.value)}
-                    placeholder="Choose account to inspect..."
-                />
-            </div>
-            {selectedAccountId && (
-                <div style={{maxHeight: '500px', overflowY: 'auto', border: '1px solid #eee', borderRadius: '4px'}}>
-                    {loading ? <p style={{padding: '1rem'}}>Loading transactions...</p> : (
-                        <table style={{width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem'}}>
-                            <thead style={{background: '#f6f9fc', position: 'sticky', top: 0, zIndex: 10}}>
-                                <tr>
-                                    <th style={{padding: '0.75rem', textAlign: 'left'}}>Date</th>
-                                    <th style={{padding: '0.75rem', textAlign: 'left'}}>Sender</th>
-                                    <th style={{padding: '0.75rem', textAlign: 'left'}}>Amount</th>
-                                    <th style={{padding: '0.75rem', textAlign: 'left'}}>Smart Suggestion</th>
-                                    <th style={{padding: '0.75rem', textAlign: 'left'}}>Assign To</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {transactions.length === 0 ? (
-                                    <tr><td colSpan="5" style={{padding: '2rem', textAlign: 'center'}}>No transactions found.</td></tr>
-                                ) : transactions.map(tx => (
-                                    <RecibosRow 
-                                        key={tx.id} 
-                                        tx={tx} 
-                                        subOptions={subOptions} 
-                                        onReassign={onReassign}
-                                    />
-                                ))}
-                            </tbody>
-                        </table>
-                    )}
-                </div>
-            )}
-        </Modal>
-    );
+  const themedStyles = useMemo(
+    () => ({
+      ...modalSelectStyles,
+      control: (base) => ({
+        ...base,
+        minHeight: 32,
+        background: theme.surface,
+        borderColor: theme.border,
+      }),
+      menu: (base) => ({
+        ...base,
+        background: theme.surface,
+        border: `1px solid ${theme.border}`,
+      }),
+      option: (base, state) => ({
+        ...base,
+        background: state.isFocused ? theme.surfaceAlt : theme.surface,
+        color: theme.text,
+      }),
+      singleValue: (base) => ({ ...base, color: theme.text }),
+      input: (base) => ({ ...base, color: theme.text }),
+    }),
+    [theme],
+  );
+
+  return (
+    <Modal isOpen={isOpen} onClose={onClose} maxWidth="980px">
+      <ModalTitle>Recibos / Internal Transfer Manager</ModalTitle>
+      <HelperText style={{ marginBottom: "0.75rem" }}>
+        Select the source account and reassign transactions to the correct client.
+      </HelperText>
+
+      <InputGroup style={{ marginBottom: "0.72rem" }}>
+        <Label>Select Source Account (Recibos)</Label>
+        <Select
+          options={subOptions}
+          onChange={(opt) => onSelectAccount(opt?.value)}
+          placeholder="Choose account to inspect..."
+          styles={themedStyles}
+          menuPortalTarget={document.body}
+        />
+      </InputGroup>
+
+      {selectedAccountId && (
+        <RecibosTableWrap>
+          {loading ? (
+            <p style={{ padding: "0.8rem" }}>Loading transactions...</p>
+          ) : (
+            <RecibosTable>
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Sender</th>
+                  <th>Amount</th>
+                  <th>Smart Suggestion</th>
+                  <th>Assign To</th>
+                </tr>
+              </thead>
+              <tbody>
+                {transactions.length === 0 ? (
+                  <tr>
+                    <td colSpan="5">No transactions found.</td>
+                  </tr>
+                ) : (
+                  transactions.map((tx) => (
+                    <RecibosRow key={tx.id} tx={tx} subOptions={subOptions} onReassign={onReassign} />
+                  ))
+                )}
+              </tbody>
+            </RecibosTable>
+          )}
+        </RecibosTableWrap>
+      )}
+    </Modal>
+  );
 };
 
 const RecibosRow = ({ tx, subOptions, onReassign }) => {
-    const [target, setTarget] = useState(null);
+  const [target, setTarget] = useState(null);
 
-    const suggestionOption = tx.suggestion 
-        ? subOptions.find(o => o.label === tx.suggestion.subaccountName) 
-        : null;
+  const suggestionOption = tx.suggestion
+    ? subOptions.find((option) => option.label === tx.suggestion.subaccountName)
+    : null;
 
-    return (
-        <tr style={{borderBottom: '1px solid #eee'}}>
-            <td style={{padding: '0.75rem'}}>{new Date(tx.transaction_date).toLocaleDateString()}</td>
-            <td style={{padding: '0.75rem', fontWeight: '500'}}>{tx.sender_name}</td>
-            <td style={{padding: '0.75rem', fontFamily: 'monospace'}}>{parseFloat(tx.amount).toFixed(2)}</td>
-            <td style={{padding: '0.75rem'}}>
-                {tx.suggestion ? (
-                    <SuggestionBadge onClick={() => setTarget(suggestionOption)}>
-                        <FaMagic /> {tx.suggestion.confidence}%: {tx.suggestion.subaccountName}
-                    </SuggestionBadge>
-                ) : <span style={{color: '#ccc', fontSize: '0.8rem'}}>No history</span>}
-            </td>
-            <td style={{padding: '0.75rem', display: 'flex', gap: '0.5rem', alignItems: 'center'}}>
-                <div style={{width: '200px'}}>
-                    <Select 
-                        options={subOptions} 
-                        value={target} 
-                        onChange={setTarget} 
-                        placeholder="Select Client..."
-                        menuPortalTarget={document.body}
-                        styles={{ menuPortal: base => ({ ...base, zIndex: 9999 }) }}
-                    />
-                </div>
-                <Button 
-                    disabled={!target} 
-                    onClick={() => onReassign(tx.id, target.value)}
-                    style={{padding: '0.5rem', fontSize: '0.8rem'}}
-                >
-                    Move
-                </Button>
-            </td>
-        </tr>
-    );
+  return (
+    <tr>
+      <td>{new Date(tx.transaction_date).toLocaleDateString()}</td>
+      <td>{tx.sender_name}</td>
+      <td>{parseFloat(tx.amount).toFixed(2)}</td>
+      <td>
+        {tx.suggestion ? (
+          <SuggestionBadge type="button" onClick={() => setTarget(suggestionOption)}>
+            <FaMagic /> {tx.suggestion.confidence}%: {tx.suggestion.subaccountName}
+          </SuggestionBadge>
+        ) : (
+          <EmptyText>No history</EmptyText>
+        )}
+      </td>
+      <td>
+        <AssignCell>
+          <div className="select">
+            <Select
+              options={subOptions}
+              value={target}
+              onChange={setTarget}
+              placeholder="Select client..."
+              menuPortalTarget={document.body}
+              styles={modalSelectStyles}
+            />
+          </div>
+          <Button
+            type="button"
+            disabled={!target}
+            onClick={() => onReassign(tx.id, target.value)}
+            style={{ minWidth: "58px", justifyContent: "center" }}
+          >
+            Move
+          </Button>
+        </AssignCell>
+      </td>
+    </tr>
+  );
 };
 
 const CrossDebitModal = ({ isOpen, onClose, subaccount, form, setForm, onSubmit }) => {
@@ -700,15 +1070,17 @@ const CrossDebitModal = ({ isOpen, onClose, subaccount, form, setForm, onSubmit 
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} maxWidth="520px">
-      <h2>Add Debit (Cross)</h2>
-      <p style={{ marginTop: 0, color: '#6b7c93' }}>
-        This will create a debit entry for <strong>{subaccount.name}</strong>.
-      </p>
+      <ModalTitle>Add Debit (Cross)</ModalTitle>
+      <HelperText style={{ marginBottom: "0.65rem" }}>
+        Create a debit entry for <strong>{subaccount.name}</strong>.
+      </HelperText>
+
       <ModalForm onSubmit={onSubmit}>
         <InputGroup>
           <Label>PIX Key</Label>
-          <Input value={subaccount.chave_pix || ''} readOnly />
+          <Input value={subaccount.chave_pix || ""} readOnly />
         </InputGroup>
+
         <InputGroup>
           <Label>Amount (BRL)</Label>
           <Input
@@ -716,39 +1088,39 @@ const CrossDebitModal = ({ isOpen, onClose, subaccount, form, setForm, onSubmit 
             min="0.01"
             step="0.01"
             value={form.amount}
-            onChange={(e) => setForm((prev) => ({ ...prev, amount: e.target.value }))}
+            onChange={(event) => setForm((prev) => ({ ...prev, amount: event.target.value }))}
             placeholder="e.g., 134000.00"
             required
           />
         </InputGroup>
+
         <InputGroup>
           <Label>Date & Time</Label>
           <Input
             type="datetime-local"
             value={form.tx_date}
-            onChange={(e) => setForm((prev) => ({ ...prev, tx_date: e.target.value }))}
+            onChange={(event) => setForm((prev) => ({ ...prev, tx_date: event.target.value }))}
             required
           />
         </InputGroup>
+
         <InputGroup>
           <Label>Description</Label>
           <Input
             value={form.description}
-            onChange={(e) => setForm((prev) => ({ ...prev, description: e.target.value }))}
-            placeholder="USD BETA OUT / C"
+            onChange={(event) => setForm((prev) => ({ ...prev, description: event.target.value }))}
           />
         </InputGroup>
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
-          <Button type="button" onClick={onClose} style={{ backgroundColor: '#6b7c93' }}>
+
+        <FooterActions>
+          <Button type="button" $variant="dark" onClick={onClose}>
             Cancel
           </Button>
           <Button type="submit">Create Debit</Button>
-        </div>
+        </FooterActions>
       </ModalForm>
     </Modal>
   );
 };
 
-
-// Default export
 export default SubaccountsPage;

@@ -21,7 +21,7 @@ const PageContainer = styled.div`
     gap: 1.25rem;
     height: 100%;
     min-height: 0;
-    overflow: hidden;
+    overflow: auto;
 `;
 const Header = styled.div`
     display: flex;
@@ -136,7 +136,7 @@ const Slider = styled.span`
     left: 0;
     right: 0;
     bottom: 0;
-    background-color: #ccc;
+    background-color: ${({ theme }) => theme.borderStrong};
     transition: .4s;
     border-radius: 34px;
     &:before {
@@ -146,7 +146,7 @@ const Slider = styled.span`
         width: 20px;
         left: 4px;
         bottom: 4px;
-        background-color: white;
+        background-color: ${({ theme }) => theme.surface};
         transition: .4s;
         border-radius: 50%;
     }
@@ -156,7 +156,7 @@ const StatusBadge = styled.span`
     border-radius: 12px;
     font-weight: 600;
     font-size: 0.8rem;
-    color: #fff;
+    color: ${({ theme }) => theme.surface};
     background-color: ${({ status }) => {
         if (status === 'success') return '#00C49A';
         if (status === 'failed') return '#DE350B';
@@ -164,14 +164,14 @@ const StatusBadge = styled.span`
         return '#A0AEC0';
     }};
 `;
-const ScheduleInfo = styled.div`font-size: 0.9rem; span { display: block; color: #6B7C93; font-size: 0.8rem; }`;
+const ScheduleInfo = styled.div`font-size: 0.9rem; span { display: block; color: ${({ theme }) => theme.lightText}; font-size: 0.8rem; }`;
 const ModalForm = styled.form`display: flex; flex-direction: column; gap: 1rem;`;
 const InputGroup = styled.div`display: flex; flex-direction: column; gap: 0.5rem;`;
 const Label = styled.label`font-weight: 500;`;
 const Input = styled.input`padding: 0.68rem 0.74rem; border: 1px solid ${({ theme }) => theme.border}; border-radius: 8px; font-size: 0.95rem;`;
 const Select = styled.select`padding: 0.68rem 0.74rem; border: 1px solid ${({ theme }) => theme.border}; border-radius: 8px; font-size: 0.95rem; background: ${({ theme }) => theme.surface};`;
 const Fieldset = styled.fieldset`border: 1px solid ${({ theme }) => theme.border}; border-radius: 8px; padding: 0.85rem; display: flex; flex-wrap: wrap; gap: 0.75rem;`;
-const Legend = styled.legend`padding: 0 0.5em; font-weight: 500; color: #6B7C93;`;
+const Legend = styled.legend`padding: 0 0.5em; font-weight: 500; color: ${({ theme }) => theme.lightText};`;
 const FormRow = styled.div`
     display: grid;
     grid-template-columns: 1fr 1fr;
@@ -184,7 +184,7 @@ const FormRow = styled.div`
 const DayButton = styled.button`
     padding: 0.5rem 0.75rem;
     border: 1px solid ${({ theme, selected }) => selected ? theme.secondary : theme.border};
-    background: ${({ theme, selected }) => selected ? '#e6fff9' : '#fff'};
+    background: ${({ theme, selected }) => selected ? theme.secondarySoft : theme.surface};
     color: ${({ theme, selected }) => selected ? theme.secondary : theme.text};
     border-radius: 20px;
     font-weight: 600;

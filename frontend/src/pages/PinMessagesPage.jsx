@@ -14,7 +14,7 @@ const MainContent = styled.div`
   align-items: flex-start;
   height: 100%;
   min-height: 0;
-  overflow: hidden;
+  overflow: auto;
 
   @media (max-width: 1400px) and (min-width: 1201px) {
     grid-template-columns: minmax(300px, 360px) 1fr;

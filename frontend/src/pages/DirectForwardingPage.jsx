@@ -11,7 +11,7 @@ const PageContainer = styled.div`
     gap: 1.25rem;
     height: 100%;
     min-height: 0;
-    overflow: hidden;
+    overflow: auto;
 `;
 
 const Card = styled.div`

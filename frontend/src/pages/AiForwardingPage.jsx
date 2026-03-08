@@ -12,7 +12,7 @@ const PageContainer = styled.div`
     gap: 1.25rem;
     height: 100%;
     min-height: 0;
-    overflow: hidden;
+    overflow: auto;
 `;
 
 const Card = styled.div`
@@ -68,7 +68,7 @@ const Button = styled.button`
     font-weight: bold;
     height: fit-content;
     &:disabled {
-        background-color: #ccc;
+        background-color: ${({ theme }) => theme.borderStrong};
         cursor: not-allowed;
     }
 `;
@@ -148,7 +148,7 @@ const Slider = styled.span`
     left: 0;
     right: 0;
     bottom: 0;
-    background-color: #ccc;
+    background-color: ${({ theme }) => theme.borderStrong};
     transition: .4s;
     border-radius: 34px;
     &:before {

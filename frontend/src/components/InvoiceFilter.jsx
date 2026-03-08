@@ -1,159 +1,184 @@
-import React from 'react';
-import styled from 'styled-components';
-import Select from 'react-select';
+import React from "react";
+import styled, { useTheme } from "styled-components";
+import Select from "react-select";
 
-const FilterContainer = styled.div`
-    background: ${({ theme }) => theme.surface};
-    padding: 1.05rem 1.15rem;
-    border-radius: 14px;
-    border: 1px solid ${({ theme }) => theme.border};
-    box-shadow: ${({ theme }) => theme.shadowMd};
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
-    gap: 0.85rem;
-    align-items: flex-end;
+const Container = styled.section`
+  border: 1px solid ${({ theme }) => theme.border};
+  border-radius: 10px;
+  background: ${({ theme }) => theme.surface};
+  box-shadow: ${({ theme }) => theme.shadowSm};
+  padding: 0.55rem;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  gap: 0.45rem;
+  align-items: end;
 `;
 
-const InputGroup = styled.div`
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
+const Field = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 0.24rem;
 `;
 
 const Label = styled.label`
-    font-weight: 500;
-    font-size: 0.85rem;
+  font-size: 0.66rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 800;
+  color: ${({ theme }) => theme.lightText};
 `;
 
 const Input = styled.input`
-    padding: 0.58rem 0.66rem;
-    border: 1px solid ${({ theme }) => theme.border};
-    border-radius: 8px;
-    font-size: 0.9rem;
+  width: 100%;
 `;
 
 const SelectInput = styled.select`
-    height: 40px;
-    border: 1px solid hsl(0, 0%, 80%);
-    border-radius: 8px;
-    padding: 0 0.65rem;
-    font-size: 0.9rem;
-    background: ${({ theme }) => theme.surface};
+  width: 100%;
 `;
 
 const ClearButton = styled.button`
-    padding: 0.6rem 0.9rem;
-    border: 1px solid ${({ theme }) => theme.lightText};
-    color: ${({ theme }) => theme.lightText};
-    background: transparent;
-    border-radius: 8px;
-    cursor: pointer;
-    font-weight: 600;
-    
-    &:hover {
-        background: ${({ theme }) => theme.background};
-    }
+  border-radius: 7px;
+  border: 1px solid ${({ theme }) => theme.border};
+  background: ${({ theme }) => theme.surfaceAlt};
+  color: ${({ theme }) => theme.primary};
+  font-size: 0.75rem;
+  font-weight: 800;
+  min-height: 30px;
 `;
 
-const selectStyles = {
-  control: (provided) => ({
-    ...provided,
-    minHeight: '40px',
-  }),
-  menu: (provided) => ({
-    ...provided,
-    zIndex: 20
-  })
-};
-
 const InvoiceFilter = ({ filters, onFilterChange, allGroups, recipientNames }) => {
+  const theme = useTheme();
 
-    const handleMultiChange = (name, selectedOptions) => {
-        const values = selectedOptions ? selectedOptions.map(opt => opt.value) : [];
-        onFilterChange({ ...filters, [name]: values });
-    };
+  const selectStyles = {
+    control: (base, state) => ({
+      ...base,
+      minHeight: 31,
+      borderRadius: 7,
+      borderColor: state.isFocused ? theme.secondary : theme.border,
+      background: theme.surface,
+      boxShadow: state.isFocused ? `0 0 0 2px ${theme.secondarySoft}` : "none",
+      ":hover": { borderColor: state.isFocused ? theme.secondary : theme.borderStrong },
+    }),
+    valueContainer: (base) => ({ ...base, paddingTop: 0, paddingBottom: 0 }),
+    input: (base) => ({ ...base, margin: 0, color: theme.text }),
+    placeholder: (base) => ({ ...base, color: theme.lightText, fontSize: "0.76rem" }),
+    singleValue: (base) => ({ ...base, color: theme.text }),
+    multiValue: (base) => ({ ...base, background: theme.secondarySoft }),
+    multiValueLabel: (base) => ({ ...base, color: theme.secondary, fontWeight: 700, fontSize: "0.72rem" }),
+    multiValueRemove: (base) => ({ ...base, color: theme.secondary, ":hover": { background: "transparent", color: theme.primary } }),
+    menu: (base) => ({ ...base, zIndex: 2000, background: theme.surface, border: `1px solid ${theme.border}` }),
+    option: (base, state) => ({
+      ...base,
+      fontSize: "0.76rem",
+      background: state.isFocused ? theme.surfaceAlt : theme.surface,
+      color: theme.text,
+    }),
+  };
 
-    const handleChange = (e) => {
-        onFilterChange({ ...filters, [e.target.name]: e.target.value });
-    };
-    
-    const handleClear = () => {
-        onFilterChange({
-            search: '', dateFrom: '', dateTo: '', timeFrom: '', timeTo: '',
-            sourceGroups: [], recipientNames: [],
-            reviewStatus: '', status: '',
-        });
-    };
+  const handleMultiChange = (name, selectedOptions) => {
+    const values = selectedOptions ? selectedOptions.map((option) => option.value) : [];
+    onFilterChange({ ...filters, [name]: values });
+  };
 
-    const groupOptions = allGroups.map(g => ({ value: g.id, label: g.name }));
-    const recipientOptions = recipientNames.map(name => ({ value: name, label: name }));
+  const handleChange = (event) => {
+    onFilterChange({ ...filters, [event.target.name]: event.target.value });
+  };
 
-    return (
-        <FilterContainer>
-            <InputGroup>
-                <Label>Search (ID, Name, Amount, etc.)</Label>
-                <Input name="search" type="text" value={filters.search} onChange={handleChange} />
-            </InputGroup>
-            <InputGroup>
-                <Label>From Date</Label>
-                <Input name="dateFrom" type="date" value={filters.dateFrom} onChange={handleChange} />
-            </InputGroup>
-            <InputGroup>
-                <Label>From Time</Label>
-                <Input name="timeFrom" type="time" value={filters.timeFrom} onChange={handleChange} />
-            </InputGroup>
-            <InputGroup>
-                <Label>To Date</Label>
-                <Input name="dateTo" type="date" value={filters.dateTo} onChange={handleChange} />
-            </InputGroup>
-            <InputGroup>
-                <Label>To Time</Label>
-                <Input name="timeTo" type="time" value={filters.timeTo} onChange={handleChange} />
-            </InputGroup>
+  const handleClear = () => {
+    onFilterChange({
+      search: "",
+      dateFrom: "",
+      dateTo: "",
+      timeFrom: "",
+      timeTo: "",
+      sourceGroups: [],
+      recipientNames: [],
+      reviewStatus: "",
+      status: "",
+    });
+  };
 
-            <InputGroup>
-                <Label>Source Groups</Label>
-                <Select
-                    isMulti
-                    options={groupOptions}
-                    styles={selectStyles}
-                    onChange={(opts) => handleMultiChange('sourceGroups', opts)}
-                    value={groupOptions.filter(opt => filters.sourceGroups.includes(opt.value))}
-                />
-            </InputGroup>
+  const groupOptions = (allGroups || []).map((group) => ({ value: group.id, label: group.name }));
+  const recipientOptions = (recipientNames || []).map((name) => ({ value: name, label: name }));
 
-            <InputGroup>
-                <Label>Recipient Names</Label>
-                <Select
-                    isMulti
-                    options={recipientOptions}
-                    styles={selectStyles}
-                    onChange={(opts) => handleMultiChange('recipientNames', opts)}
-                    value={recipientOptions.filter(opt => filters.recipientNames.includes(opt.value))}
-                />
-            </InputGroup>
+  return (
+    <Container>
+      <Field>
+        <Label>Search</Label>
+        <Input
+          name="search"
+          type="text"
+          value={filters.search}
+          onChange={handleChange}
+          placeholder="ID, sender, amount..."
+        />
+      </Field>
 
-            <InputGroup>
-                <Label>Review Status</Label>
-                <SelectInput name="reviewStatus" value={filters.reviewStatus} onChange={handleChange}>
-                    <option value="">Show All</option>
-                    <option value="only_review">Show Only To Be Reviewed</option>
-                    <option value="hide_review">Hide "To Be Reviewed"</option>
-                </SelectInput>
-            </InputGroup>
-            
-            <InputGroup>
-                <Label>Other Status</Label>
-                <SelectInput name="status" value={filters.status} onChange={handleChange}>
-                    <option value="">Show All</option>
-                    <option value="only_deleted">Show Only Deleted</option>
-                    <option value="only_duplicates">Show Only Duplicates</option>
-                </SelectInput>
-            </InputGroup>
+      <Field>
+        <Label>From Date</Label>
+        <Input name="dateFrom" type="date" value={filters.dateFrom} onChange={handleChange} />
+      </Field>
 
-            <ClearButton onClick={handleClear}>Clear Filters</ClearButton>
-        </FilterContainer>
-    );
+      <Field>
+        <Label>From Time</Label>
+        <Input name="timeFrom" type="time" value={filters.timeFrom} onChange={handleChange} />
+      </Field>
+
+      <Field>
+        <Label>To Date</Label>
+        <Input name="dateTo" type="date" value={filters.dateTo} onChange={handleChange} />
+      </Field>
+
+      <Field>
+        <Label>To Time</Label>
+        <Input name="timeTo" type="time" value={filters.timeTo} onChange={handleChange} />
+      </Field>
+
+      <Field>
+        <Label>Source Groups</Label>
+        <Select
+          isMulti
+          options={groupOptions}
+          styles={selectStyles}
+          onChange={(opts) => handleMultiChange("sourceGroups", opts)}
+          value={groupOptions.filter((opt) => filters.sourceGroups.includes(opt.value))}
+        />
+      </Field>
+
+      <Field>
+        <Label>Recipient Names</Label>
+        <Select
+          isMulti
+          options={recipientOptions}
+          styles={selectStyles}
+          onChange={(opts) => handleMultiChange("recipientNames", opts)}
+          value={recipientOptions.filter((opt) => filters.recipientNames.includes(opt.value))}
+        />
+      </Field>
+
+      <Field>
+        <Label>Review Status</Label>
+        <SelectInput name="reviewStatus" value={filters.reviewStatus} onChange={handleChange}>
+          <option value="">Show All</option>
+          <option value="only_review">Only To Be Reviewed</option>
+          <option value="hide_review">Hide To Be Reviewed</option>
+        </SelectInput>
+      </Field>
+
+      <Field>
+        <Label>Other Status</Label>
+        <SelectInput name="status" value={filters.status} onChange={handleChange}>
+          <option value="">Show All</option>
+          <option value="only_deleted">Only Deleted</option>
+          <option value="only_duplicates">Only Duplicates</option>
+        </SelectInput>
+      </Field>
+
+      <ClearButton type="button" onClick={handleClear}>
+        Clear Filters
+      </ClearButton>
+    </Container>
+  );
 };
 
 export default InvoiceFilter;

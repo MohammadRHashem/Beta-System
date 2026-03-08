@@ -53,6 +53,10 @@ const DropdownItem = styled.li`
     }
 `;
 
+const Chevron = styled(FaChevronDown)`
+    color: ${({ theme }) => theme.borderStrong};
+`;
+
 const ComboBox = ({ options, value, onChange, placeholder }) => {
     const [searchTerm, setSearchTerm] = useState('');
     const [isOpen, setIsOpen] = useState(false);
@@ -105,7 +109,7 @@ const ComboBox = ({ options, value, onChange, placeholder }) => {
                     onFocus={() => setIsOpen(true)}
                     placeholder={placeholder}
                 />
-                <FaChevronDown color="#ccc" />
+                <Chevron />
             </InputContainer>
             {isOpen && (
                 <Dropdown>

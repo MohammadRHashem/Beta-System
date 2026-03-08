@@ -19,8 +19,8 @@ const Input = styled.input` width: 100%; padding: 0.68rem 0.72rem; border: 1px s
 const Textarea = styled.textarea` width: 100%; padding: 0.68rem 0.72rem; border: 1px solid ${({ theme }) => theme.border}; border-radius: 8px; min-height: 120px; font-family: inherit; font-size: 0.95rem; `;
 const SaveButton = styled.button` background-color: ${({ theme }) => theme.primary}; color: white; border: none; padding: 0.66rem 0.95rem; border-radius: 8px; cursor: pointer; font-weight: bold; align-self: flex-end; `;
 const AttachmentPreview = styled.div` padding: 1rem; background: ${({ theme }) => theme.surfaceAlt}; border: 1px solid ${({ theme }) => theme.border}; border-radius: 8px; display: flex; align-items: center; justify-content: space-between; `;
-const FileInfo = styled.div` display: flex; align-items: center; gap: 1rem; .icon { font-size: 2rem; color: #666; } `;
-const RemoveButton = styled(FaTimesCircle)` cursor: pointer; color: #999; &:hover { color: ${({ theme }) => theme.error}; } `;
+const FileInfo = styled.div` display: flex; align-items: center; gap: 1rem; .icon { font-size: 2rem; color: ${({ theme }) => theme.lightText}; } `;
+const RemoveButton = styled(FaTimesCircle)` cursor: pointer; color: ${({ theme }) => theme.lightText}; &:hover { color: ${({ theme }) => theme.error}; } `;
 const AttachmentControls = styled.div` display: flex; gap: 1rem; `;
 const ControlButton = styled.button` display: flex; align-items: center; gap: 0.5rem; padding: 0.56rem 0.82rem; border: 1px solid ${({ theme }) => theme.border}; background: ${({ theme }) => theme.surface}; border-radius: 8px; font-weight: 600; cursor: pointer; &:hover { background: ${({ theme }) => theme.surfaceAlt}; } `;
 

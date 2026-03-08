@@ -1,156 +1,153 @@
 import React, { useMemo } from "react";
 import styled from "styled-components";
 import {
+  FaEdit,
+  FaHistory,
   FaPause,
   FaPlay,
-  FaStop,
   FaRedo,
-  FaTrashAlt,
-  FaEdit,
+  FaStop,
   FaSyncAlt,
-  FaHistory,
+  FaTrashAlt,
 } from "react-icons/fa";
 
-const Container = styled.div`
-  background: ${({ theme }) => theme.surface};
+const Container = styled.section`
   border: 1px solid ${({ theme }) => theme.border};
   border-radius: 12px;
-  padding: 1rem;
-  min-height: 440px;
+  background: ${({ theme }) => theme.surface};
+  padding: 0.54rem;
+  min-height: 0;
+  height: 100%;
   display: flex;
   flex-direction: column;
-  gap: 0.8rem;
+  gap: 0.55rem;
 `;
 
 const Header = styled.div`
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 0.8rem;
+  gap: 0.55rem;
 `;
 
 const Title = styled.h3`
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
   margin: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.95rem;
 `;
 
 const RefreshButton = styled.button`
   border: 1px solid ${({ theme }) => theme.border};
+  border-radius: 7px;
   background: ${({ theme }) => theme.surfaceAlt};
   color: ${({ theme }) => theme.primary};
-  border-radius: 8px;
-  padding: 0.45rem 0.7rem;
-  font-weight: 700;
-  cursor: pointer;
+  min-height: 28px;
+  padding: 0.24rem 0.55rem;
+  font-size: 0.74rem;
+  font-weight: 800;
   display: inline-flex;
   align-items: center;
-  gap: 0.4rem;
+  gap: 0.3rem;
+
   &:disabled {
-    opacity: 0.7;
-    cursor: not-allowed;
+    opacity: 0.68;
   }
 `;
 
 const Layout = styled.div`
-  display: grid;
-  grid-template-columns: 330px 1fr;
-  gap: 0.9rem;
-  min-height: 0;
   flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(260px, 300px) 1fr;
+  gap: 0.55rem;
 
-  @media (max-width: 1600px) {
+  @media (max-width: 1400px) {
     grid-template-columns: 1fr;
   }
 `;
 
 const JobList = styled.div`
   border: 1px solid ${({ theme }) => theme.border};
-  border-radius: 10px;
+  border-radius: 8px;
+  min-height: 0;
   overflow: auto;
-  min-height: 220px;
-  max-height: 620px;
 `;
 
 const JobListItem = styled.button`
   width: 100%;
   text-align: left;
-  border: none;
+  border: 0;
   border-bottom: 1px solid ${({ theme }) => theme.border};
-  background: ${({ selected, theme }) =>
-    selected ? theme.background : theme.surface};
-  padding: 0.72rem;
+  background: ${({ selected, theme }) => (selected ? theme.secondarySoft : theme.surface)};
+  padding: 0.48rem;
   display: flex;
   flex-direction: column;
-  gap: 0.3rem;
-  cursor: pointer;
-
-  &:hover {
-    background: ${({ theme }) => theme.background};
-  }
+  gap: 0.2rem;
 `;
 
 const JobLine = styled.div`
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 0.5rem;
+  gap: 0.45rem;
 `;
 
 const JobMeta = styled.span`
   color: ${({ theme }) => theme.lightText};
-  font-size: 0.88rem;
+  font-size: 0.74rem;
 `;
 
 const StatusPill = styled.span`
-  padding: 0.18rem 0.5rem;
   border-radius: 999px;
-  font-size: 0.74rem;
-  font-weight: 700;
+  font-size: 0.66rem;
+  font-weight: 800;
   text-transform: uppercase;
-  letter-spacing: 0.03em;
-  background: ${({ $status }) => {
-    if ($status === "running") return "#e6f4ff";
-    if ($status === "paused") return "#fff4d6";
-    if ($status === "completed") return "#e7f8ef";
-    if ($status === "failed") return "#fde9e9";
-    if ($status === "cancelled") return "#f2f4f7";
-    return "#eef2f6";
+  letter-spacing: 0.04em;
+  padding: 0.1rem 0.44rem;
+  background: ${({ theme, $status }) => {
+    if ($status === "running") return theme.secondarySoft;
+    if ($status === "paused") return "rgba(217, 119, 6, 0.14)";
+    if ($status === "completed") return "rgba(22, 163, 74, 0.12)";
+    if ($status === "failed") return "rgba(220, 38, 38, 0.12)";
+    if ($status === "cancelled") return "rgba(100, 116, 139, 0.14)";
+    return theme.surfaceAlt;
   }};
-  color: ${({ $status }) => {
-    if ($status === "running") return "#0b5cad";
-    if ($status === "paused") return "#8a6116";
-    if ($status === "completed") return "#147a4b";
-    if ($status === "failed") return "#ab2f2f";
-    if ($status === "cancelled") return "#555";
-    return "#5f6a7a";
+  color: ${({ theme, $status }) => {
+    if ($status === "running") return theme.secondary;
+    if ($status === "paused") return theme.warning;
+    if ($status === "completed") return theme.success;
+    if ($status === "failed") return theme.error;
+    if ($status === "cancelled") return theme.lightText;
+    return theme.lightText;
   }};
 `;
 
 const DetailPanel = styled.div`
   border: 1px solid ${({ theme }) => theme.border};
-  border-radius: 10px;
-  padding: 0.8rem;
+  border-radius: 8px;
+  padding: 0.52rem;
+  min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: 0.8rem;
-  overflow: hidden;
-  min-height: 220px;
+  gap: 0.52rem;
+  overflow: auto;
 `;
 
 const Empty = styled.div`
-  color: ${({ theme }) => theme.lightText};
-  padding: 1rem;
   border: 1px dashed ${({ theme }) => theme.border};
   border-radius: 8px;
+  padding: 0.7rem;
   text-align: center;
+  font-size: 0.78rem;
+  color: ${({ theme }) => theme.lightText};
 `;
 
 const Summary = styled.div`
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 0.5rem;
+  gap: 0.4rem;
 
   @media (max-width: 760px) {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -159,119 +156,112 @@ const Summary = styled.div`
 
 const SummaryCard = styled.div`
   border: 1px solid ${({ theme }) => theme.border};
-  border-radius: 8px;
-  padding: 0.55rem;
+  border-radius: 7px;
+  padding: 0.42rem;
   text-align: center;
 
   strong {
     display: block;
-    font-size: 1rem;
-    color: ${({ theme }) => theme.primary};
+    font-size: 0.95rem;
   }
 
   span {
     color: ${({ theme }) => theme.lightText};
-    font-size: 0.78rem;
+    font-size: 0.7rem;
   }
 `;
 
 const Controls = styled.div`
   display: flex;
   flex-wrap: wrap;
-  gap: 0.45rem;
+  gap: 0.36rem;
 `;
 
 const ActionButton = styled.button`
+  border-radius: 7px;
+  min-height: 28px;
+  padding: 0.22rem 0.48rem;
+  font-size: 0.72rem;
+  font-weight: 800;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
   border: 1px solid
     ${({ theme, $variant }) => {
       if ($variant === "danger") return theme.error;
       if ($variant === "success") return theme.success;
       return theme.border;
     }};
-  background: ${({ $variant, theme }) =>
-    $variant === "danger"
-      ? theme.error
-      : $variant === "success"
-        ? theme.success
-        : theme.surfaceAlt};
-  color: ${({ $variant }) => ($variant === "default" ? "#1d2a3b" : "#fff")};
-  border-radius: 8px;
-  padding: 0.45rem 0.7rem;
-  font-weight: 700;
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
+  background: ${({ theme, $variant }) => {
+    if ($variant === "danger") return theme.error;
+    if ($variant === "success") return theme.success;
+    return theme.surfaceAlt;
+  }};
+  color: ${({ $variant, theme }) => ($variant === "default" ? theme.primary : "#fff")};
+
   &:disabled {
-    opacity: 0.65;
-    cursor: not-allowed;
+    opacity: 0.64;
   }
 `;
 
 const EditRow = styled.div`
   display: flex;
-  gap: 0.45rem;
-  align-items: center;
+  gap: 0.36rem;
 `;
 
 const EditInput = styled.input`
   flex: 1;
   min-width: 0;
-  border: 1px solid ${({ theme }) => theme.border};
-  border-radius: 8px;
-  padding: 0.5rem 0.62rem;
+`;
+
+const SectionTitle = styled.h4`
+  margin: 0;
+  font-size: 0.82rem;
 `;
 
 const LogsBox = styled.div`
   border: 1px solid ${({ theme }) => theme.border};
-  border-radius: 8px;
-  padding: 0.55rem;
+  border-radius: 7px;
+  background: ${({ theme }) => theme.surfaceAlt};
+  max-height: 200px;
   overflow: auto;
-  max-height: 190px;
-  background: #fdfdfd;
+  padding: 0.42rem;
 `;
 
 const LogLine = styled.div`
-  font-size: 0.82rem;
+  font-size: 0.74rem;
   color: ${({ theme, $status }) => {
     if ($status === "failed") return theme.error;
     if ($status === "success") return theme.success;
     return theme.text;
   }};
   border-bottom: 1px solid ${({ theme }) => theme.border};
-  padding: 0.3rem 0;
-`;
-
-const SectionTitle = styled.h4`
-  margin: 0;
-  font-size: 0.92rem;
+  padding: 0.23rem 0;
 `;
 
 const TableWrap = styled.div`
   border: 1px solid ${({ theme }) => theme.border};
-  border-radius: 8px;
+  border-radius: 7px;
+  max-height: 320px;
   overflow: auto;
-  max-height: 260px;
 `;
 
 const TargetsTable = styled.table`
   width: 100%;
-  border-collapse: collapse;
-  min-width: 720px;
+  min-width: 700px;
 
   th,
   td {
-    text-align: left;
-    padding: 0.52rem 0.6rem;
+    padding: 0.42rem 0.48rem;
     border-bottom: 1px solid ${({ theme }) => theme.border};
-    vertical-align: middle;
-    font-size: 0.86rem;
+    font-size: 0.74rem;
+    text-align: left;
   }
 
   th {
     position: sticky;
     top: 0;
-    background: #f6f8fb;
+    background: ${({ theme }) => theme.surfaceAlt};
     z-index: 1;
   }
 `;
@@ -325,9 +315,7 @@ const BroadcastJobsPanel = ({
   const canPause = canControlJobs && targetSummary?.status === "running";
   const canResume = canControlJobs && targetSummary?.status === "paused";
   const canCancel =
-    canControlJobs &&
-    targetSummary &&
-    !["completed", "cancelled"].includes(targetSummary.status);
+    canControlJobs && targetSummary && !["completed", "cancelled"].includes(targetSummary.status);
   const canRetry =
     canControlJobs &&
     targetSummary &&
@@ -369,8 +357,7 @@ const BroadcastJobsPanel = ({
               </JobLine>
               <JobLine>
                 <JobMeta>
-                  OK {job.target_success || 0} | Fail {job.target_failed || 0} | Cancel{" "}
-                  {job.target_cancelled || 0}
+                  OK {job.target_success || 0} | Fail {job.target_failed || 0} | Cancel {job.target_cancelled || 0}
                 </JobMeta>
               </JobLine>
             </JobListItem>
@@ -485,9 +472,7 @@ const BroadcastJobsPanel = ({
                   <ActionButton
                     type="button"
                     onClick={() => onEditMessage(selectedJob.id)}
-                    disabled={
-                      isActionPending(selectedJob.id, "edit") || !String(editDraft || "").trim()
-                    }
+                    disabled={isActionPending(selectedJob.id, "edit") || !String(editDraft || "").trim()}
                   >
                     <FaEdit /> Edit Sent
                   </ActionButton>
@@ -540,12 +525,7 @@ const BroadcastJobsPanel = ({
                           <td>{target.status}</td>
                           <td>{target.delete_status || "none"}</td>
                           <td>{target.edit_status || "none"}</td>
-                          <td>
-                            {target.last_error ||
-                              target.delete_error ||
-                              target.edit_error ||
-                              "-"}
-                          </td>
+                          <td>{target.last_error || target.delete_error || target.edit_error || "-"}</td>
                         </tr>
                       ))}
                   </tbody>

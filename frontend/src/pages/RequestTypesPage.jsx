@@ -5,7 +5,7 @@ import Modal from '../components/Modal';
 import { usePermissions } from '../context/PermissionContext';
 import { FaEdit, FaTrash, FaPlus, FaCodeBranch } from 'react-icons/fa';
 
-const PageContainer = styled.div` display: flex; flex-direction: column; gap: 1.25rem; height: 100%; min-height: 0; overflow: hidden; `;
+const PageContainer = styled.div` display: flex; flex-direction: column; gap: 1.25rem; height: 100%; min-height: 0; overflow: auto; `;
 const Card = styled.div` background: ${({ theme }) => theme.surface}; padding: 1.1rem 1.2rem 1rem; border-radius: 14px; border: 1px solid ${({ theme }) => theme.border}; box-shadow: ${({ theme }) => theme.shadowMd}; display: flex; flex-direction: column; min-height: 0; flex: 1; `;
 const Header = styled.div` display: flex; justify-content: space-between; align-items: center; gap: 1rem; margin-bottom: 0.75rem; flex-wrap: wrap; `;
 const Title = styled.h2` display: flex; align-items: center; gap: 0.5rem; margin: 0; line-height: 1.2; `;
@@ -60,13 +60,13 @@ const ColorInput = styled.input.attrs({ type: 'color' })`
     border-radius: 8px;
     cursor: pointer;
 `;
-const Code = styled.code` background: #eee; padding: 0.2rem 0.4rem; border-radius: 4px; font-family: 'Courier New', Courier, monospace; `;
+const Code = styled.code` background: ${({ theme }) => theme.surfaceAlt}; border: 1px solid ${({ theme }) => theme.border}; padding: 0.2rem 0.4rem; border-radius: 6px; font-family: 'Courier New', Courier, monospace; `;
 const ColorPreview = styled.div`
     width: 24px;
     height: 24px;
     border-radius: 50%;
     background-color: ${props => props.color};
-    border: 1px solid #ccc;
+    border: 1px solid ${({ theme }) => theme.borderStrong};
 `;
 const FormRow = styled.div`
     display: grid;

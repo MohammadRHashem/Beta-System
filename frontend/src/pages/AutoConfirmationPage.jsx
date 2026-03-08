@@ -1,310 +1,329 @@
-import React, { useState, useEffect } from 'react';
-import styled from 'styled-components';
-import api from '../services/api';
-import { usePermissions } from '../context/PermissionContext';
+import React, { useEffect, useState } from "react";
+import styled from "styled-components";
+import api from "../services/api";
+import { usePermissions } from "../context/PermissionContext";
 
-const PageContainer = styled.div`
-    max-width: 860px;
-    height: 100%;
-    min-height: 0;
-    overflow: auto;
-    padding-right: 0.15rem;
+const PageWrap = styled.div`
+  height: 100%;
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding-right: 0.08rem;
 `;
 
-const Card = styled.div`
-    background: ${({ theme }) => theme.surface};
-    padding: 1.3rem 1.25rem 1.1rem;
-    border-radius: 14px;
-    border: 1px solid ${({ theme }) => theme.border};
-    box-shadow: ${({ theme }) => theme.shadowMd};
+const Panel = styled.section`
+  max-width: 980px;
+  width: 100%;
+  border: 1px solid ${({ theme }) => theme.border};
+  border-radius: 12px;
+  background: ${({ theme }) => theme.surface};
+  box-shadow: ${({ theme }) => theme.shadowSm};
+  padding: 0.78rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
 `;
 
-const Header = styled.h2`
-    margin-top: 0;
-    margin-bottom: 0.5rem;
-`;
+const Heading = styled.div`
+  h2 {
+    margin: 0;
+    font-size: 1.04rem;
+  }
 
-const Description = styled.p`
-    margin-bottom: 1.2rem;
+  p {
+    margin: 0.24rem 0 0;
+    font-size: 0.79rem;
     color: ${({ theme }) => theme.lightText};
-    font-size: 0.94rem;
-    line-height: 1.5;
+  }
 `;
 
-const SmallDescription = styled(Description)`
-    font-size: 0.88rem;
-    margin-top: 0.45rem;
+const Section = styled.div`
+  border: 1px solid ${({ theme }) => theme.border};
+  border-radius: 10px;
+  background: ${({ theme }) => theme.surfaceAlt};
+  padding: 0.62rem;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.55rem;
+  align-items: start;
+
+  @media (max-width: 760px) {
+    grid-template-columns: 1fr;
+  }
 `;
 
-const SettingRow = styled.div`
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    gap: 0.8rem;
-    padding: 0.85rem;
-    border: 1px solid ${({ theme }) => theme.border};
-    border-radius: 10px;
+const SectionText = styled.div`
+  min-width: 0;
 
-    @media (max-width: 700px) {
-        align-items: flex-start;
-    }
+  strong {
+    display: block;
+    font-size: 0.82rem;
+    margin-bottom: 0.14rem;
+  }
+
+  span {
+    display: block;
+    color: ${({ theme }) => theme.lightText};
+    font-size: 0.76rem;
+    line-height: 1.45;
+  }
 `;
 
-const SettingLabel = styled.span`
-    font-weight: 600;
-    font-size: 1rem;
-`;
-
-const SwitchContainer = styled.label`
-    position: relative;
-    display: inline-block;
-    width: 60px;
-    height: 34px;
-`;
-
-const RadioGroup = styled.div`
-    display: flex;
-    gap: 1.5rem;
-    border: 1px solid ${({ theme }) => theme.border};
-    border-radius: 10px;
-    padding: 0.85rem;
-    flex-wrap: wrap;
-`;
-
-const RadioLabel = styled.label`
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    font-weight: 500;
-    cursor: pointer;
-
-    input:disabled {
-        cursor: not-allowed;
-    }
+const SwitchWrap = styled.label`
+  position: relative;
+  width: 44px;
+  height: 24px;
+  display: inline-block;
 `;
 
 const SwitchInput = styled.input`
-    opacity: 0;
-    width: 0;
-    height: 0;
-    &:checked + span {
-        background-color: ${({ theme }) => theme.secondary};
-    }
-    &:checked + span:before {
-        transform: translateX(26px);
-    }
-    &:disabled + span {
-        cursor: not-allowed;
-        background-color: ${({ theme }) => theme.surfaceAlt};
-        opacity: 0.7;
-    }
+  opacity: 0;
+  width: 0;
+  height: 0;
+
+  &:checked + span {
+    background: ${({ theme }) => theme.secondary};
+  }
+
+  &:checked + span::before {
+    transform: translateX(20px);
+  }
+
+  &:disabled + span {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
 `;
 
 const Slider = styled.span`
+  position: absolute;
+  inset: 0;
+  cursor: pointer;
+  border-radius: 999px;
+  background: ${({ theme }) => theme.borderStrong};
+  transition: background 0.16s ease;
+
+  &::before {
+    content: "";
     position: absolute;
-    cursor: pointer;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background-color: #ccc;
-    transition: .4s;
-    border-radius: 34px;
-    &:before {
-        position: absolute;
-        content: "";
-        height: 26px;
-        width: 26px;
-        left: 4px;
-        bottom: 4px;
-        background-color: white;
-        transition: .4s;
-        border-radius: 50%;
-    }
+    left: 3px;
+    top: 3px;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: ${({ theme }) => theme.surface};
+    transition: transform 0.16s ease;
+  }
 `;
 
-const Divider = styled.hr`
-    margin: 1.2rem 0;
-    border: none;
-    border-top: 1px solid #e6ebf1;
+const RadioGrid = styled.div`
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.48rem;
+
+  @media (max-width: 620px) {
+    grid-template-columns: 1fr;
+  }
 `;
 
-const SectionLabel = styled(SettingLabel)`
-    margin-bottom: 0.8rem;
-    display: block;
+const RadioCard = styled.label`
+  border: 1px solid
+    ${({ theme, $active }) => ($active ? theme.secondary : theme.border)};
+  border-radius: 10px;
+  background: ${({ theme, $active }) => ($active ? theme.secondarySoft : theme.surface)};
+  padding: 0.58rem;
+  display: flex;
+  align-items: center;
+  gap: 0.52rem;
+  cursor: pointer;
+  font-size: 0.8rem;
+  font-weight: 700;
+`;
+
+const InlineHint = styled.span`
+  color: ${({ theme }) => theme.lightText};
+  font-size: 0.75rem;
+  font-weight: 500;
 `;
 
 const AutoConfirmationPage = () => {
-    const { hasPermission } = usePermissions();
-    const canEdit = hasPermission('settings:toggle_confirmations');
+  const { hasPermission } = usePermissions();
+  const canEdit = hasPermission("settings:toggle_confirmations");
 
-    const [isAutoConfEnabled, setIsAutoConfEnabled] = useState(false);
-    const [isAlfaApiEnabled, setIsAlfaApiEnabled] = useState(false);
-    const [trocaCoinMethod, setTrocaCoinMethod] = useState('telegram');
-    const [isTrkbitEnabled, setIsTrkbitEnabled] = useState(false);
-    const [loading, setLoading] = useState(true);
+  const [isAutoConfEnabled, setIsAutoConfEnabled] = useState(false);
+  const [isAlfaApiEnabled, setIsAlfaApiEnabled] = useState(false);
+  const [trocaCoinMethod, setTrocaCoinMethod] = useState("telegram");
+  const [isTrkbitEnabled, setIsTrkbitEnabled] = useState(false);
+  const [loading, setLoading] = useState(true);
 
-    useEffect(() => {
-        const fetchAllStatuses = async () => {
-            try {
-                const [autoConfRes, alfaApiRes, trkbitRes, trocaCoinRes] = await Promise.all([
-                    api.get('/settings/auto-confirmation'),
-                    api.get('/settings/alfa-api-confirmation'),
-                    api.get('/settings/trkbit-confirmation'),
-                    api.get('/settings/troca-coin-method')
-                ]);
-                setIsAutoConfEnabled(autoConfRes.data.isEnabled);
-                setIsAlfaApiEnabled(alfaApiRes.data.isEnabled);
-                setIsTrkbitEnabled(trkbitRes.data.isEnabled);
-                setTrocaCoinMethod(trocaCoinRes.data.method);
-            } catch (error) {
-                console.error('Failed to fetch statuses:', error);
-                alert('Could not load confirmation statuses.');
-            } finally {
-                setLoading(false);
-            }
-        };
-        fetchAllStatuses();
-    }, []);
-
-    const handleAutoConfToggle = async () => {
-        const newStatus = !isAutoConfEnabled;
-        setIsAutoConfEnabled(newStatus);
-        try {
-            await api.post('/settings/auto-confirmation', { isEnabled: newStatus });
-        } catch (error) {
-            alert('Failed to update setting. Reverting change.');
-            setIsAutoConfEnabled(!newStatus);
-        }
+  useEffect(() => {
+    const fetchAllStatuses = async () => {
+      try {
+        const [autoConfRes, alfaApiRes, trkbitRes, trocaCoinRes] = await Promise.all([
+          api.get("/settings/auto-confirmation"),
+          api.get("/settings/alfa-api-confirmation"),
+          api.get("/settings/trkbit-confirmation"),
+          api.get("/settings/troca-coin-method"),
+        ]);
+        setIsAutoConfEnabled(!!autoConfRes.data.isEnabled);
+        setIsAlfaApiEnabled(!!alfaApiRes.data.isEnabled);
+        setIsTrkbitEnabled(!!trkbitRes.data.isEnabled);
+        setTrocaCoinMethod(trocaCoinRes.data.method || "telegram");
+      } catch (error) {
+        console.error("Failed to fetch statuses:", error);
+        alert("Could not load confirmation settings.");
+      } finally {
+        setLoading(false);
+      }
     };
+    fetchAllStatuses();
+  }, []);
 
-    const handleAlfaApiToggle = async () => {
-        const newStatus = !isAlfaApiEnabled;
-        setIsAlfaApiEnabled(newStatus);
-        try {
-            await api.post('/settings/alfa-api-confirmation', { isEnabled: newStatus });
-        } catch (error) {
-            alert('Failed to update Alfa API setting. Reverting change.');
-            setIsAlfaApiEnabled(!newStatus);
-        }
-    };
-
-    const handleTrkbitToggle = async () => {
-        const newStatus = !isTrkbitEnabled;
-        setIsTrkbitEnabled(newStatus);
-        try {
-            await api.post('/settings/trkbit-confirmation', { isEnabled: newStatus });
-        } catch (error) {
-            alert('Failed to update Trkbit setting. Reverting change.');
-            setIsTrkbitEnabled(!newStatus);
-        }
-    };
-
-    const handleTrocaCoinMethodChange = async (event) => {
-        const newMethod = event.target.value;
-        const oldMethod = trocaCoinMethod;
-        setTrocaCoinMethod(newMethod);
-        try {
-            await api.post('/settings/troca-coin-method', { method: newMethod });
-        } catch (error) {
-            alert('Failed to update Troca Coin method. Reverting change.');
-            setTrocaCoinMethod(oldMethod);
-        }
-    };
-
-    if (loading) {
-        return <p>Loading settings...</p>;
+  const postToggle = async (endpoint, stateSetter, currentValue, errorMessage) => {
+    const nextValue = !currentValue;
+    stateSetter(nextValue);
+    try {
+      await api.post(endpoint, { isEnabled: nextValue });
+    } catch (_error) {
+      stateSetter(currentValue);
+      alert(errorMessage);
     }
+  };
 
-    return (
-        <PageContainer>
-            <Card>
-                <Header>Confirmation Settings</Header>
-                <Description>
-                    Configure how forwarded invoices are confirmed.
-                </Description>
+  const handleTrocaCoinMethodChange = async (event) => {
+    const nextMethod = event.target.value;
+    const previous = trocaCoinMethod;
+    setTrocaCoinMethod(nextMethod);
+    try {
+      await api.post("/settings/troca-coin-method", { method: nextMethod });
+    } catch (_error) {
+      setTrocaCoinMethod(previous);
+      alert("Failed to update Troca Coin method.");
+    }
+  };
 
-                <SettingRow>
-                    <SettingLabel>Enable Standard Auto-Confirmation</SettingLabel>
-                    <SwitchContainer>
-                        <SwitchInput
-                            type="checkbox"
-                            checked={isAutoConfEnabled}
-                            onChange={handleAutoConfToggle}
-                            disabled={!canEdit}
-                        />
-                        <Slider />
-                    </SwitchContainer>
-                </SettingRow>
-                <SmallDescription>
-                    Forwards will get a '\uD83D\uDFE1' reaction. A '\uD83D\uDC4D' in the destination group triggers a "Caiu" reply in the origin group.
-                </SmallDescription>
+  if (loading) return <p>Loading settings...</p>;
 
-                <Divider />
+  return (
+    <PageWrap>
+      <Panel>
+        <Heading>
+          <h2>Confirmation Settings</h2>
+          <p>Control automation rules for broadcast confirmations and finance checks.</p>
+        </Heading>
 
-                <SettingRow>
-                    <SettingLabel>Enable Trkbit / Cross API Confirmation</SettingLabel>
-                    <SwitchContainer>
-                        <SwitchInput
-                            type="checkbox"
-                            checked={isTrkbitEnabled}
-                            onChange={handleTrkbitToggle}
-                            disabled={!canEdit}
-                        />
-                        <Slider />
-                    </SwitchContainer>
-                </SettingRow>
-                <SmallDescription>
-                    When enabled, invoices for "Trkbit", "BrasilCash" or "Cross Intermediação" are checked against synchronized API data.
-                </SmallDescription>
+        <Section>
+          <SectionText>
+            <strong>Standard Auto-Confirmation</strong>
+            <span>
+              Adds a yellow reaction on forwarded messages; a thumbs-up in destination can trigger
+              automatic "Caiu" in origin.
+            </span>
+          </SectionText>
+          <SwitchWrap>
+            <SwitchInput
+              type="checkbox"
+              checked={isAutoConfEnabled}
+              onChange={() =>
+                postToggle(
+                  "/settings/auto-confirmation",
+                  setIsAutoConfEnabled,
+                  isAutoConfEnabled,
+                  "Failed to update standard auto-confirmation.",
+                )
+              }
+              disabled={!canEdit}
+            />
+            <Slider />
+          </SwitchWrap>
+        </Section>
 
-                <Divider />
+        <Section>
+          <SectionText>
+            <strong>Trkbit / Cross API Confirmation</strong>
+            <span>
+              Verifies Trkbit, BrasilCash, and Cross Intermediacao-related invoices against synced
+              API transaction data.
+            </span>
+          </SectionText>
+          <SwitchWrap>
+            <SwitchInput
+              type="checkbox"
+              checked={isTrkbitEnabled}
+              onChange={() =>
+                postToggle(
+                  "/settings/trkbit-confirmation",
+                  setIsTrkbitEnabled,
+                  isTrkbitEnabled,
+                  "Failed to update Trkbit confirmation setting.",
+                )
+              }
+              disabled={!canEdit}
+            />
+            <Slider />
+          </SwitchWrap>
+        </Section>
 
-                <SettingRow>
-                    <SettingLabel>Enable Alfa Trust API Confirmation</SettingLabel>
-                    <SwitchContainer>
-                        <SwitchInput
-                            type="checkbox"
-                            checked={isAlfaApiEnabled}
-                            onChange={handleAlfaApiToggle}
-                            disabled={!canEdit}
-                        />
-                        <Slider />
-                    </SwitchContainer>
-                </SettingRow>
-                <SmallDescription>
-                    When enabled, invoices for "Alfa Trust" are confirmed via API. A '\uD83D\uDFE2' reaction indicates success, and '\uD83D\uDD34' indicates not found.
-                </SmallDescription>
+        <Section>
+          <SectionText>
+            <strong>Alfa Trust API Confirmation</strong>
+            <span>
+              Checks Alfa Trust invoices through API and applies status reactions for success and
+              not-found outcomes.
+            </span>
+          </SectionText>
+          <SwitchWrap>
+            <SwitchInput
+              type="checkbox"
+              checked={isAlfaApiEnabled}
+              onChange={() =>
+                postToggle(
+                  "/settings/alfa-api-confirmation",
+                  setIsAlfaApiEnabled,
+                  isAlfaApiEnabled,
+                  "Failed to update Alfa API confirmation setting.",
+                )
+              }
+              disabled={!canEdit}
+            />
+            <Slider />
+          </SwitchWrap>
+        </Section>
 
-                <SectionLabel>Troca Coin / MKS Confirmation Method</SectionLabel>
-                <RadioGroup>
-                    <RadioLabel>
-                        <input
-                            type="radio"
-                            value="telegram"
-                            checked={trocaCoinMethod === 'telegram'}
-                            onChange={handleTrocaCoinMethodChange}
-                            disabled={!canEdit}
-                        />
-                        Telegram Listener
-                    </RadioLabel>
-                    <RadioLabel>
-                        <input
-                            type="radio"
-                            value="xpayz"
-                            checked={trocaCoinMethod === 'xpayz'}
-                            onChange={handleTrocaCoinMethodChange}
-                            disabled={!canEdit}
-                        />
-                        XPayz API
-                    </RadioLabel>
-                </RadioGroup>
-                <SmallDescription>
-                    Select the data source used for automatically confirming "Troca Coin" or "MKS" invoices.
-                </SmallDescription>
-            </Card>
-        </PageContainer>
-    );
+        <Section>
+          <SectionText>
+            <strong>Troca Coin / MKS Confirmation Source</strong>
+            <span>Choose which backend source is used when confirming Troca Coin or MKS requests.</span>
+          </SectionText>
+          <RadioGrid>
+            <RadioCard $active={trocaCoinMethod === "telegram"}>
+              <input
+                type="radio"
+                value="telegram"
+                checked={trocaCoinMethod === "telegram"}
+                onChange={handleTrocaCoinMethodChange}
+                disabled={!canEdit}
+              />
+              Telegram Listener
+            </RadioCard>
+            <RadioCard $active={trocaCoinMethod === "xpayz"}>
+              <input
+                type="radio"
+                value="xpayz"
+                checked={trocaCoinMethod === "xpayz"}
+                onChange={handleTrocaCoinMethodChange}
+                disabled={!canEdit}
+              />
+              XPayz API
+            </RadioCard>
+          </RadioGrid>
+          {!canEdit && <InlineHint>Read-only: missing permission `settings:toggle_confirmations`.</InlineHint>}
+        </Section>
+      </Panel>
+    </PageWrap>
+  );
 };
 
 export default AutoConfirmationPage;

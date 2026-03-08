@@ -1,18 +1,15 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import styled from "styled-components";
-import { Routes, Route, useLocation, Navigate } from "react-router-dom";
-import { FaBars, FaTimes } from "react-icons/fa";
-import { FiMoon, FiSun } from "react-icons/fi";
+import { Navigate, Route, Routes, useLocation } from "react-router-dom";
+import { FiMenu, FiMoon, FiSun, FiX } from "react-icons/fi";
 import api from "../services/api";
 import { useAuth } from "../context/AuthContext";
-import { usePermissions } from '../context/PermissionContext';
+import { usePermissions } from "../context/PermissionContext";
 import { useThemeMode } from "../context/ThemeModeContext";
 
-// --- Component Imports ---
 import Sidebar from "../components/Sidebar";
 import StatusIndicator from "../components/StatusIndicator";
 
-// --- Page Imports ---
 import BroadcasterPage from "./BroadcasterPage";
 import InvoicesPage from "./InvoicesPage";
 import SubaccountsPage from "./SubaccountsPage";
@@ -31,229 +28,180 @@ import AutoConfirmationPage from "./AutoConfirmationPage";
 import DirectForwardingPage from "./DirectForwardingPage";
 import AbbreviationsPage from "./AbbreviationsPage";
 import GroupSettingsPage from "./GroupSettingsPage";
-// --- NEW Admin Page Imports ---
 import UsersPage from "./UsersPage";
 import RolesPage from "./RolesPage";
 import AuditLogPage from "./AuditLogPage";
 import PinMessagesPage from "./PinMessagesPage";
 
-
-// === HELPER COMPONENT FOR ROUTE PROTECTION ===
 const ProtectedPage = ({ permission, children }) => {
-    const { hasPermission } = usePermissions();
-    if (!hasPermission(permission)) {
-        // If a user tries to access a page they don't have permission for,
-        // redirect them to a safe default page (e.g., invoices).
-        return <Navigate to="/invoices" replace />;
-    }
-    return children;
+  const { hasPermission } = usePermissions();
+  if (!hasPermission(permission)) return <Navigate to="/invoices" replace />;
+  return children;
 };
 
-
-// --- Styled Components ---
-const AppLayout = styled.div`
-  display: flex;
+const Shell = styled.div`
   height: 100dvh;
-  background-color: ${({ theme }) => theme.background};
+  width: 100%;
+  display: grid;
+  grid-template-columns: auto 1fr;
   overflow: hidden;
+  background: ${({ theme }) => theme.background};
 `;
 
-const ContentArea = styled.main`
-  flex-grow: 1;
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  overflow: hidden;
+const Main = styled.main`
   min-width: 0;
   min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 `;
 
-const Header = styled.header`
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 1rem;
+const Topbar = styled.header`
+  height: ${({ theme }) => theme.appHeaderHeight};
   min-height: ${({ theme }) => theme.appHeaderHeight};
-  padding: 0.9rem 1.1rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.7rem;
+  padding: 0 0.72rem;
   border-bottom: 1px solid ${({ theme }) => theme.border};
   background: ${({ theme }) => theme.headerGradient};
-  backdrop-filter: blur(8px);
-  flex-shrink: 0;
   box-shadow: ${({ theme }) => theme.shadowSm};
-  z-index: 20;
-
-  @media (min-width: ${({ theme }) => theme.breakpoints.tablet}) {
-    padding: 0.9rem 1.5rem;
-  }
-
-  @media (max-height: 800px) and (min-width: ${({ theme }) => theme.breakpoints.tablet}) {
-    padding-top: 0.6rem;
-    padding-bottom: 0.6rem;
-  }
 `;
 
-const PageTitle = styled.h2`
-  color: ${({ theme }) => theme.primary};
-  text-transform: capitalize;
+const Left = styled.div`
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  min-width: 0;
+  flex: 1;
+`;
+
+const Title = styled.h2`
   margin: 0;
-  font-size: clamp(1rem, 1.26vw, 1.4rem);
+  font-size: 1.06rem;
   font-weight: 800;
-  letter-spacing: 0.01em;
+  text-transform: capitalize;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 `;
 
-const HeaderLeft = styled.div`
-  display: flex;
+const Right = styled.div`
+  display: inline-flex;
   align-items: center;
-  gap: 0.75rem;
-  min-width: 0;
-  flex: 1;
+  gap: 0.42rem;
 `;
 
-const PageContent = styled.div`
-  padding: clamp(0.8rem, 1.3vw, 1.35rem);
-  overflow: hidden;
-  flex-grow: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
+const IconButton = styled.button`
+  width: 30px;
+  height: 30px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+`;
 
-  > * {
-    min-height: 0;
+const MenuButton = styled(IconButton)`
+  @media (min-width: ${({ theme }) => theme.breakpoints.tablet}) {
+    display: none;
   }
 `;
 
-const AdminViewport = styled.section`
+const Content = styled.div`
   flex: 1;
   min-height: 0;
-  border-radius: 18px;
-  border: 1px solid ${({ theme }) => theme.border};
+  overflow: hidden;
+  padding: 0.56rem;
+`;
+
+const Viewport = styled.div`
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow: auto;
+  border-radius: 14px;
   background: ${({ theme }) =>
     theme.mode === "dark"
-      ? "linear-gradient(160deg, rgba(15,26,45,0.98), rgba(20,35,59,0.94))"
-      : "linear-gradient(160deg, rgba(255,255,255,0.98), rgba(246,250,255,0.95))"};
+      ? "linear-gradient(165deg, rgba(12,21,38,0.92), rgba(18,31,52,0.92))"
+      : "linear-gradient(165deg, rgba(255,255,255,0.92), rgba(246,250,255,0.9))"};
+  border: 1px solid ${({ theme }) => theme.border};
   box-shadow: ${({ theme }) => theme.shadowSm};
-  padding: clamp(0.7rem, 1.1vw, 1rem);
-  overflow: hidden;
+  padding: 0.56rem;
+`;
+
+const PageSlot = styled.section`
+  width: 100%;
+  max-width: 1800px;
+  margin: 0 auto;
+  min-height: 100%;
   display: flex;
   flex-direction: column;
+  overflow: visible;
+  padding: 0.14rem;
 
   > * {
     flex: 1;
     min-height: 0;
-    display: flex;
-    flex-direction: column;
   }
 
-  > div > div {
-    border-radius: 16px;
-    border: 1px solid ${({ theme }) => theme.border};
-    background: ${({ theme }) => theme.surface};
-    box-shadow: ${({ theme }) => theme.shadowSm};
-  }
-
-  > div > div > div {
-    border-radius: 14px;
-  }
-
-  form {
-    gap: 0.85rem;
+  h2 {
+    margin-bottom: 0.3rem;
   }
 
   button {
-    border-radius: 11px;
+    font-size: 0.78rem;
+    min-height: 30px;
+  }
+
+  input,
+  select,
+  textarea {
+    font-size: 0.8rem;
+    min-height: 30px;
   }
 
   table {
-    border-radius: 14px;
-    overflow: hidden;
+    font-size: 0.78rem;
   }
 
-  th {
-    font-size: 0.77rem;
-    text-transform: uppercase;
-  }
-`;
-
-const HeaderActions = styled.div`
-  display: inline-flex;
-  align-items: center;
-  gap: 0.6rem;
-  min-width: 0;
-`;
-
-const ThemeToggle = styled.button`
-  width: 2.35rem;
-  height: 2.35rem;
-  border-radius: 999px;
-  border: 1px solid ${({ theme }) => theme.borderStrong};
-  background: ${({ theme }) => theme.surface};
-  color: ${({ theme }) => theme.primary};
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 1rem;
-  cursor: pointer;
-  flex-shrink: 0;
-  box-shadow: ${({ theme }) => theme.shadowSm};
-
-  &:hover {
-    transform: translateY(-1px);
-  }
-`;
-
-const QRContainer = styled.div`
-  padding: 1.5rem;
-  text-align: center;
-  border: 1px dashed ${({ theme }) => theme.border};
-  border-radius: ${({ theme }) => theme.radiusMd};
-  background: ${({ theme }) => theme.surface};
-  margin: 0.5rem;
-  h2 {
-    margin-bottom: 1rem;
-  }
-  img {
-    max-width: 300px;
-    width: 100%;
+  th,
+  td {
+    padding: 0.42rem 0.52rem;
   }
 `;
 
 const SidebarBackdrop = styled.button`
   display: none;
-  border: none;
-  background: rgba(10, 37, 64, 0.35);
   position: fixed;
   inset: 0;
+  border: 0;
+  background: rgba(7, 11, 20, 0.42);
   z-index: 30;
-  cursor: pointer;
 
   @media (max-width: ${({ theme }) => theme.breakpoints.tablet}) {
     display: ${({ $visible }) => ($visible ? "block" : "none")};
   }
 `;
 
-const MobileMenuButton = styled.button`
-  width: 2.2rem;
-  height: 2.2rem;
-  border-radius: 999px;
-  border: 1px solid ${({ theme }) => theme.border};
+const QrPanel = styled.div`
+  min-height: 320px;
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  border: 1px dashed ${({ theme }) => theme.borderStrong};
   background: ${({ theme }) => theme.surface};
-  color: ${({ theme }) => theme.primary};
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  flex-shrink: 0;
+  text-align: center;
+  padding: 1rem;
+  gap: 0.7rem;
 
-  @media (min-width: ${({ theme }) => theme.breakpoints.tablet}) {
-    display: none;
+  img {
+    max-width: 260px;
+    width: 100%;
+    height: auto;
   }
 `;
 
-
-// --- Main Layout Component ---
 const MainLayout = () => {
   const [status, setStatus] = useState("disconnected");
   const [qrCode, setQrCode] = useState(null);
@@ -262,13 +210,12 @@ const MainLayout = () => {
 
   const location = useLocation();
   const { logout } = useAuth();
-  const { hasPermission } = usePermissions(); // Get permission checker for the default route
+  const { hasPermission } = usePermissions();
   const { toggleMode, isDark } = useThemeMode();
 
-  // Dynamically generate the page name from the URL path, with custom labels where needed.
   const pageName = location.pathname.replace("/", "").replace(/-/g, " ") || "invoices";
   const pageTitleOverrides = {
-    '/trkbit': 'Cross Intermediacao'
+    "/trkbit": "Cross Intermediacao",
   };
   const displayPageName = pageTitleOverrides[location.pathname] || pageName;
 
@@ -308,21 +255,21 @@ const MainLayout = () => {
     return () => clearInterval(interval);
   }, [checkStatus]);
 
-  const handleLogout = () => {
-    logout();
+  const getDefaultRoute = () => {
+    if (hasPermission("invoice:view")) return "/invoices";
+    if (hasPermission("manual_review:view")) return "/manual-review";
+    if (hasPermission("broadcast:send")) return "/broadcaster";
+    if (hasPermission("subaccount:withdrawals:view")) return "/scheduled-withdrawals";
+    return "/";
   };
 
-  // Determine the user's default landing page based on their permissions
-  const getDefaultRoute = () => {
-    if (hasPermission('invoice:view')) return '/invoices';
-    if (hasPermission('manual_review:view')) return '/manual-review';
-    if (hasPermission('broadcast:send')) return '/broadcaster';
-    if (hasPermission('subaccount:withdrawals:view')) return '/scheduled-withdrawals';
-    return '/'; // Fallback to a blank page if no permissions
-  };
+  const slot = (content) => <PageSlot>{content}</PageSlot>;
+  const protectedSlot = (permission, content) => (
+    <ProtectedPage permission={permission}>{slot(content)}</ProtectedPage>
+  );
 
   return (
-    <AppLayout>
+    <Shell data-admin-layout>
       <Sidebar isOpen={isSidebarOpen} onNavigate={() => setSidebarOpen(false)} />
       <SidebarBackdrop
         type="button"
@@ -330,87 +277,138 @@ const MainLayout = () => {
         $visible={isSidebarOpen}
         onClick={() => setSidebarOpen(false)}
       />
-      <ContentArea>
-        <Header>
-          <HeaderLeft>
-            <MobileMenuButton
+
+      <Main>
+        <Topbar>
+          <Left>
+            <MenuButton
               type="button"
               aria-label={isSidebarOpen ? "Close menu" : "Open menu"}
               onClick={() => setSidebarOpen((prev) => !prev)}
             >
-              {isSidebarOpen ? <FaTimes /> : <FaBars />}
-            </MobileMenuButton>
-            <PageTitle>{displayPageName}</PageTitle>
-          </HeaderLeft>
-          <HeaderActions>
-            <ThemeToggle
+              {isSidebarOpen ? <FiX /> : <FiMenu />}
+            </MenuButton>
+            <Title>{displayPageName}</Title>
+          </Left>
+
+          <Right>
+            <IconButton
               type="button"
               onClick={toggleMode}
-              title={isDark ? "Switch to light mode" : "Switch to dark mode"}
               aria-label={isDark ? "Switch to light mode" : "Switch to dark mode"}
+              title={isDark ? "Switch to light mode" : "Switch to dark mode"}
             >
               {isDark ? <FiSun /> : <FiMoon />}
-            </ThemeToggle>
-            <StatusIndicator status={status} onLogout={handleLogout} />
-          </HeaderActions>
-        </Header>
-        <PageContent>
-          <AdminViewport>
+            </IconButton>
+            <StatusIndicator status={status} onLogout={logout} />
+          </Right>
+        </Topbar>
+
+        <Content>
+          <Viewport>
             {status === "qr" ? (
-              <QRContainer>
-                <h2>Scan to Connect WhatsApp...</h2>
-                {qrCode && <img src={qrCode} alt="QR Code" />}
-              </QRContainer>
+              <PageSlot>
+                <QrPanel>
+                  <h2>Scan to Connect WhatsApp</h2>
+                  {qrCode && <img src={qrCode} alt="QR Code" />}
+                </QrPanel>
+              </PageSlot>
             ) : (
               <Routes>
-              {/* === CORE OPERATIONAL ROUTES === */}
-              <Route path="/invoices" element={<ProtectedPage permission="invoice:view"><InvoicesPage allGroups={allGroups} /></ProtectedPage>} />
-              <Route path="/manual-review" element={<ProtectedPage permission="manual_review:view"><ManualReviewPage allGroups={allGroups} /></ProtectedPage>} />
-              <Route path="/client-requests" element={<ProtectedPage permission="client_requests:view"><ClientRequestsPage /></ProtectedPage>} />
+                <Route
+                  path="/invoices"
+                  element={protectedSlot("invoice:view", <InvoicesPage allGroups={allGroups} />)}
+                />
+                <Route
+                  path="/manual-review"
+                  element={protectedSlot("manual_review:view", <ManualReviewPage allGroups={allGroups} />)}
+                />
+                <Route
+                  path="/client-requests"
+                  element={protectedSlot("client_requests:view", <ClientRequestsPage />)}
+                />
 
-              {/* === BROADCASTING ROUTES === */}
-              <Route path="/broadcaster" element={<ProtectedPage permission="broadcast:send"><BroadcasterPage allGroups={allGroups} /></ProtectedPage>} />
-              <Route path="/scheduled-broadcasts" element={<ProtectedPage permission="broadcast:schedules:view"><ScheduledBroadcastsPage /></ProtectedPage>} />
-              <Route path="/scheduled-withdrawals" element={<ProtectedPage permission="subaccount:withdrawals:view"><ScheduledWithdrawalsPage /></ProtectedPage>} />
-              
-              {/* === SUBACCOUNT & CLIENT ROUTES === */}
-              <Route path="/subaccounts" element={<ProtectedPage permission="subaccount:view"><SubaccountsPage allGroups={allGroups} /></ProtectedPage>} />
-              
-              {/* === FINANCIAL & BI ROUTES === */}
-              <Route path="/position" element={<ProtectedPage permission="finance:view_dashboards"><PositionPage /></ProtectedPage>} />
-              <Route path="/sub-customers" element={<ProtectedPage permission="finance:view_dashboards"><SubCustomersPage allGroups={allGroups} /></ProtectedPage>} />
-              <Route path="/trkbit" element={<ProtectedPage permission="finance:view_bank_statements"><TrkbitPage /></ProtectedPage>} />
-              <Route path="/alfa-trust" element={<ProtectedPage permission="finance:view_bank_statements"><AlfaTrustPage /></ProtectedPage>} />
-              
-              {/* === SETTINGS & RULES ROUTES === */}
-              <Route path="/ai-forwarding" element={<ProtectedPage permission="settings:view"><AiForwardingPage allGroups={allGroups} /></ProtectedPage>} />
-              <Route path="/direct-forwarding" element={<ProtectedPage permission="settings:view"><DirectForwardingPage allGroups={allGroups} /></ProtectedPage>} />
-              <Route path="/auto-confirmation" element={<ProtectedPage permission="settings:view"><AutoConfirmationPage /></ProtectedPage>} />
-              <Route path="/abbreviations" element={<ProtectedPage permission="settings:view"><AbbreviationsPage /></ProtectedPage>} />
-              <Route path="/group-settings" element={<ProtectedPage permission="settings:edit_rules"><GroupSettingsPage /></ProtectedPage>} />
-              <Route path="/request-types" element={<ProtectedPage permission="settings:edit_request_triggers"><RequestTypesPage /></ProtectedPage>} />
-              <Route path="/usdt-wallets" element={<ProtectedPage permission="usdt_wallets:view"><UsdtWalletsPage /></ProtectedPage>} />
+                <Route
+                  path="/broadcaster"
+                  element={protectedSlot("broadcast:send", <BroadcasterPage allGroups={allGroups} />)}
+                />
+                <Route
+                  path="/scheduled-broadcasts"
+                  element={protectedSlot("broadcast:schedules:view", <ScheduledBroadcastsPage />)}
+                />
+                <Route
+                  path="/scheduled-withdrawals"
+                  element={protectedSlot("subaccount:withdrawals:view", <ScheduledWithdrawalsPage />)}
+                />
+                <Route
+                  path="/subaccounts"
+                  element={protectedSlot("subaccount:view", <SubaccountsPage allGroups={allGroups} />)}
+                />
 
-              {/* === NEW ADMIN ROUTES === */}
-              <Route path="/users" element={<ProtectedPage permission="admin:view_users"><UsersPage /></ProtectedPage>} />
-              <Route path="/roles" element={<ProtectedPage permission="admin:view_roles"><RolesPage /></ProtectedPage>} />
-              <Route path="/audit-log" element={<ProtectedPage permission="admin:view_audit_log"><AuditLogPage /></ProtectedPage>} />
-              <Route path="/pin-messages" element={<ProtectedPage permission="pin:view"><PinMessagesPage allGroups={allGroups} /></ProtectedPage>} />
+                <Route
+                  path="/position"
+                  element={protectedSlot("finance:view_dashboards", <PositionPage />)}
+                />
+                <Route
+                  path="/sub-customers"
+                  element={protectedSlot("finance:view_dashboards", <SubCustomersPage allGroups={allGroups} />)}
+                />
+                <Route
+                  path="/trkbit"
+                  element={protectedSlot("finance:view_bank_statements", <TrkbitPage />)}
+                />
+                <Route
+                  path="/alfa-trust"
+                  element={protectedSlot("finance:view_bank_statements", <AlfaTrustPage />)}
+                />
 
-              {/* === LEGACY & REDIRECTS === */}
-              <Route path="/wallet-requests" element={<Navigate to="/client-requests" replace />} />
-              <Route path="/chave-pix" element={<Navigate to="/subaccounts" replace />} />
-              
-              {/* Default route redirects to user's permitted landing page */}
+                <Route
+                  path="/ai-forwarding"
+                  element={protectedSlot("settings:view", <AiForwardingPage allGroups={allGroups} />)}
+                />
+                <Route
+                  path="/direct-forwarding"
+                  element={protectedSlot("settings:view", <DirectForwardingPage allGroups={allGroups} />)}
+                />
+                <Route
+                  path="/auto-confirmation"
+                  element={protectedSlot("settings:view", <AutoConfirmationPage />)}
+                />
+                <Route
+                  path="/abbreviations"
+                  element={protectedSlot("settings:view", <AbbreviationsPage />)}
+                />
+                <Route
+                  path="/group-settings"
+                  element={protectedSlot("settings:edit_rules", <GroupSettingsPage />)}
+                />
+                <Route
+                  path="/request-types"
+                  element={protectedSlot("settings:edit_request_triggers", <RequestTypesPage />)}
+                />
+                <Route
+                  path="/usdt-wallets"
+                  element={protectedSlot("usdt_wallets:view", <UsdtWalletsPage />)}
+                />
+
+                <Route path="/users" element={protectedSlot("admin:view_users", <UsersPage />)} />
+                <Route path="/roles" element={protectedSlot("admin:view_roles", <RolesPage />)} />
+                <Route path="/audit-log" element={protectedSlot("admin:view_audit_log", <AuditLogPage />)} />
+                <Route
+                  path="/pin-messages"
+                  element={protectedSlot("pin:view", <PinMessagesPage allGroups={allGroups} />)}
+                />
+
+                <Route path="/wallet-requests" element={<Navigate to="/client-requests" replace />} />
+                <Route path="/chave-pix" element={<Navigate to="/subaccounts" replace />} />
                 <Route path="*" element={<Navigate to={getDefaultRoute()} replace />} />
               </Routes>
             )}
-          </AdminViewport>
-        </PageContent>
-      </ContentArea>
-    </AppLayout>
+          </Viewport>
+        </Content>
+      </Main>
+    </Shell>
   );
 };
 
 export default MainLayout;
-

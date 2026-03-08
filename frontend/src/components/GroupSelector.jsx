@@ -134,7 +134,7 @@ const SelectAllButton = styled.button`
     border-radius: 8px;
 
     &:hover {
-        background: #e9ecef;
+        background: ${({ theme }) => theme.surfaceAlt};
     }
 `;
 

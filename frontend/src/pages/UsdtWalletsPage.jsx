@@ -17,7 +17,7 @@ const PageContainer = styled.div`
     gap: 1.2rem;
     height: 100%;
     min-height: 0;
-    overflow: hidden;
+    overflow: auto;
 `;
 
 const Header = styled.div`
@@ -132,7 +132,7 @@ const Slider = styled.span`
     left: 0;
     right: 0;
     bottom: 0;
-    background-color: #ccc;
+    background-color: ${({ theme }) => theme.borderStrong};
     transition: .4s;
     border-radius: 34px;
     &:before {
@@ -152,6 +152,21 @@ const ModalForm = styled.form`
     display: flex;
     flex-direction: column;
     gap: 1rem;
+`;
+
+const InlineNote = styled.small`
+    color: ${({ theme }) => theme.lightText};
+`;
+
+const WarningBox = styled.p`
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    color: ${({ theme }) => theme.lightText};
+    background: ${({ theme }) => theme.surfaceAlt};
+    border: 1px solid ${({ theme }) => theme.border};
+    padding: 0.6rem 0.7rem;
+    border-radius: 8px;
 `;
 
 const InputGroup = styled.div`
@@ -355,12 +370,12 @@ const WalletModal = ({ isOpen, onClose, onSave, wallet }) => {
                         required 
                         disabled={!!wallet}
                     />
-                     {!!wallet && <small style={{color: '#6B7C93'}}>Wallet address cannot be changed after creation.</small>}
+                     {!!wallet && <InlineNote>Wallet address cannot be changed after creation.</InlineNote>}
                 </InputGroup>
-                <p style={{display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#6B7C93', background: '#F6F9FC', padding: '0.75rem', borderRadius: '4px'}}>
-                    <FaExclamationTriangle style={{color: '#f39c12'}}/>
+                <WarningBox>
+                    <FaExclamationTriangle style={{color: '#f59e0b'}}/>
                     Ensure the address is a TRON (TRC-20) address and is copied correctly.
-                </p>
+                </WarningBox>
                 <Button type="submit" style={{ alignSelf: 'flex-end', marginTop: '1rem' }}>Save Changes</Button>
             </ModalForm>
         </Modal>

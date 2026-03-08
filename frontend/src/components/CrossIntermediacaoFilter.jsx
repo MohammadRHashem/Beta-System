@@ -93,8 +93,8 @@ const ActionButton = styled.button`
     font-weight: 700;
     cursor: pointer;
     border: 1px solid ${({ theme, variant }) => variant === 'ghost' ? theme.border : 'transparent'};
-    background: ${({ theme, variant }) => variant === 'ghost' ? '#fff' : theme.primary};
-    color: ${({ theme, variant }) => variant === 'ghost' ? theme.lightText : '#fff'};
+    background: ${({ theme, variant }) => variant === 'ghost' ? theme.surface : theme.primary};
+    color: ${({ theme, variant }) => variant === 'ghost' ? theme.lightText : theme.surface};
 
     &:hover {
         opacity: 0.92;

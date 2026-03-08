@@ -11,7 +11,7 @@ const PageContainer = styled.div`
     gap: 1.25rem;
     height: 100%;
     min-height: 0;
-    overflow: hidden;
+    overflow: auto;
 `;
 
 const Card = styled.div`
@@ -66,7 +66,7 @@ const Button = styled.button`
     cursor: pointer;
     font-weight: bold;
     &:disabled {
-        background-color: #ccc;
+        background-color: ${({ theme }) => theme.borderStrong};
         cursor: not-allowed;
     }
 `;

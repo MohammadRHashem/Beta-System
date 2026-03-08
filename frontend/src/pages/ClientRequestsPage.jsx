@@ -30,7 +30,7 @@ import {
 import { formatInTimeZone } from 'date-fns-tz';
 import Modal from '../components/Modal';
 
-const PageContainer = styled.div` display: flex; flex-direction: column; gap: 1.25rem; height: 100%; min-height: 0; overflow: hidden; `;
+const PageContainer = styled.div` display: flex; flex-direction: column; gap: 1.25rem; height: 100%; min-height: 0; overflow: auto; `;
 const Header = styled.div` display: flex; justify-content: space-between; align-items: center; gap: 1rem; flex-wrap: wrap; `;
 const Card = styled.div`
     background: ${({ theme }) => theme.surface};
@@ -76,9 +76,9 @@ const TableHeader = styled.th`
     user-select: none;
     font-size: 0.84rem;
     letter-spacing: 0.01em;
-    &:hover { background-color: #eef2f7; }
+    &:hover { background-color: ${({ theme }) => theme.surfaceAlt}; }
 `;
-const TableRow = styled.tr` border-left: 5px solid ${props => props.highlightColor || '#E0E0E0'}; transition: background-color 0.2s; &:hover { background-color: ${props => props.highlightColor ? `${props.highlightColor}4D` : '#f9f9f9'}; } `;
+const TableRow = styled.tr` border-left: 5px solid ${props => props.highlightColor || '#E0E0E0'}; transition: background-color 0.2s; &:hover { background-color: ${props => props.highlightColor ? `${props.highlightColor}4D` : 'rgba(148,163,184,0.15)'}; } `;
 const Button = styled.button`
     border: none;
     padding: 0.46rem 0.78rem;
@@ -93,7 +93,7 @@ const Button = styled.button`
     &.delete { background-color: #ffe9e8; color: #a1221a; &:hover { background-color: #ffd5d2; } }
 `;
 const ActionButtons = styled.div` display: flex; gap: 0.5rem; flex-wrap: wrap; `;
-const EditableCell = styled.div` display: flex; align-items: center; gap: 0.75rem; font-weight: bold; color: ${({ theme }) => theme.primary}; svg { cursor: pointer; color: #999; flex-shrink: 0; &:hover { color: #333; } }`;
+const EditableCell = styled.div` display: flex; align-items: center; gap: 0.75rem; font-weight: bold; color: ${({ theme }) => theme.primary}; svg { cursor: pointer; color: ${({ theme }) => theme.lightText}; flex-shrink: 0; &:hover { color: ${({ theme }) => theme.primary}; } }`;
 const ContentCell = styled.td` font-family: 'Courier New', Courier, monospace; font-weight: 500; word-break: break-all; `;
 const InfoValue = styled.div` margin-bottom: 0.4rem; `;
 const HistoryBadge = styled.span`
@@ -114,7 +114,7 @@ const HistoryBadgeButton = styled.button`
     background: transparent;
     cursor: pointer;
 `;
-const AmountButton = styled.button` background: transparent; border: 1px dashed #ccc; color: #666; cursor: pointer; padding: 0.3rem 0.75rem; border-radius: 8px; display: flex; align-items: center; gap: 0.45rem; &:hover { background: #f0f0f0; border-color: #999; } `;
+const AmountButton = styled.button` background: transparent; border: 1px dashed ${({ theme }) => theme.borderStrong}; color: ${({ theme }) => theme.lightText}; cursor: pointer; padding: 0.3rem 0.75rem; border-radius: 8px; display: flex; align-items: center; gap: 0.45rem; &:hover { background: ${({ theme }) => theme.surfaceAlt}; border-color: ${({ theme }) => theme.secondary}; color: ${({ theme }) => theme.primary}; } `;
 const TabContainer = styled.div`
     border-bottom: 2px solid ${({ theme }) => theme.border};
     margin-bottom: 1rem;
@@ -139,7 +139,7 @@ const Tab = styled.button`
 const ConfigButton = styled.button` background: transparent; border: none; color: ${({ theme }) => theme.lightText}; cursor: pointer; font-size: 1.2rem; &:hover { color: ${({ theme }) => theme.primary}; } `;
 const ModalList = styled.ul` list-style: none; margin: 1rem 0; padding: 0; `;
 const ModalListItem = styled.li` display: flex; justify-content: space-between; align-items: center; padding: 0.75rem; border: 1px solid ${({ theme }) => theme.border}; border-radius: 4px; margin-bottom: 0.5rem; background: ${({ theme }) => theme.surfaceAlt}; `;
-const ArrowButton = styled.button` background: transparent; border: none; font-size: 1.2rem; cursor: pointer; color: ${({ theme }) => theme.text}; &:disabled { color: #ccc; cursor: not-allowed; } `;
+const ArrowButton = styled.button` background: transparent; border: none; font-size: 1.2rem; cursor: pointer; color: ${({ theme }) => theme.text}; &:disabled { color: ${({ theme }) => theme.borderStrong}; cursor: not-allowed; } `;
 const SaveOrderButton = styled.button` background-color: ${({ theme }) => theme.primary}; color: white; border: none; padding: 0.75rem 1.5rem; border-radius: 4px; cursor: pointer; font-weight: bold; display: block; margin-left: auto; `;
 const SearchRow = styled.div` display: flex; justify-content: flex-end; align-items: center; gap: 1rem; margin-top: 0.7rem; flex-wrap: wrap; `;
 const SearchInput = styled.input` padding: 0.6rem 0.8rem; border: 1px solid ${({ theme }) => theme.border}; border-radius: 8px; font-size: 0.9rem; min-width: 260px; width: min(360px, 100%); `;

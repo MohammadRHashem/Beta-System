@@ -1,147 +1,278 @@
-import React, { useState, useRef } from 'react';
-import styled from 'styled-components';
-import { createTemplate, uploadBroadcastAttachment } from '../services/api';
-import { FaPaperclip, FaFolderOpen, FaTimesCircle, FaImage, FaFilePdf, FaFile } from 'react-icons/fa';
+import React, { useRef, useState } from "react";
+import styled from "styled-components";
+import { createTemplate, uploadBroadcastAttachment } from "../services/api";
+import {
+  FaFile,
+  FaFilePdf,
+  FaFolderOpen,
+  FaImage,
+  FaPaperclip,
+  FaTimesCircle,
+} from "react-icons/fa";
 
-const FormContainer = styled.div` background: ${({ theme }) => theme.surface}; padding: 1.1rem 1rem 1rem; border: 1px solid ${({ theme }) => theme.border}; border-radius: 12px; `;
-const TextArea = styled.textarea` width: 100%; min-height: 150px; padding: 0.68rem 0.72rem; border: 1px solid ${({ theme }) => theme.border}; border-radius: 8px; font-family: inherit; font-size: 0.95rem; `;
-const SendButton = styled.button` background-color: ${({ theme, disabled }) => disabled ? theme.lightText : theme.secondary}; color: white; border: none; padding: 0.68rem 1rem; border-radius: 8px; cursor: ${({ disabled }) => disabled ? 'not-allowed' : 'pointer'}; font-weight: bold; font-size: 0.95rem; width: 100%; transition: background-color 0.2s; &:hover { opacity: ${({ disabled }) => disabled ? 1 : 0.9}; } `;
-const AttachmentControls = styled.div` display: flex; gap: 0.75rem; margin-top: 0.9rem; padding-top: 0.9rem; border-top: 1px solid ${({ theme }) => theme.border}; flex-wrap: wrap; `;
-const ControlButton = styled.button` display: flex; align-items: center; gap: 0.5rem; padding: 0.56rem 0.82rem; border: 1px solid ${({ theme }) => theme.border}; background: ${({ theme }) => theme.surface}; border-radius: 8px; font-weight: 600; cursor: pointer; &:hover { background: ${({ theme }) => theme.surfaceAlt}; } `;
-const HiddenInput = styled.input.attrs({ type: 'file' })` display: none; `;
-const AttachmentPreview = styled.div` margin-top: 1rem; padding: 1rem; background: ${({ theme }) => theme.surfaceAlt}; border: 1px solid ${({ theme }) => theme.border}; border-radius: 8px; display: flex; align-items: center; justify-content: space-between; `;
-const FileInfo = styled.div` display: flex; align-items: center; gap: 1rem; .icon { font-size: 2rem; color: #666; } `;
-const RemoveButton = styled(FaTimesCircle)` cursor: pointer; color: #999; &:hover { color: ${({ theme }) => theme.error}; } `;
-const TemplateSaveContainer = styled.div` margin-top: 0.85rem; display: flex; gap: 0.5rem; flex-wrap: wrap; `;
-const TemplateInput = styled.input` flex-grow: 1; padding: 0.62rem 0.72rem; border: 1px solid ${({ theme }) => theme.border}; border-radius: 8px; `;
-const SaveTemplateButton = styled.button` background-color: ${({ theme, disabled }) => disabled ? theme.lightText : theme.primary}; color: white; border: none; padding: 0.58rem 0.82rem; border-radius: 8px; cursor: ${({ disabled }) => disabled ? 'not-allowed' : 'pointer'}; font-weight: bold; `;
+const Container = styled.section`
+  border: 1px solid ${({ theme }) => theme.border};
+  border-radius: 10px;
+  background: ${({ theme }) => theme.surface};
+  padding: 0.65rem;
+  min-height: 0;
+`;
 
-const BroadcastForm = ({ 
-    selectedGroupIds, allGroups, message, setMessage, attachment, setAttachment, 
-    onTemplateSave, onBroadcastStart, isBroadcasting, onOpenAttachmentManager,
-    canSendBroadcast, canCreateTemplates, canUploadAttachments, canViewAttachments 
+const Title = styled.h3`
+  margin: 0 0 0.45rem;
+  font-size: 0.95rem;
+`;
+
+const Form = styled.form`
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+`;
+
+const TextArea = styled.textarea`
+  width: 100%;
+  min-height: 170px;
+  resize: vertical;
+  font-size: 0.83rem;
+  line-height: 1.35;
+`;
+
+const AttachmentPreview = styled.div`
+  border: 1px solid ${({ theme }) => theme.border};
+  border-radius: 8px;
+  background: ${({ theme }) => theme.surfaceAlt};
+  padding: 0.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.4rem;
+`;
+
+const FileInfo = styled.div`
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  min-width: 0;
+
+  .icon {
+    font-size: 1.15rem;
+    color: ${({ theme }) => theme.primarySoft};
+  }
+
+  span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.78rem;
+  }
+`;
+
+const RemoveButton = styled.button`
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid ${({ theme }) => theme.border};
+  background: ${({ theme }) => theme.surface};
+  color: ${({ theme }) => theme.error};
+`;
+
+const HiddenInput = styled.input.attrs({ type: "file" })`
+  display: none;
+`;
+
+const Controls = styled.div`
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.42rem;
+`;
+
+const ControlButton = styled.button`
+  border-radius: 7px;
+  border: 1px solid ${({ theme }) => theme.border};
+  background: ${({ theme }) => theme.surfaceAlt};
+  font-size: 0.75rem;
+  min-height: 28px;
+  padding: 0.24rem 0.55rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-weight: 700;
+`;
+
+const TemplateRow = styled.div`
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.4rem;
+`;
+
+const TemplateInput = styled.input`
+  width: 100%;
+`;
+
+const SendButton = styled.button`
+  border: 1px solid transparent;
+  border-radius: 8px;
+  min-height: 32px;
+  background: ${({ theme, disabled }) => (disabled ? theme.lightText : theme.secondary)};
+  color: #fff;
+  font-size: 0.8rem;
+  font-weight: 800;
+  width: 100%;
+`;
+
+const BroadcastForm = ({
+  selectedGroupIds,
+  allGroups,
+  message,
+  setMessage,
+  attachment,
+  setAttachment,
+  onTemplateSave,
+  onBroadcastStart,
+  isBroadcasting,
+  onOpenAttachmentManager,
+  canSendBroadcast,
+  canCreateTemplates,
+  canUploadAttachments,
+  canViewAttachments,
 }) => {
-    const [templateName, setTemplateName] = useState('');
-    const fileInputRef = useRef(null);
+  const [templateName, setTemplateName] = useState("");
+  const fileInputRef = useRef(null);
 
-    const handleSubmit = async (e) => {
-        e.preventDefault();
-        // Permission check added to guard clause
-        if (!canSendBroadcast || !canSend || selectedGroupIds.length === 0 || isBroadcasting) return;
+  const canSend = (message && !attachment) || attachment;
 
-        if (window.confirm(`You are about to send this content to ${selectedGroupIds.length} groups. Proceed?`)) {
-            const groupObjects = allGroups.filter(g => selectedGroupIds.includes(g.id));
-            onBroadcastStart(groupObjects, message, attachment);
-        }
-    };
+  const handleSubmit = async (event) => {
+    event.preventDefault();
+    if (!canSendBroadcast || !canSend || selectedGroupIds.length === 0 || isBroadcasting) return;
 
-    const handleFileUpload = async (e) => {
-        if (!canUploadAttachments) return;
-        const file = e.target.files[0];
-        if (!file) return;
-        try {
-            const { data } = await uploadBroadcastAttachment(file);
-            setAttachment(data);
-        } catch (error) {
-            alert('File upload failed.');
-        }
-    };
-    
-    const handleSaveTemplate = async () => {
-        const hasContent = message || attachment;
-        if (!templateName || !hasContent) {
-            alert('Please enter a template name and provide either a message or an attachment.');
-            return;
-        }
-        try {
-            const payload = { 
-                name: templateName, 
-                text: message,
-                upload_id: attachment ? attachment.id : null
-            };
-            await createTemplate(payload);
-            alert(`Template "${templateName}" saved!`);
-            setTemplateName('');
-            onTemplateSave();
-        } catch (error) {
-            console.error('Error saving template:', error);
-            alert('Failed to save template.');
-        }
-    };
+    if (window.confirm(`You are about to send this content to ${selectedGroupIds.length} groups. Proceed?`)) {
+      const groupObjects = allGroups.filter((group) => selectedGroupIds.includes(group.id));
+      onBroadcastStart(groupObjects, message, attachment);
+    }
+  };
 
-    const getFileIcon = (mimetype) => {
-        if (mimetype.startsWith('image/')) return <FaImage className="icon" />;
-        if (mimetype === 'application/pdf') return <FaFilePdf className="icon" color="#B30B00" />;
-        return <FaFile className="icon" />;
-    };
+  const handleFileUpload = async (event) => {
+    if (!canUploadAttachments) return;
+    const file = event.target.files[0];
+    if (!file) return;
 
-    const canSend = (message && !attachment) || attachment;
+    try {
+      const { data } = await uploadBroadcastAttachment(file);
+      setAttachment(data);
+    } catch (_error) {
+      alert("File upload failed.");
+    }
+  };
 
-    return (
-        <FormContainer>
-            <h3>Compose Message</h3>
-            <form onSubmit={handleSubmit}>
-                <TextArea
-                    placeholder={attachment ? "Add a caption (optional)..." : "Type your message here, or attach a file..."}
-                    value={message}
-                    onChange={(e) => setMessage(e.target.value)}
-                    disabled={isBroadcasting}
-                />
-                
-                {attachment && (
-                    <AttachmentPreview>
-                        <FileInfo>
-                            {getFileIcon(attachment.mimetype)}
-                            <span>{attachment.original_filename}</span>
-                        </FileInfo>
-                        {(canUploadAttachments || canViewAttachments) && <RemoveButton onClick={() => setAttachment(null)} />}
-                    </AttachmentPreview>
-                )}
-                
-                {(canUploadAttachments || canViewAttachments) && (
-                    <AttachmentControls>
-                        <HiddenInput ref={fileInputRef} onChange={handleFileUpload} />
-                        {canUploadAttachments && (
-                            <ControlButton type="button" onClick={() => fileInputRef.current.click()}><FaPaperclip/> Attach New</ControlButton>
-                        )}
-                        {canViewAttachments && (
-                            <ControlButton type="button" onClick={onOpenAttachmentManager}><FaFolderOpen/> Use Existing</ControlButton>
-                        )}
-                    </AttachmentControls>
-                )}
+  const handleSaveTemplate = async () => {
+    const hasContent = message || attachment;
+    if (!templateName || !hasContent) {
+      alert("Please enter a template name and provide a message or an attachment.");
+      return;
+    }
 
-                {canCreateTemplates && (
-                    <TemplateSaveContainer>
-                        <TemplateInput
-                            type="text"
-                            placeholder="New template name..."
-                            value={templateName}
-                            onChange={(e) => setTemplateName(e.target.value)}
-                        />
-                        <SaveTemplateButton
-                            type="button"
-                            disabled={!templateName || (!message && !attachment)}
-                            onClick={handleSaveTemplate}
-                        >
-                            Save
-                        </SaveTemplateButton>
-                    </TemplateSaveContainer>
-                )}
-                
-                <SendButton
-                    type="submit"
-                    disabled={!canSendBroadcast || !canSend || selectedGroupIds.length === 0 || isBroadcasting}
-                    style={{ marginTop: '1rem' }}
-                >
-                    {isBroadcasting 
-                        ? 'Broadcasting...' 
-                        : canSendBroadcast 
-                            ? `Send to ${selectedGroupIds.length} Groups` 
-                            : 'Permission Denied'}
-                </SendButton>
-            </form>
-        </FormContainer>
-    );
+    try {
+      const payload = {
+        name: templateName,
+        text: message,
+        upload_id: attachment ? attachment.id : null,
+      };
+      await createTemplate(payload);
+      alert(`Template \"${templateName}\" saved.`);
+      setTemplateName("");
+      onTemplateSave();
+    } catch (_error) {
+      alert("Failed to save template.");
+    }
+  };
+
+  const getFileIcon = (mimetype) => {
+    if (mimetype.startsWith("image/")) return <FaImage className="icon" />;
+    if (mimetype === "application/pdf") return <FaFilePdf className="icon" />;
+    return <FaFile className="icon" />;
+  };
+
+  return (
+    <Container>
+      <Title>Compose Broadcast</Title>
+      <Form onSubmit={handleSubmit}>
+        <TextArea
+          placeholder={
+            attachment
+              ? "Add a caption (optional)..."
+              : "Type your message here, or attach a file..."
+          }
+          value={message}
+          onChange={(event) => setMessage(event.target.value)}
+          disabled={isBroadcasting}
+        />
+
+        {attachment && (
+          <AttachmentPreview>
+            <FileInfo>
+              {getFileIcon(attachment.mimetype)}
+              <span>{attachment.original_filename}</span>
+            </FileInfo>
+            {(canUploadAttachments || canViewAttachments) && (
+              <RemoveButton type="button" onClick={() => setAttachment(null)} title="Remove attachment">
+                <FaTimesCircle />
+              </RemoveButton>
+            )}
+          </AttachmentPreview>
+        )}
+
+        {(canUploadAttachments || canViewAttachments) && (
+          <Controls>
+            <HiddenInput ref={fileInputRef} onChange={handleFileUpload} />
+            {canUploadAttachments && (
+              <ControlButton type="button" onClick={() => fileInputRef.current?.click()}>
+                <FaPaperclip /> Attach New
+              </ControlButton>
+            )}
+            {canViewAttachments && (
+              <ControlButton type="button" onClick={onOpenAttachmentManager}>
+                <FaFolderOpen /> Use Existing
+              </ControlButton>
+            )}
+          </Controls>
+        )}
+
+        {canCreateTemplates && (
+          <TemplateRow>
+            <TemplateInput
+              type="text"
+              placeholder="New template name..."
+              value={templateName}
+              onChange={(event) => setTemplateName(event.target.value)}
+            />
+            <ControlButton
+              type="button"
+              disabled={!templateName || (!message && !attachment)}
+              onClick={handleSaveTemplate}
+            >
+              Save Template
+            </ControlButton>
+          </TemplateRow>
+        )}
+
+        <SendButton
+          type="submit"
+          disabled={!canSendBroadcast || !canSend || selectedGroupIds.length === 0 || isBroadcasting}
+        >
+          {isBroadcasting
+            ? "Broadcasting..."
+            : canSendBroadcast
+              ? `Send to ${selectedGroupIds.length} Groups`
+              : "Permission Denied"}
+        </SendButton>
+      </Form>
+    </Container>
+  );
 };
 
 export default BroadcastForm;

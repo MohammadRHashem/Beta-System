@@ -1,13 +1,7 @@
-import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import styled from "styled-components";
 import { io } from "socket.io-client";
-import {
-  FaCheckCircle,
-  FaLayerGroup,
-  FaPaste,
-  FaSyncAlt,
-  FaTasks,
-} from "react-icons/fa";
+import { FaCheckCircle, FaLayerGroup, FaPaste, FaSyncAlt, FaTasks } from "react-icons/fa";
 import api, {
   cancelBroadcastJob,
   deleteBroadcastForEveryone,
@@ -35,94 +29,106 @@ const PageShell = styled.div`
   min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: 0.9rem;
-  overflow: hidden;
+  gap: 0.55rem;
+  overflow: auto;
 `;
 
-const TabBar = styled.div`
-  display: flex;
-  gap: 0.5rem;
-  border-bottom: 1px solid ${({ theme }) => theme.border};
-  padding-bottom: 0.4rem;
+const Tabs = styled.div`
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  border: 1px solid ${({ theme }) => theme.border};
+  border-radius: 8px;
+  background: ${({ theme }) => theme.surfaceAlt};
+  padding: 0.2rem;
+  gap: 0.2rem;
 `;
 
 const TabButton = styled.button`
-  border: 1px solid ${({ theme, $active }) => ($active ? theme.primary : theme.border)};
-  background: ${({ theme, $active }) => ($active ? theme.primary : theme.surface)};
-  color: ${({ $active }) => ($active ? "#fff" : "#1f2a37")};
-  border-radius: 8px;
-  padding: 0.5rem 0.82rem;
-  font-weight: 700;
+  min-width: 88px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  background: ${({ theme, $active }) => ($active ? theme.primary : "transparent")};
+  color: ${({ theme, $active }) => ($active ? theme.surface : theme.primary)};
+  font-size: 0.76rem;
+  font-weight: 800;
   cursor: pointer;
 `;
 
 const TabContent = styled.div`
-  flex: 1;
   min-height: 0;
-  overflow: hidden;
+  flex: 1;
+  overflow: auto;
+  padding-right: 0.05rem;
 `;
 
 const ComposeLayout = styled.div`
-  height: 100%;
-  min-height: 0;
-  display: grid;
-  grid-template-rows: auto 1fr;
-  gap: 0.9rem;
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
 `;
 
-const CompactCard = styled.div`
-  background: ${({ theme }) => theme.surface};
+const SetupCard = styled.section`
   border: 1px solid ${({ theme }) => theme.border};
-  border-radius: 12px;
-  padding: 0.9rem;
+  border-radius: 10px;
+  background: ${({ theme }) => theme.surface};
+  padding: 0.5rem;
 `;
 
 const SetupGrid = styled.div`
   display: grid;
-  grid-template-columns: repeat(4, minmax(180px, 1fr));
-  gap: 0.65rem;
+  grid-template-columns: repeat(4, minmax(170px, 1fr));
+  gap: 0.55rem;
 
-  @media (max-width: 1480px) {
-    grid-template-columns: repeat(2, minmax(160px, 1fr));
+  @media (max-width: 1400px) {
+    grid-template-columns: repeat(2, minmax(180px, 1fr));
   }
 
-  @media (max-width: 820px) {
+  @media (max-width: 860px) {
     grid-template-columns: 1fr;
   }
 `;
 
-const Label = styled.div`
-  font-size: 0.78rem;
-  color: ${({ theme }) => theme.lightText};
-  margin-bottom: 0.35rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-`;
-
-const ValueBox = styled.div`
-  border: 1px solid ${({ theme }) => theme.border};
-  border-radius: 8px;
-  padding: 0.58rem 0.66rem;
-  min-height: 38px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem;
-  background: ${({ theme }) => theme.surface};
-`;
-
-const ActionButton = styled.button`
+const SetupCell = styled.div`
   border: 1px solid ${({ theme }) => theme.border};
   border-radius: 8px;
   background: ${({ theme }) => theme.surfaceAlt};
-  color: ${({ theme }) => theme.primary};
-  padding: 0.48rem 0.7rem;
-  font-weight: 700;
-  cursor: pointer;
+  padding: 0.42rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+`;
+
+const Label = styled.div`
+  font-size: 0.68rem;
+  color: ${({ theme }) => theme.lightText};
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 800;
+`;
+
+const ValueRow = styled.div`
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.4rem;
+  font-size: 0.8rem;
+`;
+
+const ActionButton = styled.button`
+  border-radius: 6px;
+  border: 1px solid ${({ theme }) => theme.border};
+  background: ${({ theme, $variant }) => ($variant === "primary" ? theme.primary : theme.surface)};
+  color: ${({ theme, $variant }) => ($variant === "primary" ? theme.surface : theme.primary)};
+  padding: 0.25rem 0.5rem;
+  min-height: 28px;
   display: inline-flex;
   align-items: center;
-  gap: 0.45rem;
+  gap: 0.32rem;
+  font-size: 0.74rem;
+  font-weight: 800;
+  cursor: pointer;
   white-space: nowrap;
 
   &:disabled {
@@ -131,62 +137,52 @@ const ActionButton = styled.button`
   }
 `;
 
-const Select = styled.select`
+const SelectField = styled.select`
   width: 100%;
-  border: 1px solid ${({ theme }) => theme.border};
-  border-radius: 8px;
-  padding: 0.58rem 0.66rem;
-  background: ${({ theme }) => theme.surface};
-  min-height: 38px;
+  min-height: 29px;
+  font-size: 0.78rem;
+  border-radius: 6px;
 `;
 
-const ScrollArea = styled.div`
+const ComposeBody = styled.div`
   min-height: 0;
-  overflow: auto;
-  padding-right: 0.2rem;
+  overflow: visible;
 `;
 
 const ModalHeader = styled.div`
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 0.8rem;
-  margin-bottom: 0.7rem;
+  gap: 0.7rem;
+  margin-bottom: 0.55rem;
 `;
 
 const SearchInput = styled.input`
   width: 100%;
-  border: 1px solid ${({ theme }) => theme.border};
-  border-radius: 8px;
-  padding: 0.58rem 0.66rem;
 `;
 
 const ModalControls = styled.div`
   display: flex;
   flex-wrap: wrap;
-  gap: 0.55rem;
-  margin-bottom: 0.65rem;
+  gap: 0.42rem;
+  margin-bottom: 0.52rem;
 `;
 
 const ListWrap = styled.div`
   border: 1px solid ${({ theme }) => theme.border};
-  border-radius: 10px;
-  max-height: 56vh;
+  border-radius: 8px;
+  max-height: 58vh;
   overflow: auto;
 `;
 
 const ListItem = styled.label`
-  display: flex;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
   align-items: center;
-  gap: 0.6rem;
+  gap: 0.55rem;
   border-bottom: 1px solid ${({ theme }) => theme.border};
-  padding: 0.52rem 0.6rem;
-  cursor: pointer;
-  background: ${({ $selected, theme }) => ($selected ? theme.background : "#fff")};
-
-  &:hover {
-    background: ${({ theme }) => theme.background};
-  }
+  padding: 0.48rem 0.55rem;
+  background: ${({ $selected, theme }) => ($selected ? theme.secondarySoft : theme.surface)};
 `;
 
 const ItemText = styled.span`
@@ -194,12 +190,13 @@ const ItemText = styled.span`
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-size: 0.78rem;
 `;
 
 const FooterRow = styled.div`
+  margin-top: 0.55rem;
   display: flex;
   justify-content: flex-end;
-  margin-top: 0.7rem;
 `;
 
 const API_URL = (import.meta.env.VITE_SOCKET_URL || window.location.origin).trim();
@@ -491,7 +488,7 @@ const BroadcasterPage = ({ allGroups }) => {
   };
 
   const handleSyncGroups = async () => {
-    if (!window.confirm("This will fetch the latest group list... Continue?")) return;
+    if (!window.confirm("This will fetch the latest group list. Continue?")) return;
     setIsSyncing(true);
     try {
       const { data } = await api.post("/groups/sync");
@@ -571,46 +568,21 @@ const BroadcasterPage = ({ allGroups }) => {
   };
 
   const handlePauseJob = (jobId) =>
-    withJobAction(
-      jobId,
-      "pause",
-      () => pauseBroadcastJob(jobId),
-      `Pause requested for job #${jobId}.`,
-    );
+    withJobAction(jobId, "pause", () => pauseBroadcastJob(jobId), `Pause requested for job #${jobId}.`);
 
   const handleResumeJob = (jobId) =>
-    withJobAction(
-      jobId,
-      "resume",
-      () => resumeBroadcastJob(jobId),
-      `Resume requested for job #${jobId}.`,
-    );
+    withJobAction(jobId, "resume", () => resumeBroadcastJob(jobId), `Resume requested for job #${jobId}.`);
 
   const handleCancelJob = (jobId) => {
     if (!window.confirm(`Cancel broadcast job #${jobId}?`)) return Promise.resolve(null);
-    return withJobAction(
-      jobId,
-      "cancel",
-      () => cancelBroadcastJob(jobId),
-      `Cancel requested for job #${jobId}.`,
-    );
+    return withJobAction(jobId, "cancel", () => cancelBroadcastJob(jobId), `Cancel requested for job #${jobId}.`);
   };
 
   const handleRetryJob = (jobId) =>
-    withJobAction(
-      jobId,
-      "retry",
-      () => retryFailedBroadcastJob(jobId),
-      `Retry failed targets requested for job #${jobId}.`,
-    );
+    withJobAction(jobId, "retry", () => retryFailedBroadcastJob(jobId), `Retry failed targets requested for job #${jobId}.`);
 
   const handleReplayJob = async (jobId) => {
-    const result = await withJobAction(
-      jobId,
-      "replay",
-      () => replayBroadcastJob(jobId, socketId),
-      `Replay requested for job #${jobId}.`,
-    );
+    const result = await withJobAction(jobId, "replay", () => replayBroadcastJob(jobId, socketId), `Replay requested for job #${jobId}.`);
     const replayJobId = result?.data?.job?.id;
     if (replayJobId) {
       setSelectedJobId(replayJobId);
@@ -619,19 +591,10 @@ const BroadcasterPage = ({ allGroups }) => {
   };
 
   const handleDeleteForEveryone = (jobId) => {
-    if (
-      !window.confirm(
-        `Delete broadcasted messages for everyone for sent targets in job #${jobId}?`,
-      )
-    ) {
+    if (!window.confirm(`Delete broadcasted messages for everyone for sent targets in job #${jobId}?`)) {
       return Promise.resolve(null);
     }
-    return withJobAction(
-      jobId,
-      "delete",
-      () => deleteBroadcastForEveryone(jobId),
-      `Delete-for-everyone finished for job #${jobId}.`,
-    );
+    return withJobAction(jobId, "delete", () => deleteBroadcastForEveryone(jobId), `Delete-for-everyone finished for job #${jobId}.`);
   };
 
   const handleEditSentMessage = (jobId) => {
@@ -640,12 +603,7 @@ const BroadcasterPage = ({ allGroups }) => {
       alert("Please enter the edited message text first.");
       return Promise.resolve(null);
     }
-    return withJobAction(
-      jobId,
-      "edit",
-      () => editBroadcastJobMessage(jobId, messageText),
-      `Edit-sent-message finished for job #${jobId}.`,
-    );
+    return withJobAction(jobId, "edit", () => editBroadcastJobMessage(jobId, messageText), `Edit-sent-message finished for job #${jobId}.`);
   };
 
   const handleSelectAttachment = (selectedFile) => {
@@ -660,43 +618,35 @@ const BroadcasterPage = ({ allGroups }) => {
   return (
     <>
       <PageShell>
-        <TabBar>
-          <TabButton
-            type="button"
-            $active={activeTab === "compose"}
-            onClick={() => setActiveTab("compose")}
-          >
+        <Tabs>
+          <TabButton type="button" $active={activeTab === "compose"} onClick={() => setActiveTab("compose")}>
             Compose
           </TabButton>
           {canViewJobs && (
-            <TabButton
-              type="button"
-              $active={activeTab === "jobs"}
-              onClick={() => setActiveTab("jobs")}
-            >
+            <TabButton type="button" $active={activeTab === "jobs"} onClick={() => setActiveTab("jobs")}>
               Jobs
             </TabButton>
           )}
-        </TabBar>
+        </Tabs>
 
         <TabContent>
           {activeTab === "compose" && (
             <ComposeLayout>
-              <CompactCard>
+              <SetupCard>
                 <SetupGrid>
-                  <div>
+                  <SetupCell>
                     <Label>Targets</Label>
-                    <ValueBox>
+                    <ValueRow>
                       <span>{selectedGroups.size} groups selected</span>
                       <ActionButton type="button" onClick={() => setGroupModalOpen(true)}>
                         <FaLayerGroup /> Select
                       </ActionButton>
-                    </ValueBox>
-                  </div>
+                    </ValueRow>
+                  </SetupCell>
 
-                  <div>
+                  <SetupCell>
                     <Label>Batch</Label>
-                    <Select
+                    <SelectField
                       value={selectedBatchId}
                       onChange={(event) => handleApplyBatch(event.target.value)}
                       disabled={!canViewBatches}
@@ -707,12 +657,12 @@ const BroadcasterPage = ({ allGroups }) => {
                           {batch.name}
                         </option>
                       ))}
-                    </Select>
-                  </div>
+                    </SelectField>
+                  </SetupCell>
 
-                  <div>
+                  <SetupCell>
                     <Label>Template</Label>
-                    <ValueBox>
+                    <ValueRow>
                       <span>{message || attachment ? "Loaded" : "Not selected"}</span>
                       <ActionButton
                         type="button"
@@ -721,12 +671,12 @@ const BroadcasterPage = ({ allGroups }) => {
                       >
                         <FaPaste /> Pick
                       </ActionButton>
-                    </ValueBox>
-                  </div>
+                    </ValueRow>
+                  </SetupCell>
 
-                  <div>
+                  <SetupCell>
                     <Label>Actions</Label>
-                    <ValueBox>
+                    <ValueRow>
                       <ActionButton
                         type="button"
                         onClick={handleSyncGroups}
@@ -734,15 +684,15 @@ const BroadcasterPage = ({ allGroups }) => {
                       >
                         <FaSyncAlt /> {isSyncing ? "Syncing..." : "Sync Groups"}
                       </ActionButton>
-                      <ActionButton type="button" onClick={() => setActiveTab("jobs")}>
+                      <ActionButton type="button" $variant="primary" onClick={() => setActiveTab("jobs")}>
                         <FaTasks /> Jobs
                       </ActionButton>
-                    </ValueBox>
-                  </div>
+                    </ValueRow>
+                  </SetupCell>
                 </SetupGrid>
-              </CompactCard>
+              </SetupCard>
 
-              <ScrollArea>
+              <ComposeBody>
                 <BroadcastForm
                   selectedGroupIds={Array.from(selectedGroups)}
                   allGroups={allGroups}
@@ -759,7 +709,7 @@ const BroadcasterPage = ({ allGroups }) => {
                   canUploadAttachments={canCreateAttachments}
                   canViewAttachments={canViewAttachments}
                 />
-              </ScrollArea>
+              </ComposeBody>
             </ComposeLayout>
           )}
 
@@ -792,11 +742,7 @@ const BroadcasterPage = ({ allGroups }) => {
         </TabContent>
       </PageShell>
 
-      <Modal
-        isOpen={isGroupModalOpen}
-        onClose={() => setGroupModalOpen(false)}
-        maxWidth="860px"
-      >
+      <Modal isOpen={isGroupModalOpen} onClose={() => setGroupModalOpen(false)} maxWidth="860px">
         <h2>Select Target Groups</h2>
         <ModalHeader>
           <SearchInput
@@ -814,7 +760,7 @@ const BroadcasterPage = ({ allGroups }) => {
           <ActionButton type="button" onClick={() => setSelectedGroups(new Set())}>
             Clear All
           </ActionButton>
-          <ActionButton type="button" onClick={() => setGroupModalOpen(false)}>
+          <ActionButton type="button" $variant="primary" onClick={() => setGroupModalOpen(false)}>
             <FaCheckCircle /> Done ({selectedGroups.size})
           </ActionButton>
         </ModalControls>
@@ -828,16 +774,13 @@ const BroadcasterPage = ({ allGroups }) => {
                 onChange={() => toggleGroup(group.id)}
               />
               <ItemText title={group.name}>{group.name}</ItemText>
+              <span />
             </ListItem>
           ))}
         </ListWrap>
       </Modal>
 
-      <Modal
-        isOpen={isTemplateModalOpen}
-        onClose={() => setTemplateModalOpen(false)}
-        maxWidth="760px"
-      >
+      <Modal isOpen={isTemplateModalOpen} onClose={() => setTemplateModalOpen(false)} maxWidth="760px">
         <h2>Select Template</h2>
         <ModalHeader>
           <SearchInput
@@ -851,6 +794,7 @@ const BroadcasterPage = ({ allGroups }) => {
         <ListWrap>
           {filteredTemplates.map((template) => (
             <ListItem key={template.id} $selected={false}>
+              <span />
               <ItemText title={template.name}>{template.name}</ItemText>
               <ActionButton type="button" onClick={() => applyTemplate(template)}>
                 Apply

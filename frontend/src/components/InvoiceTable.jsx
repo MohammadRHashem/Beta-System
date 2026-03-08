@@ -1,213 +1,250 @@
-import React, { useMemo } from 'react';
-import styled, { css } from 'styled-components';
-import { viewInvoiceMedia } from '../services/api'; // Removed deleteInvoice, as it's handled by the parent
-import { FaEdit, FaTrashAlt, FaEye, FaLink, FaUnlink } from 'react-icons/fa';
-import { formatInTimeZone } from 'date-fns-tz';
-import Pagination from './Pagination';
+import React, { useMemo } from "react";
+import styled, { css } from "styled-components";
+import { viewInvoiceMedia } from "../services/api";
+import { FaEdit, FaEye, FaLink, FaTrashAlt, FaUnlink } from "react-icons/fa";
+import { formatInTimeZone } from "date-fns-tz";
+import Pagination from "./Pagination";
 
 const formatDisplayDateTime = (dbDateString) => {
-    if (!dbDateString || typeof dbDateString !== 'string') return '';
-    try {
-        const utcDate = new Date(dbDateString + 'Z');
-        return formatInTimeZone(utcDate, 'America/Sao_Paulo', 'dd/MM/yyyy HH:mm:ss');
-    } catch (e) {
-        console.warn("Could not format date string:", dbDateString);
-        return dbDateString;
-    }
+  if (!dbDateString || typeof dbDateString !== "string") return "";
+  try {
+    const utcDate = new Date(`${dbDateString}Z`);
+    return formatInTimeZone(utcDate, "America/Sao_Paulo", "dd/MM/yyyy HH:mm:ss");
+  } catch (error) {
+    console.warn("Could not format date string:", dbDateString, error);
+    return dbDateString;
+  }
 };
 
-const TableSection = styled.div`
-    display: flex;
-    flex-direction: column;
-    min-height: 0;
-    flex: 1;
+const Section = styled.div`
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 `;
 
 const TableWrapper = styled.div`
-    background: ${({ theme }) => theme.surface};
-    border-radius: 14px;
-    border: 1px solid ${({ theme }) => theme.border};
-    box-shadow: ${({ theme }) => theme.shadowMd};
-    min-height: 0;
-    flex: 1;
-    overflow: auto;
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  border-bottom: 1px solid ${({ theme }) => theme.border};
 `;
 
 const Table = styled.table`
-    width: 100%;
-    min-width: 1100px;
-    border-collapse: collapse;
-    font-size: 0.9rem;
+  width: 100%;
+  min-width: 980px;
+  border-collapse: collapse;
 `;
 
 const Thead = styled.thead`
-    position: sticky;
-    top: 0;
-    z-index: 1;
+  position: sticky;
+  top: 0;
+  z-index: 1;
 `;
 
 const Th = styled.th`
-    padding: 0.72rem 0.85rem;
-    text-align: left;
-    background-color: ${({ theme }) => theme.background};
-    font-weight: 600;
-    font-size: 0.82rem;
-    white-space: nowrap;
-    border-bottom: 2px solid ${({ theme }) => theme.border};
+  padding: 0.45rem 0.5rem;
+  font-size: 0.68rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  background: ${({ theme }) => theme.surfaceAlt};
+  border-bottom: 1px solid ${({ theme }) => theme.border};
+  text-align: left;
+  white-space: nowrap;
 `;
 
 const Tr = styled.tr`
-    position: relative;
-    border-bottom: 1px solid ${({ theme }) => theme.border};
-    transition: background-color 0.3s ease;
-    &:last-child {
-        border-bottom: none;
-    }
-    &:hover {
-        background-color: ${({ theme }) => theme.surfaceAlt};
-    }
-    ${({ isDuplicate }) => isDuplicate && css`
-        background-color: #fff0f0;
+  border-bottom: 1px solid ${({ theme }) => theme.border};
+
+  ${({ isDuplicate }) =>
+    isDuplicate &&
+    css`
+      background: rgba(220, 38, 38, 0.08);
     `}
-    ${({ isDeleted }) => isDeleted && css`
-        background-color: #e9ecef !important;
-        color: #6c757d;
-        text-decoration: line-through;
+
+  ${({ isDeleted }) =>
+    isDeleted &&
+    css`
+      background: ${({ theme }) => theme.surfaceAlt};
+      color: ${({ theme }) => theme.lightText};
+      text-decoration: line-through;
     `}
 `;
 
 const Td = styled.td`
-    padding: 0.72rem 0.85rem;
-    vertical-align: middle;
-    &.actions {
-        white-space: nowrap;
-        font-size: 1rem;
-        .actions-wrap {
-            display: inline-flex;
-            align-items: center;
-            gap: 0.8rem;
-            line-height: 1;
-        }
-        .actions-wrap svg {
-            cursor: pointer;
-            color: ${({ theme }) => theme.lightText};
-            &:hover { color: ${({ theme }) => theme.primary}; }
-        }
-    }
-    &.currency {
-        text-align: right;
-        font-family: 'Courier New', Courier, monospace;
-        font-weight: 600;
-        white-space: nowrap;
-    }
-    &.review {
-        color: ${({ theme }) => theme.error};
-        font-weight: bold;
-    }
+  padding: 0.46rem 0.5rem;
+  font-size: 0.78rem;
+  white-space: nowrap;
+  vertical-align: middle;
+
+  &.currency {
+    text-align: right;
+    font-family: "IBM Plex Mono", Consolas, monospace;
+    font-weight: 700;
+  }
+
+  &.review {
+    color: ${({ theme }) => theme.error};
+  }
+
+  &.actions,
+  &.link {
+    text-align: center;
+  }
 `;
 
-const InvoiceTable = ({ invoices, loading, onEdit, onLink, onDelete, pagination, setPagination, hasPermission }) => {
+const IconAction = styled.button`
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border-radius: 6px;
+  border: 1px solid ${({ theme }) => theme.border};
+  background: ${({ theme }) => theme.surfaceAlt};
+  color: ${({ theme }) => theme.primary};
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 0.12rem;
+`;
 
-    // This logic correctly creates a map of transaction IDs to their counts.
-    const duplicateCounts = useMemo(() => {
-        const counts = {};
-        if (!invoices || !Array.isArray(invoices)) return {};
+const Message = styled.p`
+  margin: 0;
+  padding: 0.75rem;
+  font-size: 0.8rem;
+  color: ${({ theme }) => theme.lightText};
+`;
 
-        invoices.forEach(inv => {
-            // Only non-manual invoices with a transaction_id can be duplicates.
-            if (inv.transaction_id && !inv.is_manual) {
-                // Create a unique key from all three fields.
-                const compositeKey = `${inv.transaction_id}|${inv.amount}|${inv.sender_name}`;
-                counts[compositeKey] = (counts[compositeKey] || 0) + 1;
-            }
-        });
-        return counts;
-    }, [invoices]);
+const InvoiceTable = ({
+  invoices,
+  loading,
+  onEdit,
+  onLink,
+  onDelete,
+  pagination,
+  setPagination,
+  hasPermission,
+}) => {
+  const duplicateCounts = useMemo(() => {
+    const counts = {};
+    if (!invoices || !Array.isArray(invoices)) return counts;
 
-    const handleViewMedia = async (id) => {
-        try {
-            await viewInvoiceMedia(id);
-        } catch (error) {
-            console.error("Failed to open media:", error);
-            alert("Could not load media file. It may have been deleted.");
-        }
-    };
+    invoices.forEach((invoice) => {
+      if (invoice.transaction_id && !invoice.is_manual) {
+        const key = `${invoice.transaction_id}|${invoice.amount}|${invoice.sender_name}`;
+        counts[key] = (counts[key] || 0) + 1;
+      }
+    });
 
-    if (loading) return <p>Loading invoices...</p>;
-    if (!invoices || !invoices.length) return <p>No invoices found for the selected criteria.</p>;
+    return counts;
+  }, [invoices]);
 
+  const handleViewMedia = async (id) => {
+    try {
+      await viewInvoiceMedia(id);
+    } catch (error) {
+      console.error("Failed to open media:", error);
+      alert("Could not load media file. It may have been deleted.");
+    }
+  };
+
+  if (loading) {
     return (
-        <>
-            <TableSection>
-                <TableWrapper>
-                    <Table>
-                        <Thead>
-                            <tr>
-                                <Th>Received At</Th>
-                                <Th>Transaction ID</Th>
-                                <Th>Sender</Th>
-                                <Th>Recipient</Th>
-                                <Th>Source Group</Th>
-                                <Th className="currency">Amount</Th>
-                                <Th>Link Status</Th>
-                                <Th>Actions</Th>
-                            </tr>
-                        </Thead>
-                        <tbody>
-                            {invoices.map((inv) => {
-                                // ... (isDuplicate and needsReview logic is unchanged) ...
-                                let isDuplicate = false;
-                                if (inv.transaction_id && !inv.is_manual) {
-                                    const compositeKey = `${inv.transaction_id}|${inv.amount}|${inv.sender_name}`;
-                                    if (duplicateCounts[compositeKey] > 1) {
-                                        isDuplicate = true;
-                                    }
-                                }
-                                const needsReview = !inv.is_manual && (!inv.sender_name || !inv.recipient_name || !inv.amount || inv.amount === '0.00');
-
-                                return (
-                                    <Tr key={inv.id} isDuplicate={isDuplicate} isDeleted={!!inv.is_deleted}>
-                                        <Td>{formatDisplayDateTime(inv.received_at)}</Td>
-                                        <Td>{inv.transaction_id || ''}</Td>
-                                        <Td>{inv.sender_name || (needsReview && 'REVIEW')}</Td>
-                                        <Td>{inv.recipient_name || (needsReview && 'REVIEW')}</Td>
-                                        <Td>{inv.source_group_name || ''}</Td>
-                                        <Td className={`currency ${needsReview && 'review'}`}>{inv.amount || ''}</Td>
-                                        <Td style={{ textAlign: 'center' }}>
-                                            {inv.linked_transaction_source ? (
-                                                <FaLink
-                                                    style={{ color: '#00C49A', fontSize: '1.1rem' }}
-                                                    title={`Linked to: ${inv.linked_transaction_source} - ${inv.linked_transaction_id}`}
-                                                />
-                                            ) : (
-                                                // 2. WRAP THE LINK ICON IN A PERMISSION CHECK
-                                                hasPermission('invoice:link') && !inv.is_deleted && inv.message_id && (
-                                                    <FaUnlink
-                                                        style={{ cursor: 'pointer', color: '#6B7C93', fontSize: '1.1rem' }}
-                                                        title="Link to a bank transaction"
-                                                        onClick={() => onLink(inv)}
-                                                    />
-                                                )
-                                            )}
-                                        </Td>
-                                        <Td className="actions">
-                                            <div className="actions-wrap">
-                                                {inv.media_path && <FaEye onClick={() => handleViewMedia(inv.id)} title="View Media"/>}
-                                                {/* 3. WRAP EDIT AND DELETE ICONS IN PERMISSION CHECKS */}
-                                                {hasPermission('invoice:edit') && <FaEdit onClick={() => onEdit(inv)} title="Edit"/>}
-                                                {hasPermission('invoice:delete') && <FaTrashAlt onClick={() => onDelete(inv.id)} title="Delete"/>}
-                                            </div>
-                                        </Td>
-                                    </Tr>
-                                );
-                            })}
-                        </tbody>
-                    </Table>
-                </TableWrapper>
-                <Pagination pagination={pagination} setPagination={setPagination} />
-            </TableSection>
-        </>
+      <Section>
+        <Message>Loading invoices...</Message>
+      </Section>
     );
+  }
+
+  if (!invoices || !invoices.length) {
+    return (
+      <Section>
+        <Message>No invoices found for the selected criteria.</Message>
+      </Section>
+    );
+  }
+
+  return (
+    <Section>
+      <TableWrapper>
+        <Table>
+          <Thead>
+            <tr>
+              <Th>Received At</Th>
+              <Th>Transaction ID</Th>
+              <Th>Sender</Th>
+              <Th>Recipient</Th>
+              <Th>Source Group</Th>
+              <Th>Amount</Th>
+              <Th>Link</Th>
+              <Th>Actions</Th>
+            </tr>
+          </Thead>
+          <tbody>
+            {invoices.map((invoice) => {
+              let isDuplicate = false;
+              if (invoice.transaction_id && !invoice.is_manual) {
+                const key = `${invoice.transaction_id}|${invoice.amount}|${invoice.sender_name}`;
+                if (duplicateCounts[key] > 1) isDuplicate = true;
+              }
+
+              const needsReview =
+                !invoice.is_manual &&
+                (!invoice.sender_name || !invoice.recipient_name || !invoice.amount || invoice.amount === "0.00");
+
+              return (
+                <Tr key={invoice.id} isDuplicate={isDuplicate} isDeleted={!!invoice.is_deleted}>
+                  <Td>{formatDisplayDateTime(invoice.received_at)}</Td>
+                  <Td>{invoice.transaction_id || ""}</Td>
+                  <Td>{invoice.sender_name || (needsReview && "REVIEW")}</Td>
+                  <Td>{invoice.recipient_name || (needsReview && "REVIEW")}</Td>
+                  <Td>{invoice.source_group_name || ""}</Td>
+                  <Td className={`currency ${needsReview ? "review" : ""}`}>{invoice.amount || ""}</Td>
+                  <Td className="link">
+                    {invoice.linked_transaction_source ? (
+                      <IconAction as="span" title={`Linked: ${invoice.linked_transaction_source} - ${invoice.linked_transaction_id}`}>
+                        <FaLink />
+                      </IconAction>
+                    ) : (
+                      hasPermission("invoice:link") &&
+                      !invoice.is_deleted &&
+                      invoice.message_id && (
+                        <IconAction
+                          type="button"
+                          title="Link to bank transaction"
+                          onClick={() => onLink(invoice)}
+                        >
+                          <FaUnlink />
+                        </IconAction>
+                      )
+                    )}
+                  </Td>
+                  <Td className="actions">
+                    {invoice.media_path && (
+                      <IconAction type="button" onClick={() => handleViewMedia(invoice.id)} title="View media">
+                        <FaEye />
+                      </IconAction>
+                    )}
+                    {hasPermission("invoice:edit") && (
+                      <IconAction type="button" onClick={() => onEdit(invoice)} title="Edit">
+                        <FaEdit />
+                      </IconAction>
+                    )}
+                    {hasPermission("invoice:delete") && (
+                      <IconAction type="button" onClick={() => onDelete(invoice.id)} title="Delete">
+                        <FaTrashAlt />
+                      </IconAction>
+                    )}
+                  </Td>
+                </Tr>
+              );
+            })}
+          </tbody>
+        </Table>
+      </TableWrapper>
+      <Pagination pagination={pagination} setPagination={setPagination} />
+    </Section>
+  );
 };
 
 export default InvoiceTable;

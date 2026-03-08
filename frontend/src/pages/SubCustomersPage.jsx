@@ -22,7 +22,7 @@ const PageContainer = styled.div`
     gap: 1.2rem;
     height: 100%;
     min-height: 0;
-    overflow: hidden;
+    overflow: auto;
 `;
 
 const Card = styled.div`
@@ -42,7 +42,7 @@ const Card = styled.div`
 
 const CardHeader = styled.div`
     margin-bottom: 0.9rem;
-    border-bottom: 1px solid #eee;
+    border-bottom: 1px solid ${({ theme }) => theme.border};
     padding-bottom: 0.75rem;
 `;
 
@@ -54,7 +54,7 @@ const CardTitle = styled.h2`
 `;
 
 const CardSubtitle = styled.p`
-    color: #666;
+    color: ${({ theme }) => theme.lightText};
     margin-top: 0.5rem;
     margin-bottom: 0;
 `;
@@ -99,7 +99,7 @@ const Select = styled.select`
     border-radius: 8px;
     font-size: 0.95rem;
     width: 100%;
-    background-color: white;
+    background-color: ${({ theme }) => theme.surface};
 `;
 
 const TableWrapper = styled.div`
@@ -132,6 +132,28 @@ const Table = styled.table`
     tr:hover {
         background-color: ${({ theme }) => theme.surfaceAlt};
     }
+`;
+
+const SourceCell = styled.td`
+    width: 50px;
+    text-align: center;
+`;
+
+const NameCell = styled.td`
+    font-weight: 600;
+`;
+
+const GroupCell = styled.td`
+    color: ${({ theme }) => theme.primary};
+`;
+
+const LastSeenCell = styled.td`
+    color: ${({ theme }) => theme.lightText};
+`;
+
+const EmptyCell = styled.td`
+    text-align: center;
+    padding: 2rem;
 `;
 
 const SourceIcon = ({ type }) => {
@@ -244,19 +266,19 @@ const SubCustomersPage = ({ allGroups }) => {
                                 </thead>
                                 <tbody>
                                     {data.length === 0 ? (
-                                        <tr><td colSpan="5" style={{textAlign: 'center', padding: '2rem'}}>No records found matching your criteria.</td></tr>
+                                        <tr><EmptyCell colSpan="5">No records found matching your criteria.</EmptyCell></tr>
                                     ) : (
                                         data.map((row, index) => (
                                             <tr key={index}>
-                                                <td style={{width: '50px', textAlign: 'center'}} title={source}>
+                                                <SourceCell title={source}>
                                                     <SourceIcon type={source} />
-                                                </td>
-                                                <td style={{fontWeight: '500'}}>{row.sender_name}</td>
-                                                <td style={{color: '#0A2540'}}>{row.group_name || 'Unknown'}</td>
+                                                </SourceCell>
+                                                <NameCell>{row.sender_name}</NameCell>
+                                                <GroupCell>{row.group_name || 'Unknown'}</GroupCell>
                                                 <td>{row.transaction_count}</td>
-                                                <td style={{color: '#666'}}>
+                                                <LastSeenCell>
                                                     {row.last_seen ? format(new Date(row.last_seen), 'dd/MM/yyyy HH:mm') : 'N/A'}
-                                                </td>
+                                                </LastSeenCell>
                                             </tr>
                                         ))
                                     )}

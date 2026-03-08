@@ -12,7 +12,7 @@ const PageContainer = styled.div`
     gap: 1.2rem;
     height: 100%;
     min-height: 0;
-    overflow: hidden;
+    overflow: auto;
 `;
 
 const Title = styled.h2`

@@ -30,7 +30,7 @@ const PageContainer = styled.div`
     gap: 0.8rem;
     height: 100%;
     min-height: 0;
-    overflow: hidden;
+    overflow: auto;
 `;
 
 const Header = styled.div`

@@ -12,7 +12,7 @@ const PageContainer = styled.div`
     gap: 1.25rem;
     height: 100%;
     min-height: 0;
-    overflow: hidden;
+    overflow: auto;
 `;
 
 const Header = styled.div`
@@ -183,10 +183,10 @@ const SwitchInput = styled.input`
 
 const Slider = styled.span`
     position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0;
-    background-color: #ccc; transition: .4s; border-radius: 34px;
+    background-color: ${({ theme }) => theme.borderStrong}; transition: .4s; border-radius: 34px;
     &:before {
         position: absolute; content: ""; height: 20px; width: 20px;
-        left: 4px; bottom: 4px; background-color: white; transition: .4s;
+        left: 4px; bottom: 4px; background-color: ${({ theme }) => theme.surface}; transition: .4s;
         border-radius: 50%;
     }
 `;
@@ -347,7 +347,7 @@ const UsersPage = () => {
                                     users.map(user => (
                                         <tr key={user.id}>
                                             <td>{user.username}</td>
-                                            <td>{user.role_names?.length ? user.role_names.join(', ') : <span style={{color: '#aaa'}}>None</span>}</td>
+                                            <td>{user.role_names?.length ? user.role_names.join(', ') : <span style={{color: 'inherit', opacity: 0.7}}>None</span>}</td>
                                             <td><StatusBadge active={user.is_active}>{user.is_active ? 'Active' : 'Inactive'}</StatusBadge></td>
                                             <td>{formatTimestamp(user.last_login)}</td>
                                             {canManage && (

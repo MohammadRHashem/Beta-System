@@ -11,7 +11,7 @@ const PageContainer = styled.div`
     gap: 1.2rem;
     height: 100%;
     min-height: 0;
-    overflow: hidden;
+    overflow: auto;
 `;
 
 const Title = styled.h2`
@@ -75,7 +75,7 @@ const RoleListItem = styled.li`
     }
 
     &.active {
-        background-color: #e6fff9;
+        background-color: ${({ theme }) => theme.secondarySoft};
         color: ${({ theme }) => theme.secondary};
         border-left-color: ${({ theme }) => theme.secondary};
     }
@@ -115,7 +115,7 @@ const Button = styled.button`
     cursor: pointer;
     font-weight: bold;
     &:disabled {
-        background-color: #ccc;
+        background-color: ${({ theme }) => theme.borderStrong};
         cursor: not-allowed;
     }
 `;
@@ -150,7 +150,7 @@ const PermissionCheckbox = styled.label`
     border: 1px solid ${({ theme }) => theme.border};
 
     &:hover {
-        background-color: #f0f0f0;
+        background-color: ${({ theme }) => theme.surface};
     }
 `;
 
@@ -177,7 +177,7 @@ const AddRoleButton = styled.button`
     color: ${({ theme }) => theme.secondary};
     font-size: 1.5rem;
     cursor: pointer;
-    &:hover { color: #00a885; }
+    &:hover { color: ${({ theme }) => theme.success}; }
 `;
 
 const RoleActions = styled.div`
