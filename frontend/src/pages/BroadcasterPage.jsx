@@ -263,9 +263,21 @@ const BroadcasterPage = ({ allGroups }) => {
   const filteredGroups = useMemo(() => {
     const term = groupSearch.trim().toLowerCase();
     const list = allGroups || [];
-    if (!term) return list;
-    return list.filter((group) => group.name?.toLowerCase().includes(term));
-  }, [allGroups, groupSearch]);
+    const filtered = term
+      ? list.filter((group) => group.name?.toLowerCase().includes(term))
+      : list;
+
+    // Keep selected groups pinned to the top while preserving base list order.
+    return filtered
+      .map((group, index) => ({ group, index }))
+      .sort((a, b) => {
+        const aSelected = selectedGroups.has(a.group.id);
+        const bSelected = selectedGroups.has(b.group.id);
+        if (aSelected !== bSelected) return aSelected ? -1 : 1;
+        return a.index - b.index;
+      })
+      .map(({ group }) => group);
+  }, [allGroups, groupSearch, selectedGroups]);
 
   const filteredTemplates = useMemo(() => {
     const term = templateSearch.trim().toLowerCase();
