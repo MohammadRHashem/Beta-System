@@ -22,6 +22,9 @@ import { usePermissions } from "../context/PermissionContext";
 import BroadcastForm from "../components/BroadcastForm";
 import AttachmentManagerModal from "../components/AttachmentManagerModal";
 import BroadcastJobsPanel from "../components/BroadcastJobsPanel";
+import BatchManager from "../components/BatchManager";
+import GroupSelector from "../components/GroupSelector";
+import TemplateManager from "../components/TemplateManager";
 import Modal from "../components/Modal";
 
 const PageShell = styled.div`
@@ -116,6 +119,13 @@ const ValueRow = styled.div`
   font-size: 0.8rem;
 `;
 
+const InlineActions = styled.div`
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.35rem;
+`;
+
 const ActionButton = styled.button`
   border-radius: 6px;
   border: 1px solid ${({ theme }) => theme.border};
@@ -199,6 +209,16 @@ const FooterRow = styled.div`
   justify-content: flex-end;
 `;
 
+const ManagerLayout = styled.div`
+  display: grid;
+  grid-template-columns: minmax(230px, 290px) 1fr;
+  gap: 0.65rem;
+
+  @media (max-width: 980px) {
+    grid-template-columns: 1fr;
+  }
+`;
+
 const API_URL = (import.meta.env.VITE_SOCKET_URL || window.location.origin).trim();
 
 const createLogEntry = (status, message) => ({
@@ -219,6 +239,9 @@ const sortJobsDesc = (jobs) =>
 const BroadcasterPage = ({ allGroups }) => {
   const { hasPermission } = usePermissions();
   const canViewBatches = hasPermission("broadcast:batches:view");
+  const canCreateBatches = hasPermission("broadcast:batches:create");
+  const canUpdateBatches = hasPermission("broadcast:batches:update");
+  const canDeleteBatches = hasPermission("broadcast:batches:delete");
   const canViewTemplates = hasPermission("broadcast:templates:view");
   const canCreateTemplates = hasPermission("broadcast:templates:create");
   const canUpdateTemplates = hasPermission("broadcast:templates:update");
@@ -230,16 +253,22 @@ const BroadcasterPage = ({ allGroups }) => {
   const canControlJobs = hasPermission("broadcast:jobs:control");
   const canReplayJobs = hasPermission("broadcast:jobs:replay");
   const canSyncGroups = hasPermission("admin:manage_roles");
+  const canManageBatches = canCreateBatches || canUpdateBatches || canDeleteBatches;
+  const canManageTemplates = canUpdateTemplates || canDeleteTemplates;
 
   const [activeTab, setActiveTab] = useState("compose");
   const [isGroupModalOpen, setGroupModalOpen] = useState(false);
   const [isTemplateModalOpen, setTemplateModalOpen] = useState(false);
+  const [isBatchManagerOpen, setBatchManagerOpen] = useState(false);
+  const [isTemplateManagerOpen, setTemplateManagerOpen] = useState(false);
   const [isAttachmentModalOpen, setIsAttachmentModalOpen] = useState(false);
 
   const [groupSearch, setGroupSearch] = useState("");
   const [templateSearch, setTemplateSearch] = useState("");
   const [selectedGroups, setSelectedGroups] = useState(new Set());
   const [selectedBatchId, setSelectedBatchId] = useState("");
+  const [batchEditorSelection, setBatchEditorSelection] = useState(new Set());
+  const [editingBatch, setEditingBatch] = useState(null);
 
   const [batches, setBatches] = useState([]);
   const [templates, setTemplates] = useState([]);
@@ -526,6 +555,34 @@ const BroadcasterPage = ({ allGroups }) => {
     }
   };
 
+  const handleBatchSelectionForEditor = async (batchId) => {
+    if (!batchId) {
+      setEditingBatch(null);
+      setBatchEditorSelection(new Set());
+      return;
+    }
+
+    try {
+      const targetBatch = (batches || []).find((batch) => String(batch.id) === String(batchId)) || null;
+      setEditingBatch(targetBatch);
+      const { data: groupIds } = await getGroupIdsForBatch(batchId);
+      setBatchEditorSelection(new Set(groupIds || []));
+    } catch (error) {
+      alert(error.response?.data?.message || "Failed to load batch groups.");
+    }
+  };
+
+  const handleBatchEdit = async (batch) => {
+    if (!batch?.id) return;
+    setEditingBatch(batch);
+    try {
+      const { data: groupIds } = await getGroupIdsForBatch(batch.id);
+      setBatchEditorSelection(new Set(groupIds || []));
+    } catch (error) {
+      alert(error.response?.data?.message || "Failed to load batch groups for editing.");
+    }
+  };
+
   const toggleGroup = (groupId) => {
     setSelectedGroups((prev) => {
       const next = new Set(prev);
@@ -670,19 +727,37 @@ const BroadcasterPage = ({ allGroups }) => {
                         </option>
                       ))}
                     </SelectField>
+                    <InlineActions>
+                      <ActionButton
+                        type="button"
+                        onClick={() => setBatchManagerOpen(true)}
+                        disabled={!canViewBatches && !canManageBatches}
+                      >
+                        Manage Batches
+                      </ActionButton>
+                    </InlineActions>
                   </SetupCell>
 
                   <SetupCell>
                     <Label>Template</Label>
                     <ValueRow>
                       <span>{message || attachment ? "Loaded" : "Not selected"}</span>
-                      <ActionButton
-                        type="button"
-                        onClick={() => setTemplateModalOpen(true)}
-                        disabled={!canViewTemplates}
-                      >
-                        <FaPaste /> Pick
-                      </ActionButton>
+                      <InlineActions>
+                        <ActionButton
+                          type="button"
+                          onClick={() => setTemplateModalOpen(true)}
+                          disabled={!canViewTemplates}
+                        >
+                          <FaPaste /> Pick
+                        </ActionButton>
+                        <ActionButton
+                          type="button"
+                          onClick={() => setTemplateManagerOpen(true)}
+                          disabled={!canViewTemplates && !canManageTemplates}
+                        >
+                          Manage Templates
+                        </ActionButton>
+                      </InlineActions>
                     </ValueRow>
                   </SetupCell>
 
@@ -816,10 +891,67 @@ const BroadcasterPage = ({ allGroups }) => {
         </ListWrap>
 
         <FooterRow>
+          {canManageTemplates && (
+            <ActionButton
+              type="button"
+              onClick={() => {
+                setTemplateModalOpen(false);
+                setTemplateManagerOpen(true);
+              }}
+            >
+              Manage Templates
+            </ActionButton>
+          )}
           <ActionButton type="button" onClick={() => setTemplateModalOpen(false)}>
             Close
           </ActionButton>
         </FooterRow>
+      </Modal>
+
+      <Modal isOpen={isBatchManagerOpen} onClose={() => setBatchManagerOpen(false)} maxWidth="1120px">
+        <h2>Batch Management</h2>
+        <p>Create, edit, delete, and apply batches from one place.</p>
+        <ManagerLayout>
+          <BatchManager
+            batches={batches}
+            onBatchSelect={handleBatchSelectionForEditor}
+            onBatchEdit={handleBatchEdit}
+            onBatchesUpdate={handleDataUpdate}
+            canEditBatch={canUpdateBatches}
+            canDeleteBatch={canDeleteBatches}
+          />
+          <GroupSelector
+            allGroups={allGroups}
+            selectedGroups={batchEditorSelection}
+            setSelectedGroups={setBatchEditorSelection}
+            onBatchUpdate={handleDataUpdate}
+            editingBatch={editingBatch}
+            setEditingBatch={setEditingBatch}
+            onSync={handleSyncGroups}
+            isSyncing={isSyncing}
+            canCreateBatch={canCreateBatches}
+            canEditBatch={canUpdateBatches}
+            canSyncGroups={canSyncGroups}
+          />
+        </ManagerLayout>
+      </Modal>
+
+      <Modal isOpen={isTemplateManagerOpen} onClose={() => setTemplateManagerOpen(false)} maxWidth="860px">
+        <h2>Template Management</h2>
+        <p>Edit and delete templates. Click a template to load it into compose.</p>
+        <TemplateManager
+          templates={templates}
+          onTemplateSelect={(template) => {
+            applyTemplate(template);
+            setTemplateManagerOpen(false);
+          }}
+          onTemplatesUpdate={handleDataUpdate}
+          canEditTemplate={canUpdateTemplates}
+          canDeleteTemplate={canDeleteTemplates}
+          canViewAttachments={canViewAttachments}
+          canUploadAttachments={canCreateAttachments}
+          canDeleteAttachments={canDeleteAttachments}
+        />
       </Modal>
 
       <AttachmentManagerModal
