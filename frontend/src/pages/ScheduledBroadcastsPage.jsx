@@ -56,7 +56,59 @@ const SwitchContainer = styled.label` position: relative; display: inline-block;
 const SwitchInput = styled.input` opacity: 0; width: 0; height: 0; &:checked + span { background-color: ${({ theme }) => theme.secondary}; } &:checked + span:before { transform: translateX(22px); } &:disabled + span { cursor: not-allowed; background-color: ${({ theme }) => theme.surfaceAlt}; opacity: 0.7; }`;
 const Slider = styled.span` position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: ${({ theme }) => theme.borderStrong}; transition: .4s; border-radius: 34px; &:before { position: absolute; content: ""; height: 20px; width: 20px; left: 4px; bottom: 4px; background-color: ${({ theme }) => theme.surface}; transition: .4s; border-radius: 50%; } `;
 const ScheduleInfo = styled.div` font-size: 0.9rem; span { display: block; color: ${({ theme }) => theme.lightText}; font-size: 0.8rem; } `;
-const MessageContent = styled.td` max-width: 300px; .content-wrapper { display: flex; align-items: center; gap: 0.5rem; } .text { white-space: pre-wrap; word-break: break-word; } `;
+const MessageContent = styled.td`
+    width: 380px;
+    min-width: 280px;
+    max-width: 420px;
+    white-space: normal !important;
+
+    .content-wrapper {
+        display: flex;
+        align-items: flex-start;
+        gap: 0.5rem;
+        min-width: 0;
+    }
+
+    .text-block {
+        min-width: 0;
+        width: 100%;
+        display: flex;
+        flex-direction: column;
+        gap: 0.35rem;
+    }
+
+    .text {
+        display: block;
+        min-width: 0;
+        font-size: 0.82rem;
+        line-height: 1.3;
+    }
+
+    .text.collapsed {
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .text.expanded {
+        white-space: pre-wrap;
+        word-break: break-word;
+        max-height: 180px;
+        overflow: auto;
+        padding-right: 0.2rem;
+    }
+`;
+const ExpandButton = styled.button`
+    width: fit-content;
+    min-height: 24px;
+    padding: 0.1rem 0.4rem;
+    border: 1px solid ${({ theme }) => theme.border};
+    background: ${({ theme }) => theme.surfaceAlt};
+    color: ${({ theme }) => theme.primary};
+    border-radius: 999px;
+    font-size: 0.72rem;
+    font-weight: 700;
+`;
 const ModalForm = styled.form` display: flex; flex-direction: column; gap: 1rem; `;
 const InputGroup = styled.div` display: flex; flex-direction: column; gap: 0.5rem; `;
 const Label = styled.label` font-weight: 500; `;
@@ -103,6 +155,7 @@ const ScheduledBroadcastsPage = () => {
     const [loading, setLoading] = useState(true);
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingSchedule, setEditingSchedule] = useState(null);
+    const [expandedRows, setExpandedRows] = useState({});
 
     const fetchData = useCallback(async () => {
         setLoading(true);
@@ -166,6 +219,10 @@ const ScheduledBroadcastsPage = () => {
         }
     };
 
+    const toggleMessageExpand = (scheduleId) => {
+        setExpandedRows((prev) => ({ ...prev, [scheduleId]: !prev[scheduleId] }));
+    };
+
     const formatSchedule = (s) => {
         const time = s.scheduled_at_time.substring(0, 5);
         if (s.schedule_type === 'ONCE') {
@@ -204,7 +261,12 @@ const ScheduledBroadcastsPage = () => {
                             <tbody>
                                 {loading ? ( <tr><td colSpan={(canUpdate || canDelete) ? 5 : 4}>Loading...</td></tr> )
                                 : schedules.length === 0 ? ( <tr><td colSpan={(canUpdate || canDelete) ? 5 : 4}>No schedules created.</td></tr> )
-                                : ( schedules.map(s => (
+                                : ( schedules.map(s => {
+                                        const messageText = (s.message || '').trim();
+                                        const isExpanded = !!expandedRows[s.id];
+                                        const isLongMessage = messageText.length > 120 || messageText.includes('\n');
+
+                                        return (
                                         <tr key={s.id}>
                                             <td>
                                                 <SwitchContainer>
@@ -222,7 +284,16 @@ const ScheduledBroadcastsPage = () => {
                                             <MessageContent>
                                                 <div className='content-wrapper'>
                                                     {s.upload_id && <FaPaperclip title={s.original_filename} />}
-                                                    <span className='text'>{s.message}</span>
+                                                    <div className='text-block'>
+                                                        <span className={`text ${isExpanded ? 'expanded' : 'collapsed'}`}>
+                                                            {messageText || (s.upload_id ? 'Attachment only' : '-')}
+                                                        </span>
+                                                        {isLongMessage && (
+                                                            <ExpandButton type="button" onClick={() => toggleMessageExpand(s.id)}>
+                                                                {isExpanded ? 'Collapse' : 'Expand'}
+                                                            </ExpandButton>
+                                                        )}
+                                                    </div>
                                                 </div>
                                             </MessageContent>
                                             {(canUpdate || canDelete) && (
@@ -234,7 +305,7 @@ const ScheduledBroadcastsPage = () => {
                                                 </td>
                                             )}
                                         </tr>
-                                    ))
+                                    )})
                                 )}
                             </tbody>
                         </Table>
