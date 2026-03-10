@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import styled from "styled-components";
 import { usePermissions } from "../context/PermissionContext";
 import { useAuth } from "../context/AuthContext";
@@ -8,12 +8,11 @@ import {
   getInvoices,
   getRecipientNames,
 } from "../services/api";
-import { FaFileExcel, FaPlus, FaSyncAlt } from "react-icons/fa";
+import { FaFileExcel, FaPlus } from "react-icons/fa";
 import InvoiceFilter from "../components/InvoiceFilter";
 import InvoiceTable from "../components/InvoiceTable";
 import InvoiceModal from "../components/InvoiceModal";
 import LinkTransactionModal from "../components/LinkTransactionModal";
-import { useSocket } from "../context/SocketContext";
 
 const useDebounce = (value, delay) => {
   const [debouncedValue, setDebouncedValue] = useState(value);
@@ -81,22 +80,6 @@ const Button = styled.button`
   }
 `;
 
-const RefreshBanner = styled.button`
-  width: 100%;
-  margin-top: 0.48rem;
-  border: 1px solid ${({ theme }) => theme.border};
-  border-radius: 8px;
-  background: ${({ theme }) => theme.secondarySoft};
-  color: ${({ theme }) => theme.secondary};
-  min-height: 32px;
-  font-size: 0.76rem;
-  font-weight: 800;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.38rem;
-`;
-
 const TableArea = styled.section`
   flex: 1;
   min-height: 0;
@@ -108,14 +91,13 @@ const TableArea = styled.section`
 
 const InvoicesPage = ({ allGroups }) => {
   const { hasPermission } = usePermissions();
-  const socket = useSocket();
   const { isAuthenticated } = useAuth();
+  const latestFetchIdRef = useRef(0);
 
   const [invoices, setInvoices] = useState([]);
   const [loading, setLoading] = useState(true);
   const [isExporting, setIsExporting] = useState(false);
   const [recipientNames, setRecipientNames] = useState([]);
-  const [hasNewInvoices, setHasNewInvoices] = useState(false);
   const [pagination, setPagination] = useState({
     page: 1,
     limit: 50,
@@ -124,6 +106,7 @@ const InvoicesPage = ({ allGroups }) => {
   });
   const [filters, setFilters] = useState({
     search: "",
+    amountExact: "",
     dateFrom: "",
     dateTo: "",
     timeFrom: "",
@@ -140,14 +123,46 @@ const InvoicesPage = ({ allGroups }) => {
   const [linkingInvoice, setLinkingInvoice] = useState(null);
 
   const debouncedSearch = useDebounce(filters.search, 420);
+  const debouncedAmountExact = useDebounce(filters.amountExact, 420);
+
+  const effectiveFilters = useMemo(
+    () => ({
+      dateFrom: filters.dateFrom,
+      dateTo: filters.dateTo,
+      timeFrom: filters.timeFrom,
+      timeTo: filters.timeTo,
+      sourceGroups: filters.sourceGroups,
+      recipientNames: filters.recipientNames,
+      reviewStatus: filters.reviewStatus,
+      status: filters.status,
+      search: debouncedSearch,
+      amountExact: debouncedAmountExact,
+    }),
+    [
+      filters.dateFrom,
+      filters.dateTo,
+      filters.timeFrom,
+      filters.timeTo,
+      filters.sourceGroups,
+      filters.recipientNames,
+      filters.reviewStatus,
+      filters.status,
+      debouncedSearch,
+      debouncedAmountExact,
+    ],
+  );
+
+  const isTextFiltersDebouncing =
+    filters.search !== debouncedSearch || filters.amountExact !== debouncedAmountExact;
 
   const fetchInvoices = useCallback(async () => {
+    if (isTextFiltersDebouncing) return;
+
+    const fetchId = ++latestFetchIdRef.current;
     setLoading(true);
-    setHasNewInvoices(false);
     try {
       const params = {
-        ...filters,
-        search: debouncedSearch,
+        ...effectiveFilters,
         page: pagination.page,
         limit: pagination.limit,
       };
@@ -159,6 +174,8 @@ const InvoicesPage = ({ allGroups }) => {
       });
 
       const { data } = await getInvoices(params);
+      if (fetchId !== latestFetchIdRef.current) return;
+
       setInvoices(data.invoices || []);
       setPagination((prev) => ({
         ...prev,
@@ -166,34 +183,40 @@ const InvoicesPage = ({ allGroups }) => {
         totalRecords: data.totalRecords,
       }));
     } catch (error) {
+      if (fetchId !== latestFetchIdRef.current) return;
       console.error("Failed to fetch invoices:", error);
       setInvoices([]);
     } finally {
+      if (fetchId !== latestFetchIdRef.current) return;
       setLoading(false);
     }
-  }, [pagination.page, pagination.limit, filters, debouncedSearch]);
+  }, [pagination.page, pagination.limit, effectiveFilters, isTextFiltersDebouncing]);
 
   useEffect(() => {
     if (!isAuthenticated) return;
     fetchInvoices();
-    getRecipientNames().then((res) => setRecipientNames(res.data || []));
   }, [isAuthenticated, fetchInvoices]);
 
   useEffect(() => {
-    if (!socket) return undefined;
-    socket.on("invoices:updated", () => setHasNewInvoices(true));
-    return () => socket.off("invoices:updated");
-  }, [socket]);
+    if (!isAuthenticated) return;
+    getRecipientNames()
+      .then((res) => setRecipientNames(res.data || []))
+      .catch(() => setRecipientNames([]));
+  }, [isAuthenticated]);
 
-  const handleFilterChange = (newFilters) => {
-    setPagination((prev) => ({ ...prev, page: 1 }));
-    setFilters(newFilters);
+  const handleFilterChange = (nextFiltersOrUpdater) => {
+    setPagination((prev) => (prev.page === 1 ? prev : { ...prev, page: 1 }));
+    setFilters((prev) =>
+      typeof nextFiltersOrUpdater === "function"
+        ? nextFiltersOrUpdater(prev)
+        : nextFiltersOrUpdater,
+    );
   };
 
   const handleExport = async () => {
     setIsExporting(true);
     try {
-      const exportParams = { ...filters, search: debouncedSearch };
+      const exportParams = { ...effectiveFilters };
       await exportInvoices(exportParams);
     } catch (error) {
       console.error("Failed to export invoices:", error);
@@ -258,11 +281,6 @@ const InvoicesPage = ({ allGroups }) => {
             </Actions>
           </HeaderTop>
 
-          {hasNewInvoices && (
-            <RefreshBanner type="button" onClick={fetchInvoices}>
-              <FaSyncAlt /> New invoices arrived. Click to refresh.
-            </RefreshBanner>
-          )}
         </HeaderCard>
 
         <InvoiceFilter

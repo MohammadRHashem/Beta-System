@@ -60,12 +60,13 @@ const InvoiceFilter = ({ filters, onFilterChange, allGroups, recipientNames }) =
       ":hover": { borderColor: state.isFocused ? theme.secondary : theme.borderStrong },
     }),
     valueContainer: (base) => ({ ...base, paddingTop: 0, paddingBottom: 0 }),
+    indicatorSeparator: () => ({ display: "none" }),
     input: (base) => ({ ...base, margin: 0, color: theme.text }),
     placeholder: (base) => ({ ...base, color: theme.lightText, fontSize: "0.76rem" }),
     singleValue: (base) => ({ ...base, color: theme.text }),
-    multiValue: (base) => ({ ...base, background: theme.secondarySoft }),
-    multiValueLabel: (base) => ({ ...base, color: theme.secondary, fontWeight: 700, fontSize: "0.72rem" }),
-    multiValueRemove: (base) => ({ ...base, color: theme.secondary, ":hover": { background: "transparent", color: theme.primary } }),
+    multiValue: () => ({ display: "none" }),
+    multiValueLabel: () => ({ display: "none" }),
+    multiValueRemove: () => ({ display: "none" }),
     menu: (base) => ({ ...base, zIndex: 2000, background: theme.surface, border: `1px solid ${theme.border}` }),
     option: (base, state) => ({
       ...base,
@@ -77,16 +78,18 @@ const InvoiceFilter = ({ filters, onFilterChange, allGroups, recipientNames }) =
 
   const handleMultiChange = (name, selectedOptions) => {
     const values = selectedOptions ? selectedOptions.map((option) => option.value) : [];
-    onFilterChange({ ...filters, [name]: values });
+    onFilterChange((prev) => ({ ...prev, [name]: values }));
   };
 
   const handleChange = (event) => {
-    onFilterChange({ ...filters, [event.target.name]: event.target.value });
+    const { name, value } = event.target;
+    onFilterChange((prev) => ({ ...prev, [name]: value }));
   };
 
   const handleClear = () => {
     onFilterChange({
       search: "",
+      amountExact: "",
       dateFrom: "",
       dateTo: "",
       timeFrom: "",
@@ -115,6 +118,18 @@ const InvoiceFilter = ({ filters, onFilterChange, allGroups, recipientNames }) =
       </Field>
 
       <Field>
+        <Label>Exact Amount</Label>
+        <Input
+          name="amountExact"
+          type="text"
+          inputMode="decimal"
+          value={filters.amountExact}
+          onChange={handleChange}
+          placeholder="1500.55"
+        />
+      </Field>
+
+      <Field>
         <Label>From Date</Label>
         <Input name="dateFrom" type="date" value={filters.dateFrom} onChange={handleChange} />
       </Field>
@@ -138,10 +153,17 @@ const InvoiceFilter = ({ filters, onFilterChange, allGroups, recipientNames }) =
         <Label>Source Groups</Label>
         <Select
           isMulti
+          closeMenuOnSelect={false}
+          controlShouldRenderValue={false}
           options={groupOptions}
           styles={selectStyles}
           onChange={(opts) => handleMultiChange("sourceGroups", opts)}
           value={groupOptions.filter((opt) => filters.sourceGroups.includes(opt.value))}
+          placeholder={
+            filters.sourceGroups.length > 0
+              ? `${filters.sourceGroups.length} selected`
+              : "Select..."
+          }
         />
       </Field>
 
@@ -149,10 +171,17 @@ const InvoiceFilter = ({ filters, onFilterChange, allGroups, recipientNames }) =
         <Label>Recipient Names</Label>
         <Select
           isMulti
+          closeMenuOnSelect={false}
+          controlShouldRenderValue={false}
           options={recipientOptions}
           styles={selectStyles}
           onChange={(opts) => handleMultiChange("recipientNames", opts)}
           value={recipientOptions.filter((opt) => filters.recipientNames.includes(opt.value))}
+          placeholder={
+            filters.recipientNames.length > 0
+              ? `${filters.recipientNames.length} selected`
+              : "Select..."
+          }
         />
       </Field>
 

@@ -8,6 +8,46 @@ const { parseFormattedCurrency } = require('../utils/currencyParser');
 
 // ... existing imports and previous functions ...
 
+const NORMALIZED_AMOUNT_SQL = `
+    CAST(
+        CASE
+            WHEN REPLACE(i.amount, ' ', '') REGEXP '^[0-9]{1,3}(,[0-9]{3})+\\.[0-9]+$'
+                THEN REPLACE(REPLACE(i.amount, ' ', ''), ',', '')
+            WHEN REPLACE(i.amount, ' ', '') REGEXP '^[0-9]{1,3}(\\.[0-9]{3})+,[0-9]+$'
+                THEN REPLACE(REPLACE(REPLACE(i.amount, ' ', ''), '.', ''), ',', '.')
+            WHEN REPLACE(i.amount, ' ', '') REGEXP '^[0-9]{1,3}(,[0-9]{3})+$'
+                THEN REPLACE(REPLACE(i.amount, ' ', ''), ',', '')
+            WHEN REPLACE(i.amount, ' ', '') REGEXP '^[0-9]{1,3}(\\.[0-9]{3})+$'
+                THEN REPLACE(REPLACE(i.amount, ' ', ''), '.', '')
+            WHEN REPLACE(i.amount, ' ', '') REGEXP '^[0-9]+,[0-9]+$'
+                THEN REPLACE(REPLACE(i.amount, ' ', ''), ',', '.')
+            ELSE REPLACE(i.amount, ' ', '')
+        END AS DECIMAL(20, 2)
+    )
+`;
+
+const normalizeExactAmountInput = (rawValue) => {
+    if (rawValue === undefined || rawValue === null) return { isEmpty: true, value: null };
+    const trimmed = String(rawValue).trim();
+    if (!trimmed) return { isEmpty: true, value: null };
+
+    // Accepted:
+    // 1500      -> 1500.00
+    // 1500.5    -> 1500.50
+    // 1500.55   -> 1500.55
+    // 1500.     -> 1500.00
+    if (!/^\d+(?:\.\d{0,2})?$/.test(trimmed)) {
+        return { isEmpty: false, isValid: false, value: null };
+    }
+
+    const numeric = Number.parseFloat(trimmed);
+    if (!Number.isFinite(numeric)) {
+        return { isEmpty: false, isValid: false, value: null };
+    }
+
+    return { isEmpty: false, isValid: true, value: numeric.toFixed(2) };
+};
+
 exports.createInvoice = async (req, res) => {
     const { 
         amount, notes, received_at, 
@@ -127,7 +167,7 @@ exports.getAllInvoices = async (req, res) => {
     const {
         page = 1, limit = 50, sortOrder = 'desc',
         search, dateFrom, dateTo, timeFrom, timeTo,
-        sourceGroups, recipientNames, reviewStatus, status,
+        sourceGroups, recipientNames, reviewStatus, status, amountExact,
     } = req.query;
 
     const offset = (page - 1) * limit;
@@ -142,6 +182,16 @@ exports.getAllInvoices = async (req, res) => {
         query += ` AND (i.transaction_id LIKE ? OR i.sender_name LIKE ? OR i.recipient_name LIKE ? OR i.pix_key LIKE ? OR i.notes LIKE ? OR i.amount LIKE ?)`;
         const searchTerm = `%${search}%`;
         params.push(searchTerm, searchTerm, searchTerm, searchTerm, searchTerm, searchTerm);
+    }
+
+    const normalizedAmountFilter = normalizeExactAmountInput(amountExact);
+    if (!normalizedAmountFilter.isEmpty) {
+        if (normalizedAmountFilter.isValid) {
+            query += ` AND ${NORMALIZED_AMOUNT_SQL} = ?`;
+            params.push(normalizedAmountFilter.value);
+        } else {
+            query += ' AND 1 = 0';
+        }
     }
     
     if (dateFrom) {
@@ -232,7 +282,7 @@ const getBusinessDay = (transactionDate) => {
 exports.exportInvoices = async (req, res) => {
     const {
         search, dateFrom, dateTo, timeFrom, timeTo,
-        sourceGroups, recipientNames, reviewStatus, status,
+        sourceGroups, recipientNames, reviewStatus, status, amountExact,
     } = req.query;
 
     let query = `
@@ -255,6 +305,16 @@ exports.exportInvoices = async (req, res) => {
         query += ` AND (i.transaction_id LIKE ? OR i.sender_name LIKE ? OR i.recipient_name LIKE ? OR i.pix_key LIKE ? OR i.notes LIKE ? OR i.amount LIKE ?)`;
         const searchTerm = `%${search}%`;
         params.push(searchTerm, searchTerm, searchTerm, searchTerm, searchTerm, searchTerm);
+    }
+
+    const normalizedAmountFilter = normalizeExactAmountInput(amountExact);
+    if (!normalizedAmountFilter.isEmpty) {
+        if (normalizedAmountFilter.isValid) {
+            query += ` AND ${NORMALIZED_AMOUNT_SQL} = ?`;
+            params.push(normalizedAmountFilter.value);
+        } else {
+            query += ' AND 1 = 0';
+        }
     }
     
     if (dateFrom) {
