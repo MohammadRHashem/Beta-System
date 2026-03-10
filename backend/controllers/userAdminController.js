@@ -1,6 +1,7 @@
 const pool = require('../config/db');
 const bcrypt = require('bcryptjs');
 const { logAction } = require('../services/auditService');
+const { parsePagination, buildPaginationMeta } = require('../utils/pagination');
 
 // ==== USER MANAGEMENT ====
 
@@ -318,8 +319,8 @@ exports.updateRole = async (req, res) => {
 // ==== AUDIT LOG ====
 
 exports.getAuditLogs = async (req, res) => {
-    const { page = 1, limit = 50, userId, action, dateFrom, dateTo } = req.query;
-    const offset = (page - 1) * limit;
+    const { userId, action, dateFrom, dateTo } = req.query;
+    const pagination = parsePagination(req.query, { defaultLimit: 20 });
 
     let query = 'FROM audit_log WHERE 1=1';
     const params = [];
@@ -333,13 +334,17 @@ exports.getAuditLogs = async (req, res) => {
         const countQuery = `SELECT COUNT(*) as total ${query}`;
         const [[{ total }]] = await pool.query(countQuery, params);
 
-        const dataQuery = `SELECT * ${query} ORDER BY timestamp DESC LIMIT ? OFFSET ?`;
-        const [logs] = await pool.query(dataQuery, [...params, parseInt(limit), parseInt(offset)]);
+        let dataQuery = `SELECT * ${query} ORDER BY timestamp DESC`;
+        const dataParams = [...params];
+        if (!pagination.isAll) {
+            dataQuery += ' LIMIT ? OFFSET ?';
+            dataParams.push(pagination.limitValue, pagination.offset);
+        }
+        const [logs] = await pool.query(dataQuery, dataParams);
 
         res.json({
             logs,
-            totalPages: Math.ceil(total / limit),
-            currentPage: parseInt(page),
+            ...buildPaginationMeta(total, pagination)
         });
     } catch (error) {
         console.error('Failed to get audit logs:', error);

@@ -167,7 +167,12 @@ const AlfaTrustTable = ({ transactions, loading, pagination, setPagination, onLi
                         </tbody>
                     </Table>
                 </TableWrapper>
-                <Pagination pagination={pagination} setPagination={setPagination} />
+                <Pagination
+                    pagination={pagination}
+                    setPagination={setPagination}
+                    showPageSize
+                    storageKey="alfa-trust"
+                />
             </TableSection>
         </>
     );

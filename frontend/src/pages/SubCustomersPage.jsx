@@ -285,7 +285,12 @@ const SubCustomersPage = ({ allGroups }) => {
                                 </tbody>
                             </Table>
                         </TableWrapper>
-                        <Pagination pagination={pagination} setPagination={setPagination} />
+                        <Pagination
+                            pagination={pagination}
+                            setPagination={setPagination}
+                            showPageSize
+                            storageKey="sub-customers"
+                        />
                     </>
                 )}
             </Card>

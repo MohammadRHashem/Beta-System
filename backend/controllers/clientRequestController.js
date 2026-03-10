@@ -1,5 +1,6 @@
 const pool = require('../config/db');
 const whatsappService = require('../services/whatsappService');
+const { parsePagination, buildPaginationMeta } = require('../utils/pagination');
 
 const normalizeContentValue = (value) => {
     if (value === undefined || value === null) return '';
@@ -12,8 +13,76 @@ const normalizeContentValue = (value) => {
 
 // RENAMED & MODIFIED: Fetches ALL requests (pending and completed)
 exports.getAllRequests = async (req, res) => {
+    const pagination = parsePagination(req.query, { defaultLimit: 50 });
+    const view = String(req.query.view || 'pending').trim().toLowerCase();
+    const requestType = String(req.query.requestType || '').trim();
+    const search = String(req.query.search || '').trim();
+    const sortKey = String(req.query.sortKey || 'received_at').trim();
+    const sortDir = String(req.query.sortDir || 'asc').trim().toLowerCase() === 'desc' ? 'DESC' : 'ASC';
+
+    const sortColumnMap = {
+        received_at: 'cr.received_at',
+        source_group_name: 'cr.source_group_name',
+        request_type: 'cr.request_type',
+        content: 'cr.content',
+        amount: 'CAST(cr.amount AS DECIMAL(18,2))',
+        completed_at: 'cr.completed_at'
+    };
+    const orderBy = sortColumnMap[sortKey] || sortColumnMap.received_at;
+
+    const whereParts = ['1=1'];
+    const whereParams = [];
+
+    if (view === 'completed') {
+        whereParts.push('cr.is_completed = 1');
+    } else {
+        whereParts.push('cr.is_completed = 0');
+    }
+
+    if (requestType && requestType !== 'All') {
+        whereParts.push('cr.request_type = ?');
+        whereParams.push(requestType);
+    }
+
+    if (search) {
+        const searchToken = `%${search}%`;
+        whereParts.push(`(
+            cr.source_group_name LIKE ?
+            OR cr.request_type LIKE ?
+            OR cr.content LIKE ?
+            OR CAST(cr.amount AS CHAR) LIKE ?
+            OR COALESCE(u.username, '') LIKE ?
+            OR DATE_FORMAT(cr.received_at, '%Y-%m-%d %H:%i:%s') LIKE ?
+            OR DATE_FORMAT(cr.completed_at, '%Y-%m-%d %H:%i:%s') LIKE ?
+            OR COALESCE(rt.content_label, '') LIKE ?
+        )`);
+        whereParams.push(
+            searchToken,
+            searchToken,
+            searchToken,
+            searchToken,
+            searchToken,
+            searchToken,
+            searchToken,
+            searchToken
+        );
+    }
+
+    const whereSql = `WHERE ${whereParts.join(' AND ')}`;
+
     try {
-        const query = `
+        const countQuery = `
+            SELECT COUNT(*) AS total
+            FROM client_requests cr
+            LEFT JOIN request_types rt
+              ON (cr.request_type_id IS NOT NULL AND rt.id = cr.request_type_id)
+              OR (cr.request_type_id IS NULL AND rt.name = cr.request_type)
+            LEFT JOIN users u ON cr.completed_by_user_id = u.id
+            ${whereSql}
+        `;
+        const [[{ total }]] = await pool.query(countQuery, whereParams);
+
+        let query = `
             SELECT 
                 cr.id, cr.message_id, cr.content, cr.amount, cr.source_group_name, cr.request_type, 
                 cr.received_at, cr.is_completed, cr.completed_at, u.username as completed_by,
@@ -46,10 +115,21 @@ exports.getAllRequests = async (req, res) => {
               ON (cr.request_type_id IS NOT NULL AND rt.id = cr.request_type_id)
               OR (cr.request_type_id IS NULL AND rt.name = cr.request_type)
             LEFT JOIN users u ON cr.completed_by_user_id = u.id
-            ORDER BY cr.received_at ASC
+            ${whereSql}
+            ORDER BY ${orderBy} ${sortDir}, cr.id ${sortDir}
         `;
-        const [requests] = await pool.query(query);
-        res.json(requests);
+        const dataParams = [...whereParams];
+        if (!pagination.isAll) {
+            query += ' LIMIT ? OFFSET ?';
+            dataParams.push(pagination.limitValue, pagination.offset);
+        }
+
+        const [items] = await pool.query(query, dataParams);
+
+        res.json({
+            items,
+            ...buildPaginationMeta(total, pagination)
+        });
     } catch (error) {
         console.error('[CLIENT-REQ-ERROR] Failed to fetch all requests:', error);
         res.status(500).json({ message: 'Failed to fetch requests.' });

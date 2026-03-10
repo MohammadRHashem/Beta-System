@@ -140,7 +140,7 @@ const AuditLogPage = () => {
     const [users, setUsers] = useState([]);
     const [loading, setLoading] = useState(true);
     const [filters, setFilters] = useState({ userId: '', action: '', dateFrom: '', dateTo: '' });
-    const [pagination, setPagination] = useState({ page: 1, limit: 25, totalPages: 1 });
+    const [pagination, setPagination] = useState({ page: 1, limit: 20, totalPages: 1, totalRecords: 0 });
     const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
     const [selectedLogDetails, setSelectedLogDetails] = useState(null);
 
@@ -150,7 +150,13 @@ const AuditLogPage = () => {
             const params = { ...filters, page: pagination.page, limit: pagination.limit };
             const { data } = await getAuditLogs(params);
             setLogs(data.logs);
-            setPagination(prev => ({ ...prev, totalPages: data.totalPages, currentPage: data.currentPage }));
+            setPagination(prev => ({
+                ...prev,
+                totalPages: data.totalPages,
+                currentPage: data.currentPage,
+                totalRecords: data.totalRecords ?? 0,
+                limit: data.limit ?? prev.limit
+            }));
         } catch (error) {
             alert('Failed to fetch audit logs.');
         } finally {
@@ -249,7 +255,12 @@ const AuditLogPage = () => {
                             </tbody>
                         </Table>
                     </TableWrapper>
-                    <Pagination pagination={pagination} setPagination={setPagination} />
+                    <Pagination
+                        pagination={pagination}
+                        setPagination={setPagination}
+                        showPageSize
+                        storageKey="audit-log"
+                    />
                 </Card>
             </PageContainer>
             

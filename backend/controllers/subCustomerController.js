@@ -1,8 +1,9 @@
 const pool = require('../config/db');
+const { parsePagination, buildPaginationMeta } = require('../utils/pagination');
 
 exports.getSubCustomers = async (req, res) => {
-    const { page = 1, limit = 50, groupId, searchName, source = 'bot' } = req.query;
-    const offset = (page - 1) * limit;
+    const { groupId, searchName, source = 'bot' } = req.query;
+    const pagination = parsePagination(req.query, { defaultLimit: 50 });
 
     try {
         let query = '';
@@ -46,7 +47,6 @@ exports.getSubCustomers = async (req, res) => {
                 ${whereClause}
                 GROUP BY i.sender_name, i.source_group_jid, wg.group_name
                 ORDER BY transaction_count DESC
-                LIMIT ? OFFSET ?
             `;
         } 
         // === SOURCE 2: XPAYZ API ===
@@ -87,7 +87,6 @@ exports.getSubCustomers = async (req, res) => {
                 ${whereClause}
                 GROUP BY xt.sender_name, s.assigned_group_jid, s.assigned_group_name, xt.subaccount_id
                 ORDER BY transaction_count DESC
-                LIMIT ? OFFSET ?
             `;
         }
         // === SOURCE 3: ALFA TRUST API ===
@@ -133,7 +132,6 @@ exports.getSubCustomers = async (req, res) => {
                 ${whereClause}
                 GROUP BY at.payer_name
                 ORDER BY transaction_count DESC
-                LIMIT ? OFFSET ?
             `;
         } else {
             return res.status(400).json({ message: 'Invalid source.' });
@@ -142,23 +140,19 @@ exports.getSubCustomers = async (req, res) => {
         // --- Execute Queries ---
         const [[{ total }]] = await pool.query(countQuery, countParams);
 
-        if (total === 0) {
-            return res.json({
-                data: [],
-                totalPages: 0,
-                currentPage: 1,
-                totalRecords: 0
-            });
+        if (!pagination.isAll) {
+            query += ' LIMIT ? OFFSET ?';
         }
 
-        const finalParams = [...params, parseInt(limit), parseInt(offset)];
+        const finalParams = [...params];
+        if (!pagination.isAll) {
+            finalParams.push(pagination.limitValue, pagination.offset);
+        }
         const [rows] = await pool.query(query, finalParams);
 
         res.json({
             data: rows,
-            totalPages: Math.ceil(total / limit),
-            currentPage: parseInt(page),
-            totalRecords: total
+            ...buildPaginationMeta(total, pagination)
         });
 
     } catch (error) {

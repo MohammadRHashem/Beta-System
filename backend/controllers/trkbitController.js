@@ -1,5 +1,6 @@
 const pool = require('../config/db');
 const ExcelJS = require('exceljs');
+const { parsePagination, buildPaginationMeta } = require('../utils/pagination');
 
 const LINKED_EXISTS_SQL = `
     EXISTS (
@@ -250,9 +251,7 @@ exports.getRefreshToken = async (req, res) => {
 };
 
 exports.getTransactions = async (req, res) => {
-    const page = Math.max(1, toInt(req.query.page, 1));
-    const limit = Math.min(200, Math.max(10, toInt(req.query.limit, 50)));
-    const offset = (page - 1) * limit;
+    const pagination = parsePagination(req.query, { defaultLimit: 50 });
 
     try {
         const filterResult = await buildFilters(req.query);
@@ -269,7 +268,7 @@ exports.getTransactions = async (req, res) => {
         `;
         const [[{ total }]] = await pool.query(countQuery, params);
 
-        const dataQuery = `
+        let dataQuery = `
             SELECT
                 tt.id,
                 tt.uid,
@@ -297,18 +296,21 @@ exports.getTransactions = async (req, res) => {
                 tt.id, tt.uid, tt.tx_id, tt.e2e_id, tt.tx_date, tt.amount,
                 tt.tx_pix_key, tt.tx_type, tt.tx_payer_name, tt.tx_payer_id, tt.is_used
             ORDER BY tt.tx_date DESC
-            LIMIT ? OFFSET ?
         `;
 
-        const [transactions] = await pool.query(dataQuery, [...params, limit, offset]);
+        const dataParams = [...params];
+        if (!pagination.isAll) {
+            dataQuery += ' LIMIT ? OFFSET ?';
+            dataParams.push(pagination.limitValue, pagination.offset);
+        }
+
+        const [transactions] = await pool.query(dataQuery, dataParams);
         const tokenPayload = await buildRefreshToken();
 
         res.json({
             transactions,
             view,
-            totalPages: Math.ceil((total || 0) / limit),
-            currentPage: page,
-            totalRecords: total || 0,
+            ...buildPaginationMeta(total, pagination),
             ...tokenPayload
         });
     } catch (error) {

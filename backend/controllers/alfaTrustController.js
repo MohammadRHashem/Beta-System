@@ -2,6 +2,7 @@ const pool = require('../config/db');
 const alfaApiService = require('../services/alfaApiService');
 const ExcelJS = require('exceljs');
 const { parseFormattedCurrency } = require('../utils/currencyParser');
+const { parsePagination, buildPaginationMeta } = require('../utils/pagination');
 
 // This helper function works directly with the time string to avoid timezone issues.
 const getBusinessDayFromLocalString = (localDateString) => {
@@ -24,9 +25,10 @@ const getBusinessDayFromLocalString = (localDateString) => {
 
 exports.getTransactions = async (req, res) => {
     const {
-        page = 1, limit = 50, sortOrder = 'desc',
+        sortOrder = 'desc',
         search, dateFrom, dateTo, operation
     } = req.query;
+    const pagination = parsePagination(req.query, { defaultLimit: 50 });
 
     try {
         let query = `
@@ -49,28 +51,25 @@ exports.getTransactions = async (req, res) => {
         const [countRows] = await pool.query(countQuery, params);
         const total = countRows[0]?.total || 0;
 
-        if (total === 0) {
-            return res.json({ transactions: [], totalPages: 0, currentPage: 1, totalRecords: 0 });
-        }
-
         // === THIS IS THE FIX: Use MAX() to resolve GROUP BY ambiguity ===
-        const dataQuery = `
+        let dataQuery = `
             SELECT at.*, MAX(i.id) as linked_invoice_id
             ${query}
             GROUP BY at.id
             ORDER BY at.inclusion_date ${sortOrder === 'asc' ? 'ASC' : 'DESC'}
-            LIMIT ? OFFSET ?
         `;
         // =============================================================
         
-        const finalParams = [...params, parseInt(limit), (page - 1) * limit];
+        const finalParams = [...params];
+        if (!pagination.isAll) {
+            dataQuery += ' LIMIT ? OFFSET ?';
+            finalParams.push(pagination.limitValue, pagination.offset);
+        }
         const [transactions] = await pool.query(dataQuery, finalParams);
         
         res.json({
             transactions,
-            totalPages: Math.ceil(total / limit),
-            currentPage: parseInt(page),
-            totalRecords: total,
+            ...buildPaginationMeta(total, pagination)
         });
 
     } catch (error) {

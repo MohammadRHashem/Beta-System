@@ -276,7 +276,8 @@ export const deletePositionCounter = (id) => apiClient.delete(`/positions/counte
 export const calculateLocalPosition = (params) => apiClient.get('/position/local', { params });
 export const calculateRemotePosition = (id, params) => apiClient.get(`/position/remote/${id}`, { params });
 export const getSubCustomers = (params) => apiClient.get('/sub-customers', { params });
-export const getRecibosTransactions = (subaccountNumber) => apiClient.get(`/subaccounts/${subaccountNumber}/recibos`);
+export const getRecibosTransactions = (subaccountNumber, params = {}) =>
+    apiClient.get(`/subaccounts/${subaccountNumber}/recibos`, { params });
 export const reassignTransaction = (transactionId, targetSubaccountNumber) => apiClient.post('/subaccounts/reassign', { transactionId, targetSubaccountNumber });
 
 
@@ -339,7 +340,7 @@ export const triggerAlfaSync = () => apiClient.post('/alfa-trust/trigger-sync');
 
 
 // ---- Client Requests ----
-export const getClientRequests = () => apiClient.get('/client-requests');
+export const getClientRequests = (params = {}) => apiClient.get('/client-requests', { params });
 export const getClientRequestHistory = (id) => apiClient.get(`/client-requests/${id}/history`);
 export const completeClientRequest = (id) => apiClient.patch(`/client-requests/${id}/complete`);
 export const updateClientRequestAmount = (id, amount) => apiClient.patch(`/client-requests/${id}/amount`, { amount });

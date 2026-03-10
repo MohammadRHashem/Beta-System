@@ -630,7 +630,12 @@ const TrkbitPage = () => {
                     </Table>
                 </TableWrapper>
 
-                <Pagination pagination={pagination} setPagination={setPagination} />
+                <Pagination
+                    pagination={pagination}
+                    setPagination={setPagination}
+                    showPageSize
+                    storageKey="trkbit"
+                />
             </PageContainer>
 
             {canLink && (

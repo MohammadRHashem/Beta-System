@@ -4,6 +4,7 @@ const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
 const { syncSingleSubaccount } = require('../xpayzSyncService');
 const { logAction } = require('../services/auditService');
+const { parsePagination, buildPaginationMeta } = require('../utils/pagination');
 require('dotenv').config();
 
 const PORTAL_JWT_SECRET = process.env.PORTAL_JWT_SECRET;
@@ -521,51 +522,89 @@ exports.createPortalAccessSession = async (req, res) => {
 
 exports.getRecibosTransactions = async (req, res) => {
     const { subaccountId } = req.params;
+    const pagination = parsePagination(req.query, { defaultLimit: 50 });
 
     try {
-        // 1. Get transactions currently in this "Recibos" subaccount
-        const [transactions] = await pool.query(
-            `SELECT id, sender_name, amount, transaction_date 
-             FROM xpayz_transactions 
-             WHERE subaccount_id = ? 
-             ORDER BY transaction_date DESC 
-             LIMIT 200`,
+        const [[{ total }]] = await pool.query(
+            `SELECT COUNT(*) AS total
+             FROM xpayz_transactions
+             WHERE subaccount_id = ?`,
             [subaccountId]
         );
 
-        // 2. Smart Matching: For each transaction, check history
-        const enhancedTransactions = await Promise.all(transactions.map(async (tx) => {
-            if (!tx.sender_name) return { ...tx, suggestion: null };
+        let dataQuery = `
+            SELECT id, sender_name, amount, transaction_date
+            FROM xpayz_transactions
+            WHERE subaccount_id = ?
+            ORDER BY transaction_date DESC
+        `;
+        const dataParams = [subaccountId];
+        if (!pagination.isAll) {
+            dataQuery += ' LIMIT ? OFFSET ?';
+            dataParams.push(pagination.limitValue, pagination.offset);
+        }
 
-            // Find where this sender sends money most often (excluding the Recibos account itself)
-            const query = `
-                SELECT s.id, s.name, COUNT(*) as match_count
-                FROM xpayz_transactions xt
-                JOIN subaccounts s ON xt.subaccount_id = s.subaccount_number
-                WHERE xt.sender_name = ? 
-                AND xt.subaccount_id != ?
-                GROUP BY s.id, s.name
-                ORDER BY match_count DESC
-                LIMIT 1
-            `;
-            const [[bestMatch]] = await pool.query(query, [tx.sender_name, subaccountId]);
+        const [transactions] = await pool.query(dataQuery, dataParams);
 
-            let suggestion = null;
-            if (bestMatch) {
-                // Calculate a rudimentary confidence based on count
-                const confidence = Math.min(bestMatch.match_count * 10, 100); 
-                suggestion = {
-                    subaccountId: bestMatch.id,
-                    subaccountName: bestMatch.name,
-                    confidence: confidence,
-                    reason: `${bestMatch.match_count} prev. txs`
-                };
+        const uniqueSenders = Array.from(
+            new Set(
+                transactions
+                    .map((tx) => (tx.sender_name || '').trim())
+                    .filter(Boolean)
+            )
+        );
+
+        let suggestionsBySender = new Map();
+        if (uniqueSenders.length > 0) {
+            const [matches] = await pool.query(
+                `
+                    SELECT
+                        xt.sender_name,
+                        s.id AS subaccount_id,
+                        s.name AS subaccount_name,
+                        COUNT(*) AS match_count
+                    FROM xpayz_transactions xt
+                    JOIN subaccounts s ON xt.subaccount_id = s.subaccount_number
+                    WHERE xt.sender_name IN (?)
+                      AND xt.subaccount_id != ?
+                    GROUP BY xt.sender_name, s.id, s.name
+                    ORDER BY xt.sender_name ASC, match_count DESC, s.name ASC
+                `,
+                [uniqueSenders, subaccountId]
+            );
+
+            suggestionsBySender = matches.reduce((acc, row) => {
+                if (!acc.has(row.sender_name)) {
+                    acc.set(row.sender_name, row);
+                }
+                return acc;
+            }, new Map());
+        }
+
+        const enhancedTransactions = transactions.map((tx) => {
+            const sender = (tx.sender_name || '').trim();
+            const bestMatch = suggestionsBySender.get(sender);
+
+            if (!bestMatch) {
+                return { ...tx, suggestion: null };
             }
 
-            return { ...tx, suggestion };
-        }));
+            const confidence = Math.min(Number(bestMatch.match_count || 0) * 10, 100);
+            return {
+                ...tx,
+                suggestion: {
+                    subaccountId: bestMatch.subaccount_id,
+                    subaccountName: bestMatch.subaccount_name,
+                    confidence,
+                    reason: `${bestMatch.match_count} prev. txs`
+                }
+            };
+        });
 
-        res.json(enhancedTransactions);
+        res.json({
+            items: enhancedTransactions,
+            ...buildPaginationMeta(total, pagination)
+        });
 
     } catch (error) {
         console.error('[RECIBOS-ERROR]', error);

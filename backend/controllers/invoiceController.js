@@ -3,6 +3,7 @@ const ExcelJS = require('exceljs');
 const path = require('path');
 const fs = require('fs');
 const { parseFormattedCurrency } = require('../utils/currencyParser');
+const { parsePagination, buildPaginationMeta } = require('../utils/pagination');
 
 // ... (getAllInvoices, getBusinessDay, exportInvoices, getRecipientNames REMAIN UNCHANGED) ...
 
@@ -165,12 +166,12 @@ exports.deleteInvoice = async (req, res) => {
 // ... (getInvoiceMedia remains unchanged) ...
 exports.getAllInvoices = async (req, res) => {
     const {
-        page = 1, limit = 50, sortOrder = 'desc',
+        sortOrder = 'desc',
         search, dateFrom, dateTo, timeFrom, timeTo,
         sourceGroups, recipientNames, reviewStatus, status, amountExact,
     } = req.query;
+    const pagination = parsePagination(req.query, { defaultLimit: 50 });
 
-    const offset = (page - 1) * limit;
     let query = `
         FROM invoices i
         LEFT JOIN whatsapp_groups wg ON i.source_group_jid = wg.group_jid
@@ -246,17 +247,20 @@ exports.getAllInvoices = async (req, res) => {
                 i.linked_transaction_source
             ${query}
             ORDER BY ${orderByClause}, i.id ${sortOrder === 'asc' ? 'ASC' : 'DESC'}
-            LIMIT ? OFFSET ?
         `;
         // =====================================
-        const finalParams = [...params, parseInt(limit), parseInt(offset)];
-        const [invoices] = await pool.query(dataQuery, finalParams);
+        const finalParams = [...params];
+        let finalDataQuery = dataQuery;
+        if (!pagination.isAll) {
+            finalDataQuery += ' LIMIT ? OFFSET ?';
+            finalParams.push(pagination.limitValue, pagination.offset);
+        }
+
+        const [invoices] = await pool.query(finalDataQuery, finalParams);
         
         res.json({
             invoices,
-            totalPages: Math.ceil(total / limit),
-            currentPage: parseInt(page),
-            totalRecords: total,
+            ...buildPaginationMeta(total, pagination)
         });
     } catch (error) {
         console.error('[ERROR] Failed to fetch invoices:', error);

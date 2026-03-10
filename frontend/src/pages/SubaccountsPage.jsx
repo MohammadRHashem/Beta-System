@@ -321,6 +321,36 @@ const RecibosTable = styled.table`
   }
 `;
 
+const RecibosToolbar = styled.div`
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.65rem;
+  flex-wrap: wrap;
+  margin: 0.6rem 0 0.5rem;
+`;
+
+const RecibosMeta = styled.span`
+  font-size: 0.78rem;
+  color: ${({ theme }) => theme.lightText};
+`;
+
+const RecibosControls = styled.div`
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+`;
+
+const RecibosPageSize = styled.select`
+  min-height: 32px;
+  border-radius: 8px;
+  border: 1px solid ${({ theme }) => theme.border};
+  background: ${({ theme }) => theme.surface};
+  color: ${({ theme }) => theme.text};
+  padding: 0.3rem 0.45rem;
+  font-weight: 600;
+`;
+
 const AssignCell = styled.div`
   display: flex;
   align-items: center;
@@ -379,6 +409,13 @@ const SubaccountsPage = ({ allGroups }) => {
   const [recibosAccountId, setRecibosAccountId] = useState(null);
   const [recibosTransactions, setRecibosTransactions] = useState([]);
   const [recibosLoading, setRecibosLoading] = useState(false);
+  const [recibosPagination, setRecibosPagination] = useState({
+    page: 1,
+    currentPage: 1,
+    limit: 50,
+    totalPages: 1,
+    totalRecords: 0,
+  });
   const [isDebitModalOpen, setIsDebitModalOpen] = useState(false);
   const [debitSubaccount, setDebitSubaccount] = useState(null);
   const [debitForm, setDebitForm] = useState({ amount: "", tx_date: "", description: "USD BETA OUT / C" });
@@ -410,6 +447,15 @@ const SubaccountsPage = ({ allGroups }) => {
     setIsCredsModalOpen(false);
     setCurrentCreds(null);
     setIsRecibosModalOpen(false);
+    setRecibosAccountId(null);
+    setRecibosTransactions([]);
+    setRecibosPagination({
+      page: 1,
+      currentPage: 1,
+      limit: 50,
+      totalPages: 1,
+      totalRecords: 0,
+    });
     setIsDebitModalOpen(false);
     setDebitSubaccount(null);
   };
@@ -462,12 +508,45 @@ const SubaccountsPage = ({ allGroups }) => {
     }
   };
 
-  const fetchRecibosData = async (subNumber) => {
+  const fetchRecibosData = async (subNumber, options = {}) => {
     if (!subNumber) return;
+    const append = options.append === true;
+    const requestedPage = options.page ?? (append ? (recibosPagination.page || 1) + 1 : 1);
+    const requestedLimit = options.limit ?? recibosPagination.limit ?? 50;
+
     setRecibosLoading(true);
     try {
-      const { data } = await getRecibosTransactions(subNumber);
-      setRecibosTransactions(data);
+      const { data } = await getRecibosTransactions(subNumber, {
+        page: requestedPage,
+        limit: requestedLimit,
+      });
+
+      const payload = Array.isArray(data)
+        ? {
+            items: data,
+            currentPage: 1,
+            totalPages: 1,
+            totalRecords: data.length,
+            limit: requestedLimit,
+          }
+        : (data || {});
+
+      const nextRows = Array.isArray(payload.items) ? payload.items : [];
+      setRecibosTransactions((prev) => {
+        if (!append) return nextRows;
+        const byId = new Map(prev.map((item) => [item.id, item]));
+        nextRows.forEach((item) => byId.set(item.id, item));
+        return Array.from(byId.values());
+      });
+
+      setRecibosPagination((prev) => ({
+        ...prev,
+        page: Number(payload.currentPage ?? requestedPage),
+        currentPage: Number(payload.currentPage ?? requestedPage),
+        totalPages: Math.max(Number(payload.totalPages ?? 1), 1),
+        totalRecords: Number(payload.totalRecords ?? (append ? prev.totalRecords : nextRows.length)),
+        limit: payload.limit ?? requestedLimit,
+      }));
     } catch (_error) {
       alert("Failed to fetch Recibos transactions.");
     } finally {
@@ -480,6 +559,10 @@ const SubaccountsPage = ({ allGroups }) => {
     try {
       await reassignTransaction(txId, targetSubaccountNumber);
       setRecibosTransactions((prev) => prev.filter((tx) => tx.id !== txId));
+      setRecibosPagination((prev) => ({
+        ...prev,
+        totalRecords: Math.max(0, Number(prev.totalRecords || 0) - 1),
+      }));
     } catch (_error) {
       alert("Failed to reassign transaction.");
     }
@@ -709,11 +792,28 @@ const SubaccountsPage = ({ allGroups }) => {
           subaccounts={subaccounts}
           loading={recibosLoading}
           transactions={recibosTransactions}
+          pagination={recibosPagination}
           onSelectAccount={(id) => {
             setRecibosAccountId(id);
-            fetchRecibosData(id);
+            setRecibosTransactions([]);
+            setRecibosPagination((prev) => ({
+              ...prev,
+              page: 1,
+              currentPage: 1,
+            }));
+            fetchRecibosData(id, { page: 1, append: false });
           }}
           selectedAccountId={recibosAccountId}
+          onLoadMore={() => fetchRecibosData(recibosAccountId, { append: true })}
+          onPageSizeChange={(nextLimit) => {
+            setRecibosPagination((prev) => ({
+              ...prev,
+              page: 1,
+              currentPage: 1,
+              limit: nextLimit,
+            }));
+            fetchRecibosData(recibosAccountId, { page: 1, limit: nextLimit, append: false });
+          }}
           onReassign={handleReassign}
         />
       )}
@@ -931,8 +1031,11 @@ const RecibosModal = ({
   subaccounts,
   loading,
   transactions,
+  pagination,
   onSelectAccount,
   selectedAccountId,
+  onLoadMore,
+  onPageSizeChange,
   onReassign,
 }) => {
   const theme = useTheme();
@@ -977,6 +1080,7 @@ const RecibosModal = ({
         <Label>Select Source Account (Recibos)</Label>
         <Select
           options={subOptions}
+          value={subOptions.find((option) => String(option.value) === String(selectedAccountId)) || null}
           onChange={(opt) => onSelectAccount(opt?.value)}
           placeholder="Choose account to inspect..."
           styles={themedStyles}
@@ -985,34 +1089,68 @@ const RecibosModal = ({
       </InputGroup>
 
       {selectedAccountId && (
-        <RecibosTableWrap>
-          {loading ? (
-            <p style={{ padding: "0.8rem" }}>Loading transactions...</p>
-          ) : (
-            <RecibosTable>
-              <thead>
-                <tr>
-                  <th>Date</th>
-                  <th>Sender</th>
-                  <th>Amount</th>
-                  <th>Smart Suggestion</th>
-                  <th>Assign To</th>
-                </tr>
-              </thead>
-              <tbody>
-                {transactions.length === 0 ? (
+        <>
+          <RecibosToolbar>
+            <RecibosMeta>
+              Showing {transactions.length} of {pagination.totalRecords || 0} records
+            </RecibosMeta>
+            <RecibosControls>
+              <RecibosMeta>Rows</RecibosMeta>
+              <RecibosPageSize
+                value={String(pagination.limit ?? 50)}
+                onChange={(event) => onPageSizeChange(event.target.value === "all" ? "all" : Number(event.target.value))}
+              >
+                <option value="20">20</option>
+                <option value="50">50</option>
+                <option value="100">100</option>
+                <option value="200">200</option>
+                <option value="all">All</option>
+              </RecibosPageSize>
+            </RecibosControls>
+          </RecibosToolbar>
+
+          <RecibosTableWrap>
+            {loading && transactions.length === 0 ? (
+              <p style={{ padding: "0.8rem" }}>Loading transactions...</p>
+            ) : (
+              <RecibosTable>
+                <thead>
                   <tr>
-                    <td colSpan="5">No transactions found.</td>
+                    <th>Date</th>
+                    <th>Sender</th>
+                    <th>Amount</th>
+                    <th>Smart Suggestion</th>
+                    <th>Assign To</th>
                   </tr>
-                ) : (
-                  transactions.map((tx) => (
-                    <RecibosRow key={tx.id} tx={tx} subOptions={subOptions} onReassign={onReassign} />
-                  ))
-                )}
-              </tbody>
-            </RecibosTable>
-          )}
-        </RecibosTableWrap>
+                </thead>
+                <tbody>
+                  {transactions.length === 0 ? (
+                    <tr>
+                      <td colSpan="5">No transactions found.</td>
+                    </tr>
+                  ) : (
+                    transactions.map((tx) => (
+                      <RecibosRow key={tx.id} tx={tx} subOptions={subOptions} onReassign={onReassign} />
+                    ))
+                  )}
+                </tbody>
+              </RecibosTable>
+            )}
+          </RecibosTableWrap>
+
+          <FooterActions style={{ marginTop: "0.6rem" }}>
+            <Button
+              type="button"
+              onClick={onLoadMore}
+              disabled={
+                loading ||
+                Number(pagination.currentPage || 1) >= Number(pagination.totalPages || 1)
+              }
+            >
+              {loading ? "Loading..." : "Load More"}
+            </Button>
+          </FooterActions>
+        </>
       )}
     </Modal>
   );

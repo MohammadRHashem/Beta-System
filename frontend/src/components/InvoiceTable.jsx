@@ -242,7 +242,12 @@ const InvoiceTable = ({
           </tbody>
         </Table>
       </TableWrapper>
-      <Pagination pagination={pagination} setPagination={setPagination} />
+      <Pagination
+        pagination={pagination}
+        setPagination={setPagination}
+        showPageSize
+        storageKey="invoices"
+      />
     </Section>
   );
 };

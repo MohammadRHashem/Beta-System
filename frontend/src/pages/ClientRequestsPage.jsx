@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import styled from 'styled-components';
 import {
     getClientRequests,
@@ -29,6 +29,18 @@ import {
 } from 'react-icons/fa';
 import { formatInTimeZone } from 'date-fns-tz';
 import Modal from '../components/Modal';
+import Pagination from '../components/Pagination';
+
+const useDebounce = (value, delay) => {
+    const [debouncedValue, setDebouncedValue] = useState(value);
+
+    useEffect(() => {
+        const handler = setTimeout(() => setDebouncedValue(value), delay);
+        return () => clearTimeout(handler);
+    }, [value, delay]);
+
+    return debouncedValue;
+};
 
 const PageContainer = styled.div` display: flex; flex-direction: column; gap: 1.25rem; height: 100%; min-height: 0; overflow: auto; `;
 const Header = styled.div` display: flex; justify-content: space-between; align-items: center; gap: 1rem; flex-wrap: wrap; `;
@@ -199,7 +211,7 @@ const ClientRequestsPage = () => {
     const canRestore = hasPermission('client_requests:restore');
     const canDelete = hasPermission('client_requests:delete');
 
-    const [allRequests, setAllRequests] = useState([]);
+    const [requests, setRequests] = useState([]);
     const [requestTypes, setRequestTypes] = useState([]);
     const [loading, setLoading] = useState(true);
     const [sortConfig, setSortConfig] = useState({ key: 'received_at', direction: 'asc' });
@@ -210,74 +222,98 @@ const ClientRequestsPage = () => {
     const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
     const [historyLoading, setHistoryLoading] = useState(false);
     const [historyPayload, setHistoryPayload] = useState(null);
+    const [pagination, setPagination] = useState({
+        page: 1,
+        currentPage: 1,
+        limit: 50,
+        totalPages: 1,
+        totalRecords: 0
+    });
     const socket = useSocket();
 
-    const fetchData = useCallback(async () => {
-        setLoading(true);
+    const debouncedSearch = useDebounce(searchTerm, 350);
+
+    const fetchRequestTypes = useCallback(async () => {
         try {
-            const [requestsRes, typesRes] = await Promise.all([getClientRequests(), getRequestTypes()]);
-            setAllRequests(requestsRes.data);
-            setRequestTypes(typesRes.data);
-        } catch (error) {
-            alert('Could not load page data.');
-        } finally {
-            setLoading(false);
+            const { data } = await getRequestTypes();
+            setRequestTypes(data || []);
+        } catch (_error) {
+            setRequestTypes([]);
         }
     }, []);
 
-    useEffect(() => { fetchData(); }, [fetchData]);
+    const fetchRequests = useCallback(async () => {
+        setLoading(true);
+        try {
+            const params = {
+                page: pagination.page,
+                limit: pagination.limit,
+                view: activeView,
+                requestType: activeTypeTab,
+                sortKey: sortConfig.key,
+                sortDir: sortConfig.direction,
+                search: debouncedSearch.trim(),
+            };
+
+            if (!params.search) delete params.search;
+            if (activeTypeTab === 'All') delete params.requestType;
+
+            const { data } = await getClientRequests(params);
+            const payload = Array.isArray(data)
+                ? {
+                    items: data,
+                    totalPages: 1,
+                    currentPage: 1,
+                    totalRecords: data.length,
+                    limit: pagination.limit
+                }
+                : (data || {});
+
+            setRequests(payload.items || []);
+            setPagination((prev) => ({
+                ...prev,
+                totalPages: payload.totalPages || 1,
+                totalRecords: payload.totalRecords || 0,
+                currentPage: payload.currentPage || prev.page,
+                limit: payload.limit ?? prev.limit,
+            }));
+        } catch (_error) {
+            alert('Could not load page data.');
+            setRequests([]);
+        } finally {
+            setLoading(false);
+        }
+    }, [activeView, activeTypeTab, debouncedSearch, sortConfig.key, sortConfig.direction, pagination.page, pagination.limit]);
 
     useEffect(() => {
-        if (socket) {
-            socket.on('client_request:update', fetchData);
-            socket.on('client_request:new', fetchData);
-            return () => {
-                socket.off('client_request:update', fetchData);
-                socket.off('client_request:new', fetchData);
-            };
-        }
-    }, [socket, fetchData]);
+        fetchRequestTypes();
+    }, [fetchRequestTypes]);
 
-    const filteredAndSortedRequests = useMemo(() => {
-        let items = allRequests.filter(req => activeView === 'completed' ? req.is_completed : !req.is_completed);
+    useEffect(() => {
+        fetchRequests();
+    }, [fetchRequests]);
 
-        if (activeTypeTab !== 'All') {
-            items = items.filter(req => req.request_type === activeTypeTab);
-        }
+    useEffect(() => {
+        if (!socket) return undefined;
 
-        if (searchTerm.trim()) {
-            const query = searchTerm.trim().toLowerCase();
-            items = items.filter(req => {
-                const values = [
-                    req.source_group_name,
-                    req.request_type,
-                    req.content,
-                    req.amount,
-                    req.completed_by,
-                    req.received_at,
-                    req.completed_at,
-                    req.content_label
-                ];
-                return values.some(val => (val || '').toString().toLowerCase().includes(query));
-            });
-        }
+        const handleUpdate = () => fetchRequests();
+        socket.on('client_request:update', handleUpdate);
+        socket.on('client_request:new', handleUpdate);
 
-        if (sortConfig.key) {
-            items.sort((a, b) => {
-                const aValue = a[sortConfig.key];
-                const bValue = b[sortConfig.key];
-                let comparison = 0;
+        return () => {
+            socket.off('client_request:update', handleUpdate);
+            socket.off('client_request:new', handleUpdate);
+        };
+    }, [socket, fetchRequests]);
 
-                if (sortConfig.key === 'amount') comparison = (parseFloat(aValue) || 0) - (parseFloat(bValue) || 0);
-                else if (sortConfig.key === 'received_at' || sortConfig.key === 'completed_at') comparison = new Date(aValue) - new Date(bValue);
-                else comparison = (aValue || '').toString().localeCompare((bValue || '').toString());
+    useEffect(() => {
+        setSearchTerm('');
+        setPagination((prev) => ({ ...prev, page: 1, currentPage: 1 }));
+    }, [activeView, activeTypeTab]);
 
-                return sortConfig.direction === 'asc' ? comparison : -comparison;
-            });
-        }
-
-        return items;
-    }, [allRequests, activeView, activeTypeTab, sortConfig, searchTerm]);
+    useEffect(() => {
+        setPagination((prev) => (prev.page === 1 ? prev : { ...prev, page: 1, currentPage: 1 }));
+    }, [debouncedSearch]);
 
     const columnCount = activeView === 'completed' ? 7 : 6;
 
@@ -287,6 +323,7 @@ const ClientRequestsPage = () => {
             direction = 'desc';
         }
         setSortConfig({ key, direction });
+        setPagination((prev) => ({ ...prev, page: 1, currentPage: 1 }));
     };
 
     const getSortIcon = (key) => {
@@ -295,21 +332,25 @@ const ClientRequestsPage = () => {
         return <FaSortDown />;
     };
 
-    useEffect(() => {
-        setSearchTerm('');
-    }, [activeView, activeTypeTab]);
-
     const handleComplete = async (id) => {
         if (!canComplete) return;
-        try { await completeClientRequest(id); }
-        catch (error) { alert('Failed to mark as complete.'); }
+        try {
+            await completeClientRequest(id);
+            fetchRequests();
+        } catch (_error) {
+            alert('Failed to mark as complete.');
+        }
     };
 
     const handleRestore = async (id) => {
         if (!canRestore) return;
         if (window.confirm('Are you sure you want to restore this request? It will reappear in the pending queue.')) {
-            try { await restoreClientRequest(id); }
-            catch (error) { alert('Failed to restore request.'); }
+            try {
+                await restoreClientRequest(id);
+                fetchRequests();
+            } catch (_error) {
+                alert('Failed to restore request.');
+            }
         }
     };
 
@@ -318,7 +359,8 @@ const ClientRequestsPage = () => {
         if (window.confirm('Delete this request permanently? This cannot be undone.')) {
             try {
                 await deleteClientRequest(id);
-            } catch (error) {
+                fetchRequests();
+            } catch (_error) {
                 alert('Failed to delete request.');
             }
         }
@@ -326,13 +368,14 @@ const ClientRequestsPage = () => {
 
     const handleAmountUpdate = async (id) => {
         if (!canEditAmount) return;
-        const currentAmount = allRequests.find(r => r.id === id)?.amount || '';
+        const currentAmount = requests.find(r => r.id === id)?.amount || '';
         const newAmount = prompt('Enter the amount for this request:', formatAmount(currentAmount));
 
         if (newAmount !== null && newAmount.trim() !== '' && !isNaN(newAmount.replace(/,/g, ''))) {
             try {
                 await updateClientRequestAmount(id, parseFloat(newAmount.replace(/,/g, '')));
-            } catch (error) {
+                fetchRequests();
+            } catch (_error) {
                 alert('Failed to update amount.');
             }
         } else if (newAmount !== null) {
@@ -342,13 +385,14 @@ const ClientRequestsPage = () => {
 
     const handleContentUpdate = async (id) => {
         if (!canEditContent) return;
-        const currentContent = allRequests.find(r => r.id === id)?.content || '';
+        const currentContent = requests.find(r => r.id === id)?.content || '';
         const newContent = prompt('Enter the new information:', currentContent);
 
         if (newContent !== null) {
             try {
                 await updateClientRequestContent(id, newContent);
-            } catch (error) {
+                fetchRequests();
+            } catch (_error) {
                 alert('Failed to update information.');
             }
         }
@@ -367,7 +411,7 @@ const ClientRequestsPage = () => {
         try {
             await updateRequestTypeOrder(orderedIds);
             setIsConfigModalOpen(false);
-        } catch (error) {
+        } catch (_error) {
             alert('Failed to save new tab order.');
         }
     };
@@ -388,7 +432,7 @@ const ClientRequestsPage = () => {
         try {
             const { data } = await getClientRequestHistory(request.id);
             setHistoryPayload(data);
-        } catch (error) {
+        } catch (_error) {
             alert('Failed to load history.');
             setIsHistoryModalOpen(false);
         } finally {
@@ -443,17 +487,17 @@ const ClientRequestsPage = () => {
                                     <TableHeader onClick={() => handleSort('request_type')}>Request Type {getSortIcon('request_type')}</TableHeader>
                                     <TableHeader onClick={() => handleSort('content')}>Information {getSortIcon('content')}</TableHeader>
                                     <TableHeader onClick={() => handleSort('amount')}>Amount {getSortIcon('amount')}</TableHeader>
-                                    {activeView === 'completed' && <TableHeader>Completed At</TableHeader>}
+                                    {activeView === 'completed' && <TableHeader onClick={() => handleSort('completed_at')}>Completed At {getSortIcon('completed_at')}</TableHeader>}
                                     <th>Action</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 {loading ? (
                                     <tr><td colSpan={columnCount}>Loading...</td></tr>
-                                ) : filteredAndSortedRequests.length === 0 ? (
+                                ) : requests.length === 0 ? (
                                     <tr><td colSpan={columnCount} style={{ textAlign: 'center', padding: '2rem' }}>No requests found for this view.</td></tr>
                                 ) : (
-                                    filteredAndSortedRequests.map(req => {
+                                    requests.map(req => {
                                         const isTracked = Number(req.track_content_history) === 1;
                                         const historyCount = Number(req.history_completed_count) || 0;
                                         const infoLabel = req.content_label ? `${req.content_label}: ` : '';
@@ -530,6 +574,13 @@ const ClientRequestsPage = () => {
                             </tbody>
                         </Table>
                     </TableWrapper>
+
+                    <Pagination
+                        pagination={pagination}
+                        setPagination={setPagination}
+                        showPageSize
+                        storageKey="client-requests"
+                    />
                 </Card>
             </PageContainer>
 

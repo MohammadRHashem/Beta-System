@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import styled, { css } from 'styled-components';
 
 const PaginationContainer = styled.div`
@@ -24,6 +24,32 @@ const PageControls = styled.div`
     display: flex;
     align-items: center;
     gap: 0.35rem;
+`;
+
+const RightCluster = styled.div`
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+`;
+
+const PageSizeWrap = styled.label`
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.82rem;
+    color: ${({ theme }) => theme.lightText};
+`;
+
+const PageSizeSelect = styled.select`
+    min-width: 92px;
+    border-radius: 8px;
+    border: 1px solid ${({ theme }) => theme.border};
+    background: ${({ theme }) => theme.surface};
+    color: ${({ theme }) => theme.text};
+    padding: 0.35rem 0.5rem;
+    font-weight: 600;
 `;
 
 const PageButton = styled.button`
@@ -105,21 +131,86 @@ const range = (start, end) => {
     return Array.from({ length }, (_, idx) => idx + start);
 };
 
-const Pagination = ({ pagination, setPagination }) => {
+const DEFAULT_PAGE_SIZE_OPTIONS = [20, 50, 100, 200, 'all'];
+
+const normalizeLimitValue = (value) => {
+    if (value === 'all') return 'all';
+    const parsed = Number(value);
+    if (Number.isFinite(parsed) && parsed > 0) return parsed;
+    return 50;
+};
+
+const Pagination = ({
+    pagination,
+    setPagination,
+    showPageSize = false,
+    pageSizeOptions = DEFAULT_PAGE_SIZE_OPTIONS,
+    storageKey = '',
+}) => {
     const currentPage = Number(pagination.page ?? pagination.currentPage ?? 1);
     const totalPages = Math.max(Number(pagination.totalPages ?? 1), 1);
     const totalRecords = Number(pagination.totalRecords ?? 0);
+    const currentLimit = normalizeLimitValue(pagination.limit ?? 50);
     const [goToPage, setGoToPage] = useState(currentPage);
+    const didReadStoredSize = useRef(false);
+
+    const normalizedPageSizeOptions = useMemo(() => {
+        const next = [];
+        pageSizeOptions.forEach((option) => {
+            const normalized = normalizeLimitValue(option);
+            if (normalized === 'all' || Number.isFinite(normalized)) {
+                if (!next.includes(normalized)) {
+                    next.push(normalized);
+                }
+            }
+        });
+        return next.length ? next : DEFAULT_PAGE_SIZE_OPTIONS;
+    }, [pageSizeOptions]);
 
     useEffect(() => {
         setGoToPage(currentPage);
     }, [currentPage]);
+
+    useEffect(() => {
+        if (!showPageSize || !storageKey || didReadStoredSize.current) return;
+
+        didReadStoredSize.current = true;
+        const saved = localStorage.getItem(`pagination:${storageKey}:limit`);
+        if (!saved) return;
+
+        const savedLimit = normalizeLimitValue(saved);
+        if (!normalizedPageSizeOptions.includes(savedLimit)) return;
+        if (savedLimit === currentLimit) return;
+
+        setPagination((prev) => ({
+            ...prev,
+            page: 1,
+            currentPage: 1,
+            limit: savedLimit,
+        }));
+    }, [showPageSize, storageKey, normalizedPageSizeOptions, currentLimit, setPagination]);
 
     const handlePageChange = (newPage) => {
         const pageAsNumber = Number(newPage);
         if (!Number.isNaN(pageAsNumber) && pageAsNumber >= 1 && pageAsNumber <= totalPages && pageAsNumber !== currentPage) {
             setPagination((p) => ({ ...p, page: pageAsNumber, currentPage: pageAsNumber }));
         }
+    };
+
+    const handlePageSizeChange = (event) => {
+        const nextLimit = normalizeLimitValue(event.target.value);
+        if (nextLimit === currentLimit) return;
+
+        if (showPageSize && storageKey) {
+            localStorage.setItem(`pagination:${storageKey}:limit`, String(nextLimit));
+        }
+
+        setPagination((prev) => ({
+            ...prev,
+            page: 1,
+            currentPage: 1,
+            limit: nextLimit,
+        }));
     };
 
     const handleGoToPageSubmit = (e) => {
@@ -164,54 +255,66 @@ const Pagination = ({ pagination, setPagination }) => {
         return [];
     }, [currentPage, totalPages]);
 
-    if (totalPages <= 1) {
-        return (
-            <PaginationContainer>
-                <PageInfo>{totalRecords} record{totalRecords !== 1 ? 's' : ''} found</PageInfo>
-            </PaginationContainer>
-        );
-    }
-
     return (
         <PaginationContainer>
             <PageInfo>
                 Page {currentPage} of {totalPages} ({totalRecords} records)
             </PageInfo>
-            <PageControls>
-                <PageButton onClick={() => handlePageChange(currentPage - 1)} disabled={currentPage <= 1}>
-                    {'<'}
-                </PageButton>
 
-                {pageRange.map((page, index) => {
-                    if (page === '...') {
-                        return <Ellipsis key={`dot-${index}`}>...</Ellipsis>;
-                    }
-                    return (
-                        <PageButton
-                            key={page}
-                            isActive={page === currentPage}
-                            onClick={() => handlePageChange(page)}
-                        >
-                            {page}
-                        </PageButton>
-                    );
-                })}
+            <RightCluster>
+                {showPageSize && (
+                    <PageSizeWrap>
+                        Rows
+                        <PageSizeSelect value={String(currentLimit)} onChange={handlePageSizeChange}>
+                            {normalizedPageSizeOptions.map((option) => (
+                                <option key={String(option)} value={String(option)}>
+                                    {option === 'all' ? 'All' : option}
+                                </option>
+                            ))}
+                        </PageSizeSelect>
+                    </PageSizeWrap>
+                )}
 
-                <PageButton onClick={() => handlePageChange(currentPage + 1)} disabled={currentPage >= totalPages}>
-                    {'>'}
-                </PageButton>
-            </PageControls>
+                {totalPages > 1 && (
+                    <>
+                        <PageControls>
+                            <PageButton onClick={() => handlePageChange(currentPage - 1)} disabled={currentPage <= 1}>
+                                {'<'}
+                            </PageButton>
 
-            <GoToPageForm onSubmit={handleGoToPageSubmit}>
-                <GoToPageInput
-                    type="number"
-                    value={goToPage}
-                    onChange={(e) => setGoToPage(e.target.value)}
-                    min="1"
-                    max={totalPages}
-                />
-                <GoToPageButton type="submit">Go</GoToPageButton>
-            </GoToPageForm>
+                            {pageRange.map((page, index) => {
+                                if (page === '...') {
+                                    return <Ellipsis key={`dot-${index}`}>...</Ellipsis>;
+                                }
+                                return (
+                                    <PageButton
+                                        key={page}
+                                        isActive={page === currentPage}
+                                        onClick={() => handlePageChange(page)}
+                                    >
+                                        {page}
+                                    </PageButton>
+                                );
+                            })}
+
+                            <PageButton onClick={() => handlePageChange(currentPage + 1)} disabled={currentPage >= totalPages}>
+                                {'>'}
+                            </PageButton>
+                        </PageControls>
+
+                        <GoToPageForm onSubmit={handleGoToPageSubmit}>
+                            <GoToPageInput
+                                type="number"
+                                value={goToPage}
+                                onChange={(e) => setGoToPage(e.target.value)}
+                                min="1"
+                                max={totalPages}
+                            />
+                            <GoToPageButton type="submit">Go</GoToPageButton>
+                        </GoToPageForm>
+                    </>
+                )}
+            </RightCluster>
         </PaginationContainer>
     );
 };
