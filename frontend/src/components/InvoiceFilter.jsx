@@ -113,7 +113,7 @@ const InvoiceFilter = ({ filters, onFilterChange, allGroups, recipientNames }) =
           type="text"
           value={filters.search}
           onChange={handleChange}
-          placeholder="ID, sender, amount..."
+          placeholder="ID, sender, recipient..."
         />
       </Field>
 
