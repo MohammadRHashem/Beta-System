@@ -200,6 +200,28 @@ const getSourceGroupJidForMessageId = async (originalMessageId) => {
   return null;
 };
 
+const getGroupJidFromMessage = (message) => {
+  if (!message) return null;
+  const candidates = [
+    message.from,
+    message.to,
+    message.author,
+    message.id?.remote,
+    message._data?.from,
+    message._data?.to,
+    message._data?.author,
+    message._data?.id?.remote,
+  ];
+
+  for (const candidate of candidates) {
+    if (typeof candidate === "string" && candidate.endsWith("@g.us")) {
+      return candidate;
+    }
+  }
+
+  return null;
+};
+
 const findAlfaTrustMatchInDb = async (invoiceJson) => {
   const searchAmount = parseFormattedCurrency(invoiceJson.amount);
   const searchSender = (invoiceJson.sender?.name || "").trim();
@@ -757,6 +779,32 @@ const invoiceWorker = new Worker(
     if (!originalMessage) {
       console.warn(`[WORKER] Could not find message by ID ${messageId}.`);
       return;
+    }
+
+    const sourceGroupJidForGate =
+      getGroupJidFromMessage(originalMessage) ||
+      (await getSourceGroupJidForMessageId(messageId));
+    if (sourceGroupJidForGate) {
+      const precheckGroupSettings =
+        await getGroupProcessingSettings(sourceGroupJidForGate);
+      logConfirmationDecision("worker-precheck-group-settings", {
+        messageId,
+        sourceGroupJid: sourceGroupJidForGate,
+        confirmation_enabled: precheckGroupSettings.confirmation_enabled,
+      });
+      if (!precheckGroupSettings.confirmation_enabled) {
+        logConfirmationDecision("worker-precheck-skip-all", {
+          messageId,
+          sourceGroupJid: sourceGroupJidForGate,
+          reason:
+            "confirmation_enabled is false; skipping media/link processing and all bot interaction",
+        });
+        return;
+      }
+    } else {
+      logConfirmationDecision("worker-precheck-no-group-jid", {
+        messageId,
+      });
     }
 
     // --- START: ROBUST PDF REPORT EXCLUSION WITH DEBUGGING ---
