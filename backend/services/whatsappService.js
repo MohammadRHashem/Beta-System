@@ -1947,8 +1947,48 @@ const auditAndReconcileInternalLog = async () => {
 
 const queueMessageIfNotExists = async (messageId, options = {}) => {
   const connection = await pool.getConnection();
+  let originalMessageForQueue = null;
+  let sourceGroupJidForQueue = null;
+  let confirmationEnabledForQueue = null;
   try {
+    try {
+      originalMessageForQueue = await client.getMessageById(messageId);
+      sourceGroupJidForQueue =
+        getGroupJidFromMessage(originalMessageForQueue) ||
+        (await getSourceGroupJidForMessageId(messageId));
+
+      if (sourceGroupJidForQueue) {
+        const settings = await getGroupProcessingSettings(sourceGroupJidForQueue);
+        confirmationEnabledForQueue = !!settings.confirmation_enabled;
+        logConfirmationDecision("queue-precheck-group-settings", {
+          messageId,
+          sourceGroupJid: sourceGroupJidForQueue,
+          confirmation_enabled: confirmationEnabledForQueue,
+        });
+      } else {
+        logConfirmationDecision("queue-precheck-no-group-jid", { messageId });
+      }
+    } catch (precheckError) {
+      console.warn(
+        `[QUEUE-PRECHECK] Could not resolve message/group for ${messageId}:`,
+        precheckError.message,
+      );
+    }
+
     await connection.beginTransaction();
+
+    if (confirmationEnabledForQueue === false) {
+      await connection.query(
+        "INSERT IGNORE INTO processed_messages (message_id) VALUES (?)",
+        [messageId],
+      );
+      await connection.commit();
+      logConfirmationDecision("queue-skip-group-disabled", {
+        messageId,
+        sourceGroupJid: sourceGroupJidForQueue,
+      });
+      return;
+    }
 
     // Check if message was processed before (Lock)
     const [processedRows] = await connection.query(
@@ -1973,11 +2013,20 @@ const queueMessageIfNotExists = async (messageId, options = {}) => {
           await connection.commit();
 
           // Try to clear the reaction to indicate "Nothing to do"
-          try {
-            const msg = await client.getMessageById(messageId);
-            if (msg) await msg.react(""); // Clears bot reaction
-          } catch (e) {
-            /* ignore */
+          // only when confirmation is explicitly enabled for this group.
+          if (confirmationEnabledForQueue === true) {
+            try {
+              const msg = originalMessageForQueue || (await client.getMessageById(messageId));
+              if (msg) await msg.react(""); // Clears bot reaction
+            } catch (e) {
+              /* ignore */
+            }
+          } else {
+            logConfirmationDecision("queue-skip-clear-reaction", {
+              messageId,
+              sourceGroupJid: sourceGroupJidForQueue,
+              confirmation_enabled: confirmationEnabledForQueue,
+            });
           }
 
           return;
@@ -2008,25 +2057,33 @@ const queueMessageIfNotExists = async (messageId, options = {}) => {
     console.log(
       `[QUEUE-ADD] Transactionally added message to queue. ID: ${messageId} (Force: ${!!options.forceIfMissingInvoice})`,
     );
-
-    // Visual Feedback
-    const originalMessage = await client.getMessageById(messageId);
-    if (originalMessage) {
-      // 1. Check for Media (Images/PDFs)
-      if (originalMessage.hasMedia) {
-        const mime = originalMessage._data?.mimetype?.toLowerCase();
-        if (
-          originalMessage.type === "image" ||
-          (originalMessage.type === "document" &&
-            (mime === "application/pdf" || mime === "application/x-pdf"))
-        ) {
-          await originalMessage.react("⏳");
+    // Visual feedback is allowed only when confirmation is explicitly enabled.
+    if (confirmationEnabledForQueue === true) {
+      const originalMessage =
+        originalMessageForQueue || (await client.getMessageById(messageId));
+      if (originalMessage) {
+        // 1. Check for Media (Images/PDFs)
+        if (originalMessage.hasMedia) {
+          const mime = originalMessage._data?.mimetype?.toLowerCase();
+          if (
+            originalMessage.type === "image" ||
+            (originalMessage.type === "document" &&
+              (mime === "application/pdf" || mime === "application/x-pdf"))
+          ) {
+            await originalMessage.react("\u23F3");
+          }
+        }
+        // 2. Check for USDT Link Flag (Text Messages)
+        else if (options.isUsdtLink) {
+          await originalMessage.react("\u23F3");
         }
       }
-      // 2. Check for USDT Link Flag (Text Messages)
-      else if (options.isUsdtLink) {
-        await originalMessage.react("⏳");
-      }
+    } else {
+      logConfirmationDecision("queue-skip-visual-feedback", {
+        messageId,
+        sourceGroupJid: sourceGroupJidForQueue,
+        confirmation_enabled: confirmationEnabledForQueue,
+      });
     }
   } catch (error) {
     await connection.rollback();
@@ -3059,4 +3116,5 @@ module.exports = {
   editMessageById,
   pinMessageToGroups,
 };
+
 
