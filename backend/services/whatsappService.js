@@ -107,6 +107,32 @@ const DEFAULT_GROUP_PROCESSING_SETTINGS = Object.freeze({
   confirmation_enabled: true,
 });
 
+const parseDbBoolean = (value, defaultValue = false) => {
+  if (value === undefined || value === null) return defaultValue;
+  if (typeof value === "boolean") return value;
+  if (typeof value === "number") return value === 1;
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (["1", "true", "yes", "on"].includes(normalized)) return true;
+    if (["0", "false", "no", "off", ""].includes(normalized)) return false;
+  }
+  return defaultValue;
+};
+
+const isConfirmationDebugEnabled = parseDbBoolean(
+  process.env.CONFIRMATION_DEBUG_LOGS,
+  true,
+);
+
+const logConfirmationDecision = (stage, details = {}) => {
+  if (!isConfirmationDebugEnabled) return;
+  try {
+    console.log(`[CONFIRM-TRACE][${stage}] ${JSON.stringify(details)}`);
+  } catch (error) {
+    console.log(`[CONFIRM-TRACE][${stage}]`, details);
+  }
+};
+
 const getGroupProcessingSettings = async (groupJid) => {
   if (!groupJid) return { ...DEFAULT_GROUP_PROCESSING_SETTINGS };
 
@@ -125,9 +151,18 @@ const getGroupProcessingSettings = async (groupJid) => {
     if (!settings) return { ...DEFAULT_GROUP_PROCESSING_SETTINGS };
 
     return {
-      forwarding_enabled: !!settings.forwarding_enabled,
-      archiving_enabled: !!settings.archiving_enabled,
-      confirmation_enabled: !!settings.confirmation_enabled,
+      forwarding_enabled: parseDbBoolean(
+        settings.forwarding_enabled,
+        DEFAULT_GROUP_PROCESSING_SETTINGS.forwarding_enabled,
+      ),
+      archiving_enabled: parseDbBoolean(
+        settings.archiving_enabled,
+        DEFAULT_GROUP_PROCESSING_SETTINGS.archiving_enabled,
+      ),
+      confirmation_enabled: parseDbBoolean(
+        settings.confirmation_enabled,
+        DEFAULT_GROUP_PROCESSING_SETTINGS.confirmation_enabled,
+      ),
     };
   } catch (error) {
     console.error(
@@ -136,6 +171,33 @@ const getGroupProcessingSettings = async (groupJid) => {
     );
     return { ...DEFAULT_GROUP_PROCESSING_SETTINGS };
   }
+};
+
+const getSourceGroupJidForMessageId = async (originalMessageId) => {
+  if (!originalMessageId) return null;
+
+  const [[invoice]] = await pool.query(
+    "SELECT source_group_jid FROM invoices WHERE message_id = ? LIMIT 1",
+    [originalMessageId],
+  );
+  if (invoice?.source_group_jid) return invoice.source_group_jid;
+
+  try {
+    if (!client || connectionStatus !== "connected") return null;
+    const originalMessage = await client.getMessageById(originalMessageId);
+    const candidateJid =
+      originalMessage?.from || originalMessage?.to || originalMessage?.author;
+    if (typeof candidateJid === "string" && candidateJid.endsWith("@g.us")) {
+      return candidateJid;
+    }
+  } catch (error) {
+    console.warn(
+      `[SETTINGS-LOOKUP] Could not resolve source group for message ${originalMessageId}:`,
+      error.message,
+    );
+  }
+
+  return null;
 };
 
 const findAlfaTrustMatchInDb = async (invoiceJson) => {
@@ -475,6 +537,38 @@ const findBestUsdtMatch = async (searchAmount, recipientAddress) => {
 
 const sendManualConfirmation = async (originalMessageId) => {
   try {
+    const sourceGroupJid = await getSourceGroupJidForMessageId(originalMessageId);
+    logConfirmationDecision("manual-confirm-start", {
+      originalMessageId,
+      sourceGroupJid,
+    });
+    if (!sourceGroupJid) {
+      console.warn(
+        `[MANUAL-API] Skipping confirmation for ${originalMessageId}; source group could not be resolved.`,
+      );
+      logConfirmationDecision("manual-confirm-skip-no-group", {
+        originalMessageId,
+      });
+      return;
+    }
+
+    const sourceGroupSettings = await getGroupProcessingSettings(sourceGroupJid);
+    logConfirmationDecision("manual-confirm-group-settings", {
+      originalMessageId,
+      sourceGroupJid,
+      confirmation_enabled: sourceGroupSettings.confirmation_enabled,
+    });
+    if (!sourceGroupSettings.confirmation_enabled) {
+      console.log(
+        `[MANUAL-API] Confirmation disabled for source group ${sourceGroupJid}; skipping confirmation for ${originalMessageId}.`,
+      );
+      logConfirmationDecision("manual-confirm-skip-disabled", {
+        originalMessageId,
+        sourceGroupJid,
+      });
+      return;
+    }
+
     const originalMessage = await client.getMessageById(originalMessageId);
     if (originalMessage) {
       await originalMessage.reply("Caiu");
@@ -504,6 +598,10 @@ const sendManualConfirmation = async (originalMessageId) => {
       }
     }
 
+    logConfirmationDecision("manual-confirm-done", {
+      originalMessageId,
+      sourceGroupJid,
+    });
     console.log(`[MANUAL-API] Confirmed invoice ${originalMessageId}`);
   } catch (error) {
     console.error(
@@ -517,6 +615,19 @@ const sendManualConfirmation = async (originalMessageId) => {
 // === NEW: Helper to trigger rejection actions programmatically ===
 const sendManualRejection = async (originalMessageId) => {
   try {
+    const sourceGroupJid = await getSourceGroupJidForMessageId(originalMessageId);
+    const sourceGroupSettings = sourceGroupJid
+      ? await getGroupProcessingSettings(sourceGroupJid)
+      : null;
+    const canSendRejectionReply =
+      !!sourceGroupJid && !!sourceGroupSettings?.confirmation_enabled;
+    logConfirmationDecision("manual-reject-start", {
+      originalMessageId,
+      sourceGroupJid,
+      confirmation_enabled: sourceGroupSettings?.confirmation_enabled,
+      canSendRejectionReply,
+    });
+
     const originalMessage = await client.getMessageById(originalMessageId);
 
     // Delete media file if exists
@@ -532,9 +643,9 @@ const sendManualRejection = async (originalMessageId) => {
       await fs.unlink(invoice.media_path);
     }
 
-    if (originalMessage) {
+    if (originalMessage && canSendRejectionReply) {
       await originalMessage.reply("no caiu");
-      await originalMessage.react("🔴");
+      await originalMessage.react("\uD83D\uDD34");
     }
 
     // Mark forwarded message (optional visual cue)
@@ -542,15 +653,26 @@ const sendManualRejection = async (originalMessageId) => {
       "SELECT forwarded_message_id FROM forwarded_invoices WHERE original_message_id = ?",
       [originalMessageId],
     );
-    if (link) {
+    if (link && canSendRejectionReply) {
       try {
         const forwardedMsg = await client.getMessageById(
           link.forwarded_message_id,
         );
-        if (forwardedMsg) await forwardedMsg.react("❌");
+        if (forwardedMsg) await forwardedMsg.react("\u274C");
       } catch (e) {}
     }
 
+    if (!canSendRejectionReply) {
+      logConfirmationDecision("manual-reject-skip-reply", {
+        originalMessageId,
+        sourceGroupJid,
+      });
+    } else {
+      logConfirmationDecision("manual-reject-done", {
+        originalMessageId,
+        sourceGroupJid,
+      });
+    }
     console.log(`[MANUAL-API] Rejected invoice ${originalMessageId}`);
   } catch (error) {
     console.error(
@@ -782,6 +904,21 @@ const invoiceWorker = new Worker(
       const isGroupArchivingEnabled = !!groupProcessingSettings.archiving_enabled;
       const isGroupConfirmationEnabled =
         !!groupProcessingSettings.confirmation_enabled;
+      logConfirmationDecision("worker-init", {
+        messageId,
+        sourceGroupJid,
+        recipient: recipientNameLower,
+        forwarding_enabled: isGroupForwardingEnabled,
+        archiving_enabled: isGroupArchivingEnabled,
+        confirmation_enabled: isGroupConfirmationEnabled,
+        auto_confirmation_enabled: isAutoConfirmationEnabled,
+      });
+      if (!isGroupConfirmationEnabled) {
+        logConfirmationDecision("worker-confirmation-disabled", {
+          messageId,
+          sourceGroupJid,
+        });
+      }
 
       if (
         recipientNameLower.includes("troca") ||
@@ -834,11 +971,16 @@ const invoiceWorker = new Worker(
       // --- 1. TRKBIT / CROSS (Atomic Update with NEW LOGIC) ---
       // --- START OF CORRECTED TRKBIT/CROSS LOGIC ---
       if (
+        isGroupConfirmationEnabled &&
         runStandardForwarding &&
         isTrkbitConfirmationEnabled &&
         (recipientNameLower.includes("trkbit") ||
           recipientNameLower.includes("cross"))
       ) {
+        logConfirmationDecision("worker-branch-trkbit-cross", {
+          messageId,
+          sourceGroupJid,
+        });
         console.log(
           '[WORKER] "Cross/Trkbit" recipient detected. Applying 3-vector confirmation logic...',
         );
@@ -993,7 +1135,11 @@ const invoiceWorker = new Worker(
       }
 
       // --- 2. USDT (Atomic Update) ---
-      if (recipientNameLower.includes("usdt_recipient")) {
+      if (isGroupConfirmationEnabled && recipientNameLower.includes("usdt_recipient")) {
+        logConfirmationDecision("worker-branch-usdt", {
+          messageId,
+          sourceGroupJid,
+        });
         console.log('[WORKER] "USDT" type detected.');
         const ocrRecipientWallet = recipient ? recipient.wallet_address : null;
         const [wallets] = await pool.query(
@@ -1047,9 +1193,14 @@ const invoiceWorker = new Worker(
 
       // --- 3. UPGRADE ZONE (XPAYZ) (Atomic Update) ---
       if (
+        isGroupConfirmationEnabled &&
         runStandardForwarding &&
         recipientNameLower.includes("upgrade zone")
       ) {
+        logConfirmationDecision("worker-branch-upgrade-zone", {
+          messageId,
+          sourceGroupJid,
+        });
         const searchAmount = parseFloat(amount.replace(/,/g, ""));
         const [[assignmentRule]] = await pool.query(
           "SELECT subaccount_number, name FROM subaccounts WHERE assigned_group_jid = ?",
@@ -1146,6 +1297,18 @@ const invoiceWorker = new Worker(
                 ],
               );
               await originalMessage.react("🟡");
+              logConfirmationDecision("worker-link-created-upgrade-escalation", {
+                messageId,
+                sourceGroupJid,
+                destination_group_jid: escalationRule.destination_group_jid,
+              });
+            } else {
+              logConfirmationDecision("worker-link-skipped-upgrade-escalation", {
+                messageId,
+                sourceGroupJid,
+                auto_confirmation_enabled: isAutoConfirmationEnabled,
+                confirmation_enabled: isGroupConfirmationEnabled,
+              });
             }
             wasActioned = true;
             runStandardForwarding = false;
@@ -1155,10 +1318,15 @@ const invoiceWorker = new Worker(
 
       // --- 4. TROCA COIN / MKS (Atomic Update) ---
       if (
+        isGroupConfirmationEnabled &&
         runStandardForwarding &&
         (recipientNameLower.includes("troca") ||
           recipientNameLower.includes("mks"))
       ) {
+        logConfirmationDecision("worker-branch-troca-mks", {
+          messageId,
+          sourceGroupJid,
+        });
         let matchId = null;
         let updateTable = "";
         let sourceName = "";
@@ -1212,10 +1380,15 @@ const invoiceWorker = new Worker(
 
       // --- 5. ALFA TRUST (HARD REJECT) ---
       if (
+        isGroupConfirmationEnabled &&
         runStandardForwarding &&
         isAlfaApiConfirmationEnabled &&
         recipientNameLower.includes("alfa trust")
       ) {
+        logConfirmationDecision("worker-branch-alfa-reject", {
+          messageId,
+          sourceGroupJid,
+        });
         await originalMessage.reply("no caiu");
         await originalMessage.react("❌");
         wasActioned = true;
@@ -1224,6 +1397,12 @@ const invoiceWorker = new Worker(
 
       // --- 6. MANUAL FORWARDING ---
       if (runStandardForwarding && isGroupForwardingEnabled) {
+          logConfirmationDecision("worker-branch-manual-forwarding", {
+            messageId,
+            sourceGroupJid,
+            auto_confirmation_enabled: isAutoConfirmationEnabled,
+            confirmation_enabled: isGroupConfirmationEnabled,
+          });
           let forwarded = false;
           const [[directRule]] = await pool.query(
             "SELECT destination_group_jid, destination_group_name FROM direct_forwarding_rules WHERE source_group_jid = ?",
@@ -1259,6 +1438,18 @@ const invoiceWorker = new Worker(
               );
               wasActioned = true;
               await originalMessage.react("🟡");
+              logConfirmationDecision("worker-link-created-direct-rule", {
+                messageId,
+                sourceGroupJid,
+                destination_group_jid: directRule.destination_group_jid,
+              });
+            } else {
+              logConfirmationDecision("worker-link-skipped-direct-rule", {
+                messageId,
+                sourceGroupJid,
+                auto_confirmation_enabled: isAutoConfirmationEnabled,
+                confirmation_enabled: isGroupConfirmationEnabled,
+              });
             }
           }
 
@@ -1319,12 +1510,29 @@ const invoiceWorker = new Worker(
                     );
                     wasActioned = true;
                     await originalMessage.react("🟡");
+                    logConfirmationDecision("worker-link-created-keyword-rule", {
+                      messageId,
+                      sourceGroupJid,
+                      destination_group_jid: rule.destination_group_jid,
+                    });
+                  } else {
+                    logConfirmationDecision("worker-link-skipped-keyword-rule", {
+                      messageId,
+                      sourceGroupJid,
+                      auto_confirmation_enabled: isAutoConfirmationEnabled,
+                      confirmation_enabled: isGroupConfirmationEnabled,
+                    });
                   }
                   break;
                 }
               }
             }
           }
+      } else if (runStandardForwarding && !isGroupForwardingEnabled) {
+        logConfirmationDecision("worker-manual-forwarding-disabled", {
+          messageId,
+          sourceGroupJid,
+        });
       }
 
       // --- 7. ARCHIVING (Modified to include link data) ---
@@ -2147,6 +2355,10 @@ const handleMessageRevoke = async (message, revoked_msg) => {
 const handleReaction = async (reaction) => {
   const reactedMessageId = reaction.msgId._serialized;
   const reactionEmoji = reaction.reaction;
+  logConfirmationDecision("reaction-received", {
+    reactedMessageId,
+    reactionEmoji,
+  });
 
   // --- 0. Delete Message for Everyone (Wastebasket) ---
   if (reactionEmoji === "🗑" || reactionEmoji === "🗑️") {
@@ -2193,6 +2405,10 @@ const handleReaction = async (reaction) => {
 
   // --- 2. Standard Auto-Confirmation Logic ---
   if (!isAutoConfirmationEnabled) {
+    logConfirmationDecision("reaction-skip-auto-disabled", {
+      reactedMessageId,
+      reactionEmoji,
+    });
     return;
   }
 
@@ -2203,22 +2419,46 @@ const handleReaction = async (reaction) => {
     );
 
     if (!link || link.is_confirmed !== 0) {
+      logConfirmationDecision("reaction-skip-no-pending-link", {
+        reactedMessageId,
+        reactionEmoji,
+      });
       return;
     }
 
+    const sourceGroupJid = await getSourceGroupJidForMessageId(
+      link.original_message_id,
+    );
+    if (!sourceGroupJid) {
+      console.warn(
+        `[REACTION] Skipping confirmation for ${link.original_message_id}; source group could not be resolved.`,
+      );
+      logConfirmationDecision("reaction-skip-no-source-group", {
+        reactedMessageId,
+        originalMessageId: link.original_message_id,
+      });
+      return;
+    }
+
+    const sourceGroupSettings = await getGroupProcessingSettings(sourceGroupJid);
+    if (!sourceGroupSettings.confirmation_enabled) {
+      logConfirmationDecision("reaction-skip-group-disabled", {
+        reactedMessageId,
+        originalMessageId: link.original_message_id,
+        sourceGroupJid,
+      });
+      return;
+    }
+    logConfirmationDecision("reaction-group-enabled", {
+      reactedMessageId,
+      originalMessageId: link.original_message_id,
+      sourceGroupJid,
+    });
+
     const [[invoiceDetails]] = await pool.query(
-      "SELECT raw_json_data, source_group_jid FROM invoices WHERE message_id = ?",
+      "SELECT raw_json_data FROM invoices WHERE message_id = ?",
       [link.original_message_id],
     );
-
-    if (invoiceDetails?.source_group_jid) {
-      const sourceGroupSettings = await getGroupProcessingSettings(
-        invoiceDetails.source_group_jid,
-      );
-      if (!sourceGroupSettings.confirmation_enabled) {
-        return;
-      }
-    }
 
     let isUsdt = false;
     if (invoiceDetails && invoiceDetails.raw_json_data) {
@@ -2242,6 +2482,11 @@ const handleReaction = async (reaction) => {
     const rejectMessage = isUsdt ? "not informed" : "no caiu";
 
     if (reactionEmoji === "👍" || reactionEmoji === "✅") {
+      logConfirmationDecision("reaction-approve-apply", {
+        reactedMessageId,
+        originalMessageId: link.original_message_id,
+        sourceGroupJid,
+      });
       const originalMessage = await client.getMessageById(
         link.original_message_id,
       );
@@ -2260,6 +2505,11 @@ const handleReaction = async (reaction) => {
         if (io) io.emit("manual:refresh");
       }
     } else if (reactionEmoji === "❌") {
+      logConfirmationDecision("reaction-reject-apply", {
+        reactedMessageId,
+        originalMessageId: link.original_message_id,
+        sourceGroupJid,
+      });
       const originalMessage = await client.getMessageById(
         link.original_message_id,
       );
@@ -2761,3 +3011,4 @@ module.exports = {
   editMessageById,
   pinMessageToGroups,
 };
+

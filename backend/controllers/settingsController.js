@@ -1,6 +1,29 @@
 const pool = require('../config/db');
 const whatsappService = require('../services/whatsappService');
 
+const parseBooleanInput = (value) => {
+    if (typeof value === 'boolean') return value;
+    if (typeof value === 'number') return value === 1;
+    if (typeof value === 'string') {
+        const normalized = value.trim().toLowerCase();
+        if (['1', 'true', 'yes', 'on'].includes(normalized)) return true;
+        if (['0', 'false', 'no', 'off', ''].includes(normalized)) return false;
+    }
+    return null;
+};
+
+const parseBooleanOutput = (value, fallback = true) => {
+    if (value === undefined || value === null) return fallback;
+    if (typeof value === 'boolean') return value;
+    if (typeof value === 'number') return value === 1;
+    if (typeof value === 'string') {
+        const normalized = value.trim().toLowerCase();
+        if (['1', 'true', 'yes', 'on'].includes(normalized)) return true;
+        if (['0', 'false', 'no', 'off', ''].includes(normalized)) return false;
+    }
+    return fallback;
+};
+
 exports.getForwardingRules = async (req, res) => {
     try {
         // Select the new column
@@ -153,7 +176,13 @@ exports.getGroupSettings = async (req, res) => {
             FROM whatsapp_groups wg
             LEFT JOIN group_settings gs ON wg.group_jid = gs.group_jid
         `);
-        res.json(groups);
+        const normalized = groups.map((group) => ({
+            ...group,
+            forwarding_enabled: parseBooleanOutput(group.forwarding_enabled, true),
+            archiving_enabled: parseBooleanOutput(group.archiving_enabled, true),
+            confirmation_enabled: parseBooleanOutput(group.confirmation_enabled, true),
+        }));
+        res.json(normalized);
     } catch (error) {
         console.error('[ERROR] Failed to fetch group settings:', error);
         res.status(500).json({ message: 'Failed to fetch group settings.' });
@@ -163,17 +192,45 @@ exports.getGroupSettings = async (req, res) => {
 exports.updateGroupSetting = async (req, res) => {
     const { group_jid, group_name, setting, value } = req.body;
     const validSettings = ['forwarding_enabled', 'archiving_enabled', 'confirmation_enabled'];
+    const parsedValue = parseBooleanInput(value);
     if (!validSettings.includes(setting)) {
         return res.status(400).json({ message: 'Invalid setting specified.' });
     }
+    if (parsedValue === null) {
+        return res.status(400).json({ message: 'A boolean-like value is required.' });
+    }
     
     try {
-        const query = `
-            INSERT INTO group_settings (group_jid, group_name, ${setting})
-            VALUES (?, ?, ?)
-            ON DUPLICATE KEY UPDATE group_name = VALUES(group_name), ${setting} = VALUES(${setting});
-        `;
-        await pool.query(query, [group_jid, group_name, value]);
+        const numericValue = parsedValue ? 1 : 0;
+        const [updateResult] = await pool.query(
+            `UPDATE group_settings
+             SET group_name = ?, ${setting} = ?
+             WHERE group_jid = ?`,
+            [group_name, numericValue, group_jid]
+        );
+
+        if (updateResult.affectedRows === 0) {
+            const initialValues = {
+                forwarding_enabled: 1,
+                archiving_enabled: 1,
+                confirmation_enabled: 1,
+                [setting]: numericValue,
+            };
+
+            await pool.query(
+                `INSERT INTO group_settings
+                 (group_jid, group_name, forwarding_enabled, archiving_enabled, confirmation_enabled)
+                 VALUES (?, ?, ?, ?, ?)`,
+                [
+                    group_jid,
+                    group_name,
+                    initialValues.forwarding_enabled,
+                    initialValues.archiving_enabled,
+                    initialValues.confirmation_enabled,
+                ]
+            );
+        }
+
         res.json({ message: 'Setting updated successfully.' });
     } catch (error) {
         console.error('[ERROR] Failed to update group setting:', error);
