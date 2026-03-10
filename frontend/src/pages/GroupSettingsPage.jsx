@@ -48,7 +48,7 @@ const TableWrapper = styled.div`
 
 const SettingsTable = styled.table`
     width: 100%;
-    min-width: 760px;
+    min-width: 980px;
     border-collapse: collapse;
     font-size: 0.9rem;
     th, td {
@@ -162,7 +162,7 @@ const GroupSettingsPage = () => {
         <PageContainer>
             <Card>
                 <h3>Group Processing Settings</h3>
-                <p>Enable or disable AI forwarding and database archiving for each group.</p>
+                <p>Enable or disable forwarding, archiving, and confirmation behavior per group.</p>
                 <SearchInput
                     type="text"
                     placeholder="Search for a group..."
@@ -176,6 +176,7 @@ const GroupSettingsPage = () => {
                                 <th>Group Name</th>
                                 <th>Enable Forwarding</th>
                                 <th>Enable Archiving</th>
+                                <th>Enable Confirmation</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -199,6 +200,17 @@ const GroupSettingsPage = () => {
                                                 type="checkbox"
                                                 checked={!!group.archiving_enabled}
                                                 onChange={() => handleToggle(group, 'archiving_enabled', !!group.archiving_enabled)}
+                                                disabled={!canEdit}
+                                            />
+                                            <Slider />
+                                        </SwitchContainer>
+                                    </td>
+                                    <td>
+                                        <SwitchContainer>
+                                            <SwitchInput
+                                                type="checkbox"
+                                                checked={!!group.confirmation_enabled}
+                                                onChange={() => handleToggle(group, 'confirmation_enabled', !!group.confirmation_enabled)}
                                                 disabled={!canEdit}
                                             />
                                             <Slider />

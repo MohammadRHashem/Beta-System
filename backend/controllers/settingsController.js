@@ -148,7 +148,8 @@ exports.getGroupSettings = async (req, res) => {
                 wg.group_jid, 
                 wg.group_name,
                 COALESCE(gs.forwarding_enabled, 1) as forwarding_enabled,
-                COALESCE(gs.archiving_enabled, 1) as archiving_enabled
+                COALESCE(gs.archiving_enabled, 1) as archiving_enabled,
+                COALESCE(gs.confirmation_enabled, 1) as confirmation_enabled
             FROM whatsapp_groups wg
             LEFT JOIN group_settings gs ON wg.group_jid = gs.group_jid
         `);
@@ -161,7 +162,7 @@ exports.getGroupSettings = async (req, res) => {
 
 exports.updateGroupSetting = async (req, res) => {
     const { group_jid, group_name, setting, value } = req.body;
-    const validSettings = ['forwarding_enabled', 'archiving_enabled'];
+    const validSettings = ['forwarding_enabled', 'archiving_enabled', 'confirmation_enabled'];
     if (!validSettings.includes(setting)) {
         return res.status(400).json({ message: 'Invalid setting specified.' });
     }

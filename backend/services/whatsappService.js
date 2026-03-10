@@ -101,6 +101,43 @@ const normalizeNameForMatching = (name) => {
     .trim();
 };
 
+const DEFAULT_GROUP_PROCESSING_SETTINGS = Object.freeze({
+  forwarding_enabled: true,
+  archiving_enabled: true,
+  confirmation_enabled: true,
+});
+
+const getGroupProcessingSettings = async (groupJid) => {
+  if (!groupJid) return { ...DEFAULT_GROUP_PROCESSING_SETTINGS };
+
+  try {
+    const [[settings]] = await pool.query(
+      `SELECT
+        forwarding_enabled,
+        archiving_enabled,
+        COALESCE(confirmation_enabled, 1) AS confirmation_enabled
+       FROM group_settings
+       WHERE group_jid = ?
+       LIMIT 1`,
+      [groupJid],
+    );
+
+    if (!settings) return { ...DEFAULT_GROUP_PROCESSING_SETTINGS };
+
+    return {
+      forwarding_enabled: !!settings.forwarding_enabled,
+      archiving_enabled: !!settings.archiving_enabled,
+      confirmation_enabled: !!settings.confirmation_enabled,
+    };
+  } catch (error) {
+    console.error(
+      `[SETTINGS-ERROR] Failed to fetch group processing settings for ${groupJid}:`,
+      error.message,
+    );
+    return { ...DEFAULT_GROUP_PROCESSING_SETTINGS };
+  }
+};
+
 const findAlfaTrustMatchInDb = async (invoiceJson) => {
   const searchAmount = parseFormattedCurrency(invoiceJson.amount);
   const searchSender = (invoiceJson.sender?.name || "").trim();
@@ -737,6 +774,14 @@ const invoiceWorker = new Worker(
       }
 
       const recipientNameLower = (recipient.name || "").toLowerCase();
+      const sourceGroupJid = chat.id._serialized;
+      const groupProcessingSettings =
+        await getGroupProcessingSettings(sourceGroupJid);
+      const isGroupForwardingEnabled =
+        !!groupProcessingSettings.forwarding_enabled;
+      const isGroupArchivingEnabled = !!groupProcessingSettings.archiving_enabled;
+      const isGroupConfirmationEnabled =
+        !!groupProcessingSettings.confirmation_enabled;
 
       if (
         recipientNameLower.includes("troca") ||
@@ -755,7 +800,7 @@ const invoiceWorker = new Worker(
           );
 
           if (existingById) {
-            const currentSourceJid = chat.id._serialized;
+            const currentSourceJid = sourceGroupJid;
             if (currentSourceJid === existingById.source_group_jid) {
               await originalMessage.reply("❌Repeated❌");
               try {
@@ -799,8 +844,6 @@ const invoiceWorker = new Worker(
         );
         const searchAmount = parseFormattedCurrency(amount);
         const searchSender = sender.name;
-        const sourceGroupJid = chat.id._serialized;
-
         const [[assignedSubaccount]] = await pool.query(
           "SELECT chave_pix FROM subaccounts WHERE account_type = 'cross' AND assigned_group_jid = ? LIMIT 1",
           [sourceGroupJid],
@@ -1007,7 +1050,6 @@ const invoiceWorker = new Worker(
         runStandardForwarding &&
         recipientNameLower.includes("upgrade zone")
       ) {
-        const sourceGroupJid = chat.id._serialized;
         const searchAmount = parseFloat(amount.replace(/,/g, ""));
         const [[assignmentRule]] = await pool.query(
           "SELECT subaccount_number, name FROM subaccounts WHERE assigned_group_jid = ?",
@@ -1071,7 +1113,7 @@ const invoiceWorker = new Worker(
             wasActioned = "duplicate";
             runStandardForwarding = false;
           }
-        } else if (isAssigned) {
+        } else if (isAssigned && isGroupForwardingEnabled) {
           // Escalation Logic
           const [[escalationRule]] = await pool.query(
             "SELECT destination_group_jid FROM forwarding_rules WHERE trigger_keyword = 'upgrade zone' AND is_enabled = 1",
@@ -1094,15 +1136,17 @@ const invoiceWorker = new Worker(
               mediaToForward,
               { caption: richCaption },
             );
-            await pool.query(
-              `INSERT INTO forwarded_invoices (original_message_id, forwarded_message_id, destination_group_jid) VALUES (?, ?, ?)`,
-              [
-                messageId,
-                forwardedMessage.id._serialized,
-                escalationRule.destination_group_jid,
-              ],
-            );
-            await originalMessage.react("🟡");
+            if (isAutoConfirmationEnabled && isGroupConfirmationEnabled) {
+              await pool.query(
+                `INSERT INTO forwarded_invoices (original_message_id, forwarded_message_id, destination_group_jid) VALUES (?, ?, ?)`,
+                [
+                  messageId,
+                  forwardedMessage.id._serialized,
+                  escalationRule.destination_group_jid,
+                ],
+              );
+              await originalMessage.react("🟡");
+            }
             wasActioned = true;
             runStandardForwarding = false;
           }
@@ -1179,18 +1223,11 @@ const invoiceWorker = new Worker(
       }
 
       // --- 6. MANUAL FORWARDING ---
-      if (runStandardForwarding) {
-        const [settings] = await pool.query(
-          "SELECT * FROM group_settings WHERE group_jid = ?",
-          [chat.id._serialized],
-        );
-        const groupSettings = settings[0] || { forwarding_enabled: true };
-
-        if (groupSettings.forwarding_enabled) {
+      if (runStandardForwarding && isGroupForwardingEnabled) {
           let forwarded = false;
           const [[directRule]] = await pool.query(
             "SELECT destination_group_jid, destination_group_name FROM direct_forwarding_rules WHERE source_group_jid = ?",
-            [chat.id._serialized],
+            [sourceGroupJid],
           );
 
           if (directRule) {
@@ -1211,7 +1248,7 @@ const invoiceWorker = new Worker(
               { caption: caption },
             );
             forwarded = true;
-            if (isAutoConfirmationEnabled) {
+            if (isAutoConfirmationEnabled && isGroupConfirmationEnabled) {
               await pool.query(
                 `INSERT INTO forwarded_invoices (original_message_id, forwarded_message_id, destination_group_jid) VALUES (?, ?, ?)`,
                 [
@@ -1271,7 +1308,7 @@ const invoiceWorker = new Worker(
                     await originalMessage.reply("⏩ " + replyText);
                   }
 
-                  if (isAutoConfirmationEnabled) {
+                  if (isAutoConfirmationEnabled && isGroupConfirmationEnabled) {
                     await pool.query(
                       `INSERT INTO forwarded_invoices (original_message_id, forwarded_message_id, destination_group_jid) VALUES (?, ?, ?)`,
                       [
@@ -1288,19 +1325,10 @@ const invoiceWorker = new Worker(
               }
             }
           }
-        }
       }
 
       // --- 7. ARCHIVING (Modified to include link data) ---
-      const [archiveSettings] = await pool.query(
-        "SELECT archiving_enabled FROM group_settings WHERE group_jid = ?",
-        [chat.id._serialized],
-      );
-      const groupArchiveSettings = archiveSettings[0] || {
-        archiving_enabled: true,
-      };
-
-      if (groupArchiveSettings.archiving_enabled) {
+      if (isGroupArchivingEnabled) {
         const archiveFileName = `${messageId}.${extension}`;
         const finalMediaPath = path.join(MEDIA_ARCHIVE_DIR, archiveFileName);
         // Ensure file is moved before proceeding
@@ -2179,9 +2207,18 @@ const handleReaction = async (reaction) => {
     }
 
     const [[invoiceDetails]] = await pool.query(
-      "SELECT raw_json_data FROM invoices WHERE message_id = ?",
+      "SELECT raw_json_data, source_group_jid FROM invoices WHERE message_id = ?",
       [link.original_message_id],
     );
+
+    if (invoiceDetails?.source_group_jid) {
+      const sourceGroupSettings = await getGroupProcessingSettings(
+        invoiceDetails.source_group_jid,
+      );
+      if (!sourceGroupSettings.confirmation_enabled) {
+        return;
+      }
+    }
 
     let isUsdt = false;
     if (invoiceDetails && invoiceDetails.raw_json_data) {
