@@ -21,6 +21,8 @@ let connectionStatus = "disconnected";
 let abbreviationCache = [];
 let requestTypeCache = [];
 let io; // To hold the socket.io instance
+const PROCESS_PID = process.pid;
+const PROCESS_BOOT_ID = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 const DEFAULT_NEW_CONTENT_REACTION = "🆕";
 const DEFAULT_NEW_CONTENT_REPLY_TEXT =
   "Request received. Everything is okay. If you need anything, call us.";
@@ -130,6 +132,19 @@ const logConfirmationDecision = (stage, details = {}) => {
     console.log(`[CONFIRM-TRACE][${stage}] ${JSON.stringify(details)}`);
   } catch (error) {
     console.log(`[CONFIRM-TRACE][${stage}]`, details);
+  }
+};
+
+const logRuntimeTrace = (stage, details = {}) => {
+  const payload = {
+    pid: PROCESS_PID,
+    bootId: PROCESS_BOOT_ID,
+    ...details,
+  };
+  try {
+    console.log(`[RUNTIME-TRACE][${stage}] ${JSON.stringify(payload)}`);
+  } catch (error) {
+    console.log(`[RUNTIME-TRACE][${stage}]`, payload);
   }
 };
 
@@ -593,6 +608,11 @@ const sendManualConfirmation = async (originalMessageId) => {
 
     const originalMessage = await client.getMessageById(originalMessageId);
     if (originalMessage) {
+      logRuntimeTrace("send-confirmation", {
+        messageId: originalMessageId,
+        confirmationType: "Caiu",
+        branch: "manual-confirmation",
+      });
       await originalMessage.reply("Caiu");
       await originalMessage.react("🟢");
     }
@@ -775,6 +795,13 @@ const invoiceWorker = new Worker(
       throw new Error("WhatsApp client is not connected. Job will be retried.");
     }
     const { messageId, isUsdtLink, txId } = job.data;
+    logRuntimeTrace("worker-start", {
+      jobId: job.id,
+      messageId,
+      attemptsMade: job.attemptsMade,
+      isUsdtLink: !!isUsdtLink,
+      txId: txId || null,
+    });
     const originalMessage = await client.getMessageById(messageId);
     if (!originalMessage) {
       console.warn(`[WORKER] Could not find message by ID ${messageId}.`);
@@ -900,6 +927,12 @@ const invoiceWorker = new Worker(
               result.data.amount,
             ],
           );
+          logRuntimeTrace("send-confirmation", {
+            messageId,
+            confirmationType: "Informed",
+            branch: "usdt-link",
+            txId,
+          });
           await originalMessage.reply("Informed ✅");
           await originalMessage.react("🟢");
         } else {
@@ -1103,6 +1136,12 @@ const invoiceWorker = new Worker(
             );
             linkedTransactionId = uid;
             linkedTransactionSource = "Trkbit";
+            logRuntimeTrace("send-confirmation", {
+              messageId,
+              confirmationType: "Caiu",
+              branch: "trkbit-cross",
+              linkedTransactionId: uid,
+            });
             await originalMessage.reply("Caiu");
             await originalMessage.react("🟢");
             wasActioned = true;
@@ -1158,6 +1197,12 @@ const invoiceWorker = new Worker(
                     media.filename,
                   );
                   await client.sendMessage(destJid, mediaToForward, {
+                    caption: finalCaption,
+                  });
+                  logRuntimeTrace("send-informative-forward", {
+                    messageId,
+                    branch: "trkbit-cross",
+                    destinationGroupJid: destJid,
                     caption: finalCaption,
                   });
                   console.log(
@@ -1217,6 +1262,12 @@ const invoiceWorker = new Worker(
             if (updateResult.affectedRows > 0) {
               linkedTransactionId = matchId; // <-- Capture Link Info
               linkedTransactionSource = "USDT"; // <-- Capture Link Info
+              logRuntimeTrace("send-confirmation", {
+                messageId,
+                confirmationType: "Informed",
+                branch: "usdt-recipient",
+                linkedTransactionId: matchId,
+              });
               await originalMessage.reply(`Informed ✅`);
               await originalMessage.react("🟢");
               wasActioned = true;
@@ -1302,6 +1353,12 @@ const invoiceWorker = new Worker(
           if (updateResult.affectedRows > 0) {
             linkedTransactionId = matchId; // <-- Capture Link Info
             linkedTransactionSource = "XPayz"; // <-- Capture Link Info
+            logRuntimeTrace("send-confirmation", {
+              messageId,
+              confirmationType: "Caiu",
+              branch: "upgrade-zone",
+              linkedTransactionId: matchId,
+            });
             await originalMessage.reply("Caiu");
             await originalMessage.react("🟢");
             wasActioned = true;
@@ -1410,11 +1467,17 @@ const invoiceWorker = new Worker(
             [matchId],
           );
 
-          if (updateResult.affectedRows > 0) {
-            linkedTransactionId = matchId; // <-- Capture Link Info
-            linkedTransactionSource = sourceName; // <-- Capture Link Info
-            await originalMessage.reply("Caiu");
-            await originalMessage.react("🟢");
+        if (updateResult.affectedRows > 0) {
+          linkedTransactionId = matchId; // <-- Capture Link Info
+          linkedTransactionSource = sourceName; // <-- Capture Link Info
+          logRuntimeTrace("send-confirmation", {
+            messageId,
+            confirmationType: "Caiu",
+            branch: "troca-mks",
+            linkedTransactionId: matchId,
+          });
+          await originalMessage.reply("Caiu");
+          await originalMessage.react("🟢");
             wasActioned = true;
             runStandardForwarding = false;
           } else {
@@ -1951,6 +2014,12 @@ const queueMessageIfNotExists = async (messageId, options = {}) => {
   let sourceGroupJidForQueue = null;
   let confirmationEnabledForQueue = null;
   try {
+    logRuntimeTrace("queue-request", {
+      messageId,
+      forceIfMissingInvoice: !!options.forceIfMissingInvoice,
+      isUsdtLink: !!options.isUsdtLink,
+      txId: options.txId || null,
+    });
     try {
       originalMessageForQueue = await client.getMessageById(messageId);
       sourceGroupJidForQueue =
@@ -2057,6 +2126,12 @@ const queueMessageIfNotExists = async (messageId, options = {}) => {
     console.log(
       `[QUEUE-ADD] Transactionally added message to queue. ID: ${messageId} (Force: ${!!options.forceIfMissingInvoice})`,
     );
+    logRuntimeTrace("queue-added", {
+      messageId,
+      forceIfMissingInvoice: !!options.forceIfMissingInvoice,
+      isUsdtLink: !!options.isUsdtLink,
+      txId: options.txId || null,
+    });
     // Visual feedback is allowed only when confirmation is explicitly enabled.
     if (confirmationEnabledForQueue === true) {
       const originalMessage =
@@ -2236,12 +2311,27 @@ const clearReaction = async (messageId) => {
 
 const handleMessage = async (message) => {
   try {
+    logRuntimeTrace("message-event", {
+      messageId: message?.id?._serialized || null,
+      fromMe: !!message?.fromMe,
+      hasMedia: !!message?.hasMedia,
+      type: message?.type || null,
+      timestamp: message?.timestamp || null,
+    });
     await pool.query(
       "INSERT IGNORE INTO raw_message_log (message_id) VALUES (?)",
       [message.id._serialized],
     );
     const chat = await message.getChat();
     if (!chat.isGroup) return;
+    logRuntimeTrace("message-group", {
+      messageId: message.id._serialized,
+      groupJid: chat.id?._serialized || null,
+      groupName: chat.name || null,
+      fromMe: !!message.fromMe,
+      hasMedia: !!message.hasMedia,
+      type: message.type || null,
+    });
 
     if (message.body) {
       // --- NEW: USDT Wallet Address Detection Logic ---
@@ -2699,6 +2789,10 @@ const refreshTrocaCoinMethod = async () => {
 const initializeWhatsApp = (socketIoInstance) => {
   io = socketIoInstance;
   console.log("[WAPP] Initializing WhatsApp client...");
+  logRuntimeTrace("init-called", {
+    connectionStatus,
+    hasExistingClient: !!client,
+  });
   client = new Client({
     authStrategy: new LocalAuth({ dataPath: "wwebjs_sessions" }),
     puppeteer: {
@@ -2726,6 +2820,9 @@ const initializeWhatsApp = (socketIoInstance) => {
     connectionStatus = "qr";
   });
   client.on("ready", async () => {
+    logRuntimeTrace("client-ready", {
+      connectionStatusBeforeReady: connectionStatus,
+    });
     cron.schedule("*/1 * * * *", auditAndReconcileInternalLog);
     console.log(
       "[AUDITOR] Internal message auditor scheduled to run every minute.",
@@ -2784,6 +2881,7 @@ const initializeWhatsApp = (socketIoInstance) => {
       "[WAPP] Client was logged out or disconnected. Reason:",
       reason,
     );
+    logRuntimeTrace("client-disconnected", { reason });
     connectionStatus = "disconnected";
   });
   client.on("auth_failure", (msg) => {
