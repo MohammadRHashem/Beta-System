@@ -56,10 +56,42 @@ const createSyntheticXpayzTransactionId = () => {
     return -1 * Math.max(candidate, 1);
 };
 
+const getTodayDateValue = () => {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+};
+
 const getViewerMode = (client) => {
     if (client?.impersonation === true) return VIEWER_MODE.IMPERSONATION;
     if (client?.accessLevel === 'view_only') return VIEWER_MODE.VIEW_ONLY;
     return VIEWER_MODE.MASTER;
+};
+
+const normalizePortalFiltersForViewerMode = (filters = {}, viewerMode) => {
+    const normalized = { ...filters };
+
+    if (viewerMode === VIEWER_MODE.VIEW_ONLY) {
+        const today = getTodayDateValue();
+        return {
+            ...normalized,
+            dateFrom: today,
+            dateTo: today,
+            direction: 'in',
+            pool: 'statement'
+        };
+    }
+
+    if (viewerMode === VIEWER_MODE.MASTER) {
+        return {
+            ...normalized,
+            dateTo: ''
+        };
+    }
+
+    return normalized;
 };
 
 const assertImpersonation = (client) => {
@@ -452,14 +484,15 @@ const calculateManualFlowSummary = async ({ subaccount, filters = {}, viewerMode
 };
 
 const getDashboardSummary = async ({ subaccount, filters = {}, viewerMode }) => {
-    const activePool = filters.pool === 'manual' ? 'manual' : 'statement';
-    const statementBalance = await calculateStatementBalance({ subaccount, filters, viewerMode });
-    const manualBalance = await calculateManualBalance({ subaccount, filters, viewerMode });
+    const normalizedFilters = normalizePortalFiltersForViewerMode(filters, viewerMode);
+    const activePool = normalizedFilters.pool === 'manual' ? 'manual' : 'statement';
+    const statementBalance = await calculateStatementBalance({ subaccount, filters: normalizedFilters, viewerMode });
+    const manualBalance = await calculateManualBalance({ subaccount, filters: normalizedFilters, viewerMode });
     const statementAllTimeBalance = await calculateStatementBalance({ subaccount, filters: {}, viewerMode });
     const manualAllTimeBalance = await calculateManualBalance({ subaccount, filters: {}, viewerMode });
     const flowSummary = activePool === 'manual'
-        ? await calculateManualFlowSummary({ subaccount, filters, viewerMode })
-        : await calculateStatementFlowSummary({ subaccount, filters, viewerMode });
+        ? await calculateManualFlowSummary({ subaccount, filters: normalizedFilters, viewerMode })
+        : await calculateStatementFlowSummary({ subaccount, filters: normalizedFilters, viewerMode });
 
     return {
         activePool,
@@ -479,12 +512,13 @@ const getDashboardSummary = async ({ subaccount, filters = {}, viewerMode }) => 
 const listPortalTransactions = async (client, query = {}) => {
     const subaccount = await getPortalSubaccount(client);
     const viewerMode = getViewerMode(client);
+    const normalizedQuery = normalizePortalFiltersForViewerMode(query, viewerMode);
     const pagination = parsePagination(query, { defaultLimit: 50, allowAll: true });
-    const activePool = query.pool === 'manual' ? 'manual' : 'statement';
+    const activePool = normalizedQuery.pool === 'manual' ? 'manual' : 'statement';
 
     const result = activePool === 'manual'
-        ? await listManualTransactions({ subaccount, filters: query, viewerMode, pagination })
-        : await listStatementTransactions({ subaccount, filters: query, viewerMode, pagination });
+        ? await listManualTransactions({ subaccount, filters: normalizedQuery, viewerMode, pagination })
+        : await listStatementTransactions({ subaccount, filters: normalizedQuery, viewerMode, pagination });
 
     return {
         transactions: result.rows,
@@ -1150,6 +1184,7 @@ const listRecibosTransactions = async ({ sourceSubaccountId, query = {} }) => {
 module.exports = {
     VIEWER_MODE,
     normalizeDateTime,
+    normalizePortalFiltersForViewerMode,
     getViewerMode,
     assertImpersonation,
     getSubaccountById,

@@ -596,6 +596,14 @@ const parseJwt = (token) => {
   }
 };
 
+const getTodayDateInputValue = () => {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
 const formatMoney = (value) =>
   new Intl.NumberFormat("en-US", { style: "currency", currency: "BRL" }).format(Number(value || 0));
 
@@ -663,16 +671,49 @@ const PortalTransactionWorkspace = ({ forceViewOnly = false }) => {
   const debouncedTransferSearch = useDebounce(transferFilters.search || "");
   const debouncedTransferAmountExact = useDebounce(transferFilters.amountExact || "");
   const debouncedTransferPixKey = useDebounce(transferFilters.pixKey || "");
+  const isImpersonating = tokenPayload?.impersonation === true || sessionStorage.getItem("portalImpersonation") === "true";
+  const isViewOnly = forceViewOnly || tokenPayload?.accessLevel === "view_only";
+  const isMasterView = !isImpersonating && !isViewOnly;
+
+  useEffect(() => {
+    const today = getTodayDateInputValue();
+
+    if (isViewOnly) {
+      setFilters((prev) => {
+        const next = {
+          ...prev,
+          pool: "statement",
+          dateFrom: today,
+          dateTo: "",
+          direction: "in",
+        };
+        if (
+          next.pool === prev.pool &&
+          next.dateFrom === prev.dateFrom &&
+          next.dateTo === prev.dateTo &&
+          next.direction === prev.direction
+        ) {
+          return prev;
+        }
+        return next;
+      });
+      return;
+    }
+
+    if (isMasterView) {
+      setFilters((prev) => (prev.dateTo ? { ...prev, dateTo: "" } : prev));
+    }
+  }, [isMasterView, isViewOnly, setFilters]);
 
   const effectiveFilters = useMemo(
     () => ({
       search: debouncedSearch,
       amountExact: debouncedAmountExact,
-      dateFrom: filters.dateFrom || "",
-      dateTo: filters.dateTo || "",
-      direction: filters.direction || "",
+      dateFrom: isViewOnly ? getTodayDateInputValue() : filters.dateFrom || "",
+      dateTo: isViewOnly ? "" : isImpersonating ? filters.dateTo || "" : "",
+      direction: isViewOnly ? "in" : filters.direction || "",
       confirmation: filters.confirmation || "",
-      pool: filters.pool || "statement",
+      pool: isViewOnly ? "statement" : filters.pool || "statement",
     }),
     [
       debouncedAmountExact,
@@ -682,19 +723,24 @@ const PortalTransactionWorkspace = ({ forceViewOnly = false }) => {
       filters.dateTo,
       filters.direction,
       filters.pool,
+      isImpersonating,
+      isViewOnly,
     ],
   );
 
   const isTextFiltersDebouncing =
     (filters.search || "") !== debouncedSearch || (filters.amountExact || "") !== debouncedAmountExact;
 
-  const isImpersonating = tokenPayload?.impersonation === true || sessionStorage.getItem("portalImpersonation") === "true";
-  const isViewOnly = forceViewOnly || tokenPayload?.accessLevel === "view_only";
   const canManageTransactions = isImpersonating;
-  const activePool = effectiveFilters.pool === "manual" ? "manual" : "statement";
+  const activePool = isViewOnly ? "statement" : effectiveFilters.pool === "manual" ? "manual" : "statement";
   const accountType = tokenPayload?.accountType || "xpayz";
   const showTransfer = canManageTransactions && accountType === "cross" && activePool === "statement";
   const showToolbarBody = !isMobileViewport || isToolbarExpanded;
+  const showPoolTabs = !isViewOnly;
+  const showDateFromFilter = !isViewOnly;
+  const showDateToFilter = isImpersonating;
+  const showDirectionFilter = !isViewOnly;
+  const showMetrics = !isViewOnly;
 
   const updateFilters = (patch) => {
     setFilters((prev) => ({ ...prev, ...patch }));
@@ -1021,17 +1067,19 @@ const PortalTransactionWorkspace = ({ forceViewOnly = false }) => {
 
         {showToolbarBody ? (
           <ToolbarBody>
-            <ToolbarTop>
-              <div />
-              <Tabs>
-                <Tab type="button" $active={activePool === "statement"} onClick={() => updateFilters({ pool: "statement" })}>
-                  Chave Extrato
-                </Tab>
-                <Tab type="button" $active={activePool === "manual"} onClick={() => updateFilters({ pool: "manual" })}>
-                  Manual
-                </Tab>
-              </Tabs>
-            </ToolbarTop>
+            {showPoolTabs ? (
+              <ToolbarTop>
+                <div />
+                <Tabs>
+                  <Tab type="button" $active={activePool === "statement"} onClick={() => updateFilters({ pool: "statement" })}>
+                    Chave Extrato
+                  </Tab>
+                  <Tab type="button" $active={activePool === "manual"} onClick={() => updateFilters({ pool: "manual" })}>
+                    Manual
+                  </Tab>
+                </Tabs>
+              </ToolbarTop>
+            ) : null}
 
             <FilterGrid>
               <Input
@@ -1045,21 +1093,27 @@ const PortalTransactionWorkspace = ({ forceViewOnly = false }) => {
                 value={filters.amountExact || ""}
                 onChange={(event) => updateFilters({ amountExact: event.target.value })}
               />
-              <Input
-                type="date"
-                value={filters.dateFrom || ""}
-                onChange={(event) => updateFilters({ dateFrom: event.target.value })}
-              />
-              <Input
-                type="date"
-                value={filters.dateTo || ""}
-                onChange={(event) => updateFilters({ dateTo: event.target.value })}
-              />
-              <Select value={filters.direction || ""} onChange={(event) => updateFilters({ direction: event.target.value })}>
-                <option value="">All directions</option>
-                <option value="in">IN</option>
-                <option value="out">OUT</option>
-              </Select>
+              {showDateFromFilter ? (
+                <Input
+                  type="date"
+                  value={filters.dateFrom || ""}
+                  onChange={(event) => updateFilters({ dateFrom: event.target.value })}
+                />
+              ) : null}
+              {showDateToFilter ? (
+                <Input
+                  type="date"
+                  value={filters.dateTo || ""}
+                  onChange={(event) => updateFilters({ dateTo: event.target.value })}
+                />
+              ) : null}
+              {showDirectionFilter ? (
+                <Select value={filters.direction || ""} onChange={(event) => updateFilters({ direction: event.target.value })}>
+                  <option value="">All directions</option>
+                  <option value="in">IN</option>
+                  <option value="out">OUT</option>
+                </Select>
+              ) : null}
               <Select value={filters.confirmation || ""} onChange={(event) => updateFilters({ confirmation: event.target.value })}>
                 <option value="">All statuses</option>
                 <option value="confirmed">Confirmed</option>
@@ -1089,15 +1143,17 @@ const PortalTransactionWorkspace = ({ forceViewOnly = false }) => {
         ) : null}
       </Toolbar>
 
-      <Metrics>
-        {metricCards.map((card) => (
-          <MetricCard key={card.label} $tone={card.tone}>
-            <h3>{card.label}</h3>
-            <p>{formatMoney(card.value)}</p>
-            <span>{card.meta}</span>
-          </MetricCard>
-        ))}
-      </Metrics>
+      {showMetrics ? (
+        <Metrics>
+          {metricCards.map((card) => (
+            <MetricCard key={card.label} $tone={card.tone}>
+              <h3>{card.label}</h3>
+              <p>{formatMoney(card.value)}</p>
+              <span>{card.meta}</span>
+            </MetricCard>
+          ))}
+        </Metrics>
+      ) : null}
 
       <Panel>
         <TableWrap>
