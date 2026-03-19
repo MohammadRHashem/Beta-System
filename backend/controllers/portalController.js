@@ -353,7 +353,7 @@ exports.exportTransactions = async (req, res) => {
 
 exports.getTrkbitTransactionsForTransfer = async (req, res) => {
     const { accountType } = req.client;
-    const { page = 1, limit = 50, search, dateFrom, dateTo } = req.query;
+    const { page = 1, limit = 50, search, dateFrom, dateTo, amountExact, pixKey } = req.query;
     const offset = (page - 1) * limit;
 
     if (req.client.impersonation !== true || accountType !== 'cross') {
@@ -371,9 +371,9 @@ exports.getTrkbitTransactionsForTransfer = async (req, res) => {
         const params = [subaccount.id];
 
         if (search) {
-            query += " AND (tt.tx_payer_name LIKE ? OR tt.tx_id LIKE ? OR tt.e2e_id LIKE ? OR tt.amount LIKE ?)";
+            query += " AND (tt.tx_payer_name LIKE ? OR JSON_UNQUOTE(JSON_EXTRACT(tt.raw_data, '$.tx_payee_name')) LIKE ?)";
             const searchTerm = `%${search}%`;
-            params.push(searchTerm, searchTerm, searchTerm, searchTerm);
+            params.push(searchTerm, searchTerm);
         }
         if (dateFrom) {
             query += " AND DATE(tt.tx_date) >= ?";
@@ -382,6 +382,17 @@ exports.getTrkbitTransactionsForTransfer = async (req, res) => {
         if (dateTo) {
             query += " AND DATE(tt.tx_date) <= ?";
             params.push(dateTo);
+        }
+        if (pixKey) {
+            query += " AND COALESCE(tt.tx_pix_key, '') LIKE ?";
+            params.push(`%${pixKey}%`);
+        }
+        if (amountExact !== undefined && amountExact !== null && String(amountExact).trim() !== '') {
+            const parsedAmount = parseFloat(amountExact);
+            if (Number.isFinite(parsedAmount)) {
+                query += " AND tt.amount = ?";
+                params.push(parsedAmount);
+            }
         }
 
         const countQuery = `SELECT count(*) as total ${query}`;
@@ -462,7 +473,6 @@ exports.updateTransactionNotes = async (req, res) => {
     }
 
     try {
-        transactionService.assertImpersonation(req.client);
         const subaccount = await transactionService.getPortalSubaccount(req.client);
         await transactionService.setTransactionNotes({
             subaccount,
@@ -492,7 +502,6 @@ exports.updateTransactionConfirmation = async (req, res) => {
     }
 
     try {
-        transactionService.assertImpersonation(req.client);
         const subaccount = await transactionService.getPortalSubaccount(req.client);
         await transactionService.setTransactionConfirmation({
             subaccount,

@@ -27,6 +27,11 @@ const parseAmount = (value) => {
     return Number(numeric.toFixed(2));
 };
 
+const parseExactAmount = (value) => {
+    if (value === '' || value == null) return null;
+    return parseAmount(value);
+};
+
 const sanitizeText = (value, maxLength = 255) => {
     if (value == null) return null;
     const normalized = String(value).trim();
@@ -71,22 +76,14 @@ const resolveSourceFromAccountType = (accountType) => {
 };
 
 const addDateFilters = (filters, fieldName, params, clauses) => {
-    const { date, dateFrom, dateTo } = filters;
-    const useRange = isValidDate(dateFrom) || isValidDate(dateTo);
-    if (useRange) {
-        if (isValidDate(dateFrom)) {
-            clauses.push(`${fieldName} >= ?`);
-            params.push(`${dateFrom} 00:00:00`);
-        }
-        if (isValidDate(dateTo)) {
-            clauses.push(`${fieldName} <= ?`);
-            params.push(`${dateTo} 23:59:59`);
-        }
-        return;
+    const { dateFrom, dateTo } = filters;
+    if (isValidDate(dateFrom)) {
+        clauses.push(`${fieldName} >= ?`);
+        params.push(`${dateFrom} 00:00:00`);
     }
-    if (isValidDate(date)) {
-        clauses.push(`DATE(${fieldName}) = ?`);
-        params.push(date);
+    if (isValidDate(dateTo)) {
+        clauses.push(`${fieldName} <= ?`);
+        params.push(`${dateTo} 23:59:59`);
     }
 };
 
@@ -124,9 +121,13 @@ const getStatementConfig = (accountType) => {
             visibleMasterField: 'tt.visible_in_master',
             visibleViewOnlyField: 'tt.visible_in_view_only',
             hiddenField: 'tt.sync_control_state',
-            searchSql: `(COALESCE(tt.tx_payer_name, '') LIKE ? OR COALESCE(JSON_UNQUOTE(JSON_EXTRACT(tt.raw_data, '$.tx_payee_name')), '') LIKE ? OR COALESCE(tt.tx_id, '') LIKE ? OR COALESCE(tt.e2e_id, '') LIKE ? OR CAST(tt.amount AS CHAR) LIKE ? OR COALESCE(tt.portal_notes, '') LIKE ? OR COALESCE(tt.badge_label, '') LIKE ?)`,
+            searchSql: `(COALESCE(tt.tx_payer_name, '') LIKE ? OR COALESCE(JSON_UNQUOTE(JSON_EXTRACT(tt.raw_data, '$.tx_payee_name')), '') LIKE ? OR COALESCE(tt.tx_id, '') LIKE ? OR COALESCE(tt.e2e_id, '') LIKE ? OR COALESCE(tt.portal_notes, '') LIKE ? OR COALESCE(tt.badge_label, '') LIKE ?)`,
             directionSql: (direction) => direction === 'in' ? "tt.tx_type = 'C'" : "tt.tx_type = 'D'",
             signedAmountSql: "CASE WHEN tt.tx_type = 'C' THEN tt.amount ELSE -tt.amount END",
+            creditAmountSql: "CASE WHEN tt.tx_type = 'C' THEN tt.amount ELSE 0 END",
+            debitAmountSql: "CASE WHEN tt.tx_type = 'D' THEN tt.amount ELSE 0 END",
+            creditCountSql: "CASE WHEN tt.tx_type = 'C' THEN 1 ELSE NULL END",
+            debitCountSql: "CASE WHEN tt.tx_type = 'D' THEN 1 ELSE NULL END",
             selectSql: `
                 SELECT
                     tt.uid AS id,
@@ -165,10 +166,14 @@ const getStatementConfig = (accountType) => {
         visibleMasterField: 'xt.visible_in_master',
         visibleViewOnlyField: 'xt.visible_in_view_only',
         hiddenField: 'xt.sync_control_state',
-        searchSql: `(COALESCE(xt.sender_name, '') LIKE ? OR COALESCE(xt.counterparty_name, '') LIKE ? OR CAST(xt.amount AS CHAR) LIKE ? OR COALESCE(xt.portal_notes, '') LIKE ? OR COALESCE(xt.badge_label, '') LIKE ? OR CAST(xt.xpayz_transaction_id AS CHAR) LIKE ? OR COALESCE(bt.correlation_id, '') LIKE ?)`,
+        searchSql: `(COALESCE(xt.sender_name, '') LIKE ? OR COALESCE(xt.counterparty_name, '') LIKE ? OR COALESCE(xt.portal_notes, '') LIKE ? OR COALESCE(xt.badge_label, '') LIKE ? OR CAST(xt.xpayz_transaction_id AS CHAR) LIKE ? OR COALESCE(bt.correlation_id, '') LIKE ?)`,
         directionSql: () => 'xt.operation_direct = ?',
         directionValue: (direction) => direction,
         signedAmountSql: "CASE WHEN xt.operation_direct = 'in' THEN xt.amount ELSE -xt.amount END",
+        creditAmountSql: "CASE WHEN xt.operation_direct = 'in' THEN xt.amount ELSE 0 END",
+        debitAmountSql: "CASE WHEN xt.operation_direct = 'out' THEN xt.amount ELSE 0 END",
+        creditCountSql: "CASE WHEN xt.operation_direct = 'in' THEN 1 ELSE NULL END",
+        debitCountSql: "CASE WHEN xt.operation_direct = 'out' THEN 1 ELSE NULL END",
         selectSql: `
             SELECT
                 xt.id AS id,
@@ -200,7 +205,13 @@ const addStatementFilters = (config, filters, viewerMode, params, clauses) => {
     if (filters.search) {
         const searchTerm = `%${filters.search.trim()}%`;
         clauses.push(config.searchSql);
-        params.push(searchTerm, searchTerm, searchTerm, searchTerm, searchTerm, searchTerm, searchTerm);
+        params.push(searchTerm, searchTerm, searchTerm, searchTerm, searchTerm, searchTerm);
+    }
+
+    const amountExact = parseExactAmount(filters.amountExact);
+    if (amountExact != null) {
+        clauses.push(`${config.source === 'trkbit' ? 'tt' : 'xt'}.amount = ?`);
+        params.push(amountExact);
     }
 
     addDateFilters(filters, config.dateField, params, clauses);
@@ -221,11 +232,16 @@ const addManualFilters = (filters, viewerMode, params, clauses) => {
         clauses.push(`(
             COALESCE(smt.sender_name, '') LIKE ?
             OR COALESCE(smt.counterparty_name, '') LIKE ?
-            OR CAST(smt.amount AS CHAR) LIKE ?
             OR COALESCE(smt.portal_notes, '') LIKE ?
             OR COALESCE(smt.badge_label, '') LIKE ?
         )`);
-        params.push(searchTerm, searchTerm, searchTerm, searchTerm, searchTerm);
+        params.push(searchTerm, searchTerm, searchTerm, searchTerm);
+    }
+
+    const amountExact = parseExactAmount(filters.amountExact);
+    if (amountExact != null) {
+        clauses.push('smt.amount = ?');
+        params.push(amountExact);
     }
 
     addDateFilters(filters, 'smt.transaction_date', params, clauses);
@@ -388,13 +404,69 @@ const calculateManualBalance = async ({ subaccount, filters = {}, viewerMode }) 
     return Number(row?.balance || 0);
 };
 
+const calculateStatementFlowSummary = async ({ subaccount, filters = {}, viewerMode }) => {
+    const config = getStatementConfig(subaccount.account_type);
+    const clauses = [`${config.effectiveOwnerSql} = ?`];
+    const params = [subaccount.id];
+    addStatementFilters(config, filters, viewerMode, params, clauses);
+    const whereSql = buildWhereSql(clauses);
+    const sql = `
+        SELECT
+            COALESCE(SUM(${config.creditAmountSql}), 0) AS totalIn,
+            COALESCE(SUM(${config.debitAmountSql}), 0) AS totalOut,
+            COUNT(${config.creditCountSql}) AS countIn,
+            COUNT(${config.debitCountSql}) AS countOut
+        ${config.fromSql}
+        ${whereSql}
+    `;
+    const [[row]] = await pool.query(sql, params);
+    return {
+        totalIn: Number(row?.totalIn || 0),
+        totalOut: Number(row?.totalOut || 0),
+        countIn: Number(row?.countIn || 0),
+        countOut: Number(row?.countOut || 0)
+    };
+};
+
+const calculateManualFlowSummary = async ({ subaccount, filters = {}, viewerMode }) => {
+    const clauses = ['smt.subaccount_id = ?'];
+    const params = [subaccount.id];
+    addManualFilters(filters, viewerMode, params, clauses);
+    const whereSql = buildWhereSql(clauses);
+    const sql = `
+        SELECT
+            COALESCE(SUM(CASE WHEN smt.direction = 'in' THEN smt.amount ELSE 0 END), 0) AS totalIn,
+            COALESCE(SUM(CASE WHEN smt.direction = 'out' THEN smt.amount ELSE 0 END), 0) AS totalOut,
+            COUNT(CASE WHEN smt.direction = 'in' THEN 1 ELSE NULL END) AS countIn,
+            COUNT(CASE WHEN smt.direction = 'out' THEN 1 ELSE NULL END) AS countOut
+        FROM subaccount_manual_transactions smt
+        ${whereSql}
+    `;
+    const [[row]] = await pool.query(sql, params);
+    return {
+        totalIn: Number(row?.totalIn || 0),
+        totalOut: Number(row?.totalOut || 0),
+        countIn: Number(row?.countIn || 0),
+        countOut: Number(row?.countOut || 0)
+    };
+};
+
 const getDashboardSummary = async ({ subaccount, filters = {}, viewerMode }) => {
+    const activePool = filters.pool === 'manual' ? 'manual' : 'statement';
     const statementBalance = await calculateStatementBalance({ subaccount, filters, viewerMode });
     const manualBalance = await calculateManualBalance({ subaccount, filters, viewerMode });
     const statementAllTimeBalance = await calculateStatementBalance({ subaccount, filters: {}, viewerMode });
     const manualAllTimeBalance = await calculateManualBalance({ subaccount, filters: {}, viewerMode });
+    const flowSummary = activePool === 'manual'
+        ? await calculateManualFlowSummary({ subaccount, filters, viewerMode })
+        : await calculateStatementFlowSummary({ subaccount, filters, viewerMode });
 
     return {
+        activePool,
+        totalIn: flowSummary.totalIn,
+        totalOut: flowSummary.totalOut,
+        countIn: flowSummary.countIn,
+        countOut: flowSummary.countOut,
         statementBalance,
         manualBalance,
         combinedBalance: statementBalance + manualBalance,
