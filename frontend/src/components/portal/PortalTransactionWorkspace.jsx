@@ -46,7 +46,7 @@ const Page = styled.div`
   min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: 0.9rem;
+  gap: 0.7rem;
 `;
 
 const Surface = styled.section`
@@ -79,24 +79,26 @@ const ToolbarHeader = styled.div`
   }
 `;
 
-const MobileToolbarToggle = styled.button`
-  display: none;
+const ToolbarToggle = styled.button`
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.42rem;
+  min-height: 38px;
+  border-radius: 999px;
+  border: 1px solid ${({ theme }) => theme.border};
+  background: ${({ theme }) => theme.surfaceAlt};
+  color: ${({ theme }) => theme.primary};
+  padding: 0.48rem 0.78rem;
+  font-weight: 800;
+  font-size: 0.84rem;
+  cursor: pointer;
+  flex-shrink: 0;
 
   @media (max-width: 860px) {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.4rem;
     min-height: 34px;
-    border-radius: 999px;
-    border: 1px solid ${({ theme }) => theme.border};
-    background: ${({ theme }) => theme.surfaceAlt};
-    color: ${({ theme }) => theme.primary};
     padding: 0.4rem 0.65rem;
-    font-weight: 800;
     font-size: 0.8rem;
-    cursor: pointer;
-    flex-shrink: 0;
   }
 `;
 
@@ -193,6 +195,25 @@ const FilterGrid = styled.div`
   }
 `;
 
+const FilterField = styled.label`
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  min-width: 0;
+`;
+
+const FilterLabel = styled.span`
+  font-size: 0.74rem;
+  font-weight: 800;
+  color: ${({ theme }) => theme.lightText};
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+
+  @media (max-width: 860px) {
+    font-size: 0.66rem;
+  }
+`;
+
 const Input = styled.input`
   min-height: 42px;
   border-radius: 10px;
@@ -273,7 +294,7 @@ const Button = styled.button`
 const Metrics = styled.div`
   display: grid;
   grid-template-columns: repeat(6, minmax(0, 1fr));
-  gap: 0.7rem;
+  gap: 0.6rem;
 
   @media (max-width: 1200px) {
     grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -349,12 +370,13 @@ const TableWrap = styled.div`
 
 const Table = styled.table`
   width: 100%;
-  min-width: 1180px;
+  min-width: 1040px;
   border-collapse: collapse;
+  font-size: 0.92rem;
 
   th,
   td {
-    padding: 0.88rem 0.95rem;
+    padding: 0.72rem 0.82rem;
     border-bottom: 1px solid ${({ theme }) => theme.border};
     vertical-align: top;
     text-align: left;
@@ -366,7 +388,7 @@ const Table = styled.table`
     z-index: 1;
     background: ${({ theme }) => theme.surfaceAlt};
     color: ${({ theme }) => theme.lightText};
-    font-size: 0.8rem;
+    font-size: 0.76rem;
   }
 `;
 
@@ -668,9 +690,7 @@ const PortalTransactionWorkspace = ({ forceViewOnly = false }) => {
     }
 
     const syncViewportState = () => {
-      const mobile = window.innerWidth <= 860;
-      setIsMobileViewport(mobile);
-      setIsToolbarExpanded((prev) => (mobile ? prev : true));
+      setIsMobileViewport(window.innerWidth <= 860);
     };
 
     syncViewportState();
@@ -747,7 +767,7 @@ const PortalTransactionWorkspace = ({ forceViewOnly = false }) => {
   const activePool = isViewOnly ? "statement" : effectiveFilters.pool === "manual" ? "manual" : "statement";
   const accountType = tokenPayload?.accountType || "xpayz";
   const showTransfer = canManageTransactions && accountType === "cross" && activePool === "statement";
-  const showToolbarBody = !isMobileViewport || isToolbarExpanded;
+  const showToolbarBody = isToolbarExpanded;
   const showPoolTabs = !isViewOnly;
   const showDateFromFilter = !isViewOnly;
   const showDateToFilter = isImpersonating;
@@ -1101,10 +1121,10 @@ const PortalTransactionWorkspace = ({ forceViewOnly = false }) => {
               </p>
             ) : null}
           </TitleBlock>
-          <MobileToolbarToggle type="button" onClick={() => setIsToolbarExpanded((prev) => !prev)}>
+          <ToolbarToggle type="button" onClick={() => setIsToolbarExpanded((prev) => !prev)}>
             {isToolbarExpanded ? <FaChevronUp /> : <FaChevronDown />}
-            {isToolbarExpanded ? "Ocultar" : "Filtros"}
-          </MobileToolbarToggle>
+            {isToolbarExpanded ? "Ocultar Painel" : "Mostrar Painel"}
+          </ToolbarToggle>
         </ToolbarHeader>
 
         {showToolbarBody ? (
@@ -1124,43 +1144,61 @@ const PortalTransactionWorkspace = ({ forceViewOnly = false }) => {
             ) : null}
 
             <FilterGrid>
-              <Input
-                placeholder="nome.."
-                value={filters.search || ""}
-                onChange={(event) => updateFilters({ search: event.target.value })}
-              />
-              <Input
-                placeholder="valor"
-                inputMode="decimal"
-                value={filters.amountExact || ""}
-                onChange={(event) => updateFilters({ amountExact: event.target.value })}
-              />
-              {showDateFromFilter ? (
+              <FilterField>
+                <FilterLabel>Nome</FilterLabel>
                 <Input
-                  type="date"
-                  value={filters.dateFrom || ""}
-                  onChange={(event) => updateFilters({ dateFrom: event.target.value })}
+                  placeholder="nome.."
+                  value={filters.search || ""}
+                  onChange={(event) => updateFilters({ search: event.target.value })}
                 />
+              </FilterField>
+              <FilterField>
+                <FilterLabel>Valor</FilterLabel>
+                <Input
+                  placeholder="valor"
+                  inputMode="decimal"
+                  value={filters.amountExact || ""}
+                  onChange={(event) => updateFilters({ amountExact: event.target.value })}
+                />
+              </FilterField>
+              {showDateFromFilter ? (
+                <FilterField>
+                  <FilterLabel>Data</FilterLabel>
+                  <Input
+                    type="date"
+                    value={filters.dateFrom || ""}
+                    onChange={(event) => updateFilters({ dateFrom: event.target.value })}
+                  />
+                </FilterField>
               ) : null}
               {showDateToFilter ? (
-                <Input
-                  type="date"
-                  value={filters.dateTo || ""}
-                  onChange={(event) => updateFilters({ dateTo: event.target.value })}
-                />
+                <FilterField>
+                  <FilterLabel>Data Ate</FilterLabel>
+                  <Input
+                    type="date"
+                    value={filters.dateTo || ""}
+                    onChange={(event) => updateFilters({ dateTo: event.target.value })}
+                  />
+                </FilterField>
               ) : null}
               {showDirectionFilter ? (
-                <Select value={filters.direction || ""} onChange={(event) => updateFilters({ direction: event.target.value })}>
-                  <option value="">IN / OUT</option>
-                  <option value="in">IN</option>
-                  <option value="out">OUT</option>
-                </Select>
+                <FilterField>
+                  <FilterLabel>Tipo</FilterLabel>
+                  <Select value={filters.direction || ""} onChange={(event) => updateFilters({ direction: event.target.value })}>
+                    <option value="">IN / OUT</option>
+                    <option value="in">IN</option>
+                    <option value="out">OUT</option>
+                  </Select>
+                </FilterField>
               ) : null}
-              <Select value={filters.confirmation || ""} onChange={(event) => updateFilters({ confirmation: event.target.value })}>
-                <option value="">Pending / Confirmed</option>
-                <option value="confirmed">Confirmed</option>
-                <option value="pending">Pending</option>
-              </Select>
+              <FilterField>
+                <FilterLabel>Status</FilterLabel>
+                <Select value={filters.confirmation || ""} onChange={(event) => updateFilters({ confirmation: event.target.value })}>
+                  <option value="">Pending / Confirmed</option>
+                  <option value="confirmed">Confirmed</option>
+                  <option value="pending">Pending</option>
+                </Select>
+              </FilterField>
             </FilterGrid>
 
             <ActionsRow>
