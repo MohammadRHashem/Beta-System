@@ -61,6 +61,11 @@ const Toolbar = styled(Surface)`
   display: flex;
   flex-direction: column;
   gap: 0.85rem;
+
+  @media (max-width: 860px) {
+    padding: 0.7rem;
+    gap: 0.65rem;
+  }
 `;
 
 const ToolbarHeader = styled.div`
@@ -68,6 +73,10 @@ const ToolbarHeader = styled.div`
   align-items: flex-start;
   justify-content: space-between;
   gap: 0.75rem;
+
+  @media (max-width: 860px) {
+    gap: 0.55rem;
+  }
 `;
 
 const MobileToolbarToggle = styled.button`
@@ -78,13 +87,14 @@ const MobileToolbarToggle = styled.button`
     align-items: center;
     justify-content: center;
     gap: 0.4rem;
-    min-height: 40px;
+    min-height: 34px;
     border-radius: 999px;
     border: 1px solid ${({ theme }) => theme.border};
     background: ${({ theme }) => theme.surfaceAlt};
     color: ${({ theme }) => theme.primary};
-    padding: 0.55rem 0.8rem;
+    padding: 0.4rem 0.65rem;
     font-weight: 800;
+    font-size: 0.8rem;
     cursor: pointer;
     flex-shrink: 0;
   }
@@ -94,6 +104,10 @@ const ToolbarBody = styled.div`
   display: flex;
   flex-direction: column;
   gap: 0.85rem;
+
+  @media (max-width: 860px) {
+    gap: 0.65rem;
+  }
 `;
 
 const ToolbarTop = styled.div`
@@ -102,6 +116,10 @@ const ToolbarTop = styled.div`
   align-items: flex-start;
   gap: 0.8rem;
   flex-wrap: wrap;
+
+  @media (max-width: 860px) {
+    gap: 0.55rem;
+  }
 `;
 
 const TitleBlock = styled.div`
@@ -116,12 +134,29 @@ const TitleBlock = styled.div`
     color: ${({ theme }) => theme.lightText};
     font-size: 0.9rem;
   }
+
+  @media (max-width: 860px) {
+    h2 {
+      margin-bottom: 0.08rem;
+      font-size: 0.98rem;
+      line-height: 1.2;
+    }
+
+    p {
+      font-size: 0.78rem;
+      line-height: 1.3;
+    }
+  }
 `;
 
 const Tabs = styled.div`
   display: inline-flex;
   flex-wrap: wrap;
   gap: 0.45rem;
+
+  @media (max-width: 860px) {
+    gap: 0.35rem;
+  }
 `;
 
 const Tab = styled.button`
@@ -132,6 +167,11 @@ const Tab = styled.button`
   padding: 0.62rem 0.95rem;
   font-weight: 800;
   cursor: pointer;
+
+  @media (max-width: 860px) {
+    padding: 0.46rem 0.72rem;
+    font-size: 0.82rem;
+  }
 `;
 
 const FilterGrid = styled.div`
@@ -145,6 +185,7 @@ const FilterGrid = styled.div`
 
   @media (max-width: 860px) {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.5rem;
   }
 
   @media (max-width: 560px) {
@@ -161,6 +202,12 @@ const Input = styled.input`
   padding: 0.7rem 0.82rem;
   width: 100%;
   min-width: 0;
+
+  @media (max-width: 860px) {
+    min-height: 36px;
+    padding: 0.52rem 0.65rem;
+    font-size: 0.86rem;
+  }
 `;
 
 const Select = styled.select`
@@ -171,6 +218,12 @@ const Select = styled.select`
   color: ${({ theme }) => theme.text};
   padding: 0.7rem 0.82rem;
   width: 100%;
+
+  @media (max-width: 860px) {
+    min-height: 36px;
+    padding: 0.52rem 0.65rem;
+    font-size: 0.86rem;
+  }
 `;
 
 const ActionsRow = styled.div`
@@ -179,12 +232,20 @@ const ActionsRow = styled.div`
   align-items: center;
   gap: 0.7rem;
   flex-wrap: wrap;
+
+  @media (max-width: 860px) {
+    gap: 0.5rem;
+  }
 `;
 
 const ButtonCluster = styled.div`
   display: flex;
   gap: 0.55rem;
   flex-wrap: wrap;
+
+  @media (max-width: 860px) {
+    gap: 0.4rem;
+  }
 `;
 
 const Button = styled.button`
@@ -200,6 +261,13 @@ const Button = styled.button`
   justify-content: center;
   gap: 0.45rem;
   cursor: pointer;
+
+  @media (max-width: 860px) {
+    min-height: 36px;
+    padding: 0.52rem 0.72rem;
+    font-size: 0.82rem;
+    gap: 0.35rem;
+  }
 `;
 
 const Metrics = styled.div`
@@ -213,6 +281,7 @@ const Metrics = styled.div`
 
   @media (max-width: 680px) {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.5rem;
   }
 `;
 
@@ -238,6 +307,25 @@ const MetricCard = styled(Surface)`
     margin-top: 0.18rem;
     font-size: 0.78rem;
     color: ${({ theme }) => theme.lightText};
+  }
+
+  @media (max-width: 860px) {
+    padding: 0.62rem 0.72rem;
+
+    h3 {
+      font-size: 0.66rem;
+      margin-bottom: 0.14rem;
+    }
+
+    p {
+      font-size: 0.92rem;
+      line-height: 1.15;
+    }
+
+    span {
+      font-size: 0.7rem;
+      margin-top: 0.08rem;
+    }
   }
 `;
 
@@ -288,11 +376,11 @@ const MobileList = styled.div`
   @media (max-width: 860px) {
     display: flex;
     flex-direction: column;
-    gap: 0.75rem;
+    gap: 0.55rem;
     min-height: 0;
     flex: 1;
     overflow: auto;
-    padding: 0.9rem;
+    padding: 0.65rem;
   }
 `;
 
@@ -301,6 +389,12 @@ const MobileCard = styled(Surface)`
   display: flex;
   flex-direction: column;
   gap: 0.72rem;
+
+  @media (max-width: 860px) {
+    padding: 0.68rem;
+    gap: 0.52rem;
+    border-radius: 14px;
+  }
 `;
 
 const PartyCell = styled.div`
@@ -335,6 +429,11 @@ const Badge = styled.button`
   padding: 0.2rem 0.55rem;
   white-space: nowrap;
   cursor: ${({ $editable }) => ($editable ? "pointer" : "default")};
+
+  @media (max-width: 860px) {
+    font-size: 0.66rem;
+    padding: 0.16rem 0.45rem;
+  }
 `;
 
 const TypeAmount = styled.div`
@@ -342,6 +441,11 @@ const TypeAmount = styled.div`
   flex-direction: column;
   gap: 0.18rem;
   min-width: 130px;
+
+  @media (max-width: 860px) {
+    min-width: 0;
+    gap: 0.12rem;
+  }
 `;
 
 const TypePill = styled.div`
@@ -355,6 +459,11 @@ const TypePill = styled.div`
   font-weight: 800;
   color: ${({ theme, $isIn }) => ($isIn ? theme.success : theme.error)};
   background: ${({ $isIn }) => ($isIn ? "rgba(16, 185, 129, 0.12)" : "rgba(239, 68, 68, 0.12)")};
+
+  @media (max-width: 860px) {
+    font-size: 0.68rem;
+    padding: 0.2rem 0.44rem;
+  }
 `;
 
 const AmountText = styled.strong`
