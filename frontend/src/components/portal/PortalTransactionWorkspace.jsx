@@ -626,8 +626,6 @@ const PortalTransactionWorkspace = ({ forceViewOnly = false }) => {
     const cards = [
       { label: "IN Amount", value: data.totalIn || 0, tone: "in", meta: `${Number(data.countIn || 0)} txs` },
       { label: "OUT Amount", value: data.totalOut || 0, tone: "out", meta: `${Number(data.countOut || 0)} txs` },
-      { label: "IN Count", value: Number(data.countIn || 0), meta: "Filtered" },
-      { label: "OUT Count", value: Number(data.countOut || 0), meta: "Filtered" },
     ];
 
     if (activePool === "statement") {
@@ -920,7 +918,7 @@ const PortalTransactionWorkspace = ({ forceViewOnly = false }) => {
         {metricCards.map((card) => (
           <MetricCard key={card.label} $tone={card.tone}>
             <h3>{card.label}</h3>
-            <p>{card.label.includes("Count") ? card.value : formatMoney(card.value)}</p>
+            <p>{formatMoney(card.value)}</p>
             <span>{card.meta}</span>
           </MetricCard>
         ))}
