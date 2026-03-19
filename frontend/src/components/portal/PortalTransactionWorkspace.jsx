@@ -63,6 +63,39 @@ const Toolbar = styled(Surface)`
   gap: 0.85rem;
 `;
 
+const ToolbarHeader = styled.div`
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+`;
+
+const MobileToolbarToggle = styled.button`
+  display: none;
+
+  @media (max-width: 860px) {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4rem;
+    min-height: 40px;
+    border-radius: 999px;
+    border: 1px solid ${({ theme }) => theme.border};
+    background: ${({ theme }) => theme.surfaceAlt};
+    color: ${({ theme }) => theme.primary};
+    padding: 0.55rem 0.8rem;
+    font-weight: 800;
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+`;
+
+const ToolbarBody = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+`;
+
 const ToolbarTop = styled.div`
   display: flex;
   justify-content: space-between;
@@ -489,6 +522,8 @@ const PortalTransactionWorkspace = ({ forceViewOnly = false }) => {
   const [transferLoading, setTransferLoading] = useState(false);
   const [transferFilters, setTransferFilters] = useState({ search: "", amountExact: "", pixKey: "" });
   const [tokenPayload, setTokenPayload] = useState(null);
+  const [isMobileViewport, setIsMobileViewport] = useState(() => (typeof window !== "undefined" ? window.innerWidth <= 860 : false));
+  const [isToolbarExpanded, setIsToolbarExpanded] = useState(() => (typeof window !== "undefined" ? window.innerWidth > 860 : true));
   const latestFetchIdRef = useRef(0);
   const latestSummaryIdRef = useRef(0);
   const latestTransferFetchIdRef = useRef(0);
@@ -496,6 +531,22 @@ const PortalTransactionWorkspace = ({ forceViewOnly = false }) => {
   useEffect(() => {
     const token = sessionStorage.getItem("portalAuthToken") || localStorage.getItem("portalAuthToken");
     setTokenPayload(parseJwt(token));
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return undefined;
+    }
+
+    const syncViewportState = () => {
+      const mobile = window.innerWidth <= 860;
+      setIsMobileViewport(mobile);
+      setIsToolbarExpanded((prev) => (mobile ? prev : true));
+    };
+
+    syncViewportState();
+    window.addEventListener("resize", syncViewportState);
+    return () => window.removeEventListener("resize", syncViewportState);
   }, []);
 
   const debouncedSearch = useDebounce(filters.search || "");
@@ -534,6 +585,7 @@ const PortalTransactionWorkspace = ({ forceViewOnly = false }) => {
   const activePool = effectiveFilters.pool === "manual" ? "manual" : "statement";
   const accountType = tokenPayload?.accountType || "xpayz";
   const showTransfer = canManageTransactions && accountType === "cross" && activePool === "statement";
+  const showToolbarBody = !isMobileViewport || isToolbarExpanded;
 
   const updateFilters = (patch) => {
     setFilters((prev) => ({ ...prev, ...patch }));
@@ -841,77 +893,91 @@ const PortalTransactionWorkspace = ({ forceViewOnly = false }) => {
   return (
     <Page>
       <Toolbar>
-        <ToolbarTop>
+        <ToolbarHeader>
           <TitleBlock>
             <h2>{activePool === "statement" ? "Chave Extrato" : "Manual"}</h2>
-            <p>
-              {canManageTransactions
-                ? "Full impersonation can manage transactions, visibility, ownership, and badges."
-                : "Notes and confirmation stay available in every portal view."}
-            </p>
+            {showToolbarBody ? (
+              <p>
+                {canManageTransactions
+                  ? "Full impersonation can manage transactions, visibility, ownership, and badges."
+                  : "Notes and confirmation stay available in every portal view."}
+              </p>
+            ) : null}
           </TitleBlock>
-          <Tabs>
-            <Tab type="button" $active={activePool === "statement"} onClick={() => updateFilters({ pool: "statement" })}>
-              Chave Extrato
-            </Tab>
-            <Tab type="button" $active={activePool === "manual"} onClick={() => updateFilters({ pool: "manual" })}>
-              Manual
-            </Tab>
-          </Tabs>
-        </ToolbarTop>
+          <MobileToolbarToggle type="button" onClick={() => setIsToolbarExpanded((prev) => !prev)}>
+            {isToolbarExpanded ? <FaChevronUp /> : <FaChevronDown />}
+            {isToolbarExpanded ? "Ocultar" : "Filtros"}
+          </MobileToolbarToggle>
+        </ToolbarHeader>
 
-        <FilterGrid>
-          <Input
-            placeholder="nome.."
-            value={filters.search || ""}
-            onChange={(event) => updateFilters({ search: event.target.value })}
-          />
-          <Input
-            placeholder="valor"
-            inputMode="decimal"
-            value={filters.amountExact || ""}
-            onChange={(event) => updateFilters({ amountExact: event.target.value })}
-          />
-          <Input
-            type="date"
-            value={filters.dateFrom || ""}
-            onChange={(event) => updateFilters({ dateFrom: event.target.value })}
-          />
-          <Input
-            type="date"
-            value={filters.dateTo || ""}
-            onChange={(event) => updateFilters({ dateTo: event.target.value })}
-          />
-          <Select value={filters.direction || ""} onChange={(event) => updateFilters({ direction: event.target.value })}>
-            <option value="">All directions</option>
-            <option value="in">IN</option>
-            <option value="out">OUT</option>
-          </Select>
-          <Select value={filters.confirmation || ""} onChange={(event) => updateFilters({ confirmation: event.target.value })}>
-            <option value="">All statuses</option>
-            <option value="confirmed">Confirmed</option>
-            <option value="pending">Pending</option>
-          </Select>
-        </FilterGrid>
+        {showToolbarBody ? (
+          <ToolbarBody>
+            <ToolbarTop>
+              <div />
+              <Tabs>
+                <Tab type="button" $active={activePool === "statement"} onClick={() => updateFilters({ pool: "statement" })}>
+                  Chave Extrato
+                </Tab>
+                <Tab type="button" $active={activePool === "manual"} onClick={() => updateFilters({ pool: "manual" })}>
+                  Manual
+                </Tab>
+              </Tabs>
+            </ToolbarTop>
 
-        <ActionsRow>
-          <Meta>{isTextFiltersDebouncing ? "Updating filters..." : `${pagination.totalRecords || 0} records`}</Meta>
-          <ButtonCluster>
-            <Button type="button" $variant="ghost" onClick={() => { fetchTransactions(); fetchSummary(); }}>
-              <FaSyncAlt /> Refresh
-            </Button>
-            {canManageTransactions ? (
-              <Button type="button" onClick={openCreate}>
-                <FaPlus /> Add
-              </Button>
-            ) : null}
-            {showTransfer ? (
-              <Button type="button" $variant="ghost" onClick={() => setTransferOpen(true)}>
-                <FaArrowsAltH /> Transfer Ownership
-              </Button>
-            ) : null}
-          </ButtonCluster>
-        </ActionsRow>
+            <FilterGrid>
+              <Input
+                placeholder="nome.."
+                value={filters.search || ""}
+                onChange={(event) => updateFilters({ search: event.target.value })}
+              />
+              <Input
+                placeholder="valor"
+                inputMode="decimal"
+                value={filters.amountExact || ""}
+                onChange={(event) => updateFilters({ amountExact: event.target.value })}
+              />
+              <Input
+                type="date"
+                value={filters.dateFrom || ""}
+                onChange={(event) => updateFilters({ dateFrom: event.target.value })}
+              />
+              <Input
+                type="date"
+                value={filters.dateTo || ""}
+                onChange={(event) => updateFilters({ dateTo: event.target.value })}
+              />
+              <Select value={filters.direction || ""} onChange={(event) => updateFilters({ direction: event.target.value })}>
+                <option value="">All directions</option>
+                <option value="in">IN</option>
+                <option value="out">OUT</option>
+              </Select>
+              <Select value={filters.confirmation || ""} onChange={(event) => updateFilters({ confirmation: event.target.value })}>
+                <option value="">All statuses</option>
+                <option value="confirmed">Confirmed</option>
+                <option value="pending">Pending</option>
+              </Select>
+            </FilterGrid>
+
+            <ActionsRow>
+              <Meta>{isTextFiltersDebouncing ? "Updating filters..." : `${pagination.totalRecords || 0} records`}</Meta>
+              <ButtonCluster>
+                <Button type="button" $variant="ghost" onClick={() => { fetchTransactions(); fetchSummary(); }}>
+                  <FaSyncAlt /> Refresh
+                </Button>
+                {canManageTransactions ? (
+                  <Button type="button" onClick={openCreate}>
+                    <FaPlus /> Add
+                  </Button>
+                ) : null}
+                {showTransfer ? (
+                  <Button type="button" $variant="ghost" onClick={() => setTransferOpen(true)}>
+                    <FaArrowsAltH /> Transfer Ownership
+                  </Button>
+                ) : null}
+              </ButtonCluster>
+            </ActionsRow>
+          </ToolbarBody>
+        ) : null}
       </Toolbar>
 
       <Metrics>
