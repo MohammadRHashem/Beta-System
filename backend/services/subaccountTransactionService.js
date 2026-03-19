@@ -1131,32 +1131,49 @@ const listRecibosTransactions = async ({ sourceSubaccountId, query = {} }) => {
     }
 
     const pagination = parsePagination(query, { defaultLimit: 50, allowAll: true });
+    const targetSubaccountNumber = sanitizeText(query.targetSubaccountNumber, 255);
+    const needsSuggestionFilter = Boolean(targetSubaccountNumber);
+    const sourcePagination = needsSuggestionFilter
+        ? { page: 1, limit: 'all', limitValue: null, offset: 0, isAll: true }
+        : pagination;
     const result = await listStatementTransactions({
         subaccount,
         filters: query,
         viewerMode: VIEWER_MODE.IMPERSONATION,
-        pagination
+        pagination: sourcePagination
     });
 
     const uniqueSenders = Array.from(new Set(result.rows.map((row) => sanitizeText(row.sender_name, 255)).filter(Boolean)));
     const suggestionsBySender = new Map();
 
     if (uniqueSenders.length > 0) {
-        const [matches] = await pool.query(
-            `
+        const suggestionParams = [uniqueSenders, subaccount.id];
+        let suggestionSql = `
                 SELECT
                     xt.sender_name,
                     s.id AS subaccount_id,
                     s.name AS subaccount_name,
+                    s.subaccount_number AS subaccount_number,
                     COUNT(*) AS match_count
                 FROM xpayz_transactions xt
                 JOIN subaccounts s ON s.subaccount_number = CAST(xt.subaccount_id AS CHAR)
                 WHERE xt.sender_name IN (?)
                   AND COALESCE(xt.display_subaccount_id, s.id) <> ?
-                GROUP BY xt.sender_name, s.id, s.name
+        `;
+
+        if (targetSubaccountNumber) {
+            suggestionSql += ' AND s.subaccount_number = ?';
+            suggestionParams.push(targetSubaccountNumber);
+        }
+
+        suggestionSql += `
+                GROUP BY xt.sender_name, s.id, s.name, s.subaccount_number
                 ORDER BY xt.sender_name ASC, match_count DESC, s.name ASC
-            `,
-            [uniqueSenders, subaccount.id]
+        `;
+
+        const [matches] = await pool.query(
+            suggestionSql,
+            suggestionParams
         );
 
         matches.forEach((row) => {
@@ -1166,8 +1183,7 @@ const listRecibosTransactions = async ({ sourceSubaccountId, query = {} }) => {
         });
     }
 
-    return {
-        transactions: result.rows.map((row) => {
+    const enrichedRows = result.rows.map((row) => {
             const suggestion = suggestionsBySender.get(row.sender_name);
             if (!suggestion) return row;
             return {
@@ -1175,11 +1191,36 @@ const listRecibosTransactions = async ({ sourceSubaccountId, query = {} }) => {
                 suggestion: {
                     subaccountId: suggestion.subaccount_id,
                     subaccountName: suggestion.subaccount_name,
+                    subaccountNumber: suggestion.subaccount_number,
+                    matchCount: Number(suggestion.match_count || 0),
                     confidence: 100
                 }
             };
-        }),
-        pagination: buildPaginationMeta(result.total, pagination)
+        });
+
+    const filteredRows = needsSuggestionFilter
+        ? enrichedRows.filter((row) => row.suggestion?.subaccountNumber === targetSubaccountNumber)
+        : enrichedRows;
+
+    if (pagination.isAll) {
+        return {
+            transactions: filteredRows,
+            pagination: buildPaginationMeta(filteredRows.length, pagination)
+        };
+    }
+
+    if (!needsSuggestionFilter) {
+        return {
+            transactions: filteredRows,
+            pagination: buildPaginationMeta(result.total, pagination)
+        };
+    }
+
+    const startIndex = pagination.offset;
+    const endIndex = startIndex + pagination.limitValue;
+    return {
+        transactions: filteredRows.slice(startIndex, endIndex),
+        pagination: buildPaginationMeta(filteredRows.length, pagination)
     };
 };
 

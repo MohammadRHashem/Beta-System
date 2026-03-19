@@ -15,6 +15,7 @@ import {
   updateSubaccount,
 } from "../services/api";
 import Modal from "../components/Modal";
+import Pagination from "../components/Pagination";
 import {
   FaEdit,
   FaExchangeAlt,
@@ -341,6 +342,51 @@ const RecibosControls = styled.div`
   gap: 0.45rem;
 `;
 
+const RecibosFiltersGrid = styled.div`
+  display: grid;
+  grid-template-columns: minmax(220px, 1.2fr) minmax(220px, 1.2fr) minmax(140px, 0.8fr);
+  gap: 0.7rem;
+  margin-bottom: 0.7rem;
+
+  @media (max-width: 900px) {
+    grid-template-columns: 1fr;
+  }
+`;
+
+const RecibosSummaryGrid = styled.div`
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.6rem;
+  margin-bottom: 0.75rem;
+
+  @media (max-width: 900px) {
+    grid-template-columns: 1fr;
+  }
+`;
+
+const RecibosSummaryCard = styled.div`
+  border: 1px solid ${({ theme }) => theme.border};
+  border-radius: 10px;
+  background: ${({ theme }) => theme.surfaceAlt};
+  padding: 0.65rem 0.75rem;
+
+  strong {
+    display: block;
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: ${({ theme }) => theme.lightText};
+    margin-bottom: 0.18rem;
+  }
+
+  span {
+    display: block;
+    font-size: 0.9rem;
+    font-weight: 800;
+    color: ${({ theme }) => theme.primary};
+  }
+`;
+
 const RecibosPageSize = styled.select`
   min-height: 32px;
   border-radius: 8px;
@@ -409,6 +455,11 @@ const SubaccountsPage = ({ allGroups }) => {
   const [recibosAccountId, setRecibosAccountId] = useState(null);
   const [recibosTransactions, setRecibosTransactions] = useState([]);
   const [recibosLoading, setRecibosLoading] = useState(false);
+  const [recibosFilters, setRecibosFilters] = useState({
+    search: "",
+    amountExact: "",
+    targetSubaccountNumber: "",
+  });
   const [recibosPagination, setRecibosPagination] = useState({
     page: 1,
     currentPage: 1,
@@ -449,6 +500,11 @@ const SubaccountsPage = ({ allGroups }) => {
     setIsRecibosModalOpen(false);
     setRecibosAccountId(null);
     setRecibosTransactions([]);
+    setRecibosFilters({
+      search: "",
+      amountExact: "",
+      targetSubaccountNumber: "",
+    });
     setRecibosPagination({
       page: 1,
       currentPage: 1,
@@ -510,8 +566,8 @@ const SubaccountsPage = ({ allGroups }) => {
 
   const fetchRecibosData = async (subNumber, options = {}) => {
     if (!subNumber) return;
-    const append = options.append === true;
-    const requestedPage = options.page ?? (append ? (recibosPagination.page || 1) + 1 : 1);
+    const currentFilters = options.filters ?? recibosFilters;
+    const requestedPage = options.page ?? 1;
     const requestedLimit = options.limit ?? recibosPagination.limit ?? 50;
 
     setRecibosLoading(true);
@@ -519,6 +575,7 @@ const SubaccountsPage = ({ allGroups }) => {
       const { data } = await getRecibosTransactions(subNumber, {
         page: requestedPage,
         limit: requestedLimit,
+        ...currentFilters,
       });
 
       const payload = Array.isArray(data)
@@ -532,19 +589,14 @@ const SubaccountsPage = ({ allGroups }) => {
         : (data || {});
 
       const nextRows = Array.isArray(payload.items) ? payload.items : [];
-      setRecibosTransactions((prev) => {
-        if (!append) return nextRows;
-        const byId = new Map(prev.map((item) => [item.id, item]));
-        nextRows.forEach((item) => byId.set(item.id, item));
-        return Array.from(byId.values());
-      });
+      setRecibosTransactions(nextRows);
 
       setRecibosPagination((prev) => ({
         ...prev,
         page: Number(payload.currentPage ?? requestedPage),
         currentPage: Number(payload.currentPage ?? requestedPage),
         totalPages: Math.max(Number(payload.totalPages ?? 1), 1),
-        totalRecords: Number(payload.totalRecords ?? (append ? prev.totalRecords : nextRows.length)),
+        totalRecords: Number(payload.totalRecords ?? nextRows.length),
         limit: payload.limit ?? requestedLimit,
       }));
     } catch (_error) {
@@ -796,15 +848,32 @@ const SubaccountsPage = ({ allGroups }) => {
           onSelectAccount={(id) => {
             setRecibosAccountId(id);
             setRecibosTransactions([]);
+            const resetFilters = {
+              search: "",
+              amountExact: "",
+              targetSubaccountNumber: "",
+            };
+            setRecibosFilters(resetFilters);
             setRecibosPagination((prev) => ({
               ...prev,
               page: 1,
               currentPage: 1,
             }));
-            fetchRecibosData(id, { page: 1, append: false });
+            fetchRecibosData(id, { page: 1, filters: resetFilters });
+          }}
+          filters={recibosFilters}
+          onFiltersChange={(patch) => {
+            const nextFilters = { ...recibosFilters, ...patch };
+            setRecibosFilters(nextFilters);
+            setRecibosPagination((prev) => ({
+              ...prev,
+              page: 1,
+              currentPage: 1,
+            }));
+            fetchRecibosData(recibosAccountId, { page: 1, filters: nextFilters });
           }}
           selectedAccountId={recibosAccountId}
-          onLoadMore={() => fetchRecibosData(recibosAccountId, { append: true })}
+          onPageChange={(nextPage) => fetchRecibosData(recibosAccountId, { page: nextPage })}
           onPageSizeChange={(nextLimit) => {
             setRecibosPagination((prev) => ({
               ...prev,
@@ -812,7 +881,7 @@ const SubaccountsPage = ({ allGroups }) => {
               currentPage: 1,
               limit: nextLimit,
             }));
-            fetchRecibosData(recibosAccountId, { page: 1, limit: nextLimit, append: false });
+            fetchRecibosData(recibosAccountId, { page: 1, limit: nextLimit, filters: recibosFilters });
           }}
           onReassign={handleReassign}
         />
@@ -1032,9 +1101,11 @@ const RecibosModal = ({
   loading,
   transactions,
   pagination,
+  filters,
   onSelectAccount,
+  onFiltersChange,
   selectedAccountId,
-  onLoadMore,
+  onPageChange,
   onPageSizeChange,
   onReassign,
 }) => {
@@ -1046,6 +1117,7 @@ const RecibosModal = ({
         .map((s) => ({ value: s.subaccount_number, label: s.name })),
     [subaccounts],
   );
+  const selectedSourceOption = subOptions.find((option) => String(option.value) === String(selectedAccountId)) || null;
 
   const themedStyles = useMemo(
     () => ({
@@ -1076,7 +1148,7 @@ const RecibosModal = ({
     <Modal isOpen={isOpen} onClose={onClose} maxWidth="980px">
       <ModalTitle>Recibos / Internal Transfer Manager</ModalTitle>
       <HelperText style={{ marginBottom: "0.75rem" }}>
-        Select the source account and reassign transactions to the correct client.
+        Select the source account, narrow the candidate list, and move transactions to the correct destination client faster.
       </HelperText>
 
       <InputGroup style={{ marginBottom: "0.72rem" }}>
@@ -1093,9 +1165,55 @@ const RecibosModal = ({
 
       {selectedAccountId && (
         <>
+          <RecibosSummaryGrid>
+            <RecibosSummaryCard>
+              <strong>Source Account</strong>
+              <span>{selectedSourceOption?.label || selectedAccountId}</span>
+            </RecibosSummaryCard>
+            <RecibosSummaryCard>
+              <strong>Visible Candidates</strong>
+              <span>{pagination.totalRecords || 0}</span>
+            </RecibosSummaryCard>
+            <RecibosSummaryCard>
+              <strong>Current Page</strong>
+              <span>{pagination.currentPage || 1} / {pagination.totalPages || 1}</span>
+            </RecibosSummaryCard>
+          </RecibosSummaryGrid>
+
+          <RecibosFiltersGrid>
+            <InputGroup>
+              <Label>Filter Possible Destination</Label>
+              <Select
+                options={[{ value: "", label: "All suggested destinations" }, ...subOptions]}
+                value={[{ value: "", label: "All suggested destinations" }, ...subOptions].find((option) => String(option.value) === String(filters.targetSubaccountNumber || "")) || null}
+                onChange={(opt) => onFiltersChange({ targetSubaccountNumber: opt?.value || "" })}
+                placeholder="Filter Mazda, etc..."
+                styles={themedStyles}
+                menuPortalTarget={document.body}
+              />
+            </InputGroup>
+            <InputGroup>
+              <Label>Search Sender</Label>
+              <Input
+                value={filters.search || ""}
+                onChange={(event) => onFiltersChange({ search: event.target.value })}
+                placeholder="Search sender name..."
+              />
+            </InputGroup>
+            <InputGroup>
+              <Label>Exact Amount</Label>
+              <Input
+                value={filters.amountExact || ""}
+                onChange={(event) => onFiltersChange({ amountExact: event.target.value })}
+                placeholder="e.g. 7450.00"
+                inputMode="decimal"
+              />
+            </InputGroup>
+          </RecibosFiltersGrid>
+
           <RecibosToolbar>
             <RecibosMeta>
-              Showing {transactions.length} of {pagination.totalRecords || 0} records
+              Showing {transactions.length} row(s) on this page out of {pagination.totalRecords || 0} filtered records
             </RecibosMeta>
             <RecibosControls>
               <RecibosMeta>Rows</RecibosMeta>
@@ -1119,7 +1237,7 @@ const RecibosModal = ({
               <RecibosTable>
                 <thead>
                   <tr>
-                    <th>Date</th>
+                    <th>Date / Time</th>
                     <th>Sender</th>
                     <th>Amount</th>
                     <th>Smart Suggestion</th>
@@ -1133,7 +1251,7 @@ const RecibosModal = ({
                     </tr>
                   ) : (
                     transactions.map((tx) => (
-                      <RecibosRow key={tx.id} tx={tx} subOptions={subOptions} onReassign={onReassign} />
+                      <RecibosRow key={tx.id} tx={tx} subOptions={subOptions} onReassign={onReassign} selectStyles={themedStyles} />
                     ))
                   )}
                 </tbody>
@@ -1142,16 +1260,15 @@ const RecibosModal = ({
           </RecibosTableWrap>
 
           <FooterActions style={{ marginTop: "0.6rem" }}>
-            <Button
-              type="button"
-              onClick={onLoadMore}
-              disabled={
-                loading ||
-                Number(pagination.currentPage || 1) >= Number(pagination.totalPages || 1)
-              }
-            >
-              {loading ? "Loading..." : "Load More"}
-            </Button>
+            <div style={{ width: "100%" }}>
+              <Pagination
+                pagination={pagination}
+                setPagination={(updater) => {
+                  const next = typeof updater === "function" ? updater(pagination) : updater;
+                  onPageChange(next.page || next.currentPage || 1);
+                }}
+              />
+            </div>
           </FooterActions>
         </>
       )}
@@ -1159,22 +1276,22 @@ const RecibosModal = ({
   );
 };
 
-const RecibosRow = ({ tx, subOptions, onReassign }) => {
+const RecibosRow = ({ tx, subOptions, onReassign, selectStyles }) => {
   const [target, setTarget] = useState(null);
 
   const suggestionOption = tx.suggestion
-    ? subOptions.find((option) => option.label === tx.suggestion.subaccountName)
+    ? subOptions.find((option) => String(option.value) === String(tx.suggestion.subaccountNumber))
     : null;
 
   return (
     <tr>
-      <td>{new Date(tx.transaction_date).toLocaleDateString()}</td>
+      <td>{new Date(tx.transaction_date).toLocaleString()}</td>
       <td>{tx.sender_name}</td>
       <td>{parseFloat(tx.amount).toFixed(2)}</td>
       <td>
         {tx.suggestion ? (
           <SuggestionBadge type="button" onClick={() => setTarget(suggestionOption)}>
-            <FaMagic /> {tx.suggestion.confidence}%: {tx.suggestion.subaccountName}
+            <FaMagic /> {tx.suggestion.subaccountName} ({tx.suggestion.matchCount || 0})
           </SuggestionBadge>
         ) : (
           <EmptyText>No history</EmptyText>
@@ -1189,7 +1306,7 @@ const RecibosRow = ({ tx, subOptions, onReassign }) => {
               onChange={setTarget}
               placeholder="Select client..."
               menuPortalTarget={document.body}
-              styles={modalSelectStyles}
+              styles={selectStyles}
             />
           </div>
           <Button
