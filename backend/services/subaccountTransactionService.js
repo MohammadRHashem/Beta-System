@@ -85,9 +85,11 @@ const normalizePortalFiltersForViewerMode = (filters = {}, viewerMode) => {
     }
 
     if (viewerMode === VIEWER_MODE.MASTER) {
+        const exactDate = isValidDate(normalized.dateFrom) ? normalized.dateFrom : '';
         return {
             ...normalized,
-            dateTo: ''
+            dateFrom: exactDate,
+            dateTo: exactDate
         };
     }
 
