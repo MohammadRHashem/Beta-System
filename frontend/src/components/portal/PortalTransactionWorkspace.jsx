@@ -624,19 +624,19 @@ const PortalTransactionWorkspace = ({ forceViewOnly = false }) => {
   const metricCards = useMemo(() => {
     const data = summary || {};
     const cards = [
-      { label: "IN Amount", value: data.totalIn || 0, tone: "in", meta: `${Number(data.countIn || 0)} txs` },
-      { label: "OUT Amount", value: data.totalOut || 0, tone: "out", meta: `${Number(data.countOut || 0)} txs` },
+      { label: "Entradas", value: data.totalIn || 0, tone: "in", meta: `${Number(data.countIn || 0)} trans.` },
+      { label: "Saidas", value: data.totalOut || 0, tone: "out", meta: `${Number(data.countOut || 0)} trans.` },
     ];
 
     if (activePool === "statement") {
       cards.push(
-        { label: "Chave Balance", value: data.statementAllTimeBalance || 0, meta: "All-time" },
-        { label: "All-Time Balance", value: data.allTimeBalance || 0, meta: "All-time" },
+        { label: "Saldo Chave", value: data.statementAllTimeBalance || 0, meta: "Total" },
+        { label: "Saldo Total", value: data.allTimeBalance || 0, meta: "Total" },
       );
     } else {
       cards.push(
-        { label: "Manual Balance", value: data.manualBalance || 0, meta: "Filtered" },
-        { label: "All-Time Balance", value: data.allTimeBalance || 0, meta: "All-time" },
+        { label: "Saldo Manual", value: data.manualBalance || 0, meta: "Filtrado" },
+        { label: "Saldo Total", value: data.allTimeBalance || 0, meta: "Total" },
       );
     }
 
@@ -843,7 +843,7 @@ const PortalTransactionWorkspace = ({ forceViewOnly = false }) => {
       <Toolbar>
         <ToolbarTop>
           <TitleBlock>
-            <h2>{activePool === "statement" ? "Chave Pix Statement" : "Manual Entries"}</h2>
+            <h2>{activePool === "statement" ? "Chave Extrato" : "Manual"}</h2>
             <p>
               {canManageTransactions
                 ? "Full impersonation can manage transactions, visibility, ownership, and badges."
@@ -852,22 +852,22 @@ const PortalTransactionWorkspace = ({ forceViewOnly = false }) => {
           </TitleBlock>
           <Tabs>
             <Tab type="button" $active={activePool === "statement"} onClick={() => updateFilters({ pool: "statement" })}>
-              Chave Pix Statement
+              Chave Extrato
             </Tab>
             <Tab type="button" $active={activePool === "manual"} onClick={() => updateFilters({ pool: "manual" })}>
-              Manual Entries
+              Manual
             </Tab>
           </Tabs>
         </ToolbarTop>
 
         <FilterGrid>
           <Input
-            placeholder="Search names / refs"
+            placeholder="nome.."
             value={filters.search || ""}
             onChange={(event) => updateFilters({ search: event.target.value })}
           />
           <Input
-            placeholder="Exact amount"
+            placeholder="valor"
             inputMode="decimal"
             value={filters.amountExact || ""}
             onChange={(event) => updateFilters({ amountExact: event.target.value })}
@@ -929,8 +929,8 @@ const PortalTransactionWorkspace = ({ forceViewOnly = false }) => {
           <Table>
             <thead>
               <tr>
-                <th>Party / Date</th>
-                <th>Amount / Type</th>
+                <th>Nome e Data</th>
+                <th>Valor</th>
                 <th>Status</th>
                 <th>Notes</th>
                 {canManageTransactions ? <th>Visibility</th> : null}
@@ -999,17 +999,17 @@ const PortalTransactionWorkspace = ({ forceViewOnly = false }) => {
       </Panel>
 
       <Modal isOpen={editorOpen} onClose={() => setEditorOpen(false)} maxWidth="760px">
-        <ModalTitle>{editingTransaction ? "Edit Transaction" : `Add ${activePool === "statement" ? "Statement" : "Manual"} Transaction`}</ModalTitle>
+        <ModalTitle>{editingTransaction ? "Editar Transacao" : `Adicionar Transacao ${activePool === "statement" ? "Extrato" : "Manual"}`}</ModalTitle>
         <form onSubmit={saveEditor}>
           <FormGrid>
             <Input type="datetime-local" value={editorForm.transaction_date} onChange={(event) => setEditorForm((prev) => ({ ...prev, transaction_date: event.target.value }))} />
-            <Input type="number" step="0.01" placeholder="Amount" value={editorForm.amount} onChange={(event) => setEditorForm((prev) => ({ ...prev, amount: event.target.value }))} />
+            <Input type="number" step="0.01" placeholder="Valor" value={editorForm.amount} onChange={(event) => setEditorForm((prev) => ({ ...prev, amount: event.target.value }))} />
             <Select value={editorForm.operation_direct} onChange={(event) => setEditorForm((prev) => ({ ...prev, operation_direct: event.target.value }))}>
               <option value="in">IN</option>
               <option value="out">OUT</option>
             </Select>
             <Input placeholder="Sender name" value={editorForm.sender_name} onChange={(event) => setEditorForm((prev) => ({ ...prev, sender_name: event.target.value }))} />
-            <Input placeholder="Counterparty name" value={editorForm.counterparty_name} onChange={(event) => setEditorForm((prev) => ({ ...prev, counterparty_name: event.target.value }))} />
+            <Input placeholder="Nome" value={editorForm.counterparty_name} onChange={(event) => setEditorForm((prev) => ({ ...prev, counterparty_name: event.target.value }))} />
           </FormGrid>
           <div style={{ marginTop: "0.8rem" }}>
             <TextArea placeholder="Optional note" value={editorForm.portal_notes} onChange={(event) => setEditorForm((prev) => ({ ...prev, portal_notes: event.target.value }))} />
@@ -1023,11 +1023,11 @@ const PortalTransactionWorkspace = ({ forceViewOnly = false }) => {
 
       <Modal isOpen={transferOpen} onClose={() => setTransferOpen(false)} maxWidth="980px">
         <ModalTitle>Transfer Ownership</ModalTitle>
-        <Meta>Search by payer/payee name, exact amount, or source PIX key, then move the transaction here with the editable added badge.</Meta>
+        <Meta>Pesquise por nome, valor exato ou chave PIX de origem e mova a transacao para ca com o badge editavel.</Meta>
 
         <TransferFilterGrid>
-          <Input placeholder="Search names" value={transferFilters.search} onChange={(event) => setTransferFilters((prev) => ({ ...prev, search: event.target.value }))} />
-          <Input placeholder="Exact amount" inputMode="decimal" value={transferFilters.amountExact} onChange={(event) => setTransferFilters((prev) => ({ ...prev, amountExact: event.target.value }))} />
+          <Input placeholder="nome.." value={transferFilters.search} onChange={(event) => setTransferFilters((prev) => ({ ...prev, search: event.target.value }))} />
+          <Input placeholder="valor" inputMode="decimal" value={transferFilters.amountExact} onChange={(event) => setTransferFilters((prev) => ({ ...prev, amountExact: event.target.value }))} />
           <Input placeholder="Filter by PIX" value={transferFilters.pixKey} onChange={(event) => setTransferFilters((prev) => ({ ...prev, pixKey: event.target.value }))} />
         </TransferFilterGrid>
 
