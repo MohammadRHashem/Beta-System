@@ -1040,7 +1040,10 @@ const RecibosModal = ({
 }) => {
   const theme = useTheme();
   const subOptions = useMemo(
-    () => subaccounts.map((s) => ({ value: s.subaccount_number, label: s.name })),
+    () =>
+      subaccounts
+        .filter((s) => s.account_type === "xpayz")
+        .map((s) => ({ value: s.subaccount_number, label: s.name })),
     [subaccounts],
   );
 

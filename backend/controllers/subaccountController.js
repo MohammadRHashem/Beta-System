@@ -5,6 +5,7 @@ const jwt = require('jsonwebtoken');
 const { syncSingleSubaccount } = require('../xpayzSyncService');
 const { logAction } = require('../services/auditService');
 const { parsePagination, buildPaginationMeta } = require('../utils/pagination');
+const transactionService = require('../services/subaccountTransactionService');
 require('dotenv').config();
 
 const PORTAL_JWT_SECRET = process.env.PORTAL_JWT_SECRET;
@@ -334,22 +335,8 @@ exports.createCrossDebit = async (req, res) => {
     const { id: subaccountId } = req.params;
     const { amount, tx_date, description } = req.body;
 
-    const normalizedDate = normalizeDateTime(tx_date);
-    const numericAmount = parseFloat(amount);
-    const note = (description || 'USD BETA OUT / C').trim() || 'USD BETA OUT / C';
-
-    if (!normalizedDate) {
-        return res.status(400).json({ message: 'Valid date/time is required.' });
-    }
-    if (!Number.isFinite(numericAmount) || numericAmount <= 0) {
-        return res.status(400).json({ message: 'Amount must be greater than zero.' });
-    }
-
     try {
-        const [[subaccount]] = await pool.query(
-            'SELECT id, name, account_type, chave_pix FROM subaccounts WHERE id = ?',
-            [subaccountId]
-        );
+        const subaccount = await transactionService.getSubaccountById(subaccountId);
 
         if (!subaccount) {
             return res.status(404).json({ message: 'Subaccount not found.' });
@@ -357,74 +344,31 @@ exports.createCrossDebit = async (req, res) => {
         if (subaccount.account_type !== 'cross') {
             return res.status(400).json({ message: 'Debits can only be added to Cross subaccounts.' });
         }
-        if (!subaccount.chave_pix) {
-            return res.status(400).json({ message: 'Cross subaccount is missing a PIX key.' });
-        }
-
-        const uid = generateUuid();
-        const txId = generateUuid();
-
-        const insertQuery = `
-            INSERT INTO trkbit_transactions (
-                uid, tx_id, e2e_id, tx_date, amount, tx_pix_key, tx_type,
-                tx_payer_name, tx_payer_id, raw_data, is_used
-            ) VALUES (
-                ?, ?, NULL, ?, ?, ?, 'D',
-                ?, 'SYSTEM_ARCHIVE',
-                JSON_OBJECT(
-                    'ag', '0001',
-                    'uid', ?,
-                    'tx_id', ?,
-                    'amount', ?,
-                    'e2e_id', NULL,
-                    'account', '5602362',
-                    'tx_date', DATE_FORMAT(?, '%Y-%m-%d %H:%i:%s'),
-                    'tx_type', 'D',
-                    'tx_status', 'done',
-                    'created_at', UNIX_TIMESTAMP(?) * 1000,
-                    'tx_pix_key', ?,
-                    'tx_payee_id', '52006135000168',
-                    'tx_payer_id', '000000001',
-                    'tx_payee_name', ?,
-                    'tx_payer_name', ?
-                ),
-                1
-            )
-        `;
-
-        const params = [
-            uid,
-            txId,
-            normalizedDate,
-            numericAmount,
-            subaccount.chave_pix,
-            note,
-            uid,
-            txId,
-            numericAmount,
-            normalizedDate,
-            normalizedDate,
-            subaccount.chave_pix,
-            note,
-            note
-        ];
-
-        await pool.query(insertQuery, params);
+        const created = await transactionService.createStatementTransaction({
+            subaccount,
+            actorUserId: req.user.id,
+            payload: {
+                amount,
+                tx_date,
+                description,
+                operation_direct: 'out',
+                sender_name: 'CROSS INTERMEDIAÇÃO LTDA',
+                counterparty_name: description || 'USD BETA OUT / C'
+            }
+        });
 
         await logAction(req, 'subaccount:debit_cross', 'Subaccount', subaccount.id, {
             subaccount_name: subaccount.name,
-            amount: numericAmount,
-            tx_date: normalizedDate,
-            tx_pix_key: subaccount.chave_pix,
-            description: note,
-            uid,
-            tx_id: txId
+            amount: parseFloat(amount),
+            tx_date,
+            description,
+            created_transaction_id: created.id
         });
 
         res.status(201).json({ message: 'Cross debit created successfully.' });
     } catch (error) {
         console.error('[DEBIT-CROSS] Failed to create debit:', error);
-        res.status(500).json({ message: 'Failed to create debit.' });
+        res.status(error.status || 500).json({ message: error.message || 'Failed to create debit.' });
     }
 };
 
@@ -522,93 +466,24 @@ exports.createPortalAccessSession = async (req, res) => {
 
 exports.getRecibosTransactions = async (req, res) => {
     const { subaccountId } = req.params;
-    const pagination = parsePagination(req.query, { defaultLimit: 50 });
 
     try {
-        const [[{ total }]] = await pool.query(
-            `SELECT COUNT(*) AS total
-             FROM xpayz_transactions
-             WHERE subaccount_id = ?`,
-            [subaccountId]
-        );
-
-        let dataQuery = `
-            SELECT id, sender_name, amount, transaction_date
-            FROM xpayz_transactions
-            WHERE subaccount_id = ?
-            ORDER BY transaction_date DESC
-        `;
-        const dataParams = [subaccountId];
-        if (!pagination.isAll) {
-            dataQuery += ' LIMIT ? OFFSET ?';
-            dataParams.push(pagination.limitValue, pagination.offset);
+        const sourceSubaccount = await transactionService.getSubaccountByNumber(subaccountId);
+        if (!sourceSubaccount) {
+            return res.status(404).json({ message: 'Source subaccount not found.' });
         }
-
-        const [transactions] = await pool.query(dataQuery, dataParams);
-
-        const uniqueSenders = Array.from(
-            new Set(
-                transactions
-                    .map((tx) => (tx.sender_name || '').trim())
-                    .filter(Boolean)
-            )
-        );
-
-        let suggestionsBySender = new Map();
-        if (uniqueSenders.length > 0) {
-            const [matches] = await pool.query(
-                `
-                    SELECT
-                        xt.sender_name,
-                        s.id AS subaccount_id,
-                        s.name AS subaccount_name,
-                        COUNT(*) AS match_count
-                    FROM xpayz_transactions xt
-                    JOIN subaccounts s ON xt.subaccount_id = s.subaccount_number
-                    WHERE xt.sender_name IN (?)
-                      AND xt.subaccount_id != ?
-                    GROUP BY xt.sender_name, s.id, s.name
-                    ORDER BY xt.sender_name ASC, match_count DESC, s.name ASC
-                `,
-                [uniqueSenders, subaccountId]
-            );
-
-            suggestionsBySender = matches.reduce((acc, row) => {
-                if (!acc.has(row.sender_name)) {
-                    acc.set(row.sender_name, row);
-                }
-                return acc;
-            }, new Map());
-        }
-
-        const enhancedTransactions = transactions.map((tx) => {
-            const sender = (tx.sender_name || '').trim();
-            const bestMatch = suggestionsBySender.get(sender);
-
-            if (!bestMatch) {
-                return { ...tx, suggestion: null };
-            }
-
-            const confidence = Math.min(Number(bestMatch.match_count || 0) * 10, 100);
-            return {
-                ...tx,
-                suggestion: {
-                    subaccountId: bestMatch.subaccount_id,
-                    subaccountName: bestMatch.subaccount_name,
-                    confidence,
-                    reason: `${bestMatch.match_count} prev. txs`
-                }
-            };
+        const result = await transactionService.listRecibosTransactions({
+            sourceSubaccountId: sourceSubaccount.id,
+            query: req.query
         });
-
         res.json({
-            items: enhancedTransactions,
-            ...buildPaginationMeta(total, pagination)
+            items: result.transactions,
+            ...result.pagination
         });
 
     } catch (error) {
         console.error('[RECIBOS-ERROR]', error);
-        res.status(500).json({ message: 'Failed to fetch Recibos transactions.' });
+        res.status(error.status || 500).json({ message: error.message || 'Failed to fetch Recibos transactions.' });
     }
 };
 
@@ -621,20 +496,26 @@ exports.reassignTransaction = async (req, res) => {
     }
 
     try {
-        // Simply update the subaccount_id link in the database
-        const [result] = await pool.query(
-            `UPDATE xpayz_transactions SET subaccount_id = ? WHERE id = ?`,
-            [targetSubaccountNumber, transactionId]
+        const [[targetSubaccount]] = await pool.query(
+            'SELECT id FROM subaccounts WHERE subaccount_number = ?',
+            [targetSubaccountNumber]
         );
-
-        if (result.affectedRows === 0) {
-            return res.status(404).json({ message: 'Transaction not found.' });
+        if (!targetSubaccount) {
+            return res.status(404).json({ message: 'Target subaccount not found.' });
         }
+
+        await transactionService.moveStatementTransaction({
+            source: 'xpayz',
+            transactionId,
+            targetSubaccountId: targetSubaccount.id,
+            actorUserId: req.user.id,
+            badgeLabel: 'added'
+        });
 
         res.json({ message: 'Transaction successfully reassigned.' });
 
     } catch (error) {
         console.error('[REASSIGN-ERROR]', error);
-        res.status(500).json({ message: 'Failed to reassign transaction.' });
+        res.status(error.status || 500).json({ message: error.message || 'Failed to reassign transaction.' });
     }
 };

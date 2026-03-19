@@ -10,9 +10,56 @@ const ensureRuntimeSchema = async () => {
     console.log(
       "[SCHEMA] request_types columns ensured: new_content_reaction, new_content_reply_text.",
     );
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS subaccount_manual_transactions (
+        id int NOT NULL AUTO_INCREMENT,
+        subaccount_id int NOT NULL,
+        direction enum('in','out') NOT NULL DEFAULT 'in',
+        sender_name varchar(255) DEFAULT NULL,
+        counterparty_name varchar(255) DEFAULT NULL,
+        amount decimal(20,2) NOT NULL DEFAULT '0.00',
+        transaction_date datetime NOT NULL,
+        is_portal_confirmed tinyint(1) NOT NULL DEFAULT '0',
+        portal_notes varchar(30) DEFAULT NULL,
+        badge_label varchar(50) DEFAULT NULL,
+        visible_in_master tinyint(1) NOT NULL DEFAULT '1',
+        visible_in_view_only tinyint(1) NOT NULL DEFAULT '1',
+        created_by_user_id int DEFAULT NULL,
+        updated_by_user_id int DEFAULT NULL,
+        created_at timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        PRIMARY KEY (id),
+        KEY idx_smt_subaccount_date (subaccount_id, transaction_date),
+        KEY idx_smt_visibility (visible_in_master, visible_in_view_only)
+      )
+    `);
+    console.log("[SCHEMA] subaccount_manual_transactions ensured.");
+
+    await pool.query(`
+      ALTER TABLE xpayz_transactions
+      ADD COLUMN IF NOT EXISTS display_subaccount_id int NULL AFTER subaccount_id,
+      ADD COLUMN IF NOT EXISTS entry_origin enum('synced','statement_manual','moved') NOT NULL DEFAULT 'synced' AFTER display_subaccount_id,
+      ADD COLUMN IF NOT EXISTS sync_control_state enum('normal','blocked','hidden') NOT NULL DEFAULT 'normal' AFTER entry_origin,
+      ADD COLUMN IF NOT EXISTS badge_label varchar(50) NULL AFTER sync_control_state,
+      ADD COLUMN IF NOT EXISTS visible_in_master tinyint(1) NOT NULL DEFAULT '1' AFTER badge_label,
+      ADD COLUMN IF NOT EXISTS visible_in_view_only tinyint(1) NOT NULL DEFAULT '1' AFTER visible_in_master,
+      ADD COLUMN IF NOT EXISTS updated_by_user_id int NULL AFTER visible_in_view_only
+    `);
+    await pool.query(`
+      ALTER TABLE trkbit_transactions
+      ADD COLUMN IF NOT EXISTS display_subaccount_id int NULL AFTER tx_pix_key,
+      ADD COLUMN IF NOT EXISTS entry_origin enum('synced','statement_manual','moved') NOT NULL DEFAULT 'synced' AFTER display_subaccount_id,
+      ADD COLUMN IF NOT EXISTS sync_control_state enum('normal','blocked','hidden') NOT NULL DEFAULT 'normal' AFTER entry_origin,
+      ADD COLUMN IF NOT EXISTS badge_label varchar(50) NULL AFTER sync_control_state,
+      ADD COLUMN IF NOT EXISTS visible_in_master tinyint(1) NOT NULL DEFAULT '1' AFTER badge_label,
+      ADD COLUMN IF NOT EXISTS visible_in_view_only tinyint(1) NOT NULL DEFAULT '1' AFTER visible_in_master,
+      ADD COLUMN IF NOT EXISTS updated_by_user_id int NULL AFTER visible_in_view_only
+    `);
+    console.log("[SCHEMA] statement transaction control columns ensured.");
   } catch (error) {
     console.error(
-      "[SCHEMA] Failed to ensure request_types new-content columns:",
+      "[SCHEMA] Failed runtime schema ensure:",
       error.message,
     );
     throw error;

@@ -6,6 +6,7 @@ const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
 require('dotenv').config();
 const axios = require('axios');
+const transactionService = require('../services/subaccountTransactionService');
 
 const PORTAL_JWT_SECRET = process.env.PORTAL_JWT_SECRET;
 const PORTAL_UNCONFIRM_PASSCODE = process.env.PORTAL_UNCONFIRM_PASSCODE || '1234';
@@ -125,217 +126,95 @@ exports.login = async (req, res) => {
 };
 
 exports.getDashboardSummary = async (req, res) => {
-    // CORRECTED: Use subaccountNumber for xpayz, chavePix for cross
-    const { accountType, subaccountNumber, chavePix, impersonation } = req.client;
-    const { date, dateFrom, dateTo } = req.query;
-    const canUseRange = impersonation === true && dateFrom && dateTo;
-    const range = canUseRange ? buildRangeParams(dateFrom, dateTo) : null;
-
-    if (canUseRange && !range) {
-        return res.status(400).json({ message: 'Invalid date range.' });
-    }
-
-    if (!date && !range) {
-        return res.json({ 
-            dailyTotalIn: 0, dailyTotalOut: 0, allTimeBalance: 0,
-            dailyCountIn: 0, dailyCountOut: 0, dailyCountTotal: 0 
-        });
-    }
-
     try {
-        let dailySummary, balance;
-
-        if (accountType === 'cross') {
-            // This logic is correct
-            let dailySummaryQuery = `SELECT SUM(CASE WHEN tx_type = 'C' THEN amount ELSE 0 END) as dailyTotalIn, SUM(CASE WHEN tx_type = 'D' THEN amount ELSE 0 END) as dailyTotalOut, COUNT(CASE WHEN tx_type = 'C' THEN 1 END) as dailyCountIn, COUNT(CASE WHEN tx_type = 'D' THEN 1 END) as dailyCountOut, COUNT(*) as dailyCountTotal FROM trkbit_transactions WHERE tx_pix_key = ?`;
-            const summaryParams = [chavePix];
-            if (range) {
-                dailySummaryQuery += ' AND tx_date BETWEEN ? AND ?';
-                summaryParams.push(range.start, range.end);
-            } else {
-                dailySummaryQuery += ' AND DATE(tx_date) = ?';
-                summaryParams.push(date);
-            }
-            dailySummaryQuery += ';';
-            [[dailySummary]] = await pool.query(dailySummaryQuery, summaryParams);
-            const allTimeBalanceQuery = `
-                SELECT SUM(CASE 
-                                WHEN tx_type = 'C' THEN amount 
-                                WHEN tx_type = 'D' THEN -amount 
-                                ELSE 0 
-                            END) as allTimeBalance 
-                FROM trkbit_transactions 
-                WHERE tx_pix_key = ?;
-            `;
-            [[balance]] = await pool.query(allTimeBalanceQuery, [chavePix]);
-            
-        } else { // 'xpayz'
-            let dailySummaryQuery = `SELECT SUM(CASE WHEN operation_direct = 'in' THEN amount ELSE 0 END) as dailyTotalIn, SUM(CASE WHEN operation_direct = 'out' THEN amount ELSE 0 END) as dailyTotalOut, COUNT(CASE WHEN operation_direct = 'in' THEN 1 END) as dailyCountIn, COUNT(CASE WHEN operation_direct = 'out' THEN 1 END) as dailyCountOut, COUNT(*) as dailyCountTotal FROM xpayz_transactions WHERE subaccount_id = ?`;
-            const summaryParams = [subaccountNumber];
-            if (range) {
-                dailySummaryQuery += ' AND transaction_date BETWEEN ? AND ?';
-                summaryParams.push(range.start, range.end);
-            } else {
-                dailySummaryQuery += ' AND DATE(transaction_date) = ?';
-                summaryParams.push(date);
-            }
-            dailySummaryQuery += ';';
-            // DEFINITIVE FIX: Use subaccountNumber (the XPayz ID)
-            [[dailySummary]] = await pool.query(dailySummaryQuery, summaryParams);
-
-            const allTimeBalanceQuery = `SELECT (SUM(CASE WHEN operation_direct = 'in' THEN amount ELSE 0 END) - SUM(CASE WHEN operation_direct = 'out' THEN amount ELSE 0 END)) as allTimeBalance FROM xpayz_transactions WHERE subaccount_id = ?;`;
-            // DEFINITIVE FIX: Use subaccountNumber (the XPayz ID)
-            [[balance]] = await pool.query(allTimeBalanceQuery, [subaccountNumber]);
-        }
-
-        res.json({ 
-            dailyTotalIn: parseFloat(dailySummary.dailyTotalIn || 0),
-            dailyTotalOut: parseFloat(dailySummary.dailyTotalOut || 0),
-            allTimeBalance: parseFloat(balance.allTimeBalance || 0),
-            dailyCountIn: parseInt(dailySummary.dailyCountIn || 0),
-            dailyCountOut: parseInt(dailySummary.dailyCountOut || 0),
-            dailyCountTotal: parseInt(dailySummary.dailyCountTotal || 0)
+        const subaccount = await transactionService.getPortalSubaccount(req.client);
+        const viewerMode = transactionService.getViewerMode(req.client);
+        const summary = await transactionService.getDashboardSummary({
+            subaccount,
+            filters: req.query,
+            viewerMode
         });
-
+        res.json(summary);
     } catch (error) {
-        console.error(`[PORTAL-SUMMARY-ERROR] for subaccount number ${subaccountNumber}:`, error);
+        console.error('[PORTAL-SUMMARY-ERROR]', error);
         res.status(500).json({ message: 'Failed to calculate dashboard summary.' });
     }
 };
 
 exports.getTransactions = async (req, res) => {
-    const { accountType, subaccountNumber, chavePix, username, impersonation } = req.client;
-    const { page = 1, limit = 50, search, date, dateFrom, dateTo, direction, confirmation } = req.query;
-    const canUseRange = impersonation === true && dateFrom && dateTo;
-    const range = canUseRange ? buildRangeParams(dateFrom, dateTo) : null;
-    const normalizedDirection = impersonation === true && (direction === 'in' || direction === 'out') ? direction : null;
-    const normalizedConfirmation = confirmation === 'confirmed'
-        ? 'confirmed'
-        : (confirmation === 'pending' ? 'pending' : null);
-
-    if (canUseRange && !range) {
-        return res.status(400).json({ message: 'Invalid date range.' });
-    }
-
     try {
-        let total = 0;
-        let transactions = [];
-
-        if (accountType === 'cross') {
-            let query = `FROM trkbit_transactions tt WHERE tt.tx_pix_key = ?`;
-            const params = [chavePix];
-            if (search) {
-                query += ` AND (tt.tx_payer_name LIKE ? OR tt.amount LIKE ? OR tt.tx_id LIKE ?)`;
-                const searchTerm = `%${search}%`;
-                params.push(searchTerm, searchTerm, searchTerm);
-            }
-            if (range) {
-                query += ' AND tt.tx_date BETWEEN ? AND ?';
-                params.push(range.start, range.end);
-            } else if (date) {
-                query += ' AND DATE(tt.tx_date) = ?';
-                params.push(date);
-            }
-            if (normalizedDirection) {
-                query += ' AND tt.tx_type = ?';
-                params.push(normalizedDirection === 'in' ? 'C' : 'D');
-            }
-            if (normalizedConfirmation) {
-                query += ' AND tt.is_portal_confirmed = ?';
-                params.push(normalizedConfirmation === 'confirmed' ? 1 : 0);
-            }
-            
-            const countQuery = `SELECT count(*) as total ${query}`;
-            const [[{ total: queryTotal }]] = await pool.query(countQuery, params);
-            total = queryTotal;
-
-            if (total > 0) {
-                const dataQuery = `
-                    SELECT 
-                        tt.uid as id, 
-                        tt.tx_date as transaction_date, 
-                        tt.amount, 
-                        tt.tx_type as operation_direct,
-                        tt.is_portal_confirmed,
-                        tt.portal_notes,
-                        'trkbit' as source, -- <<< ADD THIS LINE
-                        CASE
-                            WHEN tt.tx_type = 'C' THEN tt.tx_payer_name
-                            ELSE 'CROSS INTERMEDIAÇÃO LTDA' 
-                        END AS sender_name,
-                        CASE
-                            WHEN tt.tx_type = 'D' THEN JSON_UNQUOTE(JSON_EXTRACT(tt.raw_data, '$.tx_payee_name'))
-                            ELSE 'CROSS INTERMEDIAÇÃO LTDA'
-                        END AS counterparty_name
-                    ${query} 
-                    ORDER BY tt.tx_date DESC 
-                    LIMIT ? OFFSET ?
-                `;
-                const finalParams = [...params, parseInt(limit), (page - 1) * limit];
-                [transactions] = await pool.query(dataQuery, finalParams);
-            }
-        } 
-        else { 
-            let query = `FROM xpayz_transactions xt `;
-            let params = [];
-            // <<< ADD 'xpayz' as source TO THE SELECT FIELDS
-            let selectFields = `xt.id, xt.transaction_date, xt.sender_name, xt.counterparty_name, xt.amount, xt.operation_direct, xt.is_portal_confirmed, xt.portal_notes, 'xpayz' as source `;
-
-            if (username === PARTNER_USERNAME) {
-                query += `INNER JOIN bridge_transactions bt ON xt.id = bt.xpayz_transaction_id WHERE xt.subaccount_id = ?`;
-                params.push(subaccountNumber);
-                selectFields += `, bt.correlation_id, bt.status as bridge_status`;
-            } 
-            else {
-                query += `WHERE xt.subaccount_id = ?`;
-                params.push(subaccountNumber);
-            }
-
-            if (search) {
-                query += ` AND (xt.sender_name LIKE ? OR xt.amount LIKE ?)`;
-                const searchTerm = `%${search}%`;
-                params.push(searchTerm, searchTerm);
-            }
-            if (range) {
-                query += ' AND xt.transaction_date BETWEEN ? AND ?';
-                params.push(range.start, range.end);
-            } else if (date) {
-                query += ' AND DATE(xt.transaction_date) = ?';
-                params.push(date);
-            }
-            if (normalizedDirection) {
-                query += ' AND xt.operation_direct = ?';
-                params.push(normalizedDirection);
-            }
-            if (normalizedConfirmation) {
-                query += ' AND xt.is_portal_confirmed = ?';
-                params.push(normalizedConfirmation === 'confirmed' ? 1 : 0);
-            }
-
-            const countQuery = `SELECT count(xt.id) as total ${query}`;
-            const [[{ total: queryTotal }]] = await pool.query(countQuery, params);
-            total = queryTotal;
-
-            if (total > 0) {
-                const dataQuery = `SELECT ${selectFields} ${query} ORDER BY xt.transaction_date DESC LIMIT ? OFFSET ?`;
-                const finalParams = [...params, parseInt(limit), (page - 1) * limit];
-                [transactions] = await pool.query(dataQuery, finalParams);
-            }
-        }
-        
+        const result = await transactionService.listPortalTransactions(req.client, req.query);
         res.json({
-            transactions,
-            totalPages: Math.ceil(total / limit),
-            currentPage: parseInt(page),
-            totalRecords: total,
+            transactions: result.transactions,
+            totalPages: result.pagination.totalPages,
+            currentPage: result.pagination.currentPage,
+            totalRecords: result.pagination.totalRecords,
+            limit: result.pagination.limit,
+            pool: result.pool
         });
     } catch (error) {
-        console.error(`[PORTAL-TRANSACTIONS-ERROR] Failed to fetch transactions:`, error);
+        console.error('[PORTAL-TRANSACTIONS-ERROR] Failed to fetch transactions:', error);
         res.status(500).json({ message: 'Failed to fetch transactions.' });
     }
 };
 
 exports.exportTransactions = async (req, res) => {
+    try {
+        const exportResult = await transactionService.listPortalTransactions(req.client, { ...req.query, limit: 'all' });
+        const exportRows = exportResult.transactions;
+        const filenameDate = (req.query.dateFrom && req.query.dateTo)
+            ? `${req.query.dateFrom}_to_${req.query.dateTo}`
+            : (req.query.date || 'all_time');
+        const exportFilename = `statement_${req.client.username}_${filenameDate}_${exportResult.pool}`;
+        const exportAccountType = req.client.accountType;
+
+        if (req.query.format === 'pdf') {
+            const doc = new PDFDocument({ margin: 50, size: 'A4' });
+            res.setHeader('Content-Type', 'application/pdf');
+            res.setHeader('Content-Disposition', `attachment; filename="${exportFilename}.pdf"`);
+            doc.pipe(res);
+            const timeOffsetHours = exportAccountType === 'cross' ? -3 : 0;
+            generatePdfTable(doc, exportRows, req.client.username, timeOffsetHours);
+            doc.end();
+            return;
+        }
+
+        const workbook = new ExcelJS.Workbook();
+        const worksheet = workbook.addWorksheet('Transactions');
+        worksheet.columns = [
+            { header: 'Date', key: 'date', width: 25, style: { numFmt: 'yyyy-mm-dd hh:mm:ss' } },
+            { header: 'Type', key: 'type', width: 10 },
+            { header: 'Counterparty', key: 'counterparty', width: 40 },
+            { header: 'Amount (BRL)', key: 'amount', width: 20, style: { numFmt: '#,##0.00' } },
+        ];
+        worksheet.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } };
+        worksheet.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0A2540' } };
+        worksheet.getRow(1).alignment = { vertical: 'middle', horizontal: 'center' };
+
+        const timeOffsetHours = exportAccountType === 'cross' ? -3 : 0;
+        exportRows.forEach((tx) => {
+            const isCredit = String(tx.operation_direct || '').toLowerCase() === 'in' || String(tx.operation_direct || '').toLowerCase() === 'c';
+            const dateObj = new Date(tx.transaction_date);
+            if (Number.isFinite(dateObj.getTime()) && timeOffsetHours) {
+                dateObj.setHours(dateObj.getHours() + timeOffsetHours);
+            }
+            worksheet.addRow({
+                date: dateObj,
+                type: isCredit ? 'IN' : 'OUT',
+                counterparty: isCredit ? tx.sender_name : (tx.counterparty_name || 'N/A'),
+                amount: isCredit ? parseFloat(tx.amount) : -parseFloat(tx.amount)
+            });
+        });
+
+        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        res.setHeader('Content-Disposition', `attachment; filename="${exportFilename}.xlsx"`);
+        await workbook.xlsx.write(res);
+        res.end();
+        return;
+    } catch (overrideError) {
+        console.error('[PORTAL-EXPORT-OVERRIDE-ERROR]', overrideError);
+    }
+
     const { accountType, subaccountNumber, chavePix, username, impersonation } = req.client;
     const { search, date, dateFrom, dateTo, direction, confirmation, format = 'excel' } = req.query;
     const canUseRange = impersonation === true && dateFrom && dateTo;
@@ -473,20 +352,23 @@ exports.exportTransactions = async (req, res) => {
 };
 
 exports.getTrkbitTransactionsForTransfer = async (req, res) => {
-    const { accountType, chavePix, impersonation } = req.client;
+    const { accountType } = req.client;
     const { page = 1, limit = 50, search, dateFrom, dateTo } = req.query;
     const offset = (page - 1) * limit;
 
-    if (!impersonation || accountType !== 'cross') {
+    if (req.client.impersonation !== true || accountType !== 'cross') {
         return res.status(403).json({ message: 'Impersonation access required for Cross accounts.' });
     }
 
     try {
+        const subaccount = await transactionService.getPortalSubaccount(req.client);
         let query = `
             FROM trkbit_transactions tt
-            WHERE (tt.tx_pix_key <> ? OR tt.tx_pix_key IS NULL)
+            LEFT JOIN subaccounts owner_sub ON owner_sub.chave_pix = tt.tx_pix_key
+            WHERE COALESCE(tt.display_subaccount_id, owner_sub.id) <> ?
+              AND tt.sync_control_state <> 'hidden'
         `;
-        const params = [chavePix];
+        const params = [subaccount.id];
 
         if (search) {
             query += " AND (tt.tx_payer_name LIKE ? OR tt.tx_id LIKE ? OR tt.e2e_id LIKE ? OR tt.amount LIKE ?)";
@@ -535,10 +417,10 @@ exports.getTrkbitTransactionsForTransfer = async (req, res) => {
 };
 
 exports.claimTrkbitTransaction = async (req, res) => {
-    const { accountType, chavePix, impersonation } = req.client;
+    const { accountType, subaccountId } = req.client;
     const { transactionId } = req.body;
 
-    if (!impersonation || accountType !== 'cross') {
+    if (!req.client.impersonation || accountType !== 'cross') {
         return res.status(403).json({ message: 'Impersonation access required for Cross accounts.' });
     }
     if (!transactionId) {
@@ -546,39 +428,23 @@ exports.claimTrkbitTransaction = async (req, res) => {
     }
 
     try {
-        const [[existing]] = await pool.query(
-            'SELECT uid, tx_pix_key, tx_id, amount, tx_date FROM trkbit_transactions WHERE uid = ?',
-            [transactionId]
-        );
+        const [[existing]] = await pool.query('SELECT uid, tx_pix_key, tx_id, amount, tx_date FROM trkbit_transactions WHERE uid = ?', [transactionId]);
+        if (!existing) return res.status(404).json({ message: 'Transaction not found.' });
 
-        if (!existing) {
-            return res.status(404).json({ message: 'Transaction not found.' });
-        }
-        if (existing.tx_pix_key === chavePix) {
-            return res.status(409).json({ message: 'Transaction already belongs to this PIX key.' });
-        }
-
-        const [result] = await pool.query(
-            `UPDATE trkbit_transactions 
-             SET tx_pix_key = ?, 
-                 raw_data = CASE 
-                    WHEN raw_data IS NULL THEN raw_data 
-                    ELSE JSON_SET(raw_data, '$.tx_pix_key', ?) 
-                 END
-             WHERE uid = ?`,
-            [chavePix, chavePix, transactionId]
-        );
-
-        if (result.affectedRows === 0) {
-            return res.status(404).json({ message: 'Transaction not found.' });
-        }
+        await transactionService.moveStatementTransaction({
+            source: 'trkbit',
+            transactionId,
+            targetSubaccountId: subaccountId,
+            actorUserId: req.client.adminUserId || null,
+            badgeLabel: 'added'
+        });
 
         await logImpersonationAction(req.client, 'subaccount:transfer_trkbit', 'TrkbitTransaction', existing.uid, {
             tx_id: existing.tx_id,
             amount: existing.amount,
             tx_date: existing.tx_date,
             from_pix_key: existing.tx_pix_key,
-            to_pix_key: chavePix
+            to_subaccount_id: subaccountId
         });
 
         res.json({ message: 'Transaction transferred successfully.' });
@@ -589,64 +455,32 @@ exports.claimTrkbitTransaction = async (req, res) => {
 };
 
 exports.updateTransactionNotes = async (req, res) => {
-    // === THE FIX: Read transactionId from the request body, not params ===
-    const { transactionId, source, op_comment } = req.body;
-    const { accountType, subaccountNumber, chavePix } = req.client;
+    const { transactionId, source, op_comment, pool: poolName = 'statement' } = req.body;
 
-    if (!transactionId || !source) {
-        return res.status(400).json({ message: 'Transaction ID and source are required.' });
-    }
-
-    // Sanitize and truncate notes
-    const finalNotes = (op_comment || '').trim().slice(0, 30);
-
-    let table, idColumn, ownershipColumn, ownershipValue;
-
-    if (source === 'xpayz' && accountType === 'xpayz') {
-        table = 'xpayz_transactions';
-        idColumn = 'id';
-        ownershipColumn = 'subaccount_id';
-        ownershipValue = subaccountNumber;
-    } else if (source === 'trkbit' && accountType === 'cross') {
-        table = 'trkbit_transactions';
-        idColumn = 'uid';
-        ownershipColumn = 'tx_pix_key';
-        ownershipValue = chavePix;
-    } else {
-        return res.status(400).json({ message: 'Invalid source or mismatched account type.' });
+    if (!transactionId) {
+        return res.status(400).json({ message: 'Transaction ID is required.' });
     }
 
     try {
-        const query = `
-            UPDATE ${table} 
-            SET portal_notes = ? 
-            WHERE ${idColumn} = ? AND ${ownershipColumn} = ?
-        `;
-        const [result] = await pool.query(query, [finalNotes, transactionId, ownershipValue]);
-
-        if (result.affectedRows === 0) {
-            return res.status(404).json({ message: 'Transaction not found or permission denied.' });
-        }
-
+        transactionService.assertImpersonation(req.client);
+        const subaccount = await transactionService.getPortalSubaccount(req.client);
+        await transactionService.setTransactionNotes({
+            subaccount,
+            transactionId,
+            poolName,
+            notes: op_comment
+        });
         res.json({ message: 'Note updated successfully.' });
     } catch (error) {
         console.error(`[PORTAL-NOTES-ERROR] Failed to update note for ${transactionId}:`, error);
-        res.status(500).json({ message: 'Failed to update note.' });
+        res.status(error.status || 500).json({ message: error.message || 'Failed to update note.' });
     }
 };
 
 exports.updateTransactionConfirmation = async (req, res) => {
-    // Logging is still here, which is good.
-    console.log(`\n--- [PORTAL CONTROLLER] updateTransactionConfirmation triggered ---`);
-    console.log('[PORTAL CONTROLLER] Request Body (Payload):', req.body);
-    console.log('[PORTAL CONTROLLER] Client Data (from JWT):', req.client);
+    const { transactionId, confirmed, passcode, pool: poolName = 'statement' } = req.body;
 
-    // === THE FIX: Read the ID from the request BODY, not the URL params ===
-    const { transactionId, source, confirmed, passcode } = req.body;
-    const { accountType, subaccountNumber, chavePix } = req.client;
-
-    if (!transactionId || !source || typeof confirmed !== 'boolean') {
-        console.error('[PORTAL CONTROLLER] VALIDATION FAILED: Missing `transactionId`, `source`, or `confirmed` boolean in the request body.');
+    if (!transactionId || typeof confirmed !== 'boolean') {
         return res.status(400).json({ message: 'Transaction ID, source, and confirmation status are required.' });
     }
     
@@ -657,47 +491,143 @@ exports.updateTransactionConfirmation = async (req, res) => {
         }
     }
 
-    let table, idColumn, ownershipColumn, ownershipValue;
-
-    if (source === 'xpayz' && accountType === 'xpayz') {
-        table = 'xpayz_transactions';
-        idColumn = 'id';
-        ownershipColumn = 'subaccount_id';
-        ownershipValue = subaccountNumber;
-    } else if (source === 'trkbit' && accountType === 'cross') {
-        table = 'trkbit_transactions';
-        idColumn = 'uid'; 
-        ownershipColumn = 'tx_pix_key';
-        ownershipValue = chavePix;
-    } else {
-        console.error(`[PORTAL CONTROLLER] LOGIC FAILED: Mismatch between source ('${source}') and accountType ('${accountType}').`);
-        return res.status(400).json({ message: 'Invalid source or mismatched account type.' });
-    }
-
     try {
-        const query = `
-            UPDATE ${table} 
-            SET is_portal_confirmed = ? 
-            WHERE ${idColumn} = ? AND ${ownershipColumn} = ?
-        `;
-        const params = [confirmed, transactionId, ownershipValue];
-
-        console.log(`[PORTAL CONTROLLER] Executing SQL: ${query.replace(/\s\s+/g, ' ')} with params [${params.join(', ')}]`);
-        
-        const [result] = await pool.query(query, params);
-
-        console.log('[PORTAL CONTROLLER] SQL Result:', result);
-
-        if (result.affectedRows === 0) {
-            console.error('[PORTAL CONTROLLER] DB FAILED: Query executed but no rows were updated. Check ownership and ID.');
-            return res.status(404).json({ message: 'Transaction not found or you do not have permission to modify it.' });
-        }
-        
-        console.log('[PORTAL CONTROLLER] SUCCESS: Transaction updated.');
+        transactionService.assertImpersonation(req.client);
+        const subaccount = await transactionService.getPortalSubaccount(req.client);
+        await transactionService.setTransactionConfirmation({
+            subaccount,
+            transactionId,
+            poolName,
+            confirmed
+        });
         res.json({ message: `Transaction successfully ${confirmed ? 'confirmed' : 'unconfirmed'}.` });
     } catch (error) {
-        console.error(`[PORTAL CONTROLLER] DB FAILED: SQL execution threw an error.`, error);
-        res.status(500).json({ message: 'Failed to update transaction status.' });
+        console.error('[PORTAL-CONFIRMATION-ERROR]', error);
+        res.status(error.status || 500).json({ message: error.message || 'Failed to update transaction status.' });
+    }
+};
+
+exports.createTransaction = async (req, res) => {
+    const { pool: poolName = 'manual' } = req.body;
+
+    try {
+        transactionService.assertImpersonation(req.client);
+        const subaccount = await transactionService.getPortalSubaccount(req.client);
+        if (poolName === 'statement') {
+            const created = await transactionService.createStatementTransaction({
+                subaccount,
+                actorUserId: req.client.adminUserId || null,
+                payload: req.body
+            });
+            return res.status(201).json({ message: 'Statement transaction created successfully.', transactionId: created.id });
+        }
+
+        const created = await transactionService.createManualTransaction({
+            subaccount,
+            actorUserId: req.client.adminUserId || null,
+            payload: req.body
+        });
+        res.status(201).json({ message: 'Manual transaction created successfully.', transactionId: created.id });
+    } catch (error) {
+        console.error('[PORTAL-CREATE-TRANSACTION]', error);
+        res.status(error.status || 500).json({ message: error.message || 'Failed to create transaction.' });
+    }
+};
+
+exports.updateTransaction = async (req, res) => {
+    const { id } = req.params;
+    const { pool: poolName = 'manual' } = req.body;
+
+    try {
+        transactionService.assertImpersonation(req.client);
+        const subaccount = await transactionService.getPortalSubaccount(req.client);
+        if (poolName === 'statement') {
+            await transactionService.updateStatementTransaction({
+                subaccount,
+                actorUserId: req.client.adminUserId || null,
+                transactionId: id,
+                payload: req.body
+            });
+            return res.json({ message: 'Statement transaction updated successfully.' });
+        }
+
+        await transactionService.updateManualTransaction({
+            subaccount,
+            actorUserId: req.client.adminUserId || null,
+            transactionId: id,
+            payload: req.body
+        });
+        res.json({ message: 'Manual transaction updated successfully.' });
+    } catch (error) {
+        console.error('[PORTAL-UPDATE-TRANSACTION]', error);
+        res.status(error.status || 500).json({ message: error.message || 'Failed to update transaction.' });
+    }
+};
+
+exports.deleteTransaction = async (req, res) => {
+    const { id } = req.params;
+    const { pool: poolName = 'manual' } = req.query;
+
+    try {
+        transactionService.assertImpersonation(req.client);
+        const subaccount = await transactionService.getPortalSubaccount(req.client);
+        if (poolName === 'statement') {
+            await transactionService.deleteStatementTransaction({
+                subaccount,
+                actorUserId: req.client.adminUserId || null,
+                transactionId: id
+            });
+            return res.json({ message: 'Statement transaction deleted successfully.' });
+        }
+
+        await transactionService.deleteManualTransaction({
+            subaccount,
+            transactionId: id
+        });
+        res.json({ message: 'Manual transaction deleted successfully.' });
+    } catch (error) {
+        console.error('[PORTAL-DELETE-TRANSACTION]', error);
+        res.status(error.status || 500).json({ message: error.message || 'Failed to delete transaction.' });
+    }
+};
+
+exports.updateTransactionVisibility = async (req, res) => {
+    const { transactionId, pool: poolName = 'statement', visibleInMaster, visibleInViewOnly } = req.body;
+
+    try {
+        transactionService.assertImpersonation(req.client);
+        const subaccount = await transactionService.getPortalSubaccount(req.client);
+        await transactionService.setTransactionVisibility({
+            subaccount,
+            transactionId,
+            poolName,
+            visibleInMaster: typeof visibleInMaster === 'boolean' ? (visibleInMaster ? 1 : 0) : null,
+            visibleInViewOnly: typeof visibleInViewOnly === 'boolean' ? (visibleInViewOnly ? 1 : 0) : null
+        });
+        res.json({ message: 'Transaction visibility updated successfully.' });
+    } catch (error) {
+        console.error('[PORTAL-VISIBILITY-TRANSACTION]', error);
+        res.status(error.status || 500).json({ message: error.message || 'Failed to update visibility.' });
+    }
+};
+
+exports.updateTransactionBadge = async (req, res) => {
+    const { transactionId, pool: poolName = 'statement', badgeLabel } = req.body;
+
+    try {
+        transactionService.assertImpersonation(req.client);
+        const subaccount = await transactionService.getPortalSubaccount(req.client);
+        await transactionService.setTransactionBadgeLabel({
+            subaccount,
+            transactionId,
+            poolName,
+            badgeLabel,
+            actorUserId: req.client.adminUserId || null
+        });
+        res.json({ message: 'Badge label updated successfully.' });
+    } catch (error) {
+        console.error('[PORTAL-BADGE-TRANSACTION]', error);
+        res.status(error.status || 500).json({ message: error.message || 'Failed to update badge label.' });
     }
 };
 
@@ -854,7 +784,7 @@ exports.triggerPartnerConfirmation = async (req, res) => {
 };
 
 exports.createCrossDebit = async (req, res) => {
-    const { impersonation, accountType, chavePix, subaccountId } = req.client;
+    const { impersonation, accountType, subaccountId } = req.client;
     const { amount, tx_date, description } = req.body;
 
     if (impersonation !== true) {
@@ -863,83 +793,30 @@ exports.createCrossDebit = async (req, res) => {
     if (accountType !== 'cross') {
         return res.status(400).json({ message: 'Debits can only be created for Cross accounts.' });
     }
-    if (!chavePix) {
-        return res.status(400).json({ message: 'Cross account is missing a PIX key.' });
-    }
-
-    const normalizedDate = normalizeDateTime(tx_date);
-    const numericAmount = parseFloat(amount);
-    const note = (description || 'USD BETA OUT / C').trim() || 'USD BETA OUT / C';
-
-    if (!normalizedDate) {
-        return res.status(400).json({ message: 'Valid date/time is required.' });
-    }
-    if (!Number.isFinite(numericAmount) || numericAmount <= 0) {
-        return res.status(400).json({ message: 'Amount must be greater than zero.' });
-    }
-
     try {
-        const uid = generateUuid();
-        const txId = generateUuid();
-
-        const insertQuery = `
-            INSERT INTO trkbit_transactions (
-                uid, tx_id, e2e_id, tx_date, amount, tx_pix_key, tx_type,
-                tx_payer_name, tx_payer_id, raw_data, is_used
-            ) VALUES (
-                ?, ?, NULL, ?, ?, ?, 'D',
-                ?, 'SYSTEM_ARCHIVE',
-                JSON_OBJECT(
-                    'ag', '0001',
-                    'uid', ?,
-                    'tx_id', ?,
-                    'amount', ?,
-                    'e2e_id', NULL,
-                    'account', '5602362',
-                    'tx_date', DATE_FORMAT(?, '%Y-%m-%d %H:%i:%s'),
-                    'tx_type', 'D',
-                    'tx_status', 'done',
-                    'created_at', UNIX_TIMESTAMP(?) * 1000,
-                    'tx_pix_key', ?,
-                    'tx_payee_id', '52006135000168',
-                    'tx_payer_id', '000000001',
-                    'tx_payee_name', ?,
-                    'tx_payer_name', ?
-                ),
-                1
-            )
-        `;
-
-        const params = [
-            uid,
-            txId,
-            normalizedDate,
-            numericAmount,
-            chavePix,
-            note,
-            uid,
-            txId,
-            numericAmount,
-            normalizedDate,
-            normalizedDate,
-            chavePix,
-            note,
-            note
-        ];
-
-        await pool.query(insertQuery, params);
+        const subaccount = await transactionService.getPortalSubaccount(req.client);
+        const created = await transactionService.createStatementTransaction({
+            subaccount,
+            actorUserId: req.client.adminUserId || null,
+            payload: {
+                amount,
+                tx_date,
+                description,
+                operation_direct: 'out',
+                sender_name: 'CROSS INTERMEDIAÇÃO LTDA',
+                counterparty_name: description || 'USD BETA OUT / C'
+            }
+        });
         await logImpersonationAction(req.client, 'subaccount:debit_cross', 'Subaccount', subaccountId, {
-            amount: numericAmount,
-            tx_date: normalizedDate,
-            tx_pix_key: chavePix,
-            description: note,
-            uid,
-            tx_id: txId
+            amount: parseFloat(amount),
+            tx_date,
+            description,
+            created_transaction_id: created.id
         });
 
         res.status(201).json({ message: 'Debit created successfully.' });
     } catch (error) {
         console.error('[PORTAL-DEBIT] Failed to create debit:', error);
-        res.status(500).json({ message: 'Failed to create debit.' });
+        res.status(error.status || 500).json({ message: error.message || 'Failed to create debit.' });
     }
 };

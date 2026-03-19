@@ -75,24 +75,31 @@ export const portalLogin = (credentials) => portalApiClient.post('/auth/login', 
 export const portalValidateSession = () => portalApiClient.get('/auth/validate'); // THIS WAS MISSING
 export const getPortalTransactions = (params) => portalApiClient.get('/transactions', { params });
 export const getPortalDashboardSummary = (params) => portalApiClient.get('/dashboard-summary', { params });
+export const createPortalTransaction = (data) => portalApiClient.post('/transactions', data);
+export const updatePortalTransaction = (id, data) => portalApiClient.put(`/transactions/${id}`, data);
+export const deletePortalTransaction = (id, pool) => portalApiClient.delete(`/transactions/${id}`, { params: { pool } });
+export const updatePortalTransactionVisibility = (data) => portalApiClient.patch('/transactions/visibility', data);
+export const updatePortalTransactionBadge = (data) => portalApiClient.patch('/transactions/badge', data);
 export const triggerPartnerConfirmation = (correlation_id) => portalApiClient.post('/bridge/confirm-payment', { correlation_id });
 export const createPortalCrossDebit = (data) => portalApiClient.post('/transactions/debit', data);
 export const getPortalTrkbitTransactions = (params) => portalApiClient.get('/trkbit/transactions', { params });
 export const claimPortalTrkbitTransaction = (transactionId) => portalApiClient.post('/trkbit/transactions/claim', { transactionId });
 
-export const updatePortalTransactionConfirmation = (id, source, confirmed, passcode) => {
+export const updatePortalTransactionConfirmation = (id, source, confirmed, passcode, pool = 'statement') => {
     return portalApiClient.post(`/transactions/confirm`, { 
         transactionId: id, 
         source, 
+        pool,
         confirmed, 
         passcode 
     });
 };
 
-export const updatePortalTransactionNotes = (id, source, notes) => {
+export const updatePortalTransactionNotes = (id, source, notes, pool = 'statement') => {
     return portalApiClient.post(`/transactions/notes`, {
         transactionId: id,
         source,
+        pool,
         op_comment: notes
     });
 };

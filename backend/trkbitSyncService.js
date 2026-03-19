@@ -83,10 +83,16 @@ const fetchAndStoreTransactions = async (customStartDate = null) => {
                 (uid, tx_id, e2e_id, tx_date, amount, tx_pix_key, tx_type, tx_payer_name, tx_payer_id, raw_data)
                 VALUES ?
                 ON DUPLICATE KEY UPDATE 
-                    tx_id = VALUES(tx_id),
-                    tx_payer_name = VALUES(tx_payer_name),
-                    tx_pix_key = VALUES(tx_pix_key),
-                    updated_at = NOW();
+                    tx_id = IF(sync_control_state = 'normal', VALUES(tx_id), tx_id),
+                    e2e_id = IF(sync_control_state = 'normal', VALUES(e2e_id), e2e_id),
+                    tx_date = IF(sync_control_state = 'normal', VALUES(tx_date), tx_date),
+                    amount = IF(sync_control_state = 'normal', VALUES(amount), amount),
+                    tx_pix_key = IF(sync_control_state = 'normal', VALUES(tx_pix_key), tx_pix_key),
+                    tx_type = IF(sync_control_state = 'normal', VALUES(tx_type), tx_type),
+                    tx_payer_name = IF(sync_control_state = 'normal', VALUES(tx_payer_name), tx_payer_name),
+                    tx_payer_id = IF(sync_control_state = 'normal', VALUES(tx_payer_id), tx_payer_id),
+                    raw_data = IF(sync_control_state = 'normal', VALUES(raw_data), raw_data),
+                    updated_at = IF(sync_control_state = 'normal', NOW(), updated_at);
             `;
 
             const chunkSize = 500;

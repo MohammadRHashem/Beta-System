@@ -144,8 +144,7 @@ def normalize_name(name: str) -> str:
 def save_transactions_to_db(subaccount_id: int, transactions: list[Transaction]):
     db = get_db_connection()
     cursor = db.cursor()
-    # Updated query to refresh raw_details on duplicate
-    query = """INSERT INTO xpayz_transactions (xpayz_transaction_id, subaccount_id, amount, operation_direct, sender_name, sender_name_normalized, counterparty_name, transaction_date, raw_details, external_id) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) ON DUPLICATE KEY UPDATE operation_direct=VALUES(operation_direct), counterparty_name=VALUES(counterparty_name), external_id=VALUES(external_id), raw_details=VALUES(raw_details);"""
+    query = """INSERT INTO xpayz_transactions (xpayz_transaction_id, subaccount_id, amount, operation_direct, sender_name, sender_name_normalized, counterparty_name, transaction_date, raw_details, external_id) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) ON DUPLICATE KEY UPDATE subaccount_id=IF(sync_control_state='normal', VALUES(subaccount_id), subaccount_id), amount=IF(sync_control_state='normal', VALUES(amount), amount), operation_direct=IF(sync_control_state='normal', VALUES(operation_direct), operation_direct), sender_name=IF(sync_control_state='normal', VALUES(sender_name), sender_name), sender_name_normalized=IF(sync_control_state='normal', VALUES(sender_name_normalized), sender_name_normalized), counterparty_name=IF(sync_control_state='normal', VALUES(counterparty_name), counterparty_name), transaction_date=IF(sync_control_state='normal', VALUES(transaction_date), transaction_date), external_id=IF(sync_control_state='normal', VALUES(external_id), external_id), raw_details=IF(sync_control_state='normal', VALUES(raw_details), raw_details);"""
     
     values_to_insert = []
     for tx in transactions:
