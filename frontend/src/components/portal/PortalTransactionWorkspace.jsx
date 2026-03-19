@@ -1109,13 +1109,13 @@ const PortalTransactionWorkspace = ({ forceViewOnly = false }) => {
               ) : null}
               {showDirectionFilter ? (
                 <Select value={filters.direction || ""} onChange={(event) => updateFilters({ direction: event.target.value })}>
-                  <option value="">All directions</option>
+                  <option value="">IN / OUT</option>
                   <option value="in">IN</option>
                   <option value="out">OUT</option>
                 </Select>
               ) : null}
               <Select value={filters.confirmation || ""} onChange={(event) => updateFilters({ confirmation: event.target.value })}>
-                <option value="">All statuses</option>
+                <option value="">Pending / Confirmed</option>
                 <option value="confirmed">Confirmed</option>
                 <option value="pending">Pending</option>
               </Select>
