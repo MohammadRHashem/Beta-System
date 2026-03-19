@@ -648,6 +648,8 @@ const PortalTransactionWorkspace = ({ forceViewOnly = false }) => {
   const [transferRows, setTransferRows] = useState([]);
   const [transferLoading, setTransferLoading] = useState(false);
   const [transferFilters, setTransferFilters] = useState({ search: "", amountExact: "", pixKey: "" });
+  const [transferPixOptions, setTransferPixOptions] = useState([]);
+  const [transferPagination, setTransferPagination] = useState({ page: 1, currentPage: 1, totalPages: 1, totalRecords: 0, limit: 20 });
   const [tokenPayload, setTokenPayload] = useState(null);
   const [isMobileViewport, setIsMobileViewport] = useState(() => (typeof window !== "undefined" ? window.innerWidth <= 860 : false));
   const [isToolbarExpanded, setIsToolbarExpanded] = useState(() => (typeof window !== "undefined" ? window.innerWidth > 860 : true));
@@ -808,22 +810,45 @@ const PortalTransactionWorkspace = ({ forceViewOnly = false }) => {
     setTransferLoading(true);
     try {
       const { data } = await getPortalTrkbitTransactions({
-        page: 1,
-        limit: 50,
+        page: transferPagination.currentPage || transferPagination.page || 1,
+        limit: transferPagination.limit || 20,
         search: debouncedTransferSearch,
         amountExact: debouncedTransferAmountExact,
         pixKey: debouncedTransferPixKey,
       });
       if (fetchId !== latestTransferFetchIdRef.current) return;
       setTransferRows(Array.isArray(data.transactions) ? data.transactions : []);
+      setTransferPixOptions(Array.isArray(data.pixOptions) ? data.pixOptions : []);
+      setTransferPagination((prev) => ({
+        ...prev,
+        page: Number(data.currentPage || 1),
+        currentPage: Number(data.currentPage || 1),
+        totalPages: Math.max(Number(data.totalPages || 1), 1),
+        totalRecords: Number(data.totalRecords || 0),
+        limit: Number(data.limit || prev.limit || 20),
+      }));
     } catch (error) {
       if (fetchId !== latestTransferFetchIdRef.current) return;
       console.error("Failed to fetch transfer rows", error);
       setTransferRows([]);
+      setTransferPixOptions([]);
     } finally {
       if (fetchId !== latestTransferFetchIdRef.current) return;
       setTransferLoading(false);
     }
+  }, [
+    debouncedTransferAmountExact,
+    debouncedTransferPixKey,
+    debouncedTransferSearch,
+    transferOpen,
+    transferPagination.currentPage,
+    transferPagination.limit,
+    transferPagination.page,
+  ]);
+
+  useEffect(() => {
+    if (!transferOpen) return;
+    setTransferPagination((prev) => ({ ...prev, page: 1, currentPage: 1 }));
   }, [debouncedTransferAmountExact, debouncedTransferPixKey, debouncedTransferSearch, transferOpen]);
 
   useEffect(() => {
@@ -959,6 +984,13 @@ const PortalTransactionWorkspace = ({ forceViewOnly = false }) => {
     fetchTransferRows();
     fetchTransactions();
     fetchSummary();
+  };
+
+  const renderTransferPixLabel = (pixKey) => {
+    if (pixKey == null || String(pixKey).trim() === "") {
+      return "Sem PIX";
+    }
+    return String(pixKey);
   };
 
   const renderNoteCell = (transaction) => {
@@ -1269,7 +1301,17 @@ const PortalTransactionWorkspace = ({ forceViewOnly = false }) => {
         <TransferFilterGrid>
           <Input placeholder="nome.." value={transferFilters.search} onChange={(event) => setTransferFilters((prev) => ({ ...prev, search: event.target.value }))} />
           <Input placeholder="valor" inputMode="decimal" value={transferFilters.amountExact} onChange={(event) => setTransferFilters((prev) => ({ ...prev, amountExact: event.target.value }))} />
-          <Input placeholder="Filter by PIX" value={transferFilters.pixKey} onChange={(event) => setTransferFilters((prev) => ({ ...prev, pixKey: event.target.value }))} />
+          <Select value={transferFilters.pixKey} onChange={(event) => setTransferFilters((prev) => ({ ...prev, pixKey: event.target.value }))}>
+            <option value="">Todos os PIX</option>
+            <option value="__EMPTY__">Sem PIX</option>
+            {transferPixOptions
+              .filter((pixKey) => String(pixKey || "").trim() !== "")
+              .map((pixKey) => (
+                <option key={pixKey} value={pixKey}>
+                  {pixKey}
+                </option>
+              ))}
+          </Select>
         </TransferFilterGrid>
 
         <div style={{ display: "grid", gap: "0.7rem", maxHeight: "56vh", overflow: "auto" }}>
@@ -1285,13 +1327,16 @@ const PortalTransactionWorkspace = ({ forceViewOnly = false }) => {
                   <AmountText $isIn={row.tx_type === "C"}>{formatMoney(row.amount)}</AmountText>
                 </Row>
                 <Meta>{formatDateTime(row.transaction_date)}</Meta>
-                <Meta>PIX: {row.tx_pix_key || "—"}</Meta>
+                <Meta>PIX: {renderTransferPixLabel(row.tx_pix_key)}</Meta>
                 <Button type="button" onClick={() => claimTransfer(row)}>
                   <FaCheck /> Take Ownership
                 </Button>
               </MobileCard>
             ))
           )}
+        </div>
+        <div style={{ marginTop: "0.85rem" }}>
+          <Pagination pagination={transferPagination} setPagination={setTransferPagination} />
         </div>
       </Modal>
     </Page>

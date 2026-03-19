@@ -37,6 +37,22 @@ const normalizeDateTime = (value) => {
     return trimmed;
 };
 
+const normalizeExactAmountInput = (rawValue) => {
+    if (rawValue === undefined || rawValue === null) return { isEmpty: true, value: null };
+    const trimmed = String(rawValue).trim();
+    if (!trimmed) return { isEmpty: true, value: null };
+    if (!/^\d+(?:\.\d{0,2})?$/.test(trimmed)) {
+        return { isEmpty: false, isValid: false, value: null };
+    }
+
+    const numeric = Number.parseFloat(trimmed);
+    if (!Number.isFinite(numeric)) {
+        return { isEmpty: false, isValid: false, value: null };
+    }
+
+    return { isEmpty: false, isValid: true, value: numeric.toFixed(2) };
+};
+
 const generateUuid = () => {
     if (crypto.randomUUID) {
         return crypto.randomUUID();
@@ -354,7 +370,9 @@ exports.exportTransactions = async (req, res) => {
 exports.getTrkbitTransactionsForTransfer = async (req, res) => {
     const { accountType } = req.client;
     const { page = 1, limit = 50, search, dateFrom, dateTo, amountExact, pixKey } = req.query;
-    const offset = (page - 1) * limit;
+    const parsedPage = Math.max(parseInt(page, 10) || 1, 1);
+    const parsedLimit = Math.max(parseInt(limit, 10) || 20, 1);
+    const offset = (parsedPage - 1) * parsedLimit;
 
     if (req.client.impersonation !== true || accountType !== 'cross') {
         return res.status(403).json({ message: 'Impersonation access required for Cross accounts.' });
@@ -362,37 +380,52 @@ exports.getTrkbitTransactionsForTransfer = async (req, res) => {
 
     try {
         const subaccount = await transactionService.getPortalSubaccount(req.client);
-        let query = `
+        const baseQuery = `
             FROM trkbit_transactions tt
             LEFT JOIN subaccounts owner_sub ON owner_sub.chave_pix = tt.tx_pix_key
             WHERE COALESCE(tt.display_subaccount_id, owner_sub.id) <> ?
               AND tt.sync_control_state <> 'hidden'
         `;
+        let query = baseQuery;
         const params = [subaccount.id];
+        let pixQuery = baseQuery;
+        const pixParams = [subaccount.id];
 
         if (search) {
             query += " AND (tt.tx_payer_name LIKE ? OR JSON_UNQUOTE(JSON_EXTRACT(tt.raw_data, '$.tx_payee_name')) LIKE ?)";
             const searchTerm = `%${search}%`;
             params.push(searchTerm, searchTerm);
+            pixQuery += " AND (tt.tx_payer_name LIKE ? OR JSON_UNQUOTE(JSON_EXTRACT(tt.raw_data, '$.tx_payee_name')) LIKE ?)";
+            pixParams.push(searchTerm, searchTerm);
         }
         if (dateFrom) {
             query += " AND DATE(tt.tx_date) >= ?";
             params.push(dateFrom);
+            pixQuery += " AND DATE(tt.tx_date) >= ?";
+            pixParams.push(dateFrom);
         }
         if (dateTo) {
             query += " AND DATE(tt.tx_date) <= ?";
             params.push(dateTo);
+            pixQuery += " AND DATE(tt.tx_date) <= ?";
+            pixParams.push(dateTo);
         }
-        if (pixKey) {
-            query += " AND COALESCE(tt.tx_pix_key, '') LIKE ?";
-            params.push(`%${pixKey}%`);
+        if (pixKey === '__EMPTY__') {
+            query += " AND COALESCE(tt.tx_pix_key, '') = ''";
+        } else if (pixKey) {
+            query += " AND COALESCE(tt.tx_pix_key, '') = ?";
+            params.push(pixKey);
         }
-        if (amountExact !== undefined && amountExact !== null && String(amountExact).trim() !== '') {
-            const parsedAmount = parseFloat(amountExact);
-            if (Number.isFinite(parsedAmount)) {
-                query += " AND tt.amount = ?";
-                params.push(parsedAmount);
+
+        const normalizedAmount = normalizeExactAmountInput(amountExact);
+        if (!normalizedAmount.isEmpty) {
+            if (!normalizedAmount.isValid) {
+                return res.status(400).json({ message: 'Invalid exact amount filter.' });
             }
+            query += " AND tt.amount = ?";
+            params.push(normalizedAmount.value);
+            pixQuery += " AND tt.amount = ?";
+            pixParams.push(normalizedAmount.value);
         }
 
         const countQuery = `SELECT count(*) as total ${query}`;
@@ -412,14 +445,27 @@ exports.getTrkbitTransactionsForTransfer = async (req, res) => {
             LIMIT ? OFFSET ?
         `;
 
-        const finalParams = [...params, parseInt(limit), parseInt(offset)];
+        const finalParams = [...params, parsedLimit, offset];
         const [transactions] = await pool.query(dataQuery, finalParams);
+        const [pixRows] = await pool.query(
+            `
+                SELECT DISTINCT COALESCE(tt.tx_pix_key, '') AS pix_key
+                ${pixQuery}
+                ORDER BY pix_key ASC
+            `,
+            pixParams
+        );
+        const pixOptions = Array.from(
+            new Set((pixRows || []).map((row) => (row.pix_key == null ? '' : String(row.pix_key))))
+        );
 
         res.json({
             transactions,
-            totalPages: Math.ceil(total / limit),
-            currentPage: parseInt(page),
-            totalRecords: total
+            totalPages: Math.max(Math.ceil(total / parsedLimit), 1),
+            currentPage: parsedPage,
+            totalRecords: total,
+            limit: parsedLimit,
+            pixOptions
         });
     } catch (error) {
         console.error('[PORTAL-TRKBIT-TRANSFER-LIST] Failed to fetch transactions:', error);
