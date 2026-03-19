@@ -12,18 +12,36 @@ const PaginationContainer = styled.div`
     flex-wrap: wrap;
     gap: 0.8rem;
     row-gap: 0.6rem;
+
+    @media (max-width: 680px) {
+        padding: 0.6rem 0.72rem;
+        gap: 0.45rem;
+        row-gap: 0.35rem;
+        flex-wrap: nowrap;
+        align-items: center;
+    }
 `;
 
 const PageInfo = styled.span`
     font-size: 0.9rem;
     color: ${({ theme }) => theme.lightText};
     white-space: nowrap;
+
+    @media (max-width: 680px) {
+        font-size: 0.68rem;
+        flex-shrink: 1;
+        min-width: 0;
+    }
 `;
 
 const PageControls = styled.div`
     display: flex;
     align-items: center;
     gap: 0.35rem;
+
+    @media (max-width: 680px) {
+        gap: 0.18rem;
+    }
 `;
 
 const RightCluster = styled.div`
@@ -32,6 +50,13 @@ const RightCluster = styled.div`
     gap: 0.55rem;
     flex-wrap: wrap;
     justify-content: flex-end;
+
+    @media (max-width: 680px) {
+        gap: 0.28rem;
+        flex-wrap: nowrap;
+        margin-left: auto;
+        min-width: 0;
+    }
 `;
 
 const PageSizeWrap = styled.label`
@@ -82,6 +107,13 @@ const PageButton = styled.button`
             border-color: ${theme.primary};
             pointer-events: none;
         `}
+
+    @media (max-width: 680px) {
+        min-width: 28px;
+        padding: 0.26rem 0.45rem;
+        font-size: 0.72rem;
+        border-radius: 6px;
+    }
 `;
 
 const Ellipsis = styled.span`
@@ -91,6 +123,12 @@ const Ellipsis = styled.span`
     align-items: center;
     justify-content: center;
     min-width: 40px;
+
+    @media (max-width: 680px) {
+        min-width: 20px;
+        padding: 0.2rem 0.08rem;
+        font-size: 0.72rem;
+    }
 `;
 
 const GoToPageForm = styled.form`
@@ -99,8 +137,9 @@ const GoToPageForm = styled.form`
     gap: 0.5rem;
 
     @media (max-width: 680px) {
-      width: 100%;
+      gap: 0.25rem;
       justify-content: flex-end;
+      flex-shrink: 0;
     }
 `;
 
@@ -111,6 +150,13 @@ const GoToPageInput = styled.input`
     border: 1px solid ${({ theme }) => theme.border};
     text-align: center;
     font-weight: 600;
+
+    @media (max-width: 680px) {
+        width: 34px;
+        padding: 0.26rem;
+        font-size: 0.72rem;
+        border-radius: 6px;
+    }
 `;
 
 const GoToPageButton = styled.button`
@@ -123,6 +169,12 @@ const GoToPageButton = styled.button`
 
     &:hover {
         border-color: ${({ theme }) => theme.borderStrong};
+    }
+
+    @media (max-width: 680px) {
+        padding: 0.26rem 0.5rem;
+        font-size: 0.72rem;
+        border-radius: 6px;
     }
 `;
 
@@ -152,6 +204,7 @@ const Pagination = ({
     const totalRecords = Number(pagination.totalRecords ?? 0);
     const currentLimit = normalizeLimitValue(pagination.limit ?? 50);
     const [goToPage, setGoToPage] = useState(currentPage);
+    const [isCompactMobile, setIsCompactMobile] = useState(() => (typeof window !== 'undefined' ? window.innerWidth <= 680 : false));
     const didReadStoredSize = useRef(false);
 
     const normalizedPageSizeOptions = useMemo(() => {
@@ -170,6 +223,15 @@ const Pagination = ({
     useEffect(() => {
         setGoToPage(currentPage);
     }, [currentPage]);
+
+    useEffect(() => {
+        if (typeof window === 'undefined') return undefined;
+
+        const syncViewport = () => setIsCompactMobile(window.innerWidth <= 680);
+        syncViewport();
+        window.addEventListener('resize', syncViewport);
+        return () => window.removeEventListener('resize', syncViewport);
+    }, []);
 
     useEffect(() => {
         if (!showPageSize || !storageKey || didReadStoredSize.current) return;
@@ -258,7 +320,7 @@ const Pagination = ({
     return (
         <PaginationContainer>
             <PageInfo>
-                Page {currentPage} of {totalPages} ({totalRecords} records)
+                {isCompactMobile ? `P. ${currentPage}/${totalPages} (${totalRecords})` : `Page ${currentPage} of ${totalPages} (${totalRecords} records)`}
             </PageInfo>
 
             <RightCluster>
