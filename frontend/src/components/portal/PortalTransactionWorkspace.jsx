@@ -397,6 +397,16 @@ const MobileCard = styled(Surface)`
   }
 `;
 
+const Row = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+
+  @media (max-width: 860px) {
+    gap: 0.4rem;
+  }
+`;
+
 const PartyCell = styled.div`
   display: flex;
   align-items: flex-start;
