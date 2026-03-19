@@ -318,8 +318,7 @@ const PortalTransactionWorkspace = ({ forceViewOnly = false }) => {
   const [transactions, setTransactions] = useState([]);
   const [summary, setSummary] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [page, setPage] = useState(1);
-  const [pagination, setPagination] = useState({ totalPages: 1, currentPage: 1, totalRecords: 0, limit: 50 });
+  const [pagination, setPagination] = useState({ page: 1, currentPage: 1, totalPages: 1, totalRecords: 0, limit: 50 });
   const [editorOpen, setEditorOpen] = useState(false);
   const [editorForm, setEditorForm] = useState(makeInitialForm());
   const [editingTransaction, setEditingTransaction] = useState(null);
@@ -341,16 +340,22 @@ const PortalTransactionWorkspace = ({ forceViewOnly = false }) => {
 
   const updateFilters = (patch) => {
     setFilters((prev) => ({ ...prev, ...patch }));
-    setPage(1);
+    setPagination((prev) => ({ ...prev, page: 1, currentPage: 1 }));
   };
 
   const fetchTransactions = useCallback(async () => {
     setLoading(true);
     try {
-      const { data } = await getPortalTransactions({ ...filters, pool: activePool, page, limit: pagination.limit });
+      const { data } = await getPortalTransactions({
+        ...filters,
+        pool: activePool,
+        page: pagination.currentPage || pagination.page || 1,
+        limit: pagination.limit,
+      });
       setTransactions(Array.isArray(data.transactions) ? data.transactions : []);
       setPagination((prev) => ({
         ...prev,
+        page: Number(data.currentPage || 1),
         totalPages: Number(data.totalPages || 1),
         currentPage: Number(data.currentPage || 1),
         totalRecords: Number(data.totalRecords || 0),
@@ -361,7 +366,7 @@ const PortalTransactionWorkspace = ({ forceViewOnly = false }) => {
     } finally {
       setLoading(false);
     }
-  }, [activePool, filters, page, pagination.limit]);
+  }, [activePool, filters, pagination.currentPage, pagination.limit, pagination.page]);
 
   const fetchSummary = useCallback(async () => {
     if (isViewOnly) return;
@@ -604,7 +609,7 @@ const PortalTransactionWorkspace = ({ forceViewOnly = false }) => {
           ))}
         </MobileList>
         <div style={{ padding: "0.8rem 1rem" }}>
-          <Pagination currentPage={pagination.currentPage} totalPages={pagination.totalPages} onPageChange={setPage} />
+          <Pagination pagination={pagination} setPagination={setPagination} />
         </div>
       </Panel>
 
