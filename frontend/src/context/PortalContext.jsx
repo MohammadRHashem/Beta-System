@@ -4,11 +4,19 @@ const PortalContext = createContext(null);
 
 export const usePortal = () => useContext(PortalContext);
 
+const getTodayDateInputValue = () => {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+};
+
 export const PortalProvider = ({ children }) => {
     // This context will hold the state of the filters from the dashboard
     const [filters, setFilters] = useState({
         search: '',
-        dateFrom: '',
+        dateFrom: getTodayDateInputValue(),
         dateTo: '',
         direction: '',
         confirmation: '',
