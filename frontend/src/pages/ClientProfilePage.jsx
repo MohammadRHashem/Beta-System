@@ -45,6 +45,7 @@ const HeroText = styled.div`
     margin: 0;
     font-size: clamp(1.2rem, 2vw, 1.8rem);
     letter-spacing: 0.04em;
+    color: #fff;
   }
 
   p {
