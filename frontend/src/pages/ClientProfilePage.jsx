@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import styled from "styled-components";
-import { FaCopy, FaQrcode, FaUniversity, FaUser } from "react-icons/fa";
+import { FaCopy, FaQrcode, FaUser } from "react-icons/fa";
 import Modal from "../components/Modal";
 import { getPortalProfile } from "../services/api";
 
@@ -76,18 +76,6 @@ const CardTop = styled.div`
   justify-content: space-between;
   gap: 0.8rem;
   align-items: flex-start;
-`;
-
-const CardBadge = styled.span`
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  padding: 0.28rem 0.62rem;
-  border-radius: 999px;
-  background: ${({ theme }) => theme.secondarySoft};
-  color: ${({ theme }) => theme.primary};
-  font-size: 0.72rem;
-  font-weight: 800;
 `;
 
 const FieldGrid = styled.div`
@@ -267,9 +255,6 @@ const ClientProfilePage = () => {
                 <div>
                   <strong>{entry.label || entry.institution_name}</strong>
                 </div>
-                <CardBadge>
-                  <FaUniversity /> {accountType === "xpayz" ? "XPayz" : "Cross"}
-                </CardBadge>
               </CardTop>
 
               <FieldGrid>
@@ -308,9 +293,9 @@ const ClientProfilePage = () => {
                     </ActionButton>
                   </>
                 ) : (
-                  <CardBadge>
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: "0.35rem", fontWeight: 700 }}>
                     <FaUser /> Pix pronto para copiar
-                  </CardBadge>
+                  </span>
                 )}
               </ButtonRow>
             </Card>
