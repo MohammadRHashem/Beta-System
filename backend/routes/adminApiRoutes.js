@@ -122,6 +122,10 @@ router.post('/subaccounts/:id/credentials/reset', checkPermission('subaccount:ma
 router.post('/subaccounts/:id/hard-refresh', checkPermission('subaccount:manage'), subaccountController.triggerHardRefresh);
 router.post('/subaccounts/:id/portal-access', checkPermission('client_portal:access'), subaccountController.createPortalAccessSession);
 router.post('/subaccounts/:id/cross-debit', checkPermission('subaccount:debit_cross'), subaccountController.createCrossDebit);
+router.get('/subaccounts/:id/profile-entries', checkPermission('subaccount:manage'), subaccountController.getProfileEntries);
+router.post('/subaccounts/:id/profile-entries', checkPermission('subaccount:manage'), subaccountController.createProfileEntry);
+router.put('/subaccounts/:id/profile-entries/:entryId', checkPermission('subaccount:manage'), subaccountController.updateProfileEntry);
+router.delete('/subaccounts/:id/profile-entries/:entryId', checkPermission('subaccount:manage'), subaccountController.deleteProfileEntry);
 router.get('/subaccounts/:subaccountId/recibos', checkPermission('subaccount:reassign_transactions'), subaccountController.getRecibosTransactions);
 router.post('/subaccounts/reassign', checkPermission('subaccount:reassign_transactions'), subaccountController.reassignTransaction);
 

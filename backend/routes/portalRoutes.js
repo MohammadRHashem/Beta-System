@@ -8,6 +8,7 @@ const portalController = require("../controllers/portalController");
 
 router.get("/transactions", portalController.getTransactions);
 router.get("/dashboard-summary", portalController.getDashboardSummary);
+router.get("/profile", portalController.getProfile);
 router.get("/export-excel", portalController.exportTransactions);
 router.post("/transactions", portalController.createTransaction);
 router.put("/transactions/:id", portalController.updateTransaction);

@@ -7,6 +7,7 @@ const jwt = require('jsonwebtoken');
 require('dotenv').config();
 const axios = require('axios');
 const transactionService = require('../services/subaccountTransactionService');
+const profileService = require('../services/subaccountProfileService');
 
 const PORTAL_JWT_SECRET = process.env.PORTAL_JWT_SECRET;
 const PORTAL_UNCONFIRM_PASSCODE = process.env.PORTAL_UNCONFIRM_PASSCODE || '1234';
@@ -154,6 +155,16 @@ exports.getDashboardSummary = async (req, res) => {
     } catch (error) {
         console.error('[PORTAL-SUMMARY-ERROR]', error);
         res.status(500).json({ message: 'Failed to calculate dashboard summary.' });
+    }
+};
+
+exports.getProfile = async (req, res) => {
+    try {
+        const profile = await profileService.getPortalProfile(req.client);
+        res.json(profile);
+    } catch (error) {
+        console.error('[PORTAL-PROFILE-ERROR]', error);
+        res.status(error.status || 500).json({ message: error.message || 'Failed to fetch profile.' });
     }
 };
 

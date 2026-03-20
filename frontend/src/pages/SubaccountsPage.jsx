@@ -2,29 +2,36 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import styled, { css, useTheme } from "styled-components";
 import { usePermissions } from "../context/PermissionContext";
 import {
+  createSubaccountProfileEntry,
   createCrossDebit,
   createPortalAccessSession,
   createSubaccount,
+  deleteSubaccountProfileEntry,
   deleteSubaccount,
   getRecibosTransactions,
+  getSubaccountProfileEntries,
   getSubaccountCredentials,
   getSubaccounts,
   reassignTransaction,
   resetSubaccountPassword,
   triggerHardRefresh,
+  updateSubaccountProfileEntry,
   updateSubaccount,
 } from "../services/api";
 import Modal from "../components/Modal";
 import Pagination from "../components/Pagination";
 import {
+  FaCopy,
   FaEdit,
   FaExchangeAlt,
   FaExternalLinkAlt,
   FaHistory,
+  FaIdCard,
   FaKey,
   FaMagic,
   FaMinusCircle,
   FaPlus,
+  FaQrcode,
   FaTrash,
 } from "react-icons/fa";
 import ComboBox from "../components/ComboBox";
@@ -429,6 +436,132 @@ const FooterActions = styled.div`
   flex-wrap: wrap;
 `;
 
+const ProfileModalLayout = styled.div`
+  display: grid;
+  grid-template-columns: minmax(280px, 1.1fr) minmax(320px, 1fr);
+  gap: 0.9rem;
+
+  @media (max-width: 980px) {
+    grid-template-columns: 1fr;
+  }
+`;
+
+const ProfilePanel = styled.div`
+  border: 1px solid ${({ theme }) => theme.border};
+  border-radius: 12px;
+  background: ${({ theme }) => theme.surfaceAlt};
+  padding: 0.8rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  min-height: 0;
+`;
+
+const ProfilePanelTitle = styled.h3`
+  margin: 0;
+  font-size: 0.92rem;
+`;
+
+const ProfileEntriesList = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  max-height: 54vh;
+  overflow: auto;
+`;
+
+const ProfileEntryCard = styled.div`
+  border: 1px solid ${({ theme }) => theme.border};
+  border-radius: 12px;
+  background: ${({ theme }) => theme.surface};
+  padding: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+`;
+
+const ProfileEntryTop = styled.div`
+  display: flex;
+  justify-content: space-between;
+  gap: 0.6rem;
+  align-items: flex-start;
+`;
+
+const ProfileEntryMeta = styled.div`
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  align-items: center;
+`;
+
+const ProfileMetaChip = styled.span`
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  border-radius: 999px;
+  border: 1px solid ${({ theme }) => theme.border};
+  background: ${({ theme }) => theme.surfaceAlt};
+  color: ${({ theme }) => theme.primary};
+  font-size: 0.68rem;
+  font-weight: 700;
+  padding: 0.18rem 0.48rem;
+`;
+
+const ProfileEntryFields = styled.div`
+  display: grid;
+  gap: 0.45rem;
+`;
+
+const ProfileFieldRow = styled.div`
+  display: grid;
+  grid-template-columns: 110px minmax(0, 1fr);
+  gap: 0.45rem;
+  align-items: start;
+  font-size: 0.78rem;
+
+  strong {
+    color: ${({ theme }) => theme.lightText};
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-size: 0.66rem;
+    margin-top: 0.14rem;
+  }
+
+  span {
+    color: ${({ theme }) => theme.text};
+    word-break: break-word;
+  }
+`;
+
+const ProfileCodeRow = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+
+  code {
+    flex: 1;
+    min-width: 0;
+    padding: 0.55rem 0.7rem;
+    border-radius: 10px;
+    background: ${({ theme }) => theme.surfaceAlt};
+    border: 1px solid ${({ theme }) => theme.border};
+    font-size: 0.75rem;
+    word-break: break-all;
+  }
+`;
+
+const LargeTextArea = styled.textarea`
+  width: 100%;
+  min-height: 110px;
+  border-radius: 8px;
+  border: 1px solid ${({ theme }) => theme.border};
+  background: ${({ theme }) => theme.surface};
+  color: ${({ theme }) => theme.text};
+  padding: 0.7rem 0.78rem;
+  resize: vertical;
+`;
+
 const modalSelectStyles = {
   menuPortal: (base) => ({ ...base, zIndex: 10000 }),
   control: (base) => ({ ...base, minHeight: 32 }),
@@ -470,6 +603,7 @@ const SubaccountsPage = ({ allGroups }) => {
   const [isDebitModalOpen, setIsDebitModalOpen] = useState(false);
   const [debitSubaccount, setDebitSubaccount] = useState(null);
   const [debitForm, setDebitForm] = useState({ amount: "", tx_date: "", description: "USD BETA OUT / C" });
+  const [profileSubaccount, setProfileSubaccount] = useState(null);
 
   const fetchSubaccounts = useCallback(async () => {
     setLoading(true);
@@ -514,6 +648,7 @@ const SubaccountsPage = ({ allGroups }) => {
     });
     setIsDebitModalOpen(false);
     setDebitSubaccount(null);
+    setProfileSubaccount(null);
   };
 
   const handleDelete = async (id) => {
@@ -786,6 +921,11 @@ const SubaccountsPage = ({ allGroups }) => {
                                 <FaExternalLinkAlt />
                               </IconButton>
                             )}
+                            {canManageSubaccounts && (
+                              <IconButton type="button" onClick={() => setProfileSubaccount(acc)} title="Manage Portal Profile">
+                                <FaIdCard />
+                              </IconButton>
+                            )}
                             {canCrossDebit && acc.account_type === "cross" && (
                               <IconButton type="button" onClick={() => handleOpenDebitModal(acc)} title="Add Cross Debit">
                                 <FaMinusCircle />
@@ -895,6 +1035,14 @@ const SubaccountsPage = ({ allGroups }) => {
           form={debitForm}
           setForm={setDebitForm}
           onSubmit={handleDebitSubmit}
+        />
+      )}
+
+      {canManageSubaccounts && (
+        <SubaccountProfileModal
+          isOpen={Boolean(profileSubaccount)}
+          onClose={handleCloseModals}
+          subaccount={profileSubaccount}
         />
       )}
     </>
@@ -1320,6 +1468,272 @@ const RecibosRow = ({ tx, subOptions, onReassign, selectStyles }) => {
         </AssignCell>
       </td>
     </tr>
+  );
+};
+
+const makeProfileEntryForm = () => ({
+  label: "",
+  account_holder_name: "",
+  institution_name: "",
+  pix_key: "",
+  pix_copy_code: "",
+  sort_order: "0",
+  is_active: true,
+});
+
+const SubaccountProfileModal = ({ isOpen, onClose, subaccount }) => {
+  const [entries, setEntries] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [editingEntryId, setEditingEntryId] = useState(null);
+  const [form, setForm] = useState(makeProfileEntryForm());
+
+  const loadEntries = useCallback(async () => {
+    if (!subaccount?.id || !isOpen) return;
+    setLoading(true);
+    try {
+      const { data } = await getSubaccountProfileEntries(subaccount.id);
+      setEntries(Array.isArray(data.entries) ? data.entries : []);
+    } catch (_error) {
+      alert("Failed to fetch profile entries.");
+    } finally {
+      setLoading(false);
+    }
+  }, [isOpen, subaccount?.id]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    setEditingEntryId(null);
+    setForm(makeProfileEntryForm());
+    loadEntries();
+  }, [isOpen, loadEntries]);
+
+  const startEdit = (entry) => {
+    setEditingEntryId(entry.id);
+    setForm({
+      label: entry.label || "",
+      account_holder_name: entry.account_holder_name || "",
+      institution_name: entry.institution_name || "",
+      pix_key: entry.pix_key || "",
+      pix_copy_code: entry.pix_copy_code || "",
+      sort_order: String(entry.sort_order ?? 0),
+      is_active: Boolean(entry.is_active),
+    });
+  };
+
+  const resetEditor = () => {
+    setEditingEntryId(null);
+    setForm(makeProfileEntryForm());
+  };
+
+  const handleSave = async (event) => {
+    event.preventDefault();
+    if (!subaccount?.id) return;
+
+    setSaving(true);
+    try {
+      const payload = {
+        ...form,
+        sort_order: Number(form.sort_order || 0),
+        is_active: Boolean(form.is_active),
+      };
+      if (editingEntryId) {
+        await updateSubaccountProfileEntry(subaccount.id, editingEntryId, payload);
+      } else {
+        await createSubaccountProfileEntry(subaccount.id, payload);
+      }
+      resetEditor();
+      loadEntries();
+    } catch (error) {
+      alert(error.response?.data?.message || "Failed to save profile entry.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDeleteEntry = async (entry) => {
+    if (!subaccount?.id) return;
+    if (!window.confirm(`Delete profile entry "${entry.label || entry.institution_name}"?`)) return;
+    try {
+      await deleteSubaccountProfileEntry(subaccount.id, entry.id);
+      if (editingEntryId === entry.id) {
+        resetEditor();
+      }
+      loadEntries();
+    } catch (error) {
+      alert(error.response?.data?.message || "Failed to delete profile entry.");
+    }
+  };
+
+  const copyText = async (value, successLabel) => {
+    if (!value) return;
+    try {
+      await navigator.clipboard.writeText(value);
+      alert(`${successLabel} copied.`);
+    } catch (_error) {
+      alert("Failed to copy.");
+    }
+  };
+
+  if (!subaccount) return null;
+
+  return (
+    <Modal isOpen={isOpen} onClose={onClose} maxWidth="1180px">
+      <ModalTitle>Portal Profile for {subaccount.name}</ModalTitle>
+      <HelperText style={{ marginBottom: "0.7rem" }}>
+        Add one or more payment profiles for this client. XPayz profiles can also include a PIX copia-e-cola value for QR display in the portal.
+      </HelperText>
+
+      <ProfileModalLayout>
+        <ProfilePanel>
+          <ProfilePanelTitle>Saved Entries</ProfilePanelTitle>
+          <ProfileEntriesList>
+            {loading ? (
+              <InlineBox>Loading profile entries...</InlineBox>
+            ) : entries.length === 0 ? (
+              <InlineBox>No profile entries yet.</InlineBox>
+            ) : (
+              entries.map((entry) => (
+                <ProfileEntryCard key={entry.id}>
+                  <ProfileEntryTop>
+                    <div>
+                      <strong>{entry.label || entry.institution_name}</strong>
+                      <HelperText>{entry.account_holder_name}</HelperText>
+                    </div>
+                    <ActionIcons>
+                      <IconButton type="button" onClick={() => startEdit(entry)} title="Edit Entry">
+                        <FaEdit />
+                      </IconButton>
+                      <IconButton type="button" onClick={() => handleDeleteEntry(entry)} title="Delete Entry">
+                        <FaTrash />
+                      </IconButton>
+                    </ActionIcons>
+                  </ProfileEntryTop>
+
+                  <ProfileEntryMeta>
+                    <ProfileMetaChip>{entry.is_active ? "Active" : "Inactive"}</ProfileMetaChip>
+                    <ProfileMetaChip>Sort {entry.sort_order ?? 0}</ProfileMetaChip>
+                    {subaccount.account_type === "xpayz" && entry.pix_copy_code ? (
+                      <ProfileMetaChip><FaQrcode /> QR Ready</ProfileMetaChip>
+                    ) : null}
+                  </ProfileEntryMeta>
+
+                  <ProfileEntryFields>
+                    <ProfileFieldRow>
+                      <strong>Instituicao</strong>
+                      <span>{entry.institution_name}</span>
+                    </ProfileFieldRow>
+                    <ProfileFieldRow>
+                      <strong>Chave Pix</strong>
+                      <span>{entry.pix_key}</span>
+                    </ProfileFieldRow>
+                  </ProfileEntryFields>
+
+                  <ProfileCodeRow>
+                    <code>{entry.pix_key}</code>
+                    <Button type="button" $variant="dark" onClick={() => copyText(entry.pix_key, "PIX key")}>
+                      <FaCopy /> Copy
+                    </Button>
+                  </ProfileCodeRow>
+
+                  {subaccount.account_type === "xpayz" && entry.pix_copy_code ? (
+                    <ProfileCodeRow>
+                      <code>{entry.pix_copy_code}</code>
+                      <Button type="button" $variant="dark" onClick={() => copyText(entry.pix_copy_code, "PIX code")}>
+                        <FaCopy /> Copy QR Code
+                      </Button>
+                    </ProfileCodeRow>
+                  ) : null}
+                </ProfileEntryCard>
+              ))
+            )}
+          </ProfileEntriesList>
+        </ProfilePanel>
+
+        <ProfilePanel as="form" onSubmit={handleSave}>
+          <ProfilePanelTitle>{editingEntryId ? "Edit Entry" : "Add New Entry"}</ProfilePanelTitle>
+
+          <InputGroup>
+            <Label>Label / Bank Name (Optional)</Label>
+            <Input
+              value={form.label}
+              onChange={(event) => setForm((prev) => ({ ...prev, label: event.target.value }))}
+              placeholder="e.g. Banco Principal"
+            />
+          </InputGroup>
+
+          <InputGroup>
+            <Label>Nome da Conta</Label>
+            <Input
+              value={form.account_holder_name}
+              onChange={(event) => setForm((prev) => ({ ...prev, account_holder_name: event.target.value }))}
+              placeholder="e.g. MAZDA LTDA"
+              required
+            />
+          </InputGroup>
+
+          <InputGroup>
+            <Label>Nome da Instituicao</Label>
+            <Input
+              value={form.institution_name}
+              onChange={(event) => setForm((prev) => ({ ...prev, institution_name: event.target.value }))}
+              placeholder="e.g. Banco do Brasil"
+              required
+            />
+          </InputGroup>
+
+          <InputGroup>
+            <Label>Chave PIX</Label>
+            <Input
+              value={form.pix_key}
+              onChange={(event) => setForm((prev) => ({ ...prev, pix_key: event.target.value }))}
+              placeholder="e.g. financeiro@empresa.com"
+              required
+            />
+          </InputGroup>
+
+          {subaccount.account_type === "xpayz" ? (
+            <InputGroup>
+              <Label>PIX Copia e Cola para QR (Optional)</Label>
+              <LargeTextArea
+                value={form.pix_copy_code}
+                onChange={(event) => setForm((prev) => ({ ...prev, pix_copy_code: event.target.value }))}
+                placeholder="Paste the PIX copia-e-cola string used for QR generation..."
+              />
+            </InputGroup>
+          ) : null}
+
+          <InputGroup>
+            <Label>Sort Order</Label>
+            <Input
+              type="number"
+              value={form.sort_order}
+              onChange={(event) => setForm((prev) => ({ ...prev, sort_order: event.target.value }))}
+            />
+          </InputGroup>
+
+          <RadioOption>
+            <input
+              type="checkbox"
+              checked={Boolean(form.is_active)}
+              onChange={(event) => setForm((prev) => ({ ...prev, is_active: event.target.checked }))}
+            />
+            Active in portal
+          </RadioOption>
+
+          <FooterActions>
+            {editingEntryId ? (
+              <Button type="button" $variant="dark" onClick={resetEditor}>
+                Cancel Edit
+              </Button>
+            ) : null}
+            <Button type="submit" disabled={saving}>
+              {saving ? "Saving..." : editingEntryId ? "Update Entry" : "Add Entry"}
+            </Button>
+          </FooterActions>
+        </ProfilePanel>
+      </ProfileModalLayout>
+    </Modal>
   );
 };
 

@@ -57,6 +57,25 @@ const ensureRuntimeSchema = async () => {
       ADD COLUMN IF NOT EXISTS updated_by_user_id int NULL AFTER visible_in_view_only
     `);
     console.log("[SCHEMA] statement transaction control columns ensured.");
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS subaccount_profile_entries (
+        id int NOT NULL AUTO_INCREMENT,
+        subaccount_id int NOT NULL,
+        label varchar(120) DEFAULT NULL,
+        account_holder_name varchar(255) NOT NULL,
+        institution_name varchar(255) NOT NULL,
+        pix_key varchar(255) NOT NULL,
+        pix_copy_code text DEFAULT NULL,
+        sort_order int NOT NULL DEFAULT 0,
+        is_active tinyint(1) NOT NULL DEFAULT 1,
+        created_at timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        PRIMARY KEY (id),
+        KEY idx_spe_subaccount_sort (subaccount_id, is_active, sort_order, id)
+      )
+    `);
+    console.log("[SCHEMA] subaccount_profile_entries ensured.");
   } catch (error) {
     console.error(
       "[SCHEMA] Failed runtime schema ensure:",

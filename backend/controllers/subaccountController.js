@@ -6,6 +6,7 @@ const { syncSingleSubaccount } = require('../xpayzSyncService');
 const { logAction } = require('../services/auditService');
 const { parsePagination, buildPaginationMeta } = require('../utils/pagination');
 const transactionService = require('../services/subaccountTransactionService');
+const profileService = require('../services/subaccountProfileService');
 require('dotenv').config();
 
 const PORTAL_JWT_SECRET = process.env.PORTAL_JWT_SECRET;
@@ -484,6 +485,57 @@ exports.getRecibosTransactions = async (req, res) => {
     } catch (error) {
         console.error('[RECIBOS-ERROR]', error);
         res.status(error.status || 500).json({ message: error.message || 'Failed to fetch Recibos transactions.' });
+    }
+};
+
+exports.getProfileEntries = async (req, res) => {
+    const { id: subaccountId } = req.params;
+
+    try {
+        const result = await profileService.listAdminProfileEntries(subaccountId);
+        res.json({
+            subaccount: result.subaccount,
+            entries: result.entries,
+        });
+    } catch (error) {
+        console.error('[SUBACCOUNT-PROFILE-LIST-ERROR]', error);
+        res.status(error.status || 500).json({ message: error.message || 'Failed to fetch profile entries.' });
+    }
+};
+
+exports.createProfileEntry = async (req, res) => {
+    const { id: subaccountId } = req.params;
+
+    try {
+        const entry = await profileService.createProfileEntry(subaccountId, req.body);
+        res.status(201).json(entry);
+    } catch (error) {
+        console.error('[SUBACCOUNT-PROFILE-CREATE-ERROR]', error);
+        res.status(error.status || 500).json({ message: error.message || 'Failed to create profile entry.' });
+    }
+};
+
+exports.updateProfileEntry = async (req, res) => {
+    const { id: subaccountId, entryId } = req.params;
+
+    try {
+        const entry = await profileService.updateProfileEntry(subaccountId, entryId, req.body);
+        res.json(entry);
+    } catch (error) {
+        console.error('[SUBACCOUNT-PROFILE-UPDATE-ERROR]', error);
+        res.status(error.status || 500).json({ message: error.message || 'Failed to update profile entry.' });
+    }
+};
+
+exports.deleteProfileEntry = async (req, res) => {
+    const { id: subaccountId, entryId } = req.params;
+
+    try {
+        await profileService.deleteProfileEntry(subaccountId, entryId);
+        res.status(204).send();
+    } catch (error) {
+        console.error('[SUBACCOUNT-PROFILE-DELETE-ERROR]', error);
+        res.status(error.status || 500).json({ message: error.message || 'Failed to delete profile entry.' });
     }
 };
 

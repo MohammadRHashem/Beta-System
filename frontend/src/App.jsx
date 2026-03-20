@@ -12,6 +12,7 @@ import ClientLoginPage from './pages/ClientLoginPage';
 import PortalLayout from './pages/PortalLayout';
 import ClientDashboard from './pages/ClientDashboard';
 import ClientViewOnlyDashboard from './pages/ClientViewOnlyDashboard'; // Import
+import ClientProfilePage from './pages/ClientProfilePage';
 import PortalImpersonate from './pages/PortalImpersonate';
 
 const LoadingContainer = styled.div`
@@ -58,6 +59,7 @@ const App = () => {
                 {/* Nested routes */}
                 <Route path="dashboard" element={<ClientDashboard />} />
                 <Route path="view-only" element={<ClientViewOnlyDashboard />} /> {/* New Route */}
+                <Route path="profile" element={<ClientProfilePage />} />
             </Route>
         </Routes>
     );

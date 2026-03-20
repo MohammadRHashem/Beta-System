@@ -75,6 +75,7 @@ export const portalLogin = (credentials) => portalApiClient.post('/auth/login', 
 export const portalValidateSession = () => portalApiClient.get('/auth/validate'); // THIS WAS MISSING
 export const getPortalTransactions = (params) => portalApiClient.get('/transactions', { params });
 export const getPortalDashboardSummary = (params) => portalApiClient.get('/dashboard-summary', { params });
+export const getPortalProfile = () => portalApiClient.get('/profile');
 export const createPortalTransaction = (data) => portalApiClient.post('/transactions', data);
 export const updatePortalTransaction = (id, data) => portalApiClient.put(`/transactions/${id}`, data);
 export const deletePortalTransaction = (id, pool) => portalApiClient.delete(`/transactions/${id}`, { params: { pool } });
@@ -267,6 +268,10 @@ export const retryPinMessage = (id, payload = {}) => apiClient.post(`/pins/${id}
 export const createSubaccount = (data) => apiClient.post('/subaccounts', data);
 export const updateSubaccount = (id, data) => apiClient.put(`/subaccounts/${id}`, data);
 export const deleteSubaccount = (id) => apiClient.delete(`/subaccounts/${id}`);
+export const getSubaccountProfileEntries = (id) => apiClient.get(`/subaccounts/${id}/profile-entries`);
+export const createSubaccountProfileEntry = (id, data) => apiClient.post(`/subaccounts/${id}/profile-entries`, data);
+export const updateSubaccountProfileEntry = (id, entryId, data) => apiClient.put(`/subaccounts/${id}/profile-entries/${entryId}`, data);
+export const deleteSubaccountProfileEntry = (id, entryId) => apiClient.delete(`/subaccounts/${id}/profile-entries/${entryId}`);
 export const getSubaccountCredentials = (id) => apiClient.get(`/subaccounts/${id}/credentials`);
 export const resetSubaccountPassword = (id, type) => apiClient.post(`/subaccounts/${id}/credentials/reset`, { type });
 export const triggerHardRefresh = (id) => apiClient.post(`/subaccounts/${id}/hard-refresh`);

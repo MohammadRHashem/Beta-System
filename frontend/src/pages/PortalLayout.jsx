@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Outlet, useNavigate } from "react-router-dom";
+import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import styled from "styled-components";
 import { motion, AnimatePresence } from "framer-motion";
 import BetaTextLogo from "../assets/betaLogo.png";
@@ -8,6 +8,8 @@ import {
   FaHeadset,
   FaSignOutAlt,
   FaBars,
+  FaIdCard,
+  FaThLarge,
   FaTimes,
   FaFilePdf,
 } from "react-icons/fa";
@@ -219,6 +221,7 @@ const parseJwt = (token) => {
 
 const LayoutContent = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const [clientInfo, setClientInfo] = useState({});
   const [isMobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
@@ -289,8 +292,21 @@ const LayoutContent = () => {
     }
   };
 
+  const decodedToken = parseJwt(getPortalToken() || "");
+  const isViewOnlyMode = decodedToken?.accessLevel === "view_only";
+  const dashboardRoute = isViewOnlyMode ? "/portal/view-only" : "/portal/dashboard";
+  const isDashboardRoute =
+    location.pathname === "/portal/dashboard" || location.pathname === "/portal/view-only";
+  const isProfileRoute = location.pathname === "/portal/profile";
+
   const navActions = (
     <>
+      <NavButton onClick={() => navigate(dashboardRoute)} style={isDashboardRoute ? { color: "#0A2540", backgroundColor: "#f6f9fc" } : undefined}>
+        <FaThLarge /> Dashboard
+      </NavButton>
+      <NavButton onClick={() => navigate("/portal/profile")} style={isProfileRoute ? { color: "#0A2540", backgroundColor: "#f6f9fc" } : undefined}>
+        <FaIdCard /> Perfil
+      </NavButton>
       <NavButton onClick={() => setIsExportModalOpen(true)}>
         <FaFileExcel /> Export
       </NavButton>
