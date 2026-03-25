@@ -303,7 +303,7 @@ const normalizeRows = (rows = []) => rows.map((row) => ({
 
 const getSubaccountById = async (subaccountId) => {
     const [[subaccount]] = await pool.query(
-        'SELECT id, name, account_type, subaccount_number, chave_pix, assigned_group_name FROM subaccounts WHERE id = ?',
+        'SELECT id, name, account_type, portal_source_type, invoice_recipient_pattern, subaccount_number, chave_pix, assigned_group_name FROM subaccounts WHERE id = ?',
         [subaccountId]
     );
     return subaccount || null;
@@ -311,7 +311,7 @@ const getSubaccountById = async (subaccountId) => {
 
 const getSubaccountByNumber = async (subaccountNumber) => {
     const [[subaccount]] = await pool.query(
-        'SELECT id, name, account_type, subaccount_number, chave_pix, assigned_group_name FROM subaccounts WHERE subaccount_number = ?',
+        'SELECT id, name, account_type, portal_source_type, invoice_recipient_pattern, subaccount_number, chave_pix, assigned_group_name FROM subaccounts WHERE subaccount_number = ?',
         [subaccountNumber]
     );
     return subaccount || null;

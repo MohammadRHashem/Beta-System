@@ -272,7 +272,9 @@ export const getSubaccountProfileEntries = (id) => apiClient.get(`/subaccounts/$
 export const createSubaccountProfileEntry = (id, data) => apiClient.post(`/subaccounts/${id}/profile-entries`, data);
 export const updateSubaccountProfileEntry = (id, entryId, data) => apiClient.put(`/subaccounts/${id}/profile-entries/${entryId}`, data);
 export const deleteSubaccountProfileEntry = (id, entryId) => apiClient.delete(`/subaccounts/${id}/profile-entries/${entryId}`);
-export const getSubaccountCredentials = (id) => apiClient.get(`/subaccounts/${id}/credentials`);
+export const getSubaccountCredentials = (id, username = '') => apiClient.get(`/subaccounts/${id}/credentials`, {
+    params: username ? { username } : {}
+});
 export const resetSubaccountPassword = (id, type) => apiClient.post(`/subaccounts/${id}/credentials/reset`, { type });
 export const triggerHardRefresh = (id) => apiClient.post(`/subaccounts/${id}/hard-refresh`);
 export const createPortalAccessSession = (id) => apiClient.post(`/subaccounts/${id}/portal-access`);

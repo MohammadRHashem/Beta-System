@@ -7,6 +7,7 @@ const jwt = require('jsonwebtoken');
 require('dotenv').config();
 const axios = require('axios');
 const transactionService = require('../services/subaccountTransactionService');
+const portalLedgerService = require('../services/portalLedgerService');
 const profileService = require('../services/subaccountProfileService');
 
 const PORTAL_JWT_SECRET = process.env.PORTAL_JWT_SECRET;
@@ -109,7 +110,7 @@ exports.login = async (req, res) => {
         }
 
         const [[subaccount]] = await pool.query(
-            'SELECT id, name, account_type, subaccount_number, chave_pix, assigned_group_name FROM subaccounts WHERE id = ?', 
+            'SELECT id, name, account_type, portal_source_type, subaccount_number, chave_pix, assigned_group_name FROM subaccounts WHERE id = ?', 
             [client.subaccount_id]
         );
 
@@ -122,7 +123,8 @@ exports.login = async (req, res) => {
             accessLevel: accessLevel,
             impersonation: false,
             accountType: subaccount.account_type,
-            chavePix: subaccount.chave_pix
+            chavePix: subaccount.chave_pix,
+            portalSourceType: subaccount.portal_source_type || 'transactions'
         };
         
         const token = jwt.sign(tokenPayload, PORTAL_JWT_SECRET, { expiresIn: '8h' });
@@ -144,9 +146,9 @@ exports.login = async (req, res) => {
 
 exports.getDashboardSummary = async (req, res) => {
     try {
-        const subaccount = await transactionService.getPortalSubaccount(req.client);
-        const viewerMode = transactionService.getViewerMode(req.client);
-        const summary = await transactionService.getDashboardSummary({
+        const subaccount = await portalLedgerService.getPortalSubaccount(req.client);
+        const viewerMode = portalLedgerService.getViewerMode(req.client);
+        const summary = await portalLedgerService.getDashboardSummary({
             subaccount,
             filters: req.query,
             viewerMode
@@ -170,14 +172,15 @@ exports.getProfile = async (req, res) => {
 
 exports.getTransactions = async (req, res) => {
     try {
-        const result = await transactionService.listPortalTransactions(req.client, req.query);
+        const result = await portalLedgerService.listPortalTransactions(req.client, req.query);
         res.json({
             transactions: result.transactions,
             totalPages: result.pagination.totalPages,
             currentPage: result.pagination.currentPage,
             totalRecords: result.pagination.totalRecords,
             limit: result.pagination.limit,
-            pool: result.pool
+            pool: result.pool,
+            sourceType: result.sourceType
         });
     } catch (error) {
         console.error('[PORTAL-TRANSACTIONS-ERROR] Failed to fetch transactions:', error);
@@ -187,7 +190,7 @@ exports.getTransactions = async (req, res) => {
 
 exports.exportTransactions = async (req, res) => {
     try {
-        const exportResult = await transactionService.listPortalTransactions(req.client, { ...req.query, limit: 'all' });
+        const exportResult = await portalLedgerService.listPortalTransactions(req.client, { ...req.query, limit: 'all' });
         const exportRows = exportResult.transactions;
         const filenameDate = (req.query.dateFrom && req.query.dateTo)
             ? `${req.query.dateFrom}_to_${req.query.dateTo}`
@@ -391,6 +394,9 @@ exports.getTrkbitTransactionsForTransfer = async (req, res) => {
 
     try {
         const subaccount = await transactionService.getPortalSubaccount(req.client);
+        if ((subaccount.portal_source_type || 'transactions') === 'invoices') {
+            return res.status(400).json({ message: 'Transfer ownership is not available for invoice-driven portals.' });
+        }
         const baseQuery = `
             FROM trkbit_transactions tt
             LEFT JOIN subaccounts owner_sub ON owner_sub.chave_pix = tt.tx_pix_key
@@ -499,13 +505,17 @@ exports.claimTrkbitTransaction = async (req, res) => {
     }
 
     try {
+        const subaccount = await transactionService.getPortalSubaccount(req.client);
+        if ((subaccount.portal_source_type || 'transactions') === 'invoices') {
+            return res.status(400).json({ message: 'Transfer ownership is not available for invoice-driven portals.' });
+        }
         const [[existing]] = await pool.query('SELECT uid, tx_pix_key, tx_id, amount, tx_date FROM trkbit_transactions WHERE uid = ?', [transactionId]);
         if (!existing) return res.status(404).json({ message: 'Transaction not found.' });
 
         await transactionService.moveStatementTransaction({
             source: 'trkbit',
             transactionId,
-            targetSubaccountId: subaccountId,
+            targetSubaccountId: subaccount.id,
             actorUserId: req.client.adminUserId || null,
             badgeLabel: 'added'
         });
@@ -515,7 +525,7 @@ exports.claimTrkbitTransaction = async (req, res) => {
             amount: existing.amount,
             tx_date: existing.tx_date,
             from_pix_key: existing.tx_pix_key,
-            to_subaccount_id: subaccountId
+            to_subaccount_id: subaccount.id
         });
 
         res.json({ message: 'Transaction transferred successfully.' });
@@ -533,8 +543,8 @@ exports.updateTransactionNotes = async (req, res) => {
     }
 
     try {
-        const subaccount = await transactionService.getPortalSubaccount(req.client);
-        await transactionService.setTransactionNotes({
+        const subaccount = await portalLedgerService.getPortalSubaccount(req.client);
+        await portalLedgerService.setTransactionNotes({
             subaccount,
             transactionId,
             poolName,
@@ -562,8 +572,8 @@ exports.updateTransactionConfirmation = async (req, res) => {
     }
 
     try {
-        const subaccount = await transactionService.getPortalSubaccount(req.client);
-        await transactionService.setTransactionConfirmation({
+        const subaccount = await portalLedgerService.getPortalSubaccount(req.client);
+        await portalLedgerService.setTransactionConfirmation({
             subaccount,
             transactionId,
             poolName,
@@ -580,10 +590,10 @@ exports.createTransaction = async (req, res) => {
     const { pool: poolName = 'manual' } = req.body;
 
     try {
-        transactionService.assertImpersonation(req.client);
-        const subaccount = await transactionService.getPortalSubaccount(req.client);
+        portalLedgerService.assertImpersonation(req.client);
+        const subaccount = await portalLedgerService.getPortalSubaccount(req.client);
         if (poolName === 'statement') {
-            const created = await transactionService.createStatementTransaction({
+            const created = await portalLedgerService.createStatementTransaction({
                 subaccount,
                 actorUserId: req.client.adminUserId || null,
                 payload: req.body
@@ -591,7 +601,7 @@ exports.createTransaction = async (req, res) => {
             return res.status(201).json({ message: 'Statement transaction created successfully.', transactionId: created.id });
         }
 
-        const created = await transactionService.createManualTransaction({
+        const created = await portalLedgerService.createManualTransaction({
             subaccount,
             actorUserId: req.client.adminUserId || null,
             payload: req.body
@@ -608,10 +618,10 @@ exports.updateTransaction = async (req, res) => {
     const { pool: poolName = 'manual' } = req.body;
 
     try {
-        transactionService.assertImpersonation(req.client);
-        const subaccount = await transactionService.getPortalSubaccount(req.client);
+        portalLedgerService.assertImpersonation(req.client);
+        const subaccount = await portalLedgerService.getPortalSubaccount(req.client);
         if (poolName === 'statement') {
-            await transactionService.updateStatementTransaction({
+            await portalLedgerService.updateStatementTransaction({
                 subaccount,
                 actorUserId: req.client.adminUserId || null,
                 transactionId: id,
@@ -620,7 +630,7 @@ exports.updateTransaction = async (req, res) => {
             return res.json({ message: 'Statement transaction updated successfully.' });
         }
 
-        await transactionService.updateManualTransaction({
+        await portalLedgerService.updateManualTransaction({
             subaccount,
             actorUserId: req.client.adminUserId || null,
             transactionId: id,
@@ -638,10 +648,10 @@ exports.deleteTransaction = async (req, res) => {
     const { pool: poolName = 'manual' } = req.query;
 
     try {
-        transactionService.assertImpersonation(req.client);
-        const subaccount = await transactionService.getPortalSubaccount(req.client);
+        portalLedgerService.assertImpersonation(req.client);
+        const subaccount = await portalLedgerService.getPortalSubaccount(req.client);
         if (poolName === 'statement') {
-            await transactionService.deleteStatementTransaction({
+            await portalLedgerService.deleteStatementTransaction({
                 subaccount,
                 actorUserId: req.client.adminUserId || null,
                 transactionId: id
@@ -649,7 +659,7 @@ exports.deleteTransaction = async (req, res) => {
             return res.json({ message: 'Statement transaction deleted successfully.' });
         }
 
-        await transactionService.deleteManualTransaction({
+        await portalLedgerService.deleteManualTransaction({
             subaccount,
             transactionId: id
         });
@@ -664,9 +674,9 @@ exports.updateTransactionVisibility = async (req, res) => {
     const { transactionId, pool: poolName = 'statement', visibleInMaster, visibleInViewOnly } = req.body;
 
     try {
-        transactionService.assertImpersonation(req.client);
-        const subaccount = await transactionService.getPortalSubaccount(req.client);
-        await transactionService.setTransactionVisibility({
+        portalLedgerService.assertImpersonation(req.client);
+        const subaccount = await portalLedgerService.getPortalSubaccount(req.client);
+        await portalLedgerService.setTransactionVisibility({
             subaccount,
             transactionId,
             poolName,
@@ -684,9 +694,9 @@ exports.updateTransactionBadge = async (req, res) => {
     const { transactionId, pool: poolName = 'statement', badgeLabel } = req.body;
 
     try {
-        transactionService.assertImpersonation(req.client);
-        const subaccount = await transactionService.getPortalSubaccount(req.client);
-        await transactionService.setTransactionBadgeLabel({
+        portalLedgerService.assertImpersonation(req.client);
+        const subaccount = await portalLedgerService.getPortalSubaccount(req.client);
+        await portalLedgerService.setTransactionBadgeLabel({
             subaccount,
             transactionId,
             poolName,

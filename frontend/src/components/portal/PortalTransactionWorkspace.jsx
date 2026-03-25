@@ -595,6 +595,21 @@ const FormGrid = styled.div`
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
 `;
 
+const CheckboxField = styled.label`
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.9rem;
+  font-weight: 700;
+  color: ${({ theme }) => theme.primary};
+  cursor: pointer;
+
+  input {
+    width: 16px;
+    height: 16px;
+  }
+`;
+
 const TextArea = styled.textarea`
   width: 100%;
   min-height: 92px;
@@ -653,6 +668,7 @@ const makeInitialForm = () => ({
   sender_name: "",
   counterparty_name: "",
   portal_notes: "",
+  is_starting_entry: false,
 });
 
 const PortalTransactionWorkspace = ({ forceViewOnly = false }) => {
@@ -706,6 +722,8 @@ const PortalTransactionWorkspace = ({ forceViewOnly = false }) => {
   const isImpersonating = tokenPayload?.impersonation === true || sessionStorage.getItem("portalImpersonation") === "true";
   const isViewOnly = forceViewOnly || tokenPayload?.accessLevel === "view_only";
   const isMasterView = !isImpersonating && !isViewOnly;
+  const portalSourceType = summary?.sourceType || tokenPayload?.portalSourceType || "transactions";
+  const isInvoicePortal = portalSourceType === "invoices";
 
   useEffect(() => {
     const today = getTodayDateInputValue();
@@ -766,13 +784,16 @@ const PortalTransactionWorkspace = ({ forceViewOnly = false }) => {
   const canManageTransactions = isImpersonating;
   const activePool = isViewOnly ? "statement" : effectiveFilters.pool === "manual" ? "manual" : "statement";
   const accountType = tokenPayload?.accountType || "xpayz";
-  const showTransfer = canManageTransactions && accountType === "cross" && activePool === "statement";
+  const canManageActivePool = canManageTransactions && (!isInvoicePortal || activePool === "manual");
+  const showTransfer = canManageTransactions && !isInvoicePortal && accountType === "cross" && activePool === "statement";
   const showToolbarBody = isToolbarExpanded;
   const showPoolTabs = !isViewOnly;
   const showDateFromFilter = !isViewOnly;
   const showDateToFilter = isImpersonating;
   const showDirectionFilter = !isViewOnly;
   const showMetrics = !isViewOnly;
+  const showVisibilityControls = canManageTransactions && !isInvoicePortal;
+  const statementLabel = isInvoicePortal ? "Recebidos" : "Chave Extrato";
 
   const updateFilters = (patch) => {
     setFilters((prev) => ({ ...prev, ...patch }));
@@ -892,7 +913,7 @@ const PortalTransactionWorkspace = ({ forceViewOnly = false }) => {
 
     if (activePool === "statement") {
       cards.push(
-        { label: "Saldo Chave", value: data.statementAllTimeBalance || 0, meta: "Total" },
+        { label: isInvoicePortal ? "Saldo Recebidos" : "Saldo Chave", value: data.statementAllTimeBalance || 0, meta: "Total" },
         { label: "Saldo Total", value: data.allTimeBalance || 0, meta: "Total" },
       );
     } else {
@@ -916,14 +937,15 @@ const PortalTransactionWorkspace = ({ forceViewOnly = false }) => {
     const transactionDate = transaction.transaction_date
       ? String(transaction.transaction_date).replace(" ", "T").slice(0, 16)
       : new Date().toISOString().slice(0, 16);
-    setEditorForm({
-      transaction_date: transactionDate,
-      amount: transaction.amount,
-      operation_direct: transaction.operation_direct || "in",
-      sender_name: transaction.sender_name || "",
-      counterparty_name: transaction.counterparty_name || "",
-      portal_notes: transaction.portal_notes || "",
-    });
+      setEditorForm({
+        transaction_date: transactionDate,
+        amount: transaction.amount,
+        operation_direct: transaction.operation_direct || "in",
+        sender_name: transaction.sender_name || "",
+        counterparty_name: transaction.counterparty_name || "",
+        portal_notes: transaction.portal_notes || "",
+        is_starting_entry: Boolean(transaction.is_starting_entry),
+      });
     setEditorOpen(true);
   };
 
@@ -963,6 +985,7 @@ const PortalTransactionWorkspace = ({ forceViewOnly = false }) => {
   };
 
   const handleBadgeEdit = async (transaction) => {
+    if (isInvoicePortal) return;
     const nextLabel = window.prompt("Badge text", transaction.badge_label || "added");
     if (nextLabel == null) return;
     await updatePortalTransactionBadge({
@@ -1048,7 +1071,7 @@ const PortalTransactionWorkspace = ({ forceViewOnly = false }) => {
   };
 
   const renderVisibilityActions = (transaction) => {
-    if (!canManageTransactions) return null;
+    if (!showVisibilityControls) return null;
     return (
       <ActionGroup>
         <TinyAction type="button" $active={Boolean(transaction.visible_in_master)} onClick={() => toggleAudience(transaction, "master")}>
@@ -1062,7 +1085,7 @@ const PortalTransactionWorkspace = ({ forceViewOnly = false }) => {
   };
 
   const renderManageActions = (transaction) => {
-    if (!canManageTransactions) return null;
+    if (!canManageActivePool) return null;
     return (
       <ActionGroup>
         <TinyAction type="button" onClick={() => openEdit(transaction)}><FaEdit /> Edit</TinyAction>
@@ -1080,7 +1103,7 @@ const PortalTransactionWorkspace = ({ forceViewOnly = false }) => {
     return (
       <PartyCell>
         {transaction.badge_label ? (
-          <Badge type="button" $editable={canManageTransactions} onClick={() => canManageTransactions && handleBadgeEdit(transaction)}>
+          <Badge type="button" $editable={canManageTransactions && !isInvoicePortal} onClick={() => canManageTransactions && !isInvoicePortal && handleBadgeEdit(transaction)}>
             {transaction.badge_label}
           </Badge>
         ) : null}
@@ -1112,11 +1135,13 @@ const PortalTransactionWorkspace = ({ forceViewOnly = false }) => {
       <Toolbar>
         <ToolbarHeader>
           <TitleBlock>
-            <h2>{activePool === "statement" ? "Chave Extrato" : "Manual"}</h2>
+            <h2>{activePool === "statement" ? statementLabel : "Manual"}</h2>
             {showToolbarBody ? (
               <p>
                 {canManageTransactions
-                  ? "Full impersonation can manage transactions, visibility, ownership, and badges."
+                  ? (isInvoicePortal
+                    ? "Full impersonation can manage manual lancamentos, saldo inicial, notas e confirmacao."
+                    : "Full impersonation can manage transactions, visibility, ownership, and badges.")
                   : "Notes and confirmation stay available in every portal view."}
               </p>
             ) : null}
@@ -1134,7 +1159,7 @@ const PortalTransactionWorkspace = ({ forceViewOnly = false }) => {
                 <div />
                 <Tabs>
                   <Tab type="button" $active={activePool === "statement"} onClick={() => updateFilters({ pool: "statement" })}>
-                    Chave Extrato
+                    {statementLabel}
                   </Tab>
                   <Tab type="button" $active={activePool === "manual"} onClick={() => updateFilters({ pool: "manual" })}>
                     Manual
@@ -1207,7 +1232,7 @@ const PortalTransactionWorkspace = ({ forceViewOnly = false }) => {
                 <Button type="button" $variant="ghost" onClick={() => { fetchTransactions(); fetchSummary(); }}>
                   <FaSyncAlt /> Refresh
                 </Button>
-                {canManageTransactions ? (
+                {canManageActivePool ? (
                   <Button type="button" onClick={openCreate}>
                     <FaPlus /> Add
                   </Button>
@@ -1244,14 +1269,14 @@ const PortalTransactionWorkspace = ({ forceViewOnly = false }) => {
                 <th>Valor</th>
                 <th>Status</th>
                 <th>Notes</th>
-                {canManageTransactions ? <th>Visibility</th> : null}
-                {canManageTransactions ? <th>Manage</th> : null}
+                {showVisibilityControls ? <th>Visibility</th> : null}
+                {canManageActivePool ? <th>Manage</th> : null}
               </tr>
             </thead>
             <tbody>
               {!loading && transactions.length === 0 ? (
                 <tr>
-                  <td colSpan={canManageTransactions ? 6 : 4}>
+                  <td colSpan={(showVisibilityControls ? 1 : 0) + (canManageActivePool ? 1 : 0) + 4}>
                     <EmptyState>No transactions found.</EmptyState>
                   </td>
                 </tr>
@@ -1271,8 +1296,8 @@ const PortalTransactionWorkspace = ({ forceViewOnly = false }) => {
                       </StatusButton>
                     </td>
                     <td>{renderNoteCell(transaction)}</td>
-                    {canManageTransactions ? <td>{renderVisibilityActions(transaction)}</td> : null}
-                    {canManageTransactions ? <td>{renderManageActions(transaction)}</td> : null}
+                    {showVisibilityControls ? <td>{renderVisibilityActions(transaction)}</td> : null}
+                    {canManageActivePool ? <td>{renderManageActions(transaction)}</td> : null}
                   </tr>
                 ))
               )}
@@ -1297,8 +1322,8 @@ const PortalTransactionWorkspace = ({ forceViewOnly = false }) => {
                   {transaction.is_portal_confirmed ? "Confirmed" : "Pending"}
                 </StatusButton>
                 {renderNoteCell(transaction)}
-                {canManageTransactions ? renderVisibilityActions(transaction) : null}
-                {canManageTransactions ? renderManageActions(transaction) : null}
+                {showVisibilityControls ? renderVisibilityActions(transaction) : null}
+                {canManageActivePool ? renderManageActions(transaction) : null}
               </MobileCard>
             ))
           )}
@@ -1310,7 +1335,7 @@ const PortalTransactionWorkspace = ({ forceViewOnly = false }) => {
       </Panel>
 
       <Modal isOpen={editorOpen} onClose={() => setEditorOpen(false)} maxWidth="760px">
-        <ModalTitle>{editingTransaction ? "Editar Transacao" : `Adicionar Transacao ${activePool === "statement" ? "Extrato" : "Manual"}`}</ModalTitle>
+        <ModalTitle>{editingTransaction ? "Editar Transacao" : `Adicionar Transacao ${activePool === "statement" ? statementLabel : "Manual"}`}</ModalTitle>
         <form onSubmit={saveEditor}>
           <FormGrid>
             <Input type="datetime-local" value={editorForm.transaction_date} onChange={(event) => setEditorForm((prev) => ({ ...prev, transaction_date: event.target.value }))} />
@@ -1322,6 +1347,16 @@ const PortalTransactionWorkspace = ({ forceViewOnly = false }) => {
             <Input placeholder="Sender name" value={editorForm.sender_name} onChange={(event) => setEditorForm((prev) => ({ ...prev, sender_name: event.target.value }))} />
             <Input placeholder="Nome" value={editorForm.counterparty_name} onChange={(event) => setEditorForm((prev) => ({ ...prev, counterparty_name: event.target.value }))} />
           </FormGrid>
+          {isInvoicePortal && activePool === "manual" ? (
+            <CheckboxField>
+              <input
+                type="checkbox"
+                checked={Boolean(editorForm.is_starting_entry)}
+                onChange={(event) => setEditorForm((prev) => ({ ...prev, is_starting_entry: event.target.checked }))}
+              />
+              Definir como saldo inicial
+            </CheckboxField>
+          ) : null}
           <div style={{ marginTop: "0.8rem" }}>
             <TextArea placeholder="Optional note" value={editorForm.portal_notes} onChange={(event) => setEditorForm((prev) => ({ ...prev, portal_notes: event.target.value }))} />
           </div>

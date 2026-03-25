@@ -76,6 +76,38 @@ const ensureRuntimeSchema = async () => {
       )
     `);
     console.log("[SCHEMA] subaccount_profile_entries ensured.");
+
+    await pool.query(`
+      ALTER TABLE subaccounts
+      ADD COLUMN IF NOT EXISTS portal_source_type enum('transactions','invoices') NOT NULL DEFAULT 'transactions' AFTER account_type,
+      ADD COLUMN IF NOT EXISTS invoice_recipient_pattern varchar(255) NULL AFTER assigned_group_name
+    `);
+    await pool.query(`
+      ALTER TABLE invoices
+      ADD COLUMN IF NOT EXISTS is_portal_confirmed tinyint(1) NOT NULL DEFAULT 1 AFTER linked_transaction_source
+    `);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS subaccount_invoice_manual_entries (
+        id int NOT NULL AUTO_INCREMENT,
+        subaccount_id int NOT NULL,
+        direction enum('in','out') NOT NULL DEFAULT 'in',
+        sender_name varchar(255) DEFAULT NULL,
+        counterparty_name varchar(255) DEFAULT NULL,
+        amount decimal(20,2) NOT NULL DEFAULT '0.00',
+        transaction_date datetime NOT NULL,
+        is_portal_confirmed tinyint(1) NOT NULL DEFAULT 1,
+        portal_notes text DEFAULT NULL,
+        is_starting_entry tinyint(1) NOT NULL DEFAULT 0,
+        created_by_user_id int DEFAULT NULL,
+        updated_by_user_id int DEFAULT NULL,
+        created_at timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        PRIMARY KEY (id),
+        KEY idx_sime_subaccount_date (subaccount_id, transaction_date),
+        KEY idx_sime_start (subaccount_id, is_starting_entry, transaction_date)
+      )
+    `);
+    console.log("[SCHEMA] invoice portal columns and subaccount_invoice_manual_entries ensured.");
   } catch (error) {
     console.error(
       "[SCHEMA] Failed runtime schema ensure:",

@@ -11,6 +11,64 @@ require('dotenv').config();
 
 const PORTAL_JWT_SECRET = process.env.PORTAL_JWT_SECRET;
 
+const hasAdvancedPortalAccess = (user = {}) => {
+    const permissions = Array.isArray(user.permissions) ? user.permissions : [];
+    const roles = Array.isArray(user.roles)
+        ? user.roles
+        : (user.role ? [user.role] : []);
+    return roles.includes('Administrator') || permissions.includes('subaccount:portal_advanced');
+};
+
+const normalizePortalSourceType = (value) => (value === 'invoices' ? 'invoices' : 'transactions');
+
+const sanitizeInvoicePattern = (value) => {
+    if (value == null) return null;
+    const trimmed = String(value).trim();
+    return trimmed ? trimmed.slice(0, 255) : null;
+};
+
+const sanitizePortalUsername = (value) => {
+    if (value == null) return null;
+    const trimmed = String(value).trim().toLowerCase();
+    if (!trimmed) return null;
+    const normalized = trimmed.replace(/[^a-z0-9._-]/g, '');
+    if (normalized.length < 3 || normalized.length > 50) return null;
+    return normalized;
+};
+
+const resolvePortalConfig = ({ user, body, currentSubaccount = null }) => {
+    const advancedAccess = hasAdvancedPortalAccess(user);
+
+    if (!advancedAccess) {
+        if (currentSubaccount) {
+            return {
+                portalSourceType: currentSubaccount.portal_source_type || 'transactions',
+                invoiceRecipientPattern: currentSubaccount.invoice_recipient_pattern || null
+            };
+        }
+        return {
+            portalSourceType: 'transactions',
+            invoiceRecipientPattern: null
+        };
+    }
+
+    const portalSourceType = normalizePortalSourceType(body.portal_source_type);
+    const invoiceRecipientPattern = portalSourceType === 'invoices'
+        ? sanitizeInvoicePattern(body.invoice_recipient_pattern)
+        : null;
+
+    if (portalSourceType === 'invoices' && !invoiceRecipientPattern) {
+        const error = new Error('Invoice recipient pattern is required for invoice-driven portal subaccounts.');
+        error.status = 400;
+        throw error;
+    }
+
+    return {
+        portalSourceType,
+        invoiceRecipientPattern
+    };
+};
+
 const normalizeDateTime = (value) => {
     if (!value || typeof value !== 'string') return null;
     let trimmed = value.trim();
@@ -41,9 +99,28 @@ const generateUuid = () => {
 exports.getAll = async (req, res) => {
     try {
         const [subaccounts] = await pool.query(
-            // --- MODIFIED: Select account_type ---
-            'SELECT id, name, account_type, subaccount_number, chave_pix, assigned_group_name FROM subaccounts ORDER BY name ASC'
+            `
+                SELECT
+                    id,
+                    name,
+                    account_type,
+                    portal_source_type,
+                    invoice_recipient_pattern,
+                    subaccount_number,
+                    chave_pix,
+                    assigned_group_jid,
+                    assigned_group_name
+                FROM subaccounts
+                ORDER BY name ASC
+            `
         );
+        if (!hasAdvancedPortalAccess(req.user)) {
+            return res.json(subaccounts.map((subaccount) => ({
+                ...subaccount,
+                portal_source_type: 'transactions',
+                invoice_recipient_pattern: null
+            })));
+        }
         res.json(subaccounts);
     } catch (error) {
         console.error('[ERROR] Failed to fetch subaccounts:', error);
@@ -70,6 +147,10 @@ exports.create = async (req, res) => {
     const connection = await pool.getConnection();
     try {
         await connection.beginTransaction();
+        const { portalSourceType, invoiceRecipientPattern } = resolvePortalConfig({
+            user: req.user,
+            body: req.body
+        });
 
         let groupName = null;
         if (assigned_group_jid) {
@@ -80,8 +161,23 @@ exports.create = async (req, res) => {
         }
         
         const [result] = await connection.query(
-            'INSERT INTO subaccounts (user_id, name, account_type, subaccount_number, chave_pix, assigned_group_jid, assigned_group_name) VALUES (?, ?, ?, ?, ?, ?, ?)',
-            [userId, name, account_type, subaccount_number || null, chave_pix || null, assigned_group_jid || null, groupName]
+            `
+                INSERT INTO subaccounts (
+                    user_id, name, account_type, portal_source_type, invoice_recipient_pattern,
+                    subaccount_number, chave_pix, assigned_group_jid, assigned_group_name
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            `,
+            [
+                userId,
+                name,
+                account_type,
+                portalSourceType,
+                invoiceRecipientPattern,
+                subaccount_number || null,
+                chave_pix || null,
+                assigned_group_jid || null,
+                groupName
+            ]
         );
         
         await connection.commit();
@@ -121,6 +217,21 @@ exports.update = async (req, res) => {
     const connection = await pool.getConnection();
     try {
         await connection.beginTransaction();
+        const [[existingSubaccount]] = await connection.query(
+            'SELECT id, portal_source_type, invoice_recipient_pattern FROM subaccounts WHERE id = ?',
+            [id]
+        );
+
+        if (!existingSubaccount) {
+            await connection.rollback();
+            return res.status(404).json({ message: 'Subaccount not found.' });
+        }
+
+        const { portalSourceType, invoiceRecipientPattern } = resolvePortalConfig({
+            user: req.user,
+            body: req.body,
+            currentSubaccount: existingSubaccount
+        });
 
         let groupName = null;
         if (assigned_group_jid) {
@@ -131,8 +242,29 @@ exports.update = async (req, res) => {
         }
 
         const [result] = await connection.query(
-            'UPDATE subaccounts SET name = ?, account_type = ?, subaccount_number = ?, chave_pix = ?, assigned_group_jid = ?, assigned_group_name = ? WHERE id = ?',
-            [name, account_type, subaccount_number || null, chave_pix || null, assigned_group_jid || null, groupName, id]
+            `
+                UPDATE subaccounts
+                SET name = ?,
+                    account_type = ?,
+                    portal_source_type = ?,
+                    invoice_recipient_pattern = ?,
+                    subaccount_number = ?,
+                    chave_pix = ?,
+                    assigned_group_jid = ?,
+                    assigned_group_name = ?
+                WHERE id = ?
+            `,
+            [
+                name,
+                account_type,
+                portalSourceType,
+                invoiceRecipientPattern,
+                subaccount_number || null,
+                chave_pix || null,
+                assigned_group_jid || null,
+                groupName,
+                id
+            ]
         );
 
         if (result.affectedRows === 0) {
@@ -180,27 +312,31 @@ exports.delete = async (req, res) => {
 
 exports.getCredentials = async (req, res) => {
     const { id: subaccountId } = req.params;
+    const customUsername = sanitizePortalUsername(req.query.username);
+
+    if (req.query.username && !customUsername) {
+        return res.status(400).json({ message: 'Please enter a valid username (3-50 letters, numbers, dot, dash, or underscore).' });
+    }
 
     try {
         const [[subaccount]] = await pool.query(
-            'SELECT name, assigned_group_name FROM subaccounts WHERE id = ?', 
+            'SELECT id, name, assigned_group_name FROM subaccounts WHERE id = ?', 
             [subaccountId]
         );
 
         if (!subaccount) {
             return res.status(404).json({ message: 'Subaccount not found.' });
         }
-        if (!subaccount.assigned_group_name) {
-            return res.status(404).json({ message: 'No WhatsApp group is assigned. Cannot generate credentials.' });
-        }
-        
-        const username = subaccount.assigned_group_name.split(' ')[0].replace(/[\s\W-]+/g, '').toLowerCase();
 
-        const [[existingClient]] = await pool.query('SELECT password_hash, view_only_password_hash FROM clients WHERE subaccount_id = ?', [subaccountId]);
+        const [[existingClient]] = await pool.query(
+            'SELECT username, password_hash, view_only_password_hash FROM clients WHERE subaccount_id = ?',
+            [subaccountId]
+        );
 
         let masterPassword = null;
         let viewOnlyPassword = null;
         let message = "";
+        let username = existingClient?.username || null;
 
         if (existingClient) {
             // Mask existing passwords
@@ -217,12 +353,33 @@ exports.getCredentials = async (req, res) => {
                 message += " Generated missing View-Only password.";
             }
         } else {
+            const rawBase = (subaccount.assigned_group_name || subaccount.name || `client${subaccountId}`).trim();
+            const baseToken = rawBase.split(' ')[0] || rawBase;
+            const derivedUsername = sanitizePortalUsername(baseToken) || `client${subaccountId}`;
+            const requestedUsername = customUsername || derivedUsername;
+
+            if (!subaccount.assigned_group_name && !customUsername) {
+                return res.status(400).json({
+                    code: 'CUSTOM_USERNAME_REQUIRED',
+                    message: 'No WhatsApp group is assigned. Enter a custom username to generate portal credentials.'
+                });
+            }
+
+            const [[usernameOwner]] = await pool.query(
+                'SELECT subaccount_id FROM clients WHERE username = ? LIMIT 1',
+                [requestedUsername]
+            );
+            if (usernameOwner && Number(usernameOwner.subaccount_id) !== Number(subaccountId)) {
+                return res.status(409).json({ message: 'This username is already in use. Please choose another one.' });
+            }
+
             // Generate BOTH fresh
             const mPass = crypto.randomBytes(4).toString('hex');
             const voPass = crypto.randomBytes(4).toString('hex');
             const hashM = await bcrypt.hash(mPass, 10);
             const hashV = await bcrypt.hash(voPass, 10);
 
+            username = requestedUsername;
             try {
                 await pool.query(
                     'INSERT INTO clients (subaccount_id, username, password_hash, view_only_password_hash) VALUES (?, ?, ?, ?)',
@@ -233,7 +390,7 @@ exports.getCredentials = async (req, res) => {
                 message = "New credentials generated for both modes.";
             } catch (insertError) {
                 // Handle unique username collision
-                if (insertError.code === 'ER_DUP_ENTRY') {
+                if (insertError.code === 'ER_DUP_ENTRY' && !customUsername) {
                     const newUsername = `${username}${subaccountId}`;
                     await pool.query(
                         'INSERT INTO clients (subaccount_id, username, password_hash, view_only_password_hash) VALUES (?, ?, ?, ?)',
@@ -384,7 +541,7 @@ exports.createPortalAccessSession = async (req, res) => {
 
     try {
         const [[subaccount]] = await pool.query(
-            'SELECT id, name, account_type, subaccount_number, chave_pix, assigned_group_name FROM subaccounts WHERE id = ?',
+            'SELECT id, name, account_type, portal_source_type, subaccount_number, chave_pix, assigned_group_name FROM subaccounts WHERE id = ?',
             [subaccountId]
         );
 
@@ -438,7 +595,8 @@ exports.createPortalAccessSession = async (req, res) => {
             adminUserId: req.user?.id,
             adminUsername: req.user?.username,
             accountType: subaccount.account_type,
-            chavePix: subaccount.chave_pix
+            chavePix: subaccount.chave_pix,
+            portalSourceType: subaccount.portal_source_type || 'transactions'
         };
 
         const token = jwt.sign(tokenPayload, PORTAL_JWT_SECRET, { expiresIn: '8h' });

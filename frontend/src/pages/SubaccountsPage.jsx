@@ -575,6 +575,7 @@ const SubaccountsPage = ({ allGroups }) => {
   const canReassign = hasPermission("subaccount:reassign_transactions");
   const canPortalAccess = hasPermission("client_portal:access");
   const canCrossDebit = hasPermission("subaccount:debit_cross");
+  const canManageAdvancedPortal = hasPermission("subaccount:portal_advanced");
 
   const [subaccounts, setSubaccounts] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -667,7 +668,25 @@ const SubaccountsPage = ({ allGroups }) => {
     setCredsLoading(true);
     setIsCredsModalOpen(true);
     try {
-      const { data } = await getSubaccountCredentials(subaccount.id);
+      let data;
+      try {
+        ({ data } = await getSubaccountCredentials(subaccount.id));
+      } catch (error) {
+        if (error.response?.data?.code !== "CUSTOM_USERNAME_REQUIRED") {
+          throw error;
+        }
+
+        const customUsername = window.prompt(
+          `Choose a portal username for "${subaccount.name}"`,
+          subaccount.name?.toLowerCase().replace(/[^a-z0-9]/g, "") || ""
+        );
+        if (!customUsername) {
+          handleCloseModals();
+          return;
+        }
+        ({ data } = await getSubaccountCredentials(subaccount.id, customUsername));
+      }
+
       setCurrentCreds({
         ...data,
         subaccountId: subaccount.id,
@@ -964,6 +983,7 @@ const SubaccountsPage = ({ allGroups }) => {
           onSave={fetchSubaccounts}
           subaccount={editingSubaccount}
           allGroups={allGroups}
+          canManageAdvancedPortal={canManageAdvancedPortal}
         />
       )}
 
@@ -1049,10 +1069,12 @@ const SubaccountsPage = ({ allGroups }) => {
   );
 };
 
-const SubaccountModal = ({ isOpen, onClose, onSave, subaccount, allGroups }) => {
+const SubaccountModal = ({ isOpen, onClose, onSave, subaccount, allGroups, canManageAdvancedPortal }) => {
   const [formData, setFormData] = useState({
     name: "",
     account_type: "xpayz",
+    portal_source_type: "transactions",
+    invoice_recipient_pattern: "",
     subaccount_number: "",
     chave_pix: "",
     assigned_group_jid: "",
@@ -1064,6 +1086,8 @@ const SubaccountModal = ({ isOpen, onClose, onSave, subaccount, allGroups }) => 
       setFormData({
         name: subaccount.name || "",
         account_type: subaccount.account_type || "xpayz",
+        portal_source_type: subaccount.portal_source_type || "transactions",
+        invoice_recipient_pattern: subaccount.invoice_recipient_pattern || "",
         subaccount_number: subaccount.subaccount_number || "",
         chave_pix: subaccount.chave_pix || "",
         assigned_group_jid: subaccount.assigned_group_jid || "",
@@ -1074,6 +1098,8 @@ const SubaccountModal = ({ isOpen, onClose, onSave, subaccount, allGroups }) => 
     setFormData({
       name: "",
       account_type: "xpayz",
+      portal_source_type: "transactions",
+      invoice_recipient_pattern: "",
       subaccount_number: "",
       chave_pix: "",
       assigned_group_jid: "",
@@ -1139,6 +1165,49 @@ const SubaccountModal = ({ isOpen, onClose, onSave, subaccount, allGroups }) => 
             </RadioOption>
           </RadioWrap>
         </InputGroup>
+
+        {canManageAdvancedPortal && (
+          <>
+            <InputGroup>
+              <Label>Portal Source</Label>
+              <RadioWrap>
+                <RadioOption>
+                  <input
+                    type="radio"
+                    name="portal_source_type"
+                    value="transactions"
+                    checked={formData.portal_source_type === "transactions"}
+                    onChange={handleChange}
+                  />
+                  Transactions
+                </RadioOption>
+                <RadioOption>
+                  <input
+                    type="radio"
+                    name="portal_source_type"
+                    value="invoices"
+                    checked={formData.portal_source_type === "invoices"}
+                    onChange={handleChange}
+                  />
+                  Invoices
+                </RadioOption>
+              </RadioWrap>
+            </InputGroup>
+
+            {formData.portal_source_type === "invoices" && (
+              <InputGroup>
+                <Label>Invoice Recipient Pattern</Label>
+                <Input
+                  name="invoice_recipient_pattern"
+                  value={formData.invoice_recipient_pattern}
+                  onChange={handleChange}
+                  placeholder="%MAZDA%"
+                  required
+                />
+              </InputGroup>
+            )}
+          </>
+        )}
 
         {formData.account_type === "xpayz" && (
           <InputGroup>
