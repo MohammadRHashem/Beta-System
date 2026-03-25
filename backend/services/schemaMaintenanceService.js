@@ -91,6 +91,7 @@ const ensureRuntimeSchema = async () => {
         id int NOT NULL AUTO_INCREMENT,
         subaccount_id int NOT NULL,
         direction enum('in','out') NOT NULL DEFAULT 'in',
+        starting_scope enum('geral','chave_pix') NOT NULL DEFAULT 'geral',
         sender_name varchar(255) DEFAULT NULL,
         counterparty_name varchar(255) DEFAULT NULL,
         amount decimal(20,2) NOT NULL DEFAULT '0.00',
@@ -104,8 +105,12 @@ const ensureRuntimeSchema = async () => {
         updated_at timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
         PRIMARY KEY (id),
         KEY idx_sime_subaccount_date (subaccount_id, transaction_date),
-        KEY idx_sime_start (subaccount_id, is_starting_entry, transaction_date)
+        KEY idx_sime_start (subaccount_id, starting_scope, is_starting_entry, transaction_date)
       )
+    `);
+    await pool.query(`
+      ALTER TABLE subaccount_invoice_manual_entries
+      ADD COLUMN IF NOT EXISTS starting_scope enum('geral','chave_pix') NOT NULL DEFAULT 'geral' AFTER direction
     `);
     console.log("[SCHEMA] invoice portal columns and subaccount_invoice_manual_entries ensured.");
   } catch (error) {

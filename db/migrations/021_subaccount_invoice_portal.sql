@@ -9,6 +9,7 @@ CREATE TABLE IF NOT EXISTS `subaccount_invoice_manual_entries` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `subaccount_id` int(11) NOT NULL,
   `direction` enum('in','out') NOT NULL DEFAULT 'in',
+  `starting_scope` enum('geral','chave_pix') NOT NULL DEFAULT 'geral',
   `sender_name` varchar(255) DEFAULT NULL,
   `counterparty_name` varchar(255) DEFAULT NULL,
   `amount` decimal(20,2) NOT NULL DEFAULT '0.00',
@@ -22,7 +23,7 @@ CREATE TABLE IF NOT EXISTS `subaccount_invoice_manual_entries` (
   `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
   PRIMARY KEY (`id`),
   KEY `idx_sime_subaccount_date` (`subaccount_id`,`transaction_date`),
-  KEY `idx_sime_start` (`subaccount_id`,`is_starting_entry`,`transaction_date`),
+  KEY `idx_sime_start` (`subaccount_id`,`starting_scope`,`is_starting_entry`,`transaction_date`),
   CONSTRAINT `fk_sime_subaccount` FOREIGN KEY (`subaccount_id`) REFERENCES `subaccounts` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 

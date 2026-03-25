@@ -21,7 +21,8 @@ export const PortalProvider = ({ children }) => {
         direction: '',
         confirmation: '',
         amountExact: '',
-        pool: 'statement'
+        pool: 'statement',
+        statementScope: 'geral'
     });
 
     const value = {

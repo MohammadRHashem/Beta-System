@@ -2,6 +2,29 @@ const pool = require('../config/db');
 const { parsePagination, buildPaginationMeta } = require('../utils/pagination');
 const transactionService = require('./subaccountTransactionService');
 
+const STATEMENT_SCOPE = {
+    GERAL: 'geral',
+    CHAVE_PIX: 'chave_pix'
+};
+
+const NORMALIZED_INVOICE_AMOUNT_SQL = `
+    CAST(
+        CASE
+            WHEN REPLACE(i.amount, ' ', '') REGEXP '^[0-9]{1,3}(,[0-9]{3})+\\.[0-9]+$'
+                THEN REPLACE(REPLACE(i.amount, ' ', ''), ',', '')
+            WHEN REPLACE(i.amount, ' ', '') REGEXP '^[0-9]{1,3}(\\.[0-9]{3})+,[0-9]+$'
+                THEN REPLACE(REPLACE(REPLACE(i.amount, ' ', ''), '.', ''), ',', '.')
+            WHEN REPLACE(i.amount, ' ', '') REGEXP '^[0-9]{1,3}(,[0-9]{3})+$'
+                THEN REPLACE(REPLACE(i.amount, ' ', ''), ',', '')
+            WHEN REPLACE(i.amount, ' ', '') REGEXP '^[0-9]{1,3}(\\.[0-9]{3})+$'
+                THEN REPLACE(REPLACE(i.amount, ' ', ''), '.', '')
+            WHEN REPLACE(i.amount, ' ', '') REGEXP '^[0-9]+,[0-9]+$'
+                THEN REPLACE(REPLACE(i.amount, ' ', ''), ',', '.')
+            ELSE REPLACE(i.amount, ' ', '')
+        END AS DECIMAL(20, 2)
+    )
+`;
+
 const isValidDate = (value) => /^\d{4}-\d{2}-\d{2}$/.test(value || '');
 
 const parseAmount = (value) => {
@@ -53,6 +76,10 @@ const addConfirmationFilter = (filters, fieldName, clauses) => {
     }
 };
 
+const normalizeStatementScope = (value) => (
+    value === STATEMENT_SCOPE.CHAVE_PIX ? STATEMENT_SCOPE.CHAVE_PIX : STATEMENT_SCOPE.GERAL
+);
+
 const getPortalSourceType = (subaccount) => (
     subaccount?.portal_source_type === 'invoices' ? 'invoices' : 'transactions'
 );
@@ -62,17 +89,18 @@ const getInvoiceRecipientPattern = (subaccount) => {
     return pattern || null;
 };
 
-const getStartingEntry = async (subaccountId) => {
+const getStartingEntry = async (subaccountId, statementScope) => {
     const [[entry]] = await pool.query(
         `
-            SELECT id, transaction_date, direction, amount
+            SELECT id, transaction_date, direction, amount, starting_scope
             FROM subaccount_invoice_manual_entries
             WHERE subaccount_id = ?
+              AND starting_scope = ?
               AND is_starting_entry = 1
             ORDER BY transaction_date DESC, id DESC
             LIMIT 1
         `,
-        [subaccountId]
+        [subaccountId, statementScope]
     );
     return entry || null;
 };
@@ -115,7 +143,7 @@ const addInvoiceStatementFilters = ({ filters, params, clauses }) => {
 
     const amountExact = parseExactAmount(filters.amountExact);
     if (amountExact != null) {
-        clauses.push('CAST(i.amount AS DECIMAL(20,2)) = ?');
+        clauses.push(`${NORMALIZED_INVOICE_AMOUNT_SQL} = ?`);
         params.push(amountExact);
     }
 
@@ -125,6 +153,26 @@ const addInvoiceStatementFilters = ({ filters, params, clauses }) => {
     if (filters.direction === 'out') {
         clauses.push('1 = 0');
     }
+};
+
+const addInvoiceStatementScopeFilter = ({ subaccount, statementScope, params, clauses }) => {
+    const linkedGroupSql = `
+        EXISTS (
+            SELECT 1
+            FROM subaccounts linked_sub
+            WHERE linked_sub.assigned_group_jid = i.source_group_jid
+              AND linked_sub.assigned_group_jid IS NOT NULL
+              AND linked_sub.account_type = ?
+        )
+    `;
+
+    params.push(subaccount.account_type);
+    if (statementScope === STATEMENT_SCOPE.CHAVE_PIX) {
+        clauses.push(linkedGroupSql);
+        return;
+    }
+
+    clauses.push(`NOT ${linkedGroupSql}`);
 };
 
 const addInvoiceManualFilters = ({ filters, params, clauses }) => {
@@ -153,11 +201,12 @@ const addInvoiceManualFilters = ({ filters, params, clauses }) => {
     }
 };
 
-const listInvoiceStatementTransactions = async ({ subaccount, filters = {}, pagination, anchorEntry }) => {
+const listInvoiceStatementTransactions = async ({ subaccount, filters = {}, pagination, anchorEntry, statementScope }) => {
     const base = getInvoiceStatementBase(subaccount);
     const clauses = [...base.baseClauses];
     const params = [...base.baseParams];
 
+    addInvoiceStatementScopeFilter({ subaccount, statementScope, params, clauses });
     addAnchorDateFilter(anchorEntry, 'i.received_at', params, clauses);
     addInvoiceStatementFilters({ filters, params, clauses });
 
@@ -173,8 +222,9 @@ const listInvoiceStatementTransactions = async ({ subaccount, filters = {}, pagi
                 i.id AS source_id,
                 'invoice' AS source,
                 'statement' AS pool,
+                ? AS statement_scope,
                 i.received_at AS transaction_date,
-                CAST(i.amount AS DECIMAL(20,2)) AS amount,
+                ${NORMALIZED_INVOICE_AMOUNT_SQL} AS amount,
                 'in' AS operation_direct,
                 i.sender_name,
                 i.recipient_name AS counterparty_name,
@@ -192,7 +242,7 @@ const listInvoiceStatementTransactions = async ({ subaccount, filters = {}, pagi
             ${whereSql}
             ORDER BY i.received_at DESC, i.id DESC
         `;
-        const dataParams = [subaccount.id, ...params];
+        const dataParams = [statementScope, subaccount.id, ...params];
         if (pagination && !pagination.isAll) {
             dataSql += ' LIMIT ? OFFSET ?';
             dataParams.push(pagination.limitValue, pagination.offset);
@@ -225,6 +275,7 @@ const listInvoiceManualTransactions = async ({ subaccount, filters = {}, paginat
                 sime.id AS source_id,
                 'invoice_manual' AS source,
                 'manual' AS pool,
+                sime.starting_scope AS statement_scope,
                 sime.transaction_date,
                 sime.amount,
                 sime.direction AS operation_direct,
@@ -233,7 +284,11 @@ const listInvoiceManualTransactions = async ({ subaccount, filters = {}, paginat
                 sime.is_portal_confirmed,
                 sime.portal_notes,
                 'manual' AS entry_origin,
-                CASE WHEN sime.is_starting_entry = 1 THEN 'saldo inicial' ELSE NULL END AS badge_label,
+                CASE
+                    WHEN sime.is_starting_entry = 1 AND sime.starting_scope = 'chave_pix' THEN 'saldo inicial chave'
+                    WHEN sime.is_starting_entry = 1 THEN 'saldo inicial geral'
+                    ELSE NULL
+                END AS badge_label,
                 NULL AS sync_control_state,
                 1 AS visible_in_master,
                 1 AS visible_in_view_only,
@@ -259,17 +314,18 @@ const listInvoiceManualTransactions = async ({ subaccount, filters = {}, paginat
     };
 };
 
-const calculateInvoiceStatementBalance = async ({ subaccount, filters = {}, anchorEntry }) => {
+const calculateInvoiceStatementBalance = async ({ subaccount, filters = {}, anchorEntry, statementScope }) => {
     const base = getInvoiceStatementBase(subaccount);
     const clauses = [...base.baseClauses];
     const params = [...base.baseParams];
 
+    addInvoiceStatementScopeFilter({ subaccount, statementScope, params, clauses });
     addAnchorDateFilter(anchorEntry, 'i.received_at', params, clauses);
     addInvoiceStatementFilters({ filters, params, clauses });
 
     const whereSql = buildWhereSql(clauses);
     const [[row]] = await pool.query(
-        `SELECT COALESCE(SUM(CAST(i.amount AS DECIMAL(20,2))), 0) AS balance ${base.fromSql} ${whereSql}`,
+        `SELECT COALESCE(SUM(${NORMALIZED_INVOICE_AMOUNT_SQL}), 0) AS balance ${base.fromSql} ${whereSql}`,
         params
     );
     return Number(row?.balance || 0);
@@ -294,11 +350,12 @@ const calculateInvoiceManualBalance = async ({ subaccount, filters = {}, anchorE
     return Number(row?.balance || 0);
 };
 
-const calculateInvoiceStatementFlowSummary = async ({ subaccount, filters = {}, anchorEntry }) => {
+const calculateInvoiceStatementFlowSummary = async ({ subaccount, filters = {}, anchorEntry, statementScope }) => {
     const base = getInvoiceStatementBase(subaccount);
     const clauses = [...base.baseClauses];
     const params = [...base.baseParams];
 
+    addInvoiceStatementScopeFilter({ subaccount, statementScope, params, clauses });
     addAnchorDateFilter(anchorEntry, 'i.received_at', params, clauses);
     addInvoiceStatementFilters({ filters, params, clauses });
 
@@ -306,7 +363,7 @@ const calculateInvoiceStatementFlowSummary = async ({ subaccount, filters = {}, 
     const [[row]] = await pool.query(
         `
             SELECT
-                COALESCE(SUM(CAST(i.amount AS DECIMAL(20,2))), 0) AS totalIn,
+                COALESCE(SUM(${NORMALIZED_INVOICE_AMOUNT_SQL}), 0) AS totalIn,
                 0 AS totalOut,
                 COUNT(*) AS countIn,
                 0 AS countOut
@@ -354,15 +411,16 @@ const calculateInvoiceManualFlowSummary = async ({ subaccount, filters = {}, anc
 const getInvoiceDashboardSummary = async ({ subaccount, filters = {}, viewerMode }) => {
     const normalizedFilters = transactionService.normalizePortalFiltersForViewerMode(filters, viewerMode);
     const activePool = normalizedFilters.pool === 'manual' ? 'manual' : 'statement';
-    const anchorEntry = await getStartingEntry(subaccount.id);
+    const statementScope = normalizeStatementScope(normalizedFilters.statementScope);
+    const anchorEntry = await getStartingEntry(subaccount.id, statementScope);
 
-    const statementBalance = await calculateInvoiceStatementBalance({ subaccount, filters: normalizedFilters, anchorEntry });
+    const statementBalance = await calculateInvoiceStatementBalance({ subaccount, filters: normalizedFilters, anchorEntry, statementScope });
     const manualBalance = await calculateInvoiceManualBalance({ subaccount, filters: normalizedFilters, anchorEntry });
-    const statementAllTimeBalance = await calculateInvoiceStatementBalance({ subaccount, filters: {}, anchorEntry });
+    const statementAllTimeBalance = await calculateInvoiceStatementBalance({ subaccount, filters: {}, anchorEntry, statementScope });
     const manualAllTimeBalance = await calculateInvoiceManualBalance({ subaccount, filters: {}, anchorEntry });
     const flowSummary = activePool === 'manual'
         ? await calculateInvoiceManualFlowSummary({ subaccount, filters: normalizedFilters, anchorEntry })
-        : await calculateInvoiceStatementFlowSummary({ subaccount, filters: normalizedFilters, anchorEntry });
+        : await calculateInvoiceStatementFlowSummary({ subaccount, filters: normalizedFilters, anchorEntry, statementScope });
 
     return {
         sourceType: 'invoices',
@@ -371,6 +429,7 @@ const getInvoiceDashboardSummary = async ({ subaccount, filters = {}, viewerMode
         supportsTransfer: false,
         supportsStartingEntry: true,
         activePool,
+        statementScope,
         totalIn: flowSummary.totalIn,
         totalOut: flowSummary.totalOut,
         countIn: flowSummary.countIn,
@@ -385,7 +444,8 @@ const getInvoiceDashboardSummary = async ({ subaccount, filters = {}, viewerMode
             id: anchorEntry.id,
             amount: Number(anchorEntry.amount || 0),
             direction: anchorEntry.direction,
-            transaction_date: anchorEntry.transaction_date
+            transaction_date: anchorEntry.transaction_date,
+            statement_scope: anchorEntry.starting_scope
         } : null
     };
 };
@@ -396,17 +456,19 @@ const listInvoicePortalTransactions = async (client, query = {}) => {
     const normalizedQuery = transactionService.normalizePortalFiltersForViewerMode(query, viewerMode);
     const pagination = parsePagination(query, { defaultLimit: 50, allowAll: true });
     const activePool = normalizedQuery.pool === 'manual' ? 'manual' : 'statement';
-    const anchorEntry = await getStartingEntry(subaccount.id);
+    const statementScope = normalizeStatementScope(normalizedQuery.statementScope);
+    const anchorEntry = await getStartingEntry(subaccount.id, statementScope);
 
     const result = activePool === 'manual'
         ? await listInvoiceManualTransactions({ subaccount, filters: normalizedQuery, pagination, anchorEntry })
-        : await listInvoiceStatementTransactions({ subaccount, filters: normalizedQuery, pagination, anchorEntry });
+        : await listInvoiceStatementTransactions({ subaccount, filters: normalizedQuery, pagination, anchorEntry, statementScope });
 
     return {
         transactions: result.rows,
         pagination: buildPaginationMeta(result.total, pagination),
         pool: activePool,
-        sourceType: 'invoices'
+        sourceType: 'invoices',
+        statementScope
     };
 };
 
@@ -444,18 +506,18 @@ const assertInvoiceStatementTransaction = async (subaccount, transactionId) => {
     return row;
 };
 
-const clearOtherStartingEntries = async (subaccountId, exceptId = null) => {
+const clearOtherStartingEntries = async (subaccountId, statementScope, exceptId = null) => {
     if (exceptId == null) {
         await pool.query(
-            'UPDATE subaccount_invoice_manual_entries SET is_starting_entry = 0 WHERE subaccount_id = ?',
-            [subaccountId]
+            'UPDATE subaccount_invoice_manual_entries SET is_starting_entry = 0 WHERE subaccount_id = ? AND starting_scope = ?',
+            [subaccountId, statementScope]
         );
         return;
     }
 
     await pool.query(
-        'UPDATE subaccount_invoice_manual_entries SET is_starting_entry = 0 WHERE subaccount_id = ? AND id <> ?',
-        [subaccountId, exceptId]
+        'UPDATE subaccount_invoice_manual_entries SET is_starting_entry = 0 WHERE subaccount_id = ? AND starting_scope = ? AND id <> ?',
+        [subaccountId, statementScope, exceptId]
     );
 };
 
@@ -464,6 +526,7 @@ const createInvoiceManualTransaction = async ({ subaccount, actorUserId, payload
     const amount = parseAmount(payload.amount);
     const direction = payload.direction === 'out' || payload.operation_direct === 'out' ? 'out' : 'in';
     const isStartingEntry = payload.is_starting_entry === true || payload.is_starting_entry === 1 || payload.is_starting_entry === '1';
+    const startingScope = normalizeStatementScope(payload.statementScope);
 
     if (!normalizedDate) {
         const error = new Error('Valid date/time is required.');
@@ -477,7 +540,7 @@ const createInvoiceManualTransaction = async ({ subaccount, actorUserId, payload
     }
 
     if (isStartingEntry) {
-        await clearOtherStartingEntries(subaccount.id);
+        await clearOtherStartingEntries(subaccount.id, startingScope);
     }
 
     const [result] = await pool.query(
@@ -485,6 +548,7 @@ const createInvoiceManualTransaction = async ({ subaccount, actorUserId, payload
             INSERT INTO subaccount_invoice_manual_entries (
                 subaccount_id,
                 direction,
+                starting_scope,
                 sender_name,
                 counterparty_name,
                 amount,
@@ -499,6 +563,7 @@ const createInvoiceManualTransaction = async ({ subaccount, actorUserId, payload
         [
             subaccount.id,
             direction,
+            startingScope,
             sanitizeText(payload.sender_name, 255),
             sanitizeText(payload.counterparty_name, 255),
             amount,
@@ -521,6 +586,7 @@ const updateInvoiceManualTransaction = async ({ subaccount, actorUserId, transac
         ? 'out'
         : (payload.direction === 'in' || payload.operation_direct === 'in' ? 'in' : existing.direction);
     const isStartingEntry = payload.is_starting_entry === true || payload.is_starting_entry === 1 || payload.is_starting_entry === '1';
+    const startingScope = normalizeStatementScope(payload.statementScope || existing.starting_scope);
 
     if (!normalizedDate) {
         const error = new Error('Valid date/time is required.');
@@ -534,13 +600,14 @@ const updateInvoiceManualTransaction = async ({ subaccount, actorUserId, transac
     }
 
     if (isStartingEntry) {
-        await clearOtherStartingEntries(subaccount.id, transactionId);
+        await clearOtherStartingEntries(subaccount.id, startingScope, transactionId);
     }
 
     await pool.query(
         `
             UPDATE subaccount_invoice_manual_entries
             SET direction = ?,
+                starting_scope = ?,
                 sender_name = ?,
                 counterparty_name = ?,
                 amount = ?,
@@ -552,6 +619,7 @@ const updateInvoiceManualTransaction = async ({ subaccount, actorUserId, transac
         `,
         [
             direction,
+            startingScope,
             sanitizeText(payload.sender_name, 255),
             sanitizeText(payload.counterparty_name, 255),
             amount,

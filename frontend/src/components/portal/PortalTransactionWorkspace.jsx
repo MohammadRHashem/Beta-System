@@ -669,6 +669,7 @@ const makeInitialForm = () => ({
   counterparty_name: "",
   portal_notes: "",
   is_starting_entry: false,
+  statementScope: "geral",
 });
 
 const PortalTransactionWorkspace = ({ forceViewOnly = false }) => {
@@ -724,6 +725,8 @@ const PortalTransactionWorkspace = ({ forceViewOnly = false }) => {
   const isMasterView = !isImpersonating && !isViewOnly;
   const portalSourceType = summary?.sourceType || tokenPayload?.portalSourceType || "transactions";
   const isInvoicePortal = portalSourceType === "invoices";
+  const currentStatementScope = summary?.statementScope || filters.statementScope || "geral";
+  const currentStatementScopeLabel = currentStatementScope === "chave_pix" ? "Chave Pix" : "Geral";
 
   useEffect(() => {
     const today = getTodayDateInputValue();
@@ -764,6 +767,7 @@ const PortalTransactionWorkspace = ({ forceViewOnly = false }) => {
       direction: isViewOnly ? "in" : filters.direction || "",
       confirmation: filters.confirmation || "",
       pool: isViewOnly ? "statement" : filters.pool || "statement",
+      statementScope: filters.statementScope || "geral",
     }),
     [
       debouncedAmountExact,
@@ -773,6 +777,7 @@ const PortalTransactionWorkspace = ({ forceViewOnly = false }) => {
       filters.dateTo,
       filters.direction,
       filters.pool,
+      filters.statementScope,
       isImpersonating,
       isViewOnly,
     ],
@@ -913,7 +918,7 @@ const PortalTransactionWorkspace = ({ forceViewOnly = false }) => {
 
     if (activePool === "statement") {
       cards.push(
-        { label: isInvoicePortal ? "Saldo Recebidos" : "Saldo Chave", value: data.statementAllTimeBalance || 0, meta: "Total" },
+        { label: isInvoicePortal ? `Saldo ${currentStatementScopeLabel}` : "Saldo Chave", value: data.statementAllTimeBalance || 0, meta: "Total" },
         { label: "Saldo Total", value: data.allTimeBalance || 0, meta: "Total" },
       );
     } else {
@@ -924,11 +929,11 @@ const PortalTransactionWorkspace = ({ forceViewOnly = false }) => {
     }
 
     return cards;
-  }, [activePool, summary]);
+  }, [activePool, currentStatementScopeLabel, isInvoicePortal, summary]);
 
   const openCreate = () => {
     setEditingTransaction(null);
-    setEditorForm(makeInitialForm());
+    setEditorForm({ ...makeInitialForm(), statementScope: currentStatementScope });
     setEditorOpen(true);
   };
 
@@ -945,13 +950,18 @@ const PortalTransactionWorkspace = ({ forceViewOnly = false }) => {
         counterparty_name: transaction.counterparty_name || "",
         portal_notes: transaction.portal_notes || "",
         is_starting_entry: Boolean(transaction.is_starting_entry),
+        statementScope: transaction.statement_scope || currentStatementScope,
       });
     setEditorOpen(true);
   };
 
   const saveEditor = async (event) => {
     event.preventDefault();
-    const payload = { ...editorForm, pool: activePool };
+    const payload = {
+      ...editorForm,
+      pool: activePool,
+      statementScope: editorForm.statementScope || currentStatementScope,
+    };
     if (editingTransaction) {
       await updatePortalTransaction(editingTransaction.id, payload);
     } else {
@@ -1140,7 +1150,7 @@ const PortalTransactionWorkspace = ({ forceViewOnly = false }) => {
               <p>
                 {canManageTransactions
                   ? (isInvoicePortal
-                    ? "Full impersonation can manage manual lancamentos, saldo inicial, notas e confirmacao."
+                    ? `Full impersonation can manage manual lancamentos, saldo inicial, notas e confirmacao para ${currentStatementScopeLabel}.`
                     : "Full impersonation can manage transactions, visibility, ownership, and badges.")
                   : "Notes and confirmation stay available in every portal view."}
               </p>
@@ -1163,6 +1173,20 @@ const PortalTransactionWorkspace = ({ forceViewOnly = false }) => {
                   </Tab>
                   <Tab type="button" $active={activePool === "manual"} onClick={() => updateFilters({ pool: "manual" })}>
                     Manual
+                  </Tab>
+                </Tabs>
+              </ToolbarTop>
+            ) : null}
+
+            {isInvoicePortal ? (
+              <ToolbarTop>
+                <div />
+                <Tabs>
+                  <Tab type="button" $active={currentStatementScope === "geral"} onClick={() => updateFilters({ statementScope: "geral" })}>
+                    Geral
+                  </Tab>
+                  <Tab type="button" $active={currentStatementScope === "chave_pix"} onClick={() => updateFilters({ statementScope: "chave_pix" })}>
+                    Chave Pix
                   </Tab>
                 </Tabs>
               </ToolbarTop>
@@ -1348,14 +1372,27 @@ const PortalTransactionWorkspace = ({ forceViewOnly = false }) => {
             <Input placeholder="Nome" value={editorForm.counterparty_name} onChange={(event) => setEditorForm((prev) => ({ ...prev, counterparty_name: event.target.value }))} />
           </FormGrid>
           {isInvoicePortal && activePool === "manual" ? (
-            <CheckboxField>
-              <input
-                type="checkbox"
-                checked={Boolean(editorForm.is_starting_entry)}
-                onChange={(event) => setEditorForm((prev) => ({ ...prev, is_starting_entry: event.target.checked }))}
-              />
-              Definir como saldo inicial
-            </CheckboxField>
+            <>
+              <CheckboxField>
+                <input
+                  type="checkbox"
+                  checked={Boolean(editorForm.is_starting_entry)}
+                  onChange={(event) => setEditorForm((prev) => ({ ...prev, is_starting_entry: event.target.checked }))}
+                />
+                Definir como saldo inicial
+              </CheckboxField>
+              {editorForm.is_starting_entry ? (
+                <div style={{ marginTop: "0.8rem" }}>
+                  <Select
+                    value={editorForm.statementScope || currentStatementScope}
+                    onChange={(event) => setEditorForm((prev) => ({ ...prev, statementScope: event.target.value }))}
+                  >
+                    <option value="geral">Saldo Inicial Geral</option>
+                    <option value="chave_pix">Saldo Inicial Chave Pix</option>
+                  </Select>
+                </div>
+              ) : null}
+            </>
           ) : null}
           <div style={{ marginTop: "0.8rem" }}>
             <TextArea placeholder="Optional note" value={editorForm.portal_notes} onChange={(event) => setEditorForm((prev) => ({ ...prev, portal_notes: event.target.value }))} />
