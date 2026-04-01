@@ -49,11 +49,13 @@ const createUuid = () => {
     return crypto.randomBytes(16).toString('hex');
 };
 
+let syntheticXpayzSequence = 0;
+
 const createSyntheticXpayzTransactionId = () => {
-    const base = Date.now() % 2000000000;
-    const entropy = Math.floor(Math.random() * 1000);
-    const candidate = Number(String(base).slice(-7) + String(entropy).padStart(3, '0'));
-    return -1 * Math.max(candidate, 1);
+    syntheticXpayzSequence = (syntheticXpayzSequence + 1) % 1000;
+    const base = Date.now() % 1999999000;
+    const candidate = Math.max(base + syntheticXpayzSequence + 1, 1);
+    return -candidate;
 };
 
 const getTodayDateValue = () => {
