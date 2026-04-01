@@ -766,11 +766,13 @@ const PortalTransactionWorkspace = ({ forceViewOnly = false }) => {
       dateTo: isViewOnly ? "" : isImpersonating ? filters.dateTo || "" : "",
       direction: isViewOnly ? "in" : filters.direction || "",
       confirmation: filters.confirmation || "",
+      badgeFilter: isImpersonating ? filters.badgeFilter || "" : "",
       pool: isViewOnly ? "statement" : filters.pool || "statement",
       statementScope: filters.statementScope || "geral",
     }),
     [
       debouncedAmountExact,
+      filters.badgeFilter,
       debouncedSearch,
       filters.confirmation,
       filters.dateFrom,
@@ -1248,6 +1250,16 @@ const PortalTransactionWorkspace = ({ forceViewOnly = false }) => {
                   <option value="pending">Pending</option>
                 </Select>
               </FilterField>
+              {isImpersonating ? (
+                <FilterField>
+                  <FilterLabel>Badge</FilterLabel>
+                  <Select value={filters.badgeFilter || ""} onChange={(event) => updateFilters({ badgeFilter: event.target.value })}>
+                    <option value="">All</option>
+                    <option value="with_badge">With Badge</option>
+                    <option value="without_badge">Without Badge</option>
+                  </Select>
+                </FilterField>
+              ) : null}
             </FilterGrid>
 
             <ActionsRow>

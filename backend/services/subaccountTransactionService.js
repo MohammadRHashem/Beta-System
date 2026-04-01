@@ -70,6 +70,10 @@ const getViewerMode = (client) => {
     return VIEWER_MODE.MASTER;
 };
 
+const normalizeBadgeFilter = (value) => (
+    value === 'with_badge' || value === 'without_badge' ? value : ''
+);
+
 const normalizePortalFiltersForViewerMode = (filters = {}, viewerMode) => {
     const normalized = { ...filters };
 
@@ -80,6 +84,7 @@ const normalizePortalFiltersForViewerMode = (filters = {}, viewerMode) => {
             dateFrom: today,
             dateTo: today,
             direction: 'in',
+            badgeFilter: '',
             pool: 'statement'
         };
     }
@@ -89,11 +94,15 @@ const normalizePortalFiltersForViewerMode = (filters = {}, viewerMode) => {
         return {
             ...normalized,
             dateFrom: exactDate,
-            dateTo: exactDate
+            dateTo: exactDate,
+            badgeFilter: ''
         };
     }
 
-    return normalized;
+    return {
+        ...normalized,
+        badgeFilter: normalizeBadgeFilter(normalized.badgeFilter)
+    };
 };
 
 const assertImpersonation = (client) => {
@@ -138,6 +147,15 @@ const addVisibilityFilters = (viewerMode, hiddenField, visibleMasterField, visib
     }
     if (viewerMode === VIEWER_MODE.VIEW_ONLY && visibleViewOnlyField) {
         clauses.push(`${visibleViewOnlyField} = 1`);
+    }
+};
+
+const addBadgeFilter = (filters, viewerMode, fieldName, clauses) => {
+    if (viewerMode !== VIEWER_MODE.IMPERSONATION) return;
+    if (filters.badgeFilter === 'with_badge') {
+        clauses.push(`COALESCE(${fieldName}, '') <> ''`);
+    } else if (filters.badgeFilter === 'without_badge') {
+        clauses.push(`COALESCE(${fieldName}, '') = ''`);
     }
 };
 
@@ -251,6 +269,7 @@ const addStatementFilters = (config, filters, viewerMode, params, clauses) => {
     addDateFilters(filters, config.dateField, params, clauses);
     addConfirmationFilter(filters, config.confirmationField, clauses);
     addVisibilityFilters(viewerMode, config.hiddenField, config.visibleMasterField, config.visibleViewOnlyField, clauses);
+    addBadgeFilter(filters, viewerMode, `${config.source === 'trkbit' ? 'tt' : 'xt'}.badge_label`, clauses);
 
     if (filters.direction === 'in' || filters.direction === 'out') {
         clauses.push(config.directionSql(filters.direction));
@@ -281,6 +300,7 @@ const addManualFilters = (filters, viewerMode, params, clauses) => {
     addDateFilters(filters, 'smt.transaction_date', params, clauses);
     addConfirmationFilter(filters, 'smt.is_portal_confirmed', clauses);
     addVisibilityFilters(viewerMode, null, 'smt.visible_in_master', 'smt.visible_in_view_only', clauses);
+    addBadgeFilter(filters, viewerMode, 'smt.badge_label', clauses);
 
     if (filters.direction === 'in' || filters.direction === 'out') {
         clauses.push('smt.direction = ?');

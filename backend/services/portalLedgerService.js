@@ -76,6 +76,18 @@ const addConfirmationFilter = (filters, fieldName, clauses) => {
     }
 };
 
+const addInvoiceBadgeFilter = (filters, poolType, clauses) => {
+    if (filters.badgeFilter === 'with_badge') {
+        if (poolType === 'statement') {
+            clauses.push('1 = 0');
+            return;
+        }
+        clauses.push('COALESCE(sime.is_starting_entry, 0) = 1');
+    } else if (filters.badgeFilter === 'without_badge' && poolType === 'manual') {
+        clauses.push('COALESCE(sime.is_starting_entry, 0) = 0');
+    }
+};
+
 const normalizeStatementScope = (value) => (
     value === STATEMENT_SCOPE.CHAVE_PIX ? STATEMENT_SCOPE.CHAVE_PIX : STATEMENT_SCOPE.GERAL
 );
@@ -149,6 +161,7 @@ const addInvoiceStatementFilters = ({ filters, params, clauses }) => {
 
     addDateFilters(filters, 'i.received_at', params, clauses);
     addConfirmationFilter(filters, 'i.is_portal_confirmed', clauses);
+    addInvoiceBadgeFilter(filters, 'statement', clauses);
 
     if (filters.direction === 'out') {
         clauses.push('1 = 0');
@@ -194,6 +207,7 @@ const addInvoiceManualFilters = ({ filters, params, clauses }) => {
 
     addDateFilters(filters, 'sime.transaction_date', params, clauses);
     addConfirmationFilter(filters, 'sime.is_portal_confirmed', clauses);
+    addInvoiceBadgeFilter(filters, 'manual', clauses);
 
     if (filters.direction === 'in' || filters.direction === 'out') {
         clauses.push('sime.direction = ?');

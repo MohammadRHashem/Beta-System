@@ -20,6 +20,7 @@ export const PortalProvider = ({ children }) => {
         dateTo: '',
         direction: '',
         confirmation: '',
+        badgeFilter: '',
         amountExact: '',
         pool: 'statement',
         statementScope: 'geral'
