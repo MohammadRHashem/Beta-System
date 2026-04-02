@@ -3,14 +3,18 @@ import styled from 'styled-components';
 import {
     getTrkbitTransactions,
     getTrkbitViews,
+    getTrkbitHistoricalSyncStatus,
+    startTrkbitHistoricalSync,
     unlinkTrkbitTransaction,
     exportTrkbit
 } from '../services/api';
 import { usePermissions } from '../context/PermissionContext';
-import { FaFileExcel, FaLink, FaSyncAlt, FaUnlink } from 'react-icons/fa';
+import { FaClock, FaFileExcel, FaHistory, FaLink, FaPlay, FaSyncAlt, FaUnlink } from 'react-icons/fa';
 import Pagination from '../components/Pagination';
 import LinkInvoiceModal from '../components/LinkInvoiceModal';
 import CrossIntermediacaoFilter from '../components/CrossIntermediacaoFilter';
+import Modal from '../components/Modal';
+import { useSocket } from '../context/SocketContext';
 
 const useDebounce = (value, delay) => {
     const [debouncedValue, setDebouncedValue] = useState(value);
@@ -56,12 +60,12 @@ const ActionButton = styled.button`
     align-items: center;
     gap: 0.5rem;
     padding: 0.52rem 0.9rem;
-    border: none;
+    border: 1px solid ${({ theme, variant }) => (variant === 'ghost' ? theme.border : 'transparent')};
     border-radius: 6px;
     font-weight: 700;
     cursor: pointer;
-    color: #fff;
-    background-color: ${({ theme, variant }) => (variant === 'excel' ? '#217346' : theme.primary)};
+    color: ${({ theme, variant }) => (variant === 'ghost' ? theme.lightText : '#fff')};
+    background-color: ${({ theme, variant }) => (variant === 'excel' ? '#217346' : variant === 'ghost' ? theme.surface : theme.primary)};
     font-size: 0.86rem;
 
     &:disabled {
@@ -171,6 +175,152 @@ const RowAction = styled.button`
     }
 `;
 
+const StatusCard = styled.div`
+    background: ${({ theme }) => theme.surface};
+    border: 1px solid ${({ theme }) => theme.border};
+    border-radius: 12px;
+    box-shadow: ${({ theme }) => theme.shadowSm};
+    padding: 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+`;
+
+const StatusHeader = styled.div`
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 0.8rem;
+    flex-wrap: wrap;
+`;
+
+const StatusTitle = styled.div`
+    h3 {
+        margin: 0 0 0.2rem;
+        font-size: 0.96rem;
+    }
+
+    p {
+        margin: 0;
+        color: ${({ theme }) => theme.lightText};
+        font-size: 0.82rem;
+    }
+`;
+
+const StatusBadge = styled.span`
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    border-radius: 999px;
+    padding: 0.36rem 0.7rem;
+    font-size: 0.8rem;
+    font-weight: 700;
+    color: ${({ $status }) => ($status === 'completed' ? '#0F7B53' : $status === 'failed' ? '#B42318' : '#0A5C8F')};
+    background: ${({ $status }) => ($status === 'completed' ? 'rgba(16, 185, 129, 0.12)' : $status === 'failed' ? 'rgba(239, 68, 68, 0.12)' : 'rgba(59, 130, 246, 0.12)')};
+`;
+
+const StatusGrid = styled.div`
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 0.75rem;
+
+    @media (max-width: 1100px) {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    @media (max-width: 680px) {
+        grid-template-columns: 1fr;
+    }
+`;
+
+const StatusMetric = styled.div`
+    border: 1px solid ${({ theme }) => theme.border};
+    border-radius: 10px;
+    background: ${({ theme }) => theme.surfaceAlt};
+    padding: 0.7rem 0.8rem;
+
+    strong {
+        display: block;
+        margin-bottom: 0.2rem;
+        font-size: 0.72rem;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: ${({ theme }) => theme.lightText};
+    }
+
+    span {
+        display: block;
+        font-size: 0.98rem;
+        font-weight: 800;
+        color: ${({ theme }) => theme.primary};
+    }
+`;
+
+const StatusMeta = styled.div`
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem 1rem;
+    color: ${({ theme }) => theme.lightText};
+    font-size: 0.82rem;
+`;
+
+const StatusMessage = styled.div`
+    border-radius: 10px;
+    padding: 0.75rem 0.85rem;
+    background: ${({ theme, $status }) => ($status === 'failed' ? 'rgba(239, 68, 68, 0.08)' : theme.surfaceAlt)};
+    border: 1px solid ${({ theme, $status }) => ($status === 'failed' ? 'rgba(239, 68, 68, 0.22)' : theme.border)};
+    color: ${({ theme }) => theme.text};
+    font-size: 0.86rem;
+`;
+
+const SyncForm = styled.form`
+    display: flex;
+    flex-direction: column;
+    gap: 0.9rem;
+`;
+
+const SyncGrid = styled.div`
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.85rem;
+
+    @media (max-width: 700px) {
+        grid-template-columns: 1fr;
+    }
+`;
+
+const SyncField = styled.label`
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: ${({ theme }) => theme.lightText};
+`;
+
+const SyncInput = styled.input`
+    width: 100%;
+    padding: 0.72rem 0.78rem;
+    border: 1px solid ${({ theme }) => theme.border};
+    border-radius: 8px;
+    font-size: 0.92rem;
+    background: ${({ theme }) => theme.surface};
+`;
+
+const SyncFooter = styled.div`
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.7rem;
+    flex-wrap: wrap;
+`;
+
+const SyncHelper = styled.p`
+    margin: 0;
+    color: ${({ theme }) => theme.lightText};
+    font-size: 0.82rem;
+    line-height: 1.45;
+`;
+
 const getStoredTabOrder = () => {
     if (typeof window === 'undefined') return [];
     try {
@@ -243,8 +393,16 @@ const formatDateTime = (value) => {
 
 const currencyFormatter = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
 
+const formatStatusDateTime = (value) => {
+    if (!value) return '-';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return value;
+    return date.toLocaleString('pt-BR');
+};
+
 const TrkbitPage = () => {
     const { hasPermission } = usePermissions();
+    const socket = useSocket();
     const canViewStatements = hasPermission('finance:view_bank_statements');
     const canLink = hasPermission('invoice:link');
 
@@ -255,6 +413,13 @@ const TrkbitPage = () => {
     const [viewsLoading, setViewsLoading] = useState(true);
     const [isExporting, setIsExporting] = useState(false);
     const [unlinkingUid, setUnlinkingUid] = useState('');
+    const [isHistoricalSyncModalOpen, setIsHistoricalSyncModalOpen] = useState(false);
+    const [isStartingHistoricalSync, setIsStartingHistoricalSync] = useState(false);
+    const [historicalSyncStatus, setHistoricalSyncStatus] = useState(null);
+    const [historicalSyncForm, setHistoricalSyncForm] = useState({
+        dateFrom: '',
+        dateTo: ''
+    });
 
     const [pagination, setPagination] = useState({
         page: 1,
@@ -280,6 +445,8 @@ const TrkbitPage = () => {
 
     const activeTab = tabs.find((tab) => tab.key === activeTabKey) || null;
     const isOtherTab = activeTab?.type === 'other';
+    const isHistoricalSyncRunning = historicalSyncStatus?.status === 'running';
+    const shouldShowHistoricalSyncStatus = historicalSyncStatus && historicalSyncStatus.status && historicalSyncStatus.status !== 'idle';
 
     const fetchViews = useCallback(async () => {
         if (!canViewStatements) return;
@@ -315,6 +482,16 @@ const TrkbitPage = () => {
             setActiveTabKey('other');
         } finally {
             setViewsLoading(false);
+        }
+    }, [canViewStatements]);
+
+    const fetchHistoricalSyncStatus = useCallback(async () => {
+        if (!canViewStatements) return;
+        try {
+            const { data } = await getTrkbitHistoricalSyncStatus();
+            setHistoricalSyncStatus(data);
+        } catch (error) {
+            console.error('Failed to fetch Trkbit historical sync status:', error);
         }
     }, [canViewStatements]);
 
@@ -387,8 +564,28 @@ const TrkbitPage = () => {
     }, [fetchViews]);
 
     useEffect(() => {
+        fetchHistoricalSyncStatus();
+    }, [fetchHistoricalSyncStatus]);
+
+    useEffect(() => {
         fetchTransactions();
     }, [fetchTransactions]);
+
+    useEffect(() => {
+        if (!socket) return undefined;
+
+        const handleHistoricalSyncUpdate = (payload) => {
+            setHistoricalSyncStatus(payload);
+            if (payload?.status === 'completed') {
+                fetchTransactions(false);
+            }
+        };
+
+        socket.on('trkbit:historical-sync:update', handleHistoricalSyncUpdate);
+        return () => {
+            socket.off('trkbit:historical-sync:update', handleHistoricalSyncUpdate);
+        };
+    }, [socket, fetchTransactions]);
 
     useEffect(() => {
         if (tabs.length > 0) {
@@ -422,6 +619,39 @@ const TrkbitPage = () => {
 
     const handleRefreshClick = () => {
         fetchTransactions();
+    };
+
+    const handleHistoricalSyncInputChange = (event) => {
+        const { name, value } = event.target;
+        setHistoricalSyncForm((prev) => ({ ...prev, [name]: value }));
+    };
+
+    const handleStartHistoricalSync = async (event) => {
+        event.preventDefault();
+        const { dateFrom, dateTo } = historicalSyncForm;
+
+        if (!dateFrom || !dateTo) {
+            alert('Please select both From and To dates.');
+            return;
+        }
+        if (dateFrom > dateTo) {
+            alert('From date must be before or equal to To date.');
+            return;
+        }
+
+        setIsStartingHistoricalSync(true);
+        try {
+            const { data } = await startTrkbitHistoricalSync({ dateFrom, dateTo });
+            setHistoricalSyncStatus(data.status || null);
+            setIsHistoricalSyncModalOpen(false);
+        } catch (error) {
+            alert(error.response?.data?.message || 'Failed to start historical sync.');
+            if (error.response?.data?.status) {
+                setHistoricalSyncStatus(error.response.data.status);
+            }
+        } finally {
+            setIsStartingHistoricalSync(false);
+        }
     };
 
     const moveTab = (tabIndex, direction) => {
@@ -505,6 +735,13 @@ const TrkbitPage = () => {
                 <Header>
                     <Title>Cross Intermediação</Title>
                     <HeaderActions>
+                        <ActionButton
+                            type="button"
+                            onClick={() => setIsHistoricalSyncModalOpen(true)}
+                            disabled={isHistoricalSyncRunning}
+                        >
+                            <FaHistory /> {isHistoricalSyncRunning ? 'Historical Sync Running...' : 'Historical Sync'}
+                        </ActionButton>
                         <ActionButton onClick={handleRefreshClick}>
                             <FaSyncAlt /> Refresh
                         </ActionButton>
@@ -513,6 +750,52 @@ const TrkbitPage = () => {
                         </ActionButton>
                     </HeaderActions>
                 </Header>
+
+                {shouldShowHistoricalSyncStatus && (
+                    <StatusCard>
+                        <StatusHeader>
+                            <StatusTitle>
+                                <h3>Cross Historical Sync</h3>
+                                <p>Insert-only backfill for a selected Trkbit date range.</p>
+                            </StatusTitle>
+                            <StatusBadge $status={historicalSyncStatus.status}>
+                                <FaClock />
+                                {(historicalSyncStatus.status || 'idle').toUpperCase()}
+                            </StatusBadge>
+                        </StatusHeader>
+
+                        <StatusGrid>
+                            <StatusMetric>
+                                <strong>Range</strong>
+                                <span>{historicalSyncStatus.range?.dateFrom || '-'} to {historicalSyncStatus.range?.dateTo || '-'}</span>
+                            </StatusMetric>
+                            <StatusMetric>
+                                <strong>Fetched</strong>
+                                <span>{historicalSyncStatus.stats?.fetched || 0}</span>
+                            </StatusMetric>
+                            <StatusMetric>
+                                <strong>Inserted</strong>
+                                <span>{historicalSyncStatus.stats?.inserted || 0}</span>
+                            </StatusMetric>
+                            <StatusMetric>
+                                <strong>Skipped</strong>
+                                <span>{historicalSyncStatus.stats?.skipped || 0}</span>
+                            </StatusMetric>
+                        </StatusGrid>
+
+                        <StatusMeta>
+                            <span>Processed: {historicalSyncStatus.stats?.processed || 0}</span>
+                            <span>Chunks: {(historicalSyncStatus.stats?.completedChunks || 0)} / {(historicalSyncStatus.stats?.totalChunks || 0)}</span>
+                            <span>Started: {formatStatusDateTime(historicalSyncStatus.startedAt)}</span>
+                            <span>Finished: {formatStatusDateTime(historicalSyncStatus.finishedAt)}</span>
+                            <span>By: {historicalSyncStatus.requestedBy?.username || '-'}</span>
+                        </StatusMeta>
+
+                        <StatusMessage $status={historicalSyncStatus.status}>
+                            {historicalSyncStatus.message || historicalSyncStatus.error || 'No historical sync activity yet.'}
+                        </StatusMessage>
+                    </StatusCard>
+                )}
 
                 <TabContainer>
                     {viewsLoading ? (
@@ -649,6 +932,49 @@ const TrkbitPage = () => {
                     recipientPrefix="cross"
                 />
             )}
+
+            <Modal isOpen={isHistoricalSyncModalOpen} onClose={() => setIsHistoricalSyncModalOpen(false)} maxWidth="560px">
+                <h2 style={{ marginTop: 0, marginBottom: '0.75rem' }}>Historical Cross Sync</h2>
+                <SyncForm onSubmit={handleStartHistoricalSync}>
+                    <SyncHelper>
+                        Select a date range to backfill Cross transactions from Trkbit. This mode is insert-only:
+                        existing transactions already in our database are skipped and never overwritten.
+                    </SyncHelper>
+
+                    <SyncGrid>
+                        <SyncField>
+                            From Date
+                            <SyncInput
+                                name="dateFrom"
+                                type="date"
+                                value={historicalSyncForm.dateFrom}
+                                onChange={handleHistoricalSyncInputChange}
+                                required
+                            />
+                        </SyncField>
+
+                        <SyncField>
+                            To Date
+                            <SyncInput
+                                name="dateTo"
+                                type="date"
+                                value={historicalSyncForm.dateTo}
+                                onChange={handleHistoricalSyncInputChange}
+                                required
+                            />
+                        </SyncField>
+                    </SyncGrid>
+
+                    <SyncFooter>
+                        <ActionButton type="button" variant="ghost" onClick={() => setIsHistoricalSyncModalOpen(false)}>
+                            Cancel
+                        </ActionButton>
+                        <ActionButton type="submit" disabled={isStartingHistoricalSync}>
+                            <FaPlay /> {isStartingHistoricalSync ? 'Starting...' : 'Start Historical Sync'}
+                        </ActionButton>
+                    </SyncFooter>
+                </SyncForm>
+            </Modal>
         </>
     );
 };

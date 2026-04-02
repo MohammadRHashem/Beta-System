@@ -332,6 +332,8 @@ export const exportAlfaPdf = async (params) => {
 export const getTrkbitTransactions = (params) => apiClient.get('/trkbit/transactions', { params });
 export const getTrkbitViews = () => apiClient.get('/trkbit/views');
 export const getTrkbitRefreshToken = () => apiClient.get('/trkbit/refresh-token');
+export const getTrkbitHistoricalSyncStatus = () => apiClient.get('/trkbit/historical-sync/status');
+export const startTrkbitHistoricalSync = (payload) => apiClient.post('/trkbit/historical-sync', payload);
 export const unlinkTrkbitTransaction = (uid) => apiClient.post(`/trkbit/transactions/${uid}/unlink`);
 export const exportTrkbit = async (params) => {
     const blob = await downloadFile('/trkbit/export', params);

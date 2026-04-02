@@ -1,6 +1,8 @@
 const pool = require('../config/db');
 const ExcelJS = require('exceljs');
 const { parsePagination, buildPaginationMeta } = require('../utils/pagination');
+const trkbitSyncService = require('../trkbitSyncService');
+const { logAction } = require('../services/auditService');
 
 const LINKED_EXISTS_SQL = `
     EXISTS (
@@ -35,6 +37,8 @@ const sanitizeSearchToken = (token) => {
     if (!token) return '';
     return token.replace(/[^\p{L}\p{N}@._\-]/gu, '').trim();
 };
+
+const isValidDateInput = (value) => /^\d{4}-\d{2}-\d{2}$/.test(String(value || '').trim());
 
 const buildRefreshToken = async () => {
     const [[row]] = await pool.query(`
@@ -247,6 +251,62 @@ exports.getRefreshToken = async (req, res) => {
     } catch (error) {
         console.error('[TRKBIT-REFRESH-TOKEN-ERROR]', error);
         res.status(500).json({ message: 'Failed to fetch refresh token.' });
+    }
+};
+
+exports.getHistoricalSyncStatus = async (req, res) => {
+    try {
+        res.json(trkbitSyncService.getHistoricalSyncStatus());
+    } catch (error) {
+        console.error('[TRKBIT-HISTORICAL-STATUS-ERROR]', error);
+        res.status(500).json({ message: 'Failed to fetch Trkbit historical sync status.' });
+    }
+};
+
+exports.startHistoricalSync = async (req, res) => {
+    const dateFrom = String(req.body?.dateFrom || '').trim();
+    const dateTo = String(req.body?.dateTo || '').trim();
+
+    if (!isValidDateInput(dateFrom) || !isValidDateInput(dateTo)) {
+        return res.status(400).json({ message: 'Valid from and to dates are required.' });
+    }
+    if (dateFrom > dateTo) {
+        return res.status(400).json({ message: 'From date must be before or equal to to date.' });
+    }
+
+    try {
+        const { started, status } = trkbitSyncService.startHistoricalSync({
+            startDate: dateFrom,
+            endDate: dateTo,
+            requestedBy: {
+                id: req.user.id,
+                username: req.user.username
+            },
+            io: req.app.get('io')
+        });
+
+        if (!started) {
+            return res.status(409).json({
+                message: 'A Trkbit historical sync is already running.',
+                status
+            });
+        }
+
+        await logAction(
+            req,
+            'finance:trkbit_historical_sync',
+            'TrkbitHistoricalSync',
+            `${dateFrom}:${dateTo}`,
+            { dateFrom, dateTo, insertOnly: true }
+        );
+
+        res.status(202).json({
+            message: 'Historical sync started.',
+            status
+        });
+    } catch (error) {
+        console.error('[TRKBIT-HISTORICAL-START-ERROR]', error);
+        res.status(500).json({ message: 'Failed to start Trkbit historical sync.' });
     }
 };
 

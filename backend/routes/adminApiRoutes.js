@@ -144,6 +144,8 @@ router.get('/alfa-trust/export-excel', checkPermission('finance:view_bank_statem
 router.post('/alfa-trust/notify-update', alfaTrustController.notifyUpdate);
 router.get('/trkbit/views', checkPermission('finance:view_bank_statements'), trkbitController.getViews);
 router.get('/trkbit/refresh-token', checkPermission('finance:view_bank_statements'), trkbitController.getRefreshToken);
+router.get('/trkbit/historical-sync/status', checkPermission('finance:view_bank_statements'), trkbitController.getHistoricalSyncStatus);
+router.post('/trkbit/historical-sync', checkPermission('finance:view_bank_statements'), trkbitController.startHistoricalSync);
 router.get('/trkbit/transactions', checkPermission('finance:view_bank_statements'), trkbitController.getTransactions);
 router.post('/trkbit/transactions/:uid/unlink', checkPermission('invoice:link'), trkbitController.unlinkTransaction);
 router.get('/trkbit/export', checkPermission('finance:view_bank_statements'), trkbitController.exportExcel);
