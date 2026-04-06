@@ -53,6 +53,7 @@ exports.create = async (req, res) => {
     const trigger = String(req.body.trigger || '').trim();
     const response = String(req.body.response || '').trim();
     const type = normalizeType(req.body.type);
+    const normalizedResponse = response || '';
 
     if (!trigger) {
         await removeFileIfExists(req.file?.path);
@@ -76,7 +77,7 @@ exports.create = async (req, res) => {
             [
                 userId,
                 trigger,
-                response || null,
+                normalizedResponse,
                 type,
                 mediaFields.media_path,
                 mediaFields.media_mimetype,
@@ -91,7 +92,7 @@ exports.create = async (req, res) => {
             id: result.insertId,
             user_id: userId,
             trigger,
-            response: response || null,
+            response: normalizedResponse,
             type,
             ...mediaFields,
             created_at: new Date()
@@ -113,6 +114,7 @@ exports.update = async (req, res) => {
     const trigger = String(req.body.trigger || '').trim();
     const response = String(req.body.response || '').trim();
     const type = normalizeType(req.body.type);
+    const normalizedResponse = response || '';
 
     try {
         const [[existing]] = await pool.query(
@@ -150,7 +152,7 @@ exports.update = async (req, res) => {
               WHERE id = ?`,
             [
                 trigger,
-                response || null,
+                normalizedResponse,
                 type,
                 nextMedia.media_path,
                 nextMedia.media_mimetype,
