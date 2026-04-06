@@ -71,10 +71,6 @@ const broadcastUploadsDir = path.join(__dirname, 'broadcast_uploads');
 if (!fs.existsSync(broadcastUploadsDir)) {
     fs.mkdirSync(broadcastUploadsDir, { recursive: true });
 }
-const abbreviationUploadsDir = path.join(__dirname, 'abbreviation_uploads');
-if (!fs.existsSync(abbreviationUploadsDir)) {
-    fs.mkdirSync(abbreviationUploadsDir, { recursive: true });
-}
 const broadcastStorage = multer.diskStorage({
     destination: (req, file, cb) => {
         cb(null, broadcastUploadsDir);
@@ -87,7 +83,7 @@ const broadcastStorage = multer.diskStorage({
 const broadcastUpload = multer({ storage: broadcastStorage });
 const abbreviationStorage = multer.diskStorage({
     destination: (_req, _file, cb) => {
-        cb(null, abbreviationUploadsDir);
+        cb(null, broadcastUploadsDir);
     },
     filename: (_req, file, cb) => {
         const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
@@ -110,7 +106,6 @@ const abbreviationUpload = multer({
 
 // Serve uploaded files for frontend previews
 app.use('/uploads/broadcasts', express.static(broadcastUploadsDir));
-app.use('/uploads/abbreviations', express.static(abbreviationUploadsDir));
 
 // 1. Public Portal Routes (Login)
 // We will now handle the login route directly here for clarity.

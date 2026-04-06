@@ -28,7 +28,7 @@ const buildMediaFields = (file) => ({
 const toResponseRow = (row) => ({
     ...row,
     type: normalizeType(row.type),
-    media_url: row.media_stored_filename ? `/uploads/abbreviations/${row.media_stored_filename}` : null
+    media_url: row.media_stored_filename ? `/uploads/broadcasts/${row.media_stored_filename}` : null
 });
 
 // GET all abbreviations (permission-gated)

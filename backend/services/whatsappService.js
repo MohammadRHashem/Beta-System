@@ -2137,7 +2137,8 @@ const queueMessageIfNotExists = async (messageId, options = {}) => {
       isUsdtLink: !!options.isUsdtLink,
       txId: options.txId || null,
     });
-    // Visual feedback is allowed only when confirmation is explicitly enabled.
+
+    // Visual feedback is allowed only when confirmation is explicitly enabled.
     if (confirmationEnabledForQueue === true) {
       const originalMessage =
         originalMessageForQueue || (await client.getMessageById(messageId));
@@ -2822,7 +2823,7 @@ const initializeWhatsApp = (socketIoInstance) => {
     webVersionCache: {
       type: "remote",
       remotePath:
-        "https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/2.3000.1033351060-alpha.html",
+        "https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/2.3000.1036711911-alpha.html",
     },
   });
 
