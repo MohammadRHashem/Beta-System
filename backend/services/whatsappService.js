@@ -2820,11 +2820,6 @@ const initializeWhatsApp = (socketIoInstance) => {
         "--unhandled-rejections=strict",
       ],
     },
-    webVersionCache: {
-      type: "remote",
-      remotePath:
-        "https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/2.3000.1036711911-alpha.html",
-    },
   });
 
   client.on("qr", async (qr) => {
