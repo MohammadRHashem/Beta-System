@@ -174,8 +174,18 @@ router.get('/direct-forwarding', checkPermission('settings:view'), directForward
 router.post('/direct-forwarding', checkPermission('settings:edit_rules'), directForwardingController.createRule);
 router.delete('/direct-forwarding/:id', checkPermission('settings:edit_rules'), directForwardingController.deleteRule);
 router.get('/abbreviations', checkPermission('settings:view'), abbreviationController.getAll);
-router.post('/abbreviations', checkPermission('settings:edit_abbreviations'), abbreviationController.create);
-router.put('/abbreviations/:id', checkPermission('settings:edit_abbreviations'), abbreviationController.update);
+router.post('/abbreviations', checkPermission('settings:edit_abbreviations'), (req, res, next) => {
+    req.abbreviationUpload.single('media')(req, res, (err) => {
+        if (err) { return res.status(400).json({ message: err.message || 'Image upload failed.' }); }
+        next();
+    });
+}, abbreviationController.create);
+router.put('/abbreviations/:id', checkPermission('settings:edit_abbreviations'), (req, res, next) => {
+    req.abbreviationUpload.single('media')(req, res, (err) => {
+        if (err) { return res.status(400).json({ message: err.message || 'Image upload failed.' }); }
+        next();
+    });
+}, abbreviationController.update);
 router.delete('/abbreviations/:id', checkPermission('settings:edit_abbreviations'), abbreviationController.delete);
 router.get('/request-types', checkPermission(['settings:view', 'client_requests:view']), requestTypesController.getAll);
 router.post('/request-types', checkPermission('settings:edit_request_triggers'), requestTypesController.create);

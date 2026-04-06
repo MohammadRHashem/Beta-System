@@ -3,6 +3,16 @@ const pool = require("../config/db");
 const ensureRuntimeSchema = async () => {
   try {
     await pool.query(`
+      ALTER TABLE abbreviations
+      ADD COLUMN IF NOT EXISTS type varchar(20) NOT NULL DEFAULT 'text' AFTER response,
+      ADD COLUMN IF NOT EXISTS media_path varchar(255) NULL AFTER type,
+      ADD COLUMN IF NOT EXISTS media_mimetype varchar(100) NULL AFTER media_path,
+      ADD COLUMN IF NOT EXISTS media_original_filename varchar(255) NULL AFTER media_mimetype,
+      ADD COLUMN IF NOT EXISTS media_stored_filename varchar(255) NULL AFTER media_original_filename
+    `);
+    console.log("[SCHEMA] abbreviation media columns ensured.");
+
+    await pool.query(`
       ALTER TABLE request_types
       ADD COLUMN IF NOT EXISTS new_content_reaction VARCHAR(16) NULL AFTER acknowledgement_reaction,
       ADD COLUMN IF NOT EXISTS new_content_reply_text VARCHAR(255) NULL AFTER new_content_reaction

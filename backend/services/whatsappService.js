@@ -1773,9 +1773,14 @@ const refreshAbbreviationCache = async () => {
   try {
     console.log("[CACHE] Refreshing abbreviations cache...");
     const [abbreviations] = await pool.query(
-      "SELECT `trigger`, `response` FROM abbreviations",
+      `SELECT \`trigger\`, response, type, media_path, media_mimetype,
+              media_original_filename, media_stored_filename
+         FROM abbreviations`,
     );
-    abbreviationCache = abbreviations;
+    abbreviationCache = abbreviations.map((abbr) => ({
+      ...abbr,
+      type: String(abbr.type || "text").toLowerCase() === "image" ? "image" : "text",
+    }));
     console.log(`[CACHE] Loaded ${abbreviationCache.length} abbreviations.`);
   } catch (error) {
     console.error(
@@ -2487,11 +2492,18 @@ const handleMessage = async (message) => {
         (abbr) => abbr.trigger.toLowerCase() === triggerText,
       );
       if (match) {
+        if (match.type === "image" && match.media_path) {
+          const media = MessageMedia.fromFilePath(match.media_path);
+          await client.sendMessage(chat.id._serialized, media, {
+            caption: match.response || "",
+          });
+        } else {
+          await client.sendMessage(chat.id._serialized, match.response || "");
+        }
         await pool.query(
           "INSERT INTO processed_messages (message_id) VALUES (?) ON DUPLICATE KEY UPDATE message_id=message_id",
           [message.id._serialized],
         );
-        await client.sendMessage(chat.id._serialized, match.response);
         return;
       }
     }

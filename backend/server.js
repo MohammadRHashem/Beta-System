@@ -71,6 +71,10 @@ const broadcastUploadsDir = path.join(__dirname, 'broadcast_uploads');
 if (!fs.existsSync(broadcastUploadsDir)) {
     fs.mkdirSync(broadcastUploadsDir, { recursive: true });
 }
+const abbreviationUploadsDir = path.join(__dirname, 'abbreviation_uploads');
+if (!fs.existsSync(abbreviationUploadsDir)) {
+    fs.mkdirSync(abbreviationUploadsDir, { recursive: true });
+}
 const broadcastStorage = multer.diskStorage({
     destination: (req, file, cb) => {
         cb(null, broadcastUploadsDir);
@@ -81,12 +85,32 @@ const broadcastStorage = multer.diskStorage({
     }
 });
 const broadcastUpload = multer({ storage: broadcastStorage });
+const abbreviationStorage = multer.diskStorage({
+    destination: (_req, _file, cb) => {
+        cb(null, abbreviationUploadsDir);
+    },
+    filename: (_req, file, cb) => {
+        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+        cb(null, uniqueSuffix + path.extname(file.originalname));
+    }
+});
+const abbreviationUpload = multer({
+    storage: abbreviationStorage,
+    fileFilter: (_req, file, cb) => {
+        if (!String(file.mimetype || '').startsWith('image/')) {
+            cb(new Error('Only image uploads are allowed for abbreviations.'));
+            return;
+        }
+        cb(null, true);
+    }
+});
 
 
 // --- ROUTE DEFINITIONS ---
 
 // Serve uploaded files for frontend previews
 app.use('/uploads/broadcasts', express.static(broadcastUploadsDir));
+app.use('/uploads/abbreviations', express.static(abbreviationUploadsDir));
 
 // 1. Public Portal Routes (Login)
 // We will now handle the login route directly here for clarity.
@@ -111,6 +135,7 @@ app.post('/api/auth/login', authController.login);
 // All routes from adminApiRoutes will be prefixed with /api AND will use the admin authMiddleware.
 app.use('/api', (req, res, next) => {
     req.broadcastUpload = broadcastUpload;
+    req.abbreviationUpload = abbreviationUpload;
     next();
 }, authMiddleware, adminApiRoutes);
 
