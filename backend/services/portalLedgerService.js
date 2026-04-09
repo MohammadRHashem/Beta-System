@@ -572,7 +572,7 @@ const createInvoiceManualTransaction = async ({ subaccount, actorUserId, payload
                 is_starting_entry,
                 created_by_user_id,
                 updated_by_user_id
-            ) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)
         `,
         [
             subaccount.id,
