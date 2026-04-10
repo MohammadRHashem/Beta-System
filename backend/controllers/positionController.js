@@ -44,9 +44,14 @@ const buildInvoiceCounterValue = async (counter, dateTo = '') => {
         statementScope: 'all',
         dateTo: effectiveDateTo
     };
+    const portalSubaccount = {
+        ...counter,
+        id: counter.subaccount_id,
+        name: counter.subaccount_name || counter.name
+    };
 
     const summary = await portalLedgerService.getDashboardSummary({
-        subaccount: counter,
+        subaccount: portalSubaccount,
         filters,
         viewerMode: PORTAL_IMPERSONATION_VIEWER_MODE
     });
