@@ -108,8 +108,16 @@ const getInvoiceRecipientPattern = (subaccount) => {
 };
 
 const getStartingEntry = async (subaccountId, statementScope) => {
-    const [[entry]] = await pool.query(
+    const query = statementScope === STATEMENT_SCOPE.ALL
+        ? `
+            SELECT id, transaction_date, direction, amount, starting_scope
+            FROM subaccount_invoice_manual_entries
+            WHERE subaccount_id = ?
+              AND is_starting_entry = 1
+            ORDER BY transaction_date DESC, id DESC
+            LIMIT 1
         `
+        : `
             SELECT id, transaction_date, direction, amount, starting_scope
             FROM subaccount_invoice_manual_entries
             WHERE subaccount_id = ?
@@ -117,9 +125,11 @@ const getStartingEntry = async (subaccountId, statementScope) => {
               AND is_starting_entry = 1
             ORDER BY transaction_date DESC, id DESC
             LIMIT 1
-        `,
-        [subaccountId, statementScope]
-    );
+        `;
+    const params = statementScope === STATEMENT_SCOPE.ALL
+        ? [subaccountId]
+        : [subaccountId, statementScope];
+    const [[entry]] = await pool.query(query, params);
     return entry || null;
 };
 
@@ -544,6 +554,22 @@ const assertInvoiceStatementTransaction = async (subaccount, transactionId) => {
 };
 
 const clearOtherStartingEntries = async (subaccountId, statementScope, exceptId = null) => {
+    if (statementScope === STATEMENT_SCOPE.ALL) {
+        if (exceptId == null) {
+            await pool.query(
+                'UPDATE subaccount_invoice_manual_entries SET is_starting_entry = 0 WHERE subaccount_id = ?',
+                [subaccountId]
+            );
+            return;
+        }
+
+        await pool.query(
+            'UPDATE subaccount_invoice_manual_entries SET is_starting_entry = 0 WHERE subaccount_id = ? AND id <> ?',
+            [subaccountId, exceptId]
+        );
+        return;
+    }
+
     if (exceptId == null) {
         await pool.query(
             'UPDATE subaccount_invoice_manual_entries SET is_starting_entry = 0 WHERE subaccount_id = ? AND starting_scope = ?',
