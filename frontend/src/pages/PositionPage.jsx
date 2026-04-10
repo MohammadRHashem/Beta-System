@@ -128,8 +128,8 @@ const Button = styled.button`
 
 const CounterGrid = styled.div`
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-    gap: 1rem;
+    grid-template-columns: repeat(auto-fit, minmax(270px, 1fr));
+    gap: 0.85rem;
     padding-bottom: 0.2rem;
 `;
 

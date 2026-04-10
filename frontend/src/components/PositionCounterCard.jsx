@@ -11,9 +11,9 @@ const formatMoney = (value) => new Intl.NumberFormat('en-US', {
 const Card = styled.article`
     display: flex;
     flex-direction: column;
-    gap: 1rem;
-    padding: 1.15rem;
-    border-radius: 18px;
+    gap: 0.8rem;
+    padding: 0.95rem;
+    border-radius: 16px;
     background:
         linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0)),
         ${({ theme }) => theme.surface};
@@ -37,13 +37,13 @@ const TitleWrap = styled.div`
 const Title = styled.h3`
     margin: 0;
     color: ${({ theme }) => theme.primary};
-    font-size: 1.08rem;
+    font-size: 1rem;
 `;
 
 const Subtext = styled.p`
     margin: 0;
     color: ${({ theme }) => theme.lightText};
-    font-size: 0.92rem;
+    font-size: 0.84rem;
 `;
 
 const BadgeRow = styled.div`
@@ -64,7 +64,7 @@ const Badge = styled.span`
             : theme.background
     )};
     color: ${({ $tone, theme }) => ($tone === 'strong' ? 'white' : theme.lightText)};
-    font-size: 0.78rem;
+    font-size: 0.72rem;
     font-weight: 700;
 `;
 
@@ -78,7 +78,7 @@ const Actions = styled.div`
 const IconButton = styled.button`
     width: 36px;
     height: 36px;
-    border-radius: 10px;
+    border-radius: 9px;
     border: 1px solid ${({ theme }) => theme.border};
     background: ${({ theme }) => theme.background};
     color: ${({ theme }) => theme.lightText};
@@ -96,7 +96,7 @@ const IconButton = styled.button`
 const FilterBlock = styled.div`
     display: flex;
     flex-direction: column;
-    gap: 0.45rem;
+    gap: 0.35rem;
 `;
 
 const FilterLabel = styled.label`
@@ -110,10 +110,10 @@ const FilterLabel = styled.label`
 
 const DateInput = styled.input`
     width: 100%;
-    padding: 0.74rem 0.8rem;
-    border-radius: 10px;
+    padding: 0.65rem 0.72rem;
+    border-radius: 9px;
     border: 1px solid ${({ theme }) => theme.border};
-    font-size: 0.96rem;
+    font-size: 0.92rem;
     background: ${({ theme }) => theme.background};
     color: ${({ theme }) => theme.text};
 `;
@@ -122,14 +122,14 @@ const ValueWrap = styled.div`
     display: flex;
     flex-direction: column;
     gap: 0.25rem;
-    min-height: 6rem;
+    min-height: 3.5rem;
     justify-content: center;
 `;
 
 const ValueLabel = styled.p`
     margin: 0;
     color: ${({ theme }) => theme.lightText};
-    font-size: 0.88rem;
+    font-size: 0.8rem;
     text-transform: uppercase;
     letter-spacing: 0.06em;
     font-weight: 700;
@@ -137,39 +137,10 @@ const ValueLabel = styled.p`
 
 const Value = styled.p`
     margin: 0;
-    font-size: 2.2rem;
+    font-size: 1.7rem;
     line-height: 1;
     font-weight: 800;
     color: ${({ theme }) => theme.primary};
-`;
-
-const MetaGrid = styled.div`
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 0.75rem;
-`;
-
-const MetaCard = styled.div`
-    padding: 0.75rem 0.8rem;
-    border-radius: 12px;
-    background: ${({ theme }) => theme.background};
-    border: 1px solid ${({ theme }) => theme.border};
-`;
-
-const MetaLabel = styled.p`
-    margin: 0;
-    color: ${({ theme }) => theme.lightText};
-    font-size: 0.78rem;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    font-weight: 700;
-`;
-
-const MetaValue = styled.p`
-    margin: 0.25rem 0 0;
-    color: ${({ theme }) => theme.text};
-    font-weight: 700;
-    font-size: 1rem;
 `;
 
 const Footer = styled.div`
@@ -178,7 +149,7 @@ const Footer = styled.div`
     align-items: center;
     gap: 0.75rem;
     color: ${({ theme }) => theme.lightText};
-    font-size: 0.82rem;
+    font-size: 0.76rem;
 `;
 
 const ErrorBox = styled.div`
@@ -205,6 +176,7 @@ const PositionCounterCard = ({
 }) => {
     const displayDate = dateTo || '';
     const formattedLastUpdated = lastUpdatedAt ? format(new Date(lastUpdatedAt), 'HH:mm:ss') : 'Never';
+    const helperText = `From last saldo inicial until ${displayDate || 'today'}.`;
 
     return (
         <Card>
@@ -249,23 +221,10 @@ const PositionCounterCard = ({
             {error ? <ErrorBox>{error}</ErrorBox> : null}
 
             <ValueWrap>
-                <ValueLabel>{loading ? 'Refreshing...' : 'Saldo Total'}</ValueLabel>
+                <ValueLabel>{loading ? 'Refreshing...' : 'Saldo Until Date'}</ValueLabel>
                 <Value>{loading && !value ? '...' : formatMoney(value?.balance || 0)}</Value>
-                <Subtext>
-                    Matching the portal ledger balance until {displayDate || 'today'}.
-                </Subtext>
+                <Subtext>{helperText}</Subtext>
             </ValueWrap>
-
-            <MetaGrid>
-                <MetaCard>
-                    <MetaLabel>Statement</MetaLabel>
-                    <MetaValue>{formatMoney(value?.statementBalance || 0)}</MetaValue>
-                </MetaCard>
-                <MetaCard>
-                    <MetaLabel>Manual</MetaLabel>
-                    <MetaValue>{formatMoney(value?.manualBalance || 0)}</MetaValue>
-                </MetaCard>
-            </MetaGrid>
 
             <Footer>
                 <span>Updated: {formattedLastUpdated}</span>

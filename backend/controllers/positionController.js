@@ -8,6 +8,8 @@ const isValidDate = (value) => /^\d{4}-\d{2}-\d{2}$/.test(value || '');
 
 const parseMoney = (value) => Number.parseFloat(value || 0) || 0;
 
+const getTodayDateValue = () => new Date().toISOString().split('T')[0];
+
 const getInvoicePortalSubaccount = async (subaccountId) => {
     const [[subaccount]] = await pool.query(
         `SELECT id, name, account_type, portal_source_type, invoice_recipient_pattern,
@@ -37,8 +39,11 @@ const getInvoiceCounterRow = async (counterId) => {
 };
 
 const buildInvoiceCounterValue = async (counter, dateTo = '') => {
-    const filters = { statementScope: 'all' };
-    if (dateTo) filters.dateTo = dateTo;
+    const effectiveDateTo = dateTo || getTodayDateValue();
+    const filters = {
+        statementScope: 'all',
+        dateTo: effectiveDateTo
+    };
 
     const summary = await portalLedgerService.getDashboardSummary({
         subaccount: counter,
@@ -46,14 +51,20 @@ const buildInvoiceCounterValue = async (counter, dateTo = '') => {
         viewerMode: PORTAL_IMPERSONATION_VIEWER_MODE
     });
 
-    const balance = parseMoney(summary.statementBalance) + parseMoney(summary.manualBalance);
+    const filteredBalance = parseMoney(summary.statementBalance) + parseMoney(summary.manualBalance);
+    const totalBalance = parseMoney(summary.allTimeBalance);
+    const totalStatementBalance = parseMoney(summary.statementAllTimeBalance);
+    const totalManualBalance = totalBalance - totalStatementBalance;
 
     return {
-        balance,
-        dateTo: dateTo || null,
-        allTimeBalance: parseMoney(summary.allTimeBalance),
+        balance: filteredBalance,
+        dateTo: effectiveDateTo,
+        filteredBalance,
+        allTimeBalance: totalBalance,
         statementBalance: parseMoney(summary.statementBalance),
         manualBalance: parseMoney(summary.manualBalance),
+        statementAllTimeBalance: totalStatementBalance,
+        manualAllTimeBalance: totalManualBalance,
         totalIn: parseMoney(summary.totalIn),
         totalOut: parseMoney(summary.totalOut),
         countIn: Number(summary.countIn || 0),
