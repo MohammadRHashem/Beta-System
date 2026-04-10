@@ -289,6 +289,12 @@ export const updatePositionCounter = (id, data) => apiClient.put(`/positions/cou
 export const deletePositionCounter = (id) => apiClient.delete(`/positions/counters/${id}`);
 export const calculateLocalPosition = (params) => apiClient.get('/position/local', { params });
 export const calculateRemotePosition = (id, params) => apiClient.get(`/position/remote/${id}`, { params });
+export const getInvoicePositionCounters = () => apiClient.get('/positions/invoice-counters');
+export const createInvoicePositionCounter = (data) => apiClient.post('/positions/invoice-counters', data);
+export const updateInvoicePositionCounter = (id, data) => apiClient.put(`/positions/invoice-counters/${id}`, data);
+export const deleteInvoicePositionCounter = (id) => apiClient.delete(`/positions/invoice-counters/${id}`);
+export const calculateInvoicePositionCounter = (id, params = {}) =>
+    apiClient.get(`/positions/invoice-counters/${id}/value`, { params });
 export const getSubCustomers = (params) => apiClient.get('/sub-customers', { params });
 export const getRecibosTransactions = (subaccountNumber, params = {}) =>
     apiClient.get(`/subaccounts/${subaccountNumber}/recibos`, { params });

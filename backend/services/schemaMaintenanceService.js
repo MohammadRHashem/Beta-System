@@ -47,6 +47,23 @@ const ensureRuntimeSchema = async () => {
     console.log("[SCHEMA] subaccount_manual_transactions ensured.");
 
     await pool.query(`
+      CREATE TABLE IF NOT EXISTS invoice_position_counters (
+        id int NOT NULL AUTO_INCREMENT,
+        user_id int NOT NULL,
+        subaccount_id int NOT NULL,
+        name varchar(255) NOT NULL,
+        created_at timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        PRIMARY KEY (id),
+        UNIQUE KEY ux_ipc_subaccount (subaccount_id),
+        KEY idx_ipc_user (user_id),
+        CONSTRAINT fk_ipc_user FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,
+        CONSTRAINT fk_ipc_subaccount FOREIGN KEY (subaccount_id) REFERENCES subaccounts (id) ON DELETE CASCADE
+      )
+    `);
+    console.log("[SCHEMA] invoice_position_counters ensured.");
+
+    await pool.query(`
       ALTER TABLE xpayz_transactions
       ADD COLUMN IF NOT EXISTS display_subaccount_id int NULL AFTER subaccount_id,
       ADD COLUMN IF NOT EXISTS entry_origin enum('synced','statement_manual','moved') NOT NULL DEFAULT 'synced' AFTER display_subaccount_id,

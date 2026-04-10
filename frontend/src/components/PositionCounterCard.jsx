@@ -1,207 +1,276 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React from 'react';
 import styled from 'styled-components';
-import { calculateLocalPosition, calculateRemotePosition } from '../services/api';
 import { format } from 'date-fns';
-import { FaEdit, FaTrash, FaSyncAlt } from 'react-icons/fa';
+import { FaCalendarAlt, FaEdit, FaSyncAlt, FaTrash } from 'react-icons/fa';
 
-const Card = styled.div`
-    background: ${({ theme }) => theme.surface};
-    padding: 1.1rem;
-    border-radius: 14px;
+const formatMoney = (value) => new Intl.NumberFormat('en-US', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+}).format(Number(value || 0));
+
+const Card = styled.article`
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    padding: 1.15rem;
+    border-radius: 18px;
+    background:
+        linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0)),
+        ${({ theme }) => theme.surface};
+    border: 1px solid ${({ theme }) => theme.border};
     box-shadow: ${({ theme }) => theme.shadowMd};
-    border-top: 4px solid ${({ theme }) => theme.secondary};
-    position: relative;
 `;
 
 const Header = styled.div`
     display: flex;
     justify-content: space-between;
     align-items: flex-start;
-    margin-bottom: 1rem;
+    gap: 0.75rem;
+`;
+
+const TitleWrap = styled.div`
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
 `;
 
 const Title = styled.h3`
     margin: 0;
     color: ${({ theme }) => theme.primary};
+    font-size: 1.08rem;
+`;
+
+const Subtext = styled.p`
+    margin: 0;
+    color: ${({ theme }) => theme.lightText};
+    font-size: 0.92rem;
+`;
+
+const BadgeRow = styled.div`
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.45rem;
+`;
+
+const Badge = styled.span`
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.4rem 0.65rem;
+    border-radius: 999px;
+    background: ${({ $tone, theme }) => (
+        $tone === 'strong'
+            ? theme.secondary
+            : theme.background
+    )};
+    color: ${({ $tone, theme }) => ($tone === 'strong' ? 'white' : theme.lightText)};
+    font-size: 0.78rem;
+    font-weight: 700;
 `;
 
 const Actions = styled.div`
     display: flex;
-    gap: 0.75rem;
+    align-items: center;
+    gap: 0.35rem;
+    flex-wrap: wrap;
+`;
+
+const IconButton = styled.button`
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
+    border: 1px solid ${({ theme }) => theme.border};
+    background: ${({ theme }) => theme.background};
     color: ${({ theme }) => theme.lightText};
-    font-size: 1rem;
-    
-    svg {
-        cursor: pointer;
-        &:hover {
-            color: ${({ theme }) => theme.primary};
-        }
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+
+    &:hover {
+        color: ${({ theme }) => theme.primary};
+        border-color: ${({ theme }) => theme.primary};
     }
 `;
 
-const InputGroup = styled.div`
+const FilterBlock = styled.div`
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
-    margin-bottom: 1.5rem;
+    gap: 0.45rem;
 `;
 
-const Label = styled.label`
-    font-weight: 600;
-    font-size: 0.9rem;
-`;
-
-const Input = styled.input`
-    padding: 0.68rem 0.72rem;
-    border: 1px solid ${({ theme }) => theme.border};
-    border-radius: 8px;
-    font-size: 0.95rem;
-`;
-
-const ResultContainer = styled.div`
-    text-align: center;
-    padding: 1rem 0;
-`;
-
-const ResultLabel = styled.p`
-    font-size: 1rem;
-    color: ${({ theme }) => theme.lightText};
-    margin: 0.25rem 0 0 0;
-`;
-
-const CalculationPeriod = styled.p`
-    font-size: 0.8rem;
-    color: #888;
-    margin-top: 1.5rem;
-    background-color: ${({ theme }) => theme.background};
-    padding: 0.5rem;
-    border-radius: 8px;
-`;
-
-const SpinIcon = styled(FaSyncAlt)`
-    animation: spin 1s linear infinite;
-    @keyframes spin {
-        from { transform: rotate(0deg); }
-        to { transform: rotate(360deg); }
-    }
-`;
-
-const ResultValue = styled.p`
-    font-size: 2.2rem;
+const FilterLabel = styled.label`
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.84rem;
     font-weight: 700;
-    color: ${({ theme }) => theme.primary};
+    color: ${({ theme }) => theme.lightText};
+`;
+
+const DateInput = styled.input`
+    width: 100%;
+    padding: 0.74rem 0.8rem;
+    border-radius: 10px;
+    border: 1px solid ${({ theme }) => theme.border};
+    font-size: 0.96rem;
+    background: ${({ theme }) => theme.background};
+    color: ${({ theme }) => theme.text};
+`;
+
+const ValueWrap = styled.div`
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    min-height: 6rem;
+    justify-content: center;
+`;
+
+const ValueLabel = styled.p`
     margin: 0;
-`;
-const LastUpdated = styled.p`
-    font-size: 0.75rem;
-    color: #aaa;
-    position: absolute;
-    bottom: 0.5rem;
-    right: 1.5rem;
+    color: ${({ theme }) => theme.lightText};
+    font-size: 0.88rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    font-weight: 700;
 `;
 
-const PositionCounterCard = ({ counter, onEdit, onDelete, canManage }) => {
-    const [selectedDate, setSelectedDate] = useState(format(new Date(), 'yyyy-MM-dd'));
-    const [result, setResult] = useState(null);
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState('');
-    const [lastUpdated, setLastUpdated] = useState(null);
+const Value = styled.p`
+    margin: 0;
+    font-size: 2.2rem;
+    line-height: 1;
+    font-weight: 800;
+    color: ${({ theme }) => theme.primary};
+`;
 
-    const handleCalculate = useCallback(async (isRefresh = false) => {
-        setLoading(true);
-        setError('');
-        try {
-            let data;
-            if (counter.type === 'local') {
-                ({ data } = await calculateLocalPosition({ date: selectedDate, keyword: counter.keyword, counterId: counter.id }));
-            } else if (counter.type === 'remote') {
-                const dateParam = isRefresh ? null : selectedDate;
-                ({ data } = await calculateRemotePosition(counter.id, { date: dateParam }));
-                setLastUpdated(new Date());
-            }
-            setResult(data);
-        } catch (err) {
-            setError(err.response?.data?.message || 'Failed to calculate position.');
-            setResult(null);
-        } finally {
-            setLoading(false);
-        }
-    }, [selectedDate, counter]);
+const MetaGrid = styled.div`
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.75rem;
+`;
 
-    useEffect(() => {
-        handleCalculate();
-    }, [handleCalculate]);
+const MetaCard = styled.div`
+    padding: 0.75rem 0.8rem;
+    border-radius: 12px;
+    background: ${({ theme }) => theme.background};
+    border: 1px solid ${({ theme }) => theme.border};
+`;
 
-    useEffect(() => {
-        if (counter.type === 'remote') {
-            const interval = setInterval(() => handleCalculate(true), 60000); // 1 minute
-            return () => clearInterval(interval);
-        }
-    }, [counter.type, handleCalculate]);
-    
-    const formatDisplayDateTime = (isoString) => format(new Date(isoString), 'MMM dd, HH:mm:ss');
-    const formatMoney = (value) => new Intl.NumberFormat('en-US', { minimumFractionDigits: 2 }).format(value);
-    const isLocalCross = counter.type === 'local' && counter.local_mode === 'cross';
+const MetaLabel = styled.p`
+    margin: 0;
+    color: ${({ theme }) => theme.lightText};
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-weight: 700;
+`;
+
+const MetaValue = styled.p`
+    margin: 0.25rem 0 0;
+    color: ${({ theme }) => theme.text};
+    font-weight: 700;
+    font-size: 1rem;
+`;
+
+const Footer = styled.div`
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 0.75rem;
+    color: ${({ theme }) => theme.lightText};
+    font-size: 0.82rem;
+`;
+
+const ErrorBox = styled.div`
+    padding: 0.8rem;
+    border-radius: 12px;
+    background: rgba(220, 53, 69, 0.08);
+    color: #b42318;
+    border: 1px solid rgba(220, 53, 69, 0.18);
+    font-weight: 600;
+`;
+
+const PositionCounterCard = ({
+    counter,
+    dateTo,
+    value,
+    loading,
+    error,
+    lastUpdatedAt,
+    canManage,
+    onDateChange,
+    onRefresh,
+    onEdit,
+    onDelete,
+}) => {
+    const displayDate = dateTo || '';
+    const formattedLastUpdated = lastUpdatedAt ? format(new Date(lastUpdatedAt), 'HH:mm:ss') : 'Never';
 
     return (
         <Card>
             <Header>
-                <Title>{counter.name}</Title>
-                {canManage && (
-                    <Actions>
-                        {counter.type === 'remote' && <FaSyncAlt onClick={() => handleCalculate(true)} title="Refresh Now" />}
-                        <FaEdit onClick={() => onEdit(counter)} title="Edit Counter" />
-                        <FaTrash onClick={() => onDelete(counter)} title="Delete Counter" />
-                    </Actions>
-                )}
+                <TitleWrap>
+                    <Title>{counter.name}</Title>
+                    <Subtext>{counter.subaccount_name || 'Invoice portal subaccount'}</Subtext>
+                    <BadgeRow>
+                        <Badge $tone="strong">{String(counter.account_type || '').toUpperCase()}</Badge>
+                        <Badge>Invoices</Badge>
+                        <Badge>Saldo total</Badge>
+                    </BadgeRow>
+                </TitleWrap>
+                <Actions>
+                    <IconButton type="button" onClick={() => onRefresh(counter.id)} title="Refresh">
+                        <FaSyncAlt />
+                    </IconButton>
+                    {canManage ? (
+                        <>
+                            <IconButton type="button" onClick={() => onEdit(counter)} title="Edit counter">
+                                <FaEdit />
+                            </IconButton>
+                            <IconButton type="button" onClick={() => onDelete(counter)} title="Delete counter">
+                                <FaTrash />
+                            </IconButton>
+                        </>
+                    ) : null}
+                </Actions>
             </Header>
 
-            <InputGroup>
-                <Label>{counter.type === 'local' ? 'Select Date (Till Date)' : 'Select Date for Historical Balance'}</Label>
-                <Input type="date" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} />
-            </InputGroup>
+            <FilterBlock>
+                <FilterLabel>
+                    <FaCalendarAlt /> Date To (Until)
+                </FilterLabel>
+                <DateInput
+                    type="date"
+                    value={displayDate}
+                    onChange={(event) => onDateChange(counter.id, event.target.value)}
+                />
+            </FilterBlock>
 
-            <ResultContainer>
-                {loading ? <SpinIcon size="2rem" color="#ccc" /> : (
-                    error ? <p style={{color: 'red'}}>{error}</p> : (
-                        result && (
-                            counter.type === 'local' ? ( // LOCAL DISPLAY
-                                <>
-                                    <ResultValue>
-                                        {formatMoney(
-                                            isLocalCross || counter.sub_type === 'cross'
-                                                ? (result.netPosition ?? result.disponivel ?? 0)
-                                                : (result.disponivel ?? result.netPosition ?? 0)
-                                        )}
-                                    </ResultValue>
-                                    <ResultLabel>
-                                        {isLocalCross || counter.sub_type === 'cross' ? 'Net Position (Till Date)' : 'Available Balance (Till Date)'}
-                                    </ResultLabel>
-                                    <CalculationPeriod>
-                                        {isLocalCross || counter.sub_type === 'cross' 
-                                            ? (result.calculationPeriod?.start && result.calculationPeriod?.end
-                                                ? `Till date: ${formatDisplayDateTime(result.calculationPeriod.start)} - ${formatDisplayDateTime(result.calculationPeriod.end)}`
-                                                : `Till date: ${result.dataReferencia || 'Today'}`)
-                                            : `Till date: ${result.dataReferencia || 'Today'}`
-                                        }
-                                    </CalculationPeriod>
-                                </>
-                            ) : ( // REMOTE DISPLAY
-                                <>
-                                    <ResultValue>
-                                        {formatMoney(result.disponivel ?? result.netPosition ?? 0)}
-                                    </ResultValue>
-                                    <ResultLabel>Available Balance</ResultLabel>
-                                    <CalculationPeriod>
-                                        Balance for date: {result.dataReferencia || 'Today'}
-                                    </CalculationPeriod>
-                                </>
-                            )
-                        )
-                    )
-                )}
-            </ResultContainer>
-            {lastUpdated && <LastUpdated>Last updated: {format(lastUpdated, 'HH:mm:ss')}</LastUpdated>}
+            {error ? <ErrorBox>{error}</ErrorBox> : null}
+
+            <ValueWrap>
+                <ValueLabel>{loading ? 'Refreshing...' : 'Saldo Total'}</ValueLabel>
+                <Value>{loading && !value ? '...' : formatMoney(value?.balance || 0)}</Value>
+                <Subtext>
+                    Matching the portal ledger balance until {displayDate || 'today'}.
+                </Subtext>
+            </ValueWrap>
+
+            <MetaGrid>
+                <MetaCard>
+                    <MetaLabel>Statement</MetaLabel>
+                    <MetaValue>{formatMoney(value?.statementBalance || 0)}</MetaValue>
+                </MetaCard>
+                <MetaCard>
+                    <MetaLabel>Manual</MetaLabel>
+                    <MetaValue>{formatMoney(value?.manualBalance || 0)}</MetaValue>
+                </MetaCard>
+            </MetaGrid>
+
+            <Footer>
+                <span>Updated: {formattedLastUpdated}</span>
+                <span>Subaccount #{counter.subaccount_id}</span>
+            </Footer>
         </Card>
     );
 };

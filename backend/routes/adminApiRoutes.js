@@ -133,6 +133,11 @@ router.post('/subaccounts/reassign', checkPermission('subaccount:reassign_transa
 // --- BI & Financial Tools ---
 router.get('/position/local', checkPermission('finance:view_dashboards'), positionController.calculateLocalPosition);
 router.get('/position/remote/:id', checkPermission('finance:view_dashboards'), positionController.calculateRemotePosition);
+router.get('/positions/invoice-counters', checkPermission('finance:view_dashboards'), positionController.getInvoiceCounters);
+router.get('/positions/invoice-counters/:id/value', checkPermission('finance:view_dashboards'), positionController.calculateInvoiceCounter);
+router.post('/positions/invoice-counters', checkPermission('finance:manage_counters'), positionController.createInvoiceCounter);
+router.put('/positions/invoice-counters/:id', checkPermission('finance:manage_counters'), positionController.updateInvoiceCounter);
+router.delete('/positions/invoice-counters/:id', checkPermission('finance:manage_counters'), positionController.deleteInvoiceCounter);
 router.get('/positions/counters', checkPermission('finance:view_dashboards'), positionController.getAllCounters);
 router.post('/positions/counters', checkPermission('finance:manage_counters'), positionController.createCounter);
 router.put('/positions/counters/:id', checkPermission('finance:manage_counters'), positionController.updateCounter);

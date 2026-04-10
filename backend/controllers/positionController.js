@@ -1,5 +1,199 @@
 const pool = require('../config/db');
 const alfaBalanceService = require('../services/alfaBalanceService');
+const portalLedgerService = require('../services/portalLedgerService');
+
+const PORTAL_IMPERSONATION_VIEWER_MODE = 'impersonation';
+
+const isValidDate = (value) => /^\d{4}-\d{2}-\d{2}$/.test(value || '');
+
+const parseMoney = (value) => Number.parseFloat(value || 0) || 0;
+
+const getInvoicePortalSubaccount = async (subaccountId) => {
+    const [[subaccount]] = await pool.query(
+        `SELECT id, name, account_type, portal_source_type, invoice_recipient_pattern,
+                subaccount_number, chave_pix, assigned_group_name
+         FROM subaccounts
+         WHERE id = ?
+           AND portal_source_type = 'invoices'
+         LIMIT 1`,
+        [subaccountId]
+    );
+    return subaccount || null;
+};
+
+const getInvoiceCounterRow = async (counterId) => {
+    const [[counter]] = await pool.query(
+        `SELECT ipc.id, ipc.user_id, ipc.subaccount_id, ipc.name, ipc.created_at, ipc.updated_at,
+                s.name AS subaccount_name, s.account_type, s.portal_source_type,
+                s.invoice_recipient_pattern, s.subaccount_number, s.chave_pix, s.assigned_group_name
+         FROM invoice_position_counters ipc
+         INNER JOIN subaccounts s ON s.id = ipc.subaccount_id
+         WHERE ipc.id = ?
+           AND s.portal_source_type = 'invoices'
+         LIMIT 1`,
+        [counterId]
+    );
+    return counter || null;
+};
+
+const buildInvoiceCounterValue = async (counter, dateTo = '') => {
+    const filters = { statementScope: 'all' };
+    if (dateTo) filters.dateTo = dateTo;
+
+    const summary = await portalLedgerService.getDashboardSummary({
+        subaccount: counter,
+        filters,
+        viewerMode: PORTAL_IMPERSONATION_VIEWER_MODE
+    });
+
+    const balance = parseMoney(summary.statementBalance) + parseMoney(summary.manualBalance);
+
+    return {
+        balance,
+        dateTo: dateTo || null,
+        allTimeBalance: parseMoney(summary.allTimeBalance),
+        statementBalance: parseMoney(summary.statementBalance),
+        manualBalance: parseMoney(summary.manualBalance),
+        totalIn: parseMoney(summary.totalIn),
+        totalOut: parseMoney(summary.totalOut),
+        countIn: Number(summary.countIn || 0),
+        countOut: Number(summary.countOut || 0),
+        statementScope: summary.statementScope || 'all',
+        sourceType: summary.sourceType || 'invoices',
+        supportsStartingEntry: Boolean(summary.supportsStartingEntry)
+    };
+};
+
+exports.getInvoiceCounters = async (req, res) => {
+    try {
+        const [rows] = await pool.query(
+            `SELECT ipc.id, ipc.user_id, ipc.subaccount_id, ipc.name, ipc.created_at, ipc.updated_at,
+                    s.name AS subaccount_name, s.account_type, s.portal_source_type,
+                    s.invoice_recipient_pattern, s.subaccount_number, s.chave_pix, s.assigned_group_name
+             FROM invoice_position_counters ipc
+             INNER JOIN subaccounts s ON s.id = ipc.subaccount_id
+             WHERE s.portal_source_type = 'invoices'
+             ORDER BY ipc.name ASC, ipc.id ASC`
+        );
+        res.json(rows);
+    } catch (error) {
+        console.error('[ERROR] Failed to fetch invoice position counters:', error);
+        res.status(500).json({ message: 'Failed to fetch invoice counters.' });
+    }
+};
+
+exports.createInvoiceCounter = async (req, res) => {
+    const userId = req.user.id;
+    const name = String(req.body?.name || '').trim();
+    const subaccountId = Number.parseInt(req.body?.subaccount_id, 10);
+
+    if (!name || !Number.isInteger(subaccountId) || subaccountId <= 0) {
+        return res.status(400).json({ message: 'Name and invoice portal subaccount are required.' });
+    }
+
+    try {
+        const subaccount = await getInvoicePortalSubaccount(subaccountId);
+        if (!subaccount) {
+            return res.status(400).json({ message: 'Selected subaccount must use portal source "invoices".' });
+        }
+
+        const [result] = await pool.query(
+            'INSERT INTO invoice_position_counters (user_id, subaccount_id, name) VALUES (?, ?, ?)',
+            [userId, subaccountId, name.slice(0, 255)]
+        );
+
+        const created = await getInvoiceCounterRow(result.insertId);
+        res.status(201).json(created);
+    } catch (error) {
+        if (error.code === 'ER_DUP_ENTRY') {
+            return res.status(409).json({ message: 'A counter already exists for this invoice portal subaccount.' });
+        }
+        console.error('[ERROR] Failed to create invoice position counter:', error);
+        res.status(500).json({ message: 'Failed to create invoice counter.' });
+    }
+};
+
+exports.updateInvoiceCounter = async (req, res) => {
+    const counterId = Number.parseInt(req.params.id, 10);
+    const name = String(req.body?.name || '').trim();
+    const subaccountId = Number.parseInt(req.body?.subaccount_id, 10);
+
+    if (!Number.isInteger(counterId) || counterId <= 0) {
+        return res.status(400).json({ message: 'Valid counter id is required.' });
+    }
+    if (!name || !Number.isInteger(subaccountId) || subaccountId <= 0) {
+        return res.status(400).json({ message: 'Name and invoice portal subaccount are required.' });
+    }
+
+    try {
+        const existing = await getInvoiceCounterRow(counterId);
+        if (!existing) {
+            return res.status(404).json({ message: 'Invoice counter not found.' });
+        }
+
+        const subaccount = await getInvoicePortalSubaccount(subaccountId);
+        if (!subaccount) {
+            return res.status(400).json({ message: 'Selected subaccount must use portal source "invoices".' });
+        }
+
+        await pool.query(
+            'UPDATE invoice_position_counters SET name = ?, subaccount_id = ? WHERE id = ?',
+            [name.slice(0, 255), subaccountId, counterId]
+        );
+
+        const updated = await getInvoiceCounterRow(counterId);
+        res.json(updated);
+    } catch (error) {
+        if (error.code === 'ER_DUP_ENTRY') {
+            return res.status(409).json({ message: 'A counter already exists for this invoice portal subaccount.' });
+        }
+        console.error('[ERROR] Failed to update invoice position counter:', error);
+        res.status(500).json({ message: 'Failed to update invoice counter.' });
+    }
+};
+
+exports.deleteInvoiceCounter = async (req, res) => {
+    const counterId = Number.parseInt(req.params.id, 10);
+    if (!Number.isInteger(counterId) || counterId <= 0) {
+        return res.status(400).json({ message: 'Valid counter id is required.' });
+    }
+
+    try {
+        const [result] = await pool.query('DELETE FROM invoice_position_counters WHERE id = ?', [counterId]);
+        if (!result.affectedRows) {
+            return res.status(404).json({ message: 'Invoice counter not found.' });
+        }
+        res.status(204).send();
+    } catch (error) {
+        console.error('[ERROR] Failed to delete invoice position counter:', error);
+        res.status(500).json({ message: 'Failed to delete invoice counter.' });
+    }
+};
+
+exports.calculateInvoiceCounter = async (req, res) => {
+    const counterId = Number.parseInt(req.params.id, 10);
+    const dateTo = String(req.query?.dateTo || '').trim();
+
+    if (!Number.isInteger(counterId) || counterId <= 0) {
+        return res.status(400).json({ message: 'Valid counter id is required.' });
+    }
+    if (dateTo && !isValidDate(dateTo)) {
+        return res.status(400).json({ message: 'dateTo must be in YYYY-MM-DD format.' });
+    }
+
+    try {
+        const counter = await getInvoiceCounterRow(counterId);
+        if (!counter) {
+            return res.status(404).json({ message: 'Invoice counter not found.' });
+        }
+
+        const data = await buildInvoiceCounterValue(counter, dateTo);
+        res.json(data);
+    } catch (error) {
+        console.error('[ERROR] Failed to calculate invoice position counter:', error);
+        res.status(500).json({ message: 'Failed to calculate invoice counter.' });
+    }
+};
 
 // --- CRUD for Position Counters ---
 
