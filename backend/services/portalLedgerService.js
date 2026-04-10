@@ -4,7 +4,8 @@ const transactionService = require('./subaccountTransactionService');
 
 const STATEMENT_SCOPE = {
     GERAL: 'geral',
-    CHAVE_PIX: 'chave_pix'
+    CHAVE_PIX: 'chave_pix',
+    ALL: 'all'
 };
 
 const NORMALIZED_INVOICE_AMOUNT_SQL = `
@@ -88,9 +89,14 @@ const addInvoiceBadgeFilter = (filters, poolType, clauses) => {
     }
 };
 
-const normalizeStatementScope = (value) => (
-    value === STATEMENT_SCOPE.CHAVE_PIX ? STATEMENT_SCOPE.CHAVE_PIX : STATEMENT_SCOPE.GERAL
+const isAllOnlyInvoiceScope = (subaccount) => (
+    subaccount?.account_type === 'cross' || subaccount?.account_type === 'xpayz'
 );
+
+const normalizeStatementScope = (value, subaccount = null) => {
+    if (isAllOnlyInvoiceScope(subaccount)) return STATEMENT_SCOPE.ALL;
+    return value === STATEMENT_SCOPE.CHAVE_PIX ? STATEMENT_SCOPE.CHAVE_PIX : STATEMENT_SCOPE.GERAL;
+};
 
 const getPortalSourceType = (subaccount) => (
     subaccount?.portal_source_type === 'invoices' ? 'invoices' : 'transactions'
@@ -169,6 +175,10 @@ const addInvoiceStatementFilters = ({ filters, params, clauses }) => {
 };
 
 const addInvoiceStatementScopeFilter = ({ subaccount, statementScope, params, clauses }) => {
+    if (statementScope === STATEMENT_SCOPE.ALL) {
+        return;
+    }
+
     const linkedGroupSql = `
         EXISTS (
             SELECT 1
@@ -186,6 +196,15 @@ const addInvoiceStatementScopeFilter = ({ subaccount, statementScope, params, cl
     }
 
     clauses.push(`NOT ${linkedGroupSql}`);
+};
+
+const addInvoiceManualScopeFilter = ({ statementScope, clauses, params }) => {
+    if (statementScope === STATEMENT_SCOPE.ALL) {
+        return;
+    }
+
+    clauses.push(`COALESCE(sime.starting_scope, '${STATEMENT_SCOPE.GERAL}') = ?`);
+    params.push(statementScope);
 };
 
 const addInvoiceManualFilters = ({ filters, params, clauses }) => {
@@ -270,10 +289,11 @@ const listInvoiceStatementTransactions = async ({ subaccount, filters = {}, pagi
     };
 };
 
-const listInvoiceManualTransactions = async ({ subaccount, filters = {}, pagination, anchorEntry }) => {
+const listInvoiceManualTransactions = async ({ subaccount, filters = {}, pagination, anchorEntry, statementScope }) => {
     const clauses = ['sime.subaccount_id = ?'];
     const params = [subaccount.id];
 
+    addInvoiceManualScopeFilter({ statementScope, clauses, params });
     addAnchorDateFilter(anchorEntry, 'sime.transaction_date', params, clauses);
     addInvoiceManualFilters({ filters, params, clauses });
 
@@ -300,6 +320,7 @@ const listInvoiceManualTransactions = async ({ subaccount, filters = {}, paginat
                 'manual' AS entry_origin,
                 CASE
                     WHEN sime.is_starting_entry = 1 AND sime.starting_scope = 'chave_pix' THEN 'saldo inicial chave'
+                    WHEN sime.is_starting_entry = 1 AND sime.starting_scope = 'all' THEN 'saldo inicial'
                     WHEN sime.is_starting_entry = 1 THEN 'saldo inicial geral'
                     ELSE NULL
                 END AS badge_label,
@@ -345,10 +366,11 @@ const calculateInvoiceStatementBalance = async ({ subaccount, filters = {}, anch
     return Number(row?.balance || 0);
 };
 
-const calculateInvoiceManualBalance = async ({ subaccount, filters = {}, anchorEntry }) => {
+const calculateInvoiceManualBalance = async ({ subaccount, filters = {}, anchorEntry, statementScope }) => {
     const clauses = ['sime.subaccount_id = ?'];
     const params = [subaccount.id];
 
+    addInvoiceManualScopeFilter({ statementScope, clauses, params });
     addAnchorDateFilter(anchorEntry, 'sime.transaction_date', params, clauses);
     addInvoiceManualFilters({ filters, params, clauses });
 
@@ -394,10 +416,11 @@ const calculateInvoiceStatementFlowSummary = async ({ subaccount, filters = {}, 
     };
 };
 
-const calculateInvoiceManualFlowSummary = async ({ subaccount, filters = {}, anchorEntry }) => {
+const calculateInvoiceManualFlowSummary = async ({ subaccount, filters = {}, anchorEntry, statementScope }) => {
     const clauses = ['sime.subaccount_id = ?'];
     const params = [subaccount.id];
 
+    addInvoiceManualScopeFilter({ statementScope, clauses, params });
     addAnchorDateFilter(anchorEntry, 'sime.transaction_date', params, clauses);
     addInvoiceManualFilters({ filters, params, clauses });
 
@@ -425,15 +448,15 @@ const calculateInvoiceManualFlowSummary = async ({ subaccount, filters = {}, anc
 const getInvoiceDashboardSummary = async ({ subaccount, filters = {}, viewerMode }) => {
     const normalizedFilters = transactionService.normalizePortalFiltersForViewerMode(filters, viewerMode);
     const activePool = normalizedFilters.pool === 'manual' ? 'manual' : 'statement';
-    const statementScope = normalizeStatementScope(normalizedFilters.statementScope);
+    const statementScope = normalizeStatementScope(normalizedFilters.statementScope, subaccount);
     const anchorEntry = await getStartingEntry(subaccount.id, statementScope);
 
     const statementBalance = await calculateInvoiceStatementBalance({ subaccount, filters: normalizedFilters, anchorEntry, statementScope });
-    const manualBalance = await calculateInvoiceManualBalance({ subaccount, filters: normalizedFilters, anchorEntry });
+    const manualBalance = await calculateInvoiceManualBalance({ subaccount, filters: normalizedFilters, anchorEntry, statementScope });
     const statementAllTimeBalance = await calculateInvoiceStatementBalance({ subaccount, filters: {}, anchorEntry, statementScope });
-    const manualAllTimeBalance = await calculateInvoiceManualBalance({ subaccount, filters: {}, anchorEntry });
+    const manualAllTimeBalance = await calculateInvoiceManualBalance({ subaccount, filters: {}, anchorEntry, statementScope });
     const flowSummary = activePool === 'manual'
-        ? await calculateInvoiceManualFlowSummary({ subaccount, filters: normalizedFilters, anchorEntry })
+        ? await calculateInvoiceManualFlowSummary({ subaccount, filters: normalizedFilters, anchorEntry, statementScope })
         : await calculateInvoiceStatementFlowSummary({ subaccount, filters: normalizedFilters, anchorEntry, statementScope });
 
     return {
@@ -470,11 +493,11 @@ const listInvoicePortalTransactions = async (client, query = {}) => {
     const normalizedQuery = transactionService.normalizePortalFiltersForViewerMode(query, viewerMode);
     const pagination = parsePagination(query, { defaultLimit: 50, allowAll: true });
     const activePool = normalizedQuery.pool === 'manual' ? 'manual' : 'statement';
-    const statementScope = normalizeStatementScope(normalizedQuery.statementScope);
+    const statementScope = normalizeStatementScope(normalizedQuery.statementScope, subaccount);
     const anchorEntry = await getStartingEntry(subaccount.id, statementScope);
 
     const result = activePool === 'manual'
-        ? await listInvoiceManualTransactions({ subaccount, filters: normalizedQuery, pagination, anchorEntry })
+        ? await listInvoiceManualTransactions({ subaccount, filters: normalizedQuery, pagination, anchorEntry, statementScope })
         : await listInvoiceStatementTransactions({ subaccount, filters: normalizedQuery, pagination, anchorEntry, statementScope });
 
     return {
@@ -540,7 +563,7 @@ const createInvoiceManualTransaction = async ({ subaccount, actorUserId, payload
     const amount = parseAmount(payload.amount);
     const direction = payload.direction === 'out' || payload.operation_direct === 'out' ? 'out' : 'in';
     const isStartingEntry = payload.is_starting_entry === true || payload.is_starting_entry === 1 || payload.is_starting_entry === '1';
-    const startingScope = normalizeStatementScope(payload.statementScope);
+    const startingScope = normalizeStatementScope(payload.statementScope, subaccount);
 
     if (!normalizedDate) {
         const error = new Error('Valid date/time is required.');
@@ -600,7 +623,7 @@ const updateInvoiceManualTransaction = async ({ subaccount, actorUserId, transac
         ? 'out'
         : (payload.direction === 'in' || payload.operation_direct === 'in' ? 'in' : existing.direction);
     const isStartingEntry = payload.is_starting_entry === true || payload.is_starting_entry === 1 || payload.is_starting_entry === '1';
-    const startingScope = normalizeStatementScope(payload.statementScope || existing.starting_scope);
+    const startingScope = normalizeStatementScope(payload.statementScope || existing.starting_scope, subaccount);
 
     if (!normalizedDate) {
         const error = new Error('Valid date/time is required.');

@@ -725,8 +725,11 @@ const PortalTransactionWorkspace = ({ forceViewOnly = false }) => {
   const isMasterView = !isImpersonating && !isViewOnly;
   const portalSourceType = summary?.sourceType || tokenPayload?.portalSourceType || "transactions";
   const isInvoicePortal = portalSourceType === "invoices";
-  const currentStatementScope = summary?.statementScope || filters.statementScope || "geral";
-  const currentStatementScopeLabel = currentStatementScope === "chave_pix" ? "Chave Pix" : "Geral";
+  const accountType = tokenPayload?.accountType || "xpayz";
+  const isAllOnlyInvoicePortal = isInvoicePortal && (accountType === "cross" || accountType === "xpayz");
+  const currentStatementScope = isAllOnlyInvoicePortal ? "all" : (summary?.statementScope || filters.statementScope || "geral");
+  const currentStatementScopeLabel =
+    currentStatementScope === "chave_pix" ? "Chave Pix" : currentStatementScope === "all" ? "All" : "Geral";
 
   useEffect(() => {
     const today = getTodayDateInputValue();
@@ -756,7 +759,11 @@ const PortalTransactionWorkspace = ({ forceViewOnly = false }) => {
     if (isMasterView) {
       setFilters((prev) => (prev.dateTo ? { ...prev, dateTo: "" } : prev));
     }
-  }, [isMasterView, isViewOnly, setFilters]);
+
+    if (isAllOnlyInvoicePortal) {
+      setFilters((prev) => (prev.statementScope === "all" ? prev : { ...prev, statementScope: "all" }));
+    }
+  }, [isAllOnlyInvoicePortal, isMasterView, isViewOnly, setFilters]);
 
   const effectiveFilters = useMemo(
     () => ({
@@ -768,7 +775,7 @@ const PortalTransactionWorkspace = ({ forceViewOnly = false }) => {
       confirmation: filters.confirmation || "",
       badgeFilter: isImpersonating ? filters.badgeFilter || "" : "",
       pool: isViewOnly ? "statement" : filters.pool || "statement",
-      statementScope: filters.statementScope || "geral",
+      statementScope: isAllOnlyInvoicePortal ? "all" : (filters.statementScope || "geral"),
     }),
     [
       debouncedAmountExact,
@@ -780,6 +787,7 @@ const PortalTransactionWorkspace = ({ forceViewOnly = false }) => {
       filters.direction,
       filters.pool,
       filters.statementScope,
+      isAllOnlyInvoicePortal,
       isImpersonating,
       isViewOnly,
     ],
@@ -790,7 +798,6 @@ const PortalTransactionWorkspace = ({ forceViewOnly = false }) => {
 
   const canManageTransactions = isImpersonating;
   const activePool = isViewOnly ? "statement" : effectiveFilters.pool === "manual" ? "manual" : "statement";
-  const accountType = tokenPayload?.accountType || "xpayz";
   const canManageActivePool = canManageTransactions && (!isInvoicePortal || activePool === "manual");
   const showTransfer = canManageTransactions && !isInvoicePortal && accountType === "cross" && activePool === "statement";
   const showToolbarBody = isToolbarExpanded;
@@ -935,7 +942,7 @@ const PortalTransactionWorkspace = ({ forceViewOnly = false }) => {
 
   const openCreate = () => {
     setEditingTransaction(null);
-    setEditorForm({ ...makeInitialForm(), statementScope: currentStatementScope });
+    setEditorForm({ ...makeInitialForm(), statementScope: isAllOnlyInvoicePortal ? "all" : currentStatementScope });
     setEditorOpen(true);
   };
 
@@ -952,7 +959,7 @@ const PortalTransactionWorkspace = ({ forceViewOnly = false }) => {
         counterparty_name: transaction.counterparty_name || "",
         portal_notes: transaction.portal_notes || "",
         is_starting_entry: Boolean(transaction.is_starting_entry),
-        statementScope: transaction.statement_scope || currentStatementScope,
+        statementScope: isAllOnlyInvoicePortal ? "all" : (transaction.statement_scope || currentStatementScope),
       });
     setEditorOpen(true);
   };
@@ -962,7 +969,7 @@ const PortalTransactionWorkspace = ({ forceViewOnly = false }) => {
     const payload = {
       ...editorForm,
       pool: activePool,
-      statementScope: editorForm.statementScope || currentStatementScope,
+      statementScope: isAllOnlyInvoicePortal ? "all" : (editorForm.statementScope || currentStatementScope),
     };
     if (editingTransaction) {
       await updatePortalTransaction(editingTransaction.id, payload);
@@ -1184,12 +1191,20 @@ const PortalTransactionWorkspace = ({ forceViewOnly = false }) => {
               <ToolbarTop>
                 <div />
                 <Tabs>
-                  <Tab type="button" $active={currentStatementScope === "geral"} onClick={() => updateFilters({ statementScope: "geral" })}>
-                    Geral
-                  </Tab>
-                  <Tab type="button" $active={currentStatementScope === "chave_pix"} onClick={() => updateFilters({ statementScope: "chave_pix" })}>
-                    Chave Pix
-                  </Tab>
+                  {isAllOnlyInvoicePortal ? (
+                    <Tab type="button" $active>
+                      All
+                    </Tab>
+                  ) : (
+                    <>
+                      <Tab type="button" $active={currentStatementScope === "geral"} onClick={() => updateFilters({ statementScope: "geral" })}>
+                        Geral
+                      </Tab>
+                      <Tab type="button" $active={currentStatementScope === "chave_pix"} onClick={() => updateFilters({ statementScope: "chave_pix" })}>
+                        Chave Pix
+                      </Tab>
+                    </>
+                  )}
                 </Tabs>
               </ToolbarTop>
             ) : null}
@@ -1395,13 +1410,17 @@ const PortalTransactionWorkspace = ({ forceViewOnly = false }) => {
               </CheckboxField>
               {editorForm.is_starting_entry ? (
                 <div style={{ marginTop: "0.8rem" }}>
-                  <Select
-                    value={editorForm.statementScope || currentStatementScope}
-                    onChange={(event) => setEditorForm((prev) => ({ ...prev, statementScope: event.target.value }))}
-                  >
-                    <option value="geral">Saldo Inicial Geral</option>
-                    <option value="chave_pix">Saldo Inicial Chave Pix</option>
-                  </Select>
+                  {isAllOnlyInvoicePortal ? (
+                    <Meta>Saldo inicial sera salvo como All.</Meta>
+                  ) : (
+                    <Select
+                      value={editorForm.statementScope || currentStatementScope}
+                      onChange={(event) => setEditorForm((prev) => ({ ...prev, statementScope: event.target.value }))}
+                    >
+                      <option value="geral">Saldo Inicial Geral</option>
+                      <option value="chave_pix">Saldo Inicial Chave Pix</option>
+                    </Select>
+                  )}
                 </div>
               ) : null}
             </>
