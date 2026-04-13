@@ -250,7 +250,7 @@ const PositionCounterCard = ({
 }) => {
     const displayDate = dateTo || '';
     const formattedLastUpdated = lastUpdatedAt ? format(new Date(lastUpdatedAt), 'HH:mm:ss') : 'Never';
-    const helperText = `From last saldo inicial until ${displayDate || 'today'}.`;
+    const helperText = `From last confirmed balance until ${displayDate || 'today'}.`;
     const isCrossCounter = counter.account_type === 'cross';
 
     return (
@@ -306,14 +306,14 @@ const PositionCounterCard = ({
                         <MetricLabel>{loading ? 'Refreshing...' : 'Saldo Until Date + Chaves'}</MetricLabel>
                         <MetricValue>{loading && !value ? '...' : formatMoney(value?.balance || 0)}</MetricValue>
                         <MetricMeta>
-                            Invoice balance plus Cross transaction-source contribution.
+                            GERAL + CHAVES.
                         </MetricMeta>
                     </MetricCard>
                     <MetricCard>
                         <MetricLabel>{loading ? 'Refreshing...' : 'Chave Pix Saldo Total'}</MetricLabel>
                         <MetricValue>{loading && !value ? '...' : formatMoney(value?.chavePixSaldoTotal || 0)}</MetricValue>
                         <MetricMeta>
-                            {Number(value?.chavePixIncludedCount || 0)} transaction-source Cross subaccounts included.
+                            {Number(value?.chavePixIncludedCount || 0)} CHAVES.
                         </MetricMeta>
                     </MetricCard>
                 </MetricGrid>
