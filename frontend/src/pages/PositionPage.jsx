@@ -147,6 +147,7 @@ const PositionPage = () => {
 
     const [counters, setCounters] = useState([]);
     const [invoiceSubaccounts, setInvoiceSubaccounts] = useState([]);
+    const [crossTransactionSubaccounts, setCrossTransactionSubaccounts] = useState([]);
     const [counterValues, setCounterValues] = useState({});
     const [counterErrors, setCounterErrors] = useState({});
     const [loadingIds, setLoadingIds] = useState({});
@@ -224,13 +225,19 @@ const PositionPage = () => {
     const fetchInvoiceSubaccounts = useCallback(async () => {
         try {
             const { data } = await getSubaccounts();
-            const filtered = (Array.isArray(data) ? data : [])
+            const rows = Array.isArray(data) ? data : [];
+            const filtered = rows
                 .filter((subaccount) => subaccount.portal_source_type === 'invoices')
                 .sort((left, right) => String(left.name || '').localeCompare(String(right.name || '')));
+            const crossTransactions = rows
+                .filter((subaccount) => subaccount.portal_source_type === 'transactions' && subaccount.account_type === 'cross')
+                .sort((left, right) => String(left.name || '').localeCompare(String(right.name || '')));
             setInvoiceSubaccounts(filtered);
+            setCrossTransactionSubaccounts(crossTransactions);
         } catch (error) {
             console.error('Failed to fetch invoice portal subaccounts', error);
             setInvoiceSubaccounts([]);
+            setCrossTransactionSubaccounts([]);
         }
     }, []);
 
@@ -382,6 +389,7 @@ const PositionPage = () => {
                 onSave={handleSaveCounter}
                 editingCounter={editingCounter}
                 invoiceSubaccounts={invoiceSubaccounts}
+                crossTransactionSubaccounts={crossTransactionSubaccounts}
             />
         </>
     );

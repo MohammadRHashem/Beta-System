@@ -161,6 +161,32 @@ const ErrorBox = styled.div`
     font-weight: 600;
 `;
 
+const SecondaryMetric = styled.div`
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+    padding: 0.65rem 0.75rem;
+    border-radius: 12px;
+    border: 1px solid ${({ theme }) => theme.border};
+    background: ${({ theme }) => theme.background};
+`;
+
+const SecondaryLabel = styled.p`
+    margin: 0;
+    color: ${({ theme }) => theme.lightText};
+    font-size: 0.74rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-weight: 700;
+`;
+
+const SecondaryValue = styled.p`
+    margin: 0;
+    color: ${({ theme }) => theme.text};
+    font-size: 1rem;
+    font-weight: 800;
+`;
+
 const PositionCounterCard = ({
     counter,
     dateTo,
@@ -225,6 +251,16 @@ const PositionCounterCard = ({
                 <Value>{loading && !value ? '...' : formatMoney(value?.balance || 0)}</Value>
                 <Subtext>{helperText}</Subtext>
             </ValueWrap>
+
+            {counter.account_type === 'cross' ? (
+                <SecondaryMetric>
+                    <SecondaryLabel>Chave Pix Saldo Total</SecondaryLabel>
+                    <SecondaryValue>{formatMoney(value?.chavePixSaldoTotal || 0)}</SecondaryValue>
+                    <Subtext>
+                        {Number(value?.chavePixIncludedCount || 0)} transaction-source Cross subaccounts included.
+                    </Subtext>
+                </SecondaryMetric>
+            ) : null}
 
             <Footer>
                 <span>Updated: {formattedLastUpdated}</span>

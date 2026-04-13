@@ -82,15 +82,52 @@ const EmptyBox = styled.div`
     color: ${({ theme }) => theme.lightText};
 `;
 
-const PositionCounterModal = ({ isOpen, onClose, onSave, editingCounter, invoiceSubaccounts }) => {
+const Checklist = styled.div`
+    max-height: 180px;
+    overflow: auto;
+    padding: 0.8rem;
+    border-radius: 12px;
+    border: 1px solid ${({ theme }) => theme.border};
+    background: ${({ theme }) => theme.background};
+    display: grid;
+    gap: 0.55rem;
+`;
+
+const CheckLabel = styled.label`
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    color: ${({ theme }) => theme.text};
+    font-size: 0.92rem;
+`;
+
+const parseIdList = (value) => {
+    if (value == null || value === '') return [];
+    let raw = value;
+    if (!Array.isArray(raw)) {
+        try {
+            raw = JSON.parse(value);
+        } catch (error) {
+            return [];
+        }
+    }
+    if (!Array.isArray(raw)) return [];
+    return raw.map((entry) => Number.parseInt(entry, 10)).filter((entry) => Number.isInteger(entry) && entry > 0);
+};
+
+const PositionCounterModal = ({ isOpen, onClose, onSave, editingCounter, invoiceSubaccounts, crossTransactionSubaccounts }) => {
     const isEditMode = Boolean(editingCounter);
     const [name, setName] = useState('');
     const [subaccountId, setSubaccountId] = useState('');
+    const [excludedCrossTransactionSubaccountIds, setExcludedCrossTransactionSubaccountIds] = useState([]);
 
     useEffect(() => {
         if (!isOpen) return;
         setName(isEditMode ? editingCounter.name || '' : '');
         setSubaccountId(isEditMode ? String(editingCounter.subaccount_id || '') : '');
+        setExcludedCrossTransactionSubaccountIds(
+            isEditMode ? parseIdList(editingCounter.excluded_cross_transaction_subaccount_ids) : []
+        );
     }, [editingCounter, isEditMode, isOpen]);
 
     const selectedSubaccount = useMemo(
@@ -103,6 +140,7 @@ const PositionCounterModal = ({ isOpen, onClose, onSave, editingCounter, invoice
         onSave({
             name: name.trim(),
             subaccount_id: Number.parseInt(subaccountId, 10),
+            excluded_cross_transaction_subaccount_ids: excludedCrossTransactionSubaccountIds,
         });
     };
 
@@ -158,6 +196,43 @@ const PositionCounterModal = ({ isOpen, onClose, onSave, editingCounter, invoice
                     </Hint>
                 ) : !(invoiceSubaccounts || []).length ? (
                     <EmptyBox>No invoice-based portal subaccounts are available yet.</EmptyBox>
+                ) : null}
+
+                {selectedSubaccount?.account_type === 'cross' ? (
+                    <Field>
+                        <Label>Exclude Cross Transaction Subaccounts</Label>
+                        <Hint>
+                            This selector affects both the main <strong>Saldo Until Date</strong> and the secondary
+                            <strong> Chave Pix Saldo Total</strong>. The counter adds transaction-source Cross
+                            subaccount balances except the ones you exclude here.
+                        </Hint>
+                        {(crossTransactionSubaccounts || []).length ? (
+                            <Checklist>
+                                {crossTransactionSubaccounts.map((subaccount) => {
+                                    const checked = excludedCrossTransactionSubaccountIds.includes(Number(subaccount.id));
+                                    return (
+                                        <CheckLabel key={subaccount.id}>
+                                            <input
+                                                type="checkbox"
+                                                checked={checked}
+                                                onChange={(event) => {
+                                                    const numericId = Number(subaccount.id);
+                                                    setExcludedCrossTransactionSubaccountIds((prev) => (
+                                                        event.target.checked
+                                                            ? [...prev, numericId]
+                                                            : prev.filter((entry) => entry !== numericId)
+                                                    ));
+                                                }}
+                                            />
+                                            <span>{subaccount.name}</span>
+                                        </CheckLabel>
+                                    );
+                                })}
+                            </Checklist>
+                        ) : (
+                            <EmptyBox>No Cross transaction-source subaccounts are available.</EmptyBox>
+                        )}
+                    </Field>
                 ) : null}
 
                 <Footer>

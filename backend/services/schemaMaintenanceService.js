@@ -52,6 +52,7 @@ const ensureRuntimeSchema = async () => {
         user_id int NOT NULL,
         subaccount_id int NOT NULL,
         name varchar(255) NOT NULL,
+        excluded_cross_transaction_subaccount_ids longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL CHECK (json_valid(excluded_cross_transaction_subaccount_ids)),
         created_at timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
         updated_at timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
         PRIMARY KEY (id),
@@ -60,6 +61,10 @@ const ensureRuntimeSchema = async () => {
         CONSTRAINT fk_ipc_user FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,
         CONSTRAINT fk_ipc_subaccount FOREIGN KEY (subaccount_id) REFERENCES subaccounts (id) ON DELETE CASCADE
       )
+    `);
+    await pool.query(`
+      ALTER TABLE invoice_position_counters
+      ADD COLUMN IF NOT EXISTS excluded_cross_transaction_subaccount_ids longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL CHECK (json_valid(excluded_cross_transaction_subaccount_ids)) AFTER name
     `);
     console.log("[SCHEMA] invoice_position_counters ensured.");
 

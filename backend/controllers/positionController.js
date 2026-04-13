@@ -1,6 +1,7 @@
 const pool = require('../config/db');
 const alfaBalanceService = require('../services/alfaBalanceService');
 const portalLedgerService = require('../services/portalLedgerService');
+const transactionService = require('../services/subaccountTransactionService');
 
 const PORTAL_IMPERSONATION_VIEWER_MODE = 'impersonation';
 
@@ -9,6 +10,24 @@ const isValidDate = (value) => /^\d{4}-\d{2}-\d{2}$/.test(value || '');
 const parseMoney = (value) => Number.parseFloat(value || 0) || 0;
 
 const getTodayDateValue = () => new Date().toISOString().split('T')[0];
+
+const normalizeIdList = (value) => {
+    if (value == null || value === '') return [];
+    let raw = value;
+    if (!Array.isArray(raw)) {
+        try {
+            raw = JSON.parse(value);
+        } catch (error) {
+            return [];
+        }
+    }
+    if (!Array.isArray(raw)) return [];
+    return Array.from(new Set(
+        raw
+            .map((entry) => Number.parseInt(entry, 10))
+            .filter((entry) => Number.isInteger(entry) && entry > 0)
+    ));
+};
 
 const getInvoicePortalSubaccount = async (subaccountId) => {
     const [[subaccount]] = await pool.query(
@@ -25,7 +44,7 @@ const getInvoicePortalSubaccount = async (subaccountId) => {
 
 const getInvoiceCounterRow = async (counterId) => {
     const [[counter]] = await pool.query(
-        `SELECT ipc.id, ipc.user_id, ipc.subaccount_id, ipc.name, ipc.created_at, ipc.updated_at,
+        `SELECT ipc.id, ipc.user_id, ipc.subaccount_id, ipc.name, ipc.excluded_cross_transaction_subaccount_ids, ipc.created_at, ipc.updated_at,
                 s.name AS subaccount_name, s.account_type, s.portal_source_type,
                 s.invoice_recipient_pattern, s.subaccount_number, s.chave_pix, s.assigned_group_name
          FROM invoice_position_counters ipc
@@ -36,6 +55,52 @@ const getInvoiceCounterRow = async (counterId) => {
         [counterId]
     );
     return counter || null;
+};
+
+const getCrossTransactionContribution = async (counter) => {
+    if (counter.account_type !== 'cross') {
+        return { chavePixSaldoTotal: 0, chavePixIncludedCount: 0 };
+    }
+
+    const excludedIds = normalizeIdList(counter.excluded_cross_transaction_subaccount_ids);
+    const clauses = [
+        "account_type = 'cross'",
+        "portal_source_type = 'transactions'"
+    ];
+    const params = [];
+
+    if (excludedIds.length) {
+        clauses.push(`id NOT IN (${excludedIds.map(() => '?').join(', ')})`);
+        params.push(...excludedIds);
+    }
+
+    const [subaccounts] = await pool.query(
+        `
+            SELECT id, name, account_type, portal_source_type, invoice_recipient_pattern,
+                   subaccount_number, chave_pix, assigned_group_name
+            FROM subaccounts
+            WHERE ${clauses.join(' AND ')}
+            ORDER BY name ASC, id ASC
+        `,
+        params
+    );
+
+    if (!subaccounts.length) {
+        return { chavePixSaldoTotal: 0, chavePixIncludedCount: 0 };
+    }
+
+    const summaries = await Promise.all(
+        subaccounts.map((subaccount) => transactionService.getDashboardSummary({
+            subaccount,
+            filters: {},
+            viewerMode: PORTAL_IMPERSONATION_VIEWER_MODE
+        }))
+    );
+
+    return {
+        chavePixSaldoTotal: summaries.reduce((sum, summary) => sum + parseMoney(summary?.allTimeBalance), 0),
+        chavePixIncludedCount: subaccounts.length
+    };
 };
 
 const buildInvoiceCounterValue = async (counter, dateTo = '') => {
@@ -60,11 +125,17 @@ const buildInvoiceCounterValue = async (counter, dateTo = '') => {
     const totalBalance = parseMoney(summary.allTimeBalance);
     const totalStatementBalance = parseMoney(summary.statementAllTimeBalance);
     const totalManualBalance = totalBalance - totalStatementBalance;
+    const crossContribution = await getCrossTransactionContribution(counter);
+    const invoiceUntilDate = filteredBalance;
+    const chavePixSaldoTotal = parseMoney(crossContribution.chavePixSaldoTotal);
 
     return {
-        balance: filteredBalance,
+        balance: invoiceUntilDate + chavePixSaldoTotal,
         dateTo: effectiveDateTo,
-        filteredBalance,
+        filteredBalance: invoiceUntilDate,
+        invoiceUntilDate,
+        chavePixSaldoTotal,
+        chavePixIncludedCount: crossContribution.chavePixIncludedCount,
         allTimeBalance: totalBalance,
         statementBalance: parseMoney(summary.statementBalance),
         manualBalance: parseMoney(summary.manualBalance),
@@ -83,7 +154,7 @@ const buildInvoiceCounterValue = async (counter, dateTo = '') => {
 exports.getInvoiceCounters = async (req, res) => {
     try {
         const [rows] = await pool.query(
-            `SELECT ipc.id, ipc.user_id, ipc.subaccount_id, ipc.name, ipc.created_at, ipc.updated_at,
+            `SELECT ipc.id, ipc.user_id, ipc.subaccount_id, ipc.name, ipc.excluded_cross_transaction_subaccount_ids, ipc.created_at, ipc.updated_at,
                     s.name AS subaccount_name, s.account_type, s.portal_source_type,
                     s.invoice_recipient_pattern, s.subaccount_number, s.chave_pix, s.assigned_group_name
              FROM invoice_position_counters ipc
@@ -102,6 +173,7 @@ exports.createInvoiceCounter = async (req, res) => {
     const userId = req.user.id;
     const name = String(req.body?.name || '').trim();
     const subaccountId = Number.parseInt(req.body?.subaccount_id, 10);
+    const excludedCrossTransactionSubaccountIds = normalizeIdList(req.body?.excluded_cross_transaction_subaccount_ids);
 
     if (!name || !Number.isInteger(subaccountId) || subaccountId <= 0) {
         return res.status(400).json({ message: 'Name and invoice portal subaccount are required.' });
@@ -112,10 +184,13 @@ exports.createInvoiceCounter = async (req, res) => {
         if (!subaccount) {
             return res.status(400).json({ message: 'Selected subaccount must use portal source "invoices".' });
         }
+        if (subaccount.account_type !== 'cross' && excludedCrossTransactionSubaccountIds.length) {
+            return res.status(400).json({ message: 'Cross transaction exclusions can only be used on Cross invoice counters.' });
+        }
 
         const [result] = await pool.query(
-            'INSERT INTO invoice_position_counters (user_id, subaccount_id, name) VALUES (?, ?, ?)',
-            [userId, subaccountId, name.slice(0, 255)]
+            'INSERT INTO invoice_position_counters (user_id, subaccount_id, name, excluded_cross_transaction_subaccount_ids) VALUES (?, ?, ?, ?)',
+            [userId, subaccountId, name.slice(0, 255), JSON.stringify(excludedCrossTransactionSubaccountIds)]
         );
 
         const created = await getInvoiceCounterRow(result.insertId);
@@ -133,6 +208,7 @@ exports.updateInvoiceCounter = async (req, res) => {
     const counterId = Number.parseInt(req.params.id, 10);
     const name = String(req.body?.name || '').trim();
     const subaccountId = Number.parseInt(req.body?.subaccount_id, 10);
+    const excludedCrossTransactionSubaccountIds = normalizeIdList(req.body?.excluded_cross_transaction_subaccount_ids);
 
     if (!Number.isInteger(counterId) || counterId <= 0) {
         return res.status(400).json({ message: 'Valid counter id is required.' });
@@ -151,10 +227,13 @@ exports.updateInvoiceCounter = async (req, res) => {
         if (!subaccount) {
             return res.status(400).json({ message: 'Selected subaccount must use portal source "invoices".' });
         }
+        if (subaccount.account_type !== 'cross' && excludedCrossTransactionSubaccountIds.length) {
+            return res.status(400).json({ message: 'Cross transaction exclusions can only be used on Cross invoice counters.' });
+        }
 
         await pool.query(
-            'UPDATE invoice_position_counters SET name = ?, subaccount_id = ? WHERE id = ?',
-            [name.slice(0, 255), subaccountId, counterId]
+            'UPDATE invoice_position_counters SET name = ?, subaccount_id = ?, excluded_cross_transaction_subaccount_ids = ? WHERE id = ?',
+            [name.slice(0, 255), subaccountId, JSON.stringify(excludedCrossTransactionSubaccountIds), counterId]
         );
 
         const updated = await getInvoiceCounterRow(counterId);
