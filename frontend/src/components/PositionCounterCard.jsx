@@ -298,22 +298,22 @@ const PositionCounterCard = ({
             {isCrossCounter ? (
                 <MetricGrid>
                     <MetricCard>
-                        <MetricLabel>{loading ? 'Refreshing...' : 'Saldo Until Date'}</MetricLabel>
+                        <MetricLabel>{loading ? 'Refreshing...' : 'Geral'}</MetricLabel>
                         <MetricValue>{loading && !value ? '...' : formatMoney(value?.invoiceUntilDate || 0)}</MetricValue>
                         <MetricMeta>{helperText}</MetricMeta>
                     </MetricCard>
                     <MetricCard>
-                        <MetricLabel>{loading ? 'Refreshing...' : 'Saldo Until Date + Chaves'}</MetricLabel>
+                        <MetricLabel>{loading ? 'Refreshing...' : 'Geral + Chaves'}</MetricLabel>
                         <MetricValue>{loading && !value ? '...' : formatMoney(value?.balance || 0)}</MetricValue>
                         <MetricMeta>
-                            GERAL + CHAVES.
+                            {helperText}
                         </MetricMeta>
                     </MetricCard>
                     <MetricCard>
-                        <MetricLabel>{loading ? 'Refreshing...' : 'Chave Pix Saldo Total'}</MetricLabel>
+                        <MetricLabel>{loading ? 'Refreshing...' : 'Chave Pix'}</MetricLabel>
                         <MetricValue>{loading && !value ? '...' : formatMoney(value?.chavePixSaldoTotal || 0)}</MetricValue>
                         <MetricMeta>
-                            {Number(value?.chavePixIncludedCount || 0)} CHAVES.
+                            {Number(value?.chavePixIncludedCount || 0)} CHAVES. {helperText}
                         </MetricMeta>
                     </MetricCard>
                 </MetricGrid>
