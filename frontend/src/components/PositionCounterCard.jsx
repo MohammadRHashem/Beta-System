@@ -250,7 +250,7 @@ const PositionCounterCard = ({
 }) => {
     const displayDate = dateTo || '';
     const formattedLastUpdated = lastUpdatedAt ? format(new Date(lastUpdatedAt), 'HH:mm:ss') : 'Never';
-    const helperText = `From last confirmed balance until ${displayDate || 'today'}.`;
+    const helperText = `Until ${displayDate || 'today'}.`;
     const isCrossCounter = counter.account_type === 'cross';
 
     return (
