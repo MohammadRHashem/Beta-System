@@ -49,6 +49,7 @@ const HeroCopy = styled.div`
 const HeroTitle = styled.h2`
     margin: 0;
     font-size: 1.9rem;
+    color: white;
 `;
 
 const HeroText = styled.p`
