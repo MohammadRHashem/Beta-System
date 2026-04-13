@@ -143,6 +143,54 @@ const Value = styled.p`
     color: ${({ theme }) => theme.primary};
 `;
 
+const MetricGrid = styled.div`
+    display: grid;
+    gap: 0.65rem;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+
+    @media (max-width: 900px) {
+        grid-template-columns: 1fr;
+    }
+`;
+
+const MetricCard = styled.div`
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    padding: 0.8rem 0.85rem;
+    border-radius: 14px;
+    border: 1px solid ${({ theme }) => theme.border};
+    background:
+        linear-gradient(180deg, rgba(255,255,255,0.05), rgba(255,255,255,0)),
+        ${({ theme }) => theme.background};
+    min-height: 7rem;
+    justify-content: center;
+`;
+
+const MetricLabel = styled.p`
+    margin: 0;
+    color: ${({ theme }) => theme.lightText};
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    font-weight: 700;
+`;
+
+const MetricValue = styled.p`
+    margin: 0;
+    color: ${({ theme }) => theme.primary};
+    font-size: 1.35rem;
+    line-height: 1.1;
+    font-weight: 800;
+`;
+
+const MetricMeta = styled.p`
+    margin: 0;
+    color: ${({ theme }) => theme.lightText};
+    font-size: 0.78rem;
+    line-height: 1.4;
+`;
+
 const Footer = styled.div`
     display: flex;
     justify-content: space-between;
@@ -203,6 +251,7 @@ const PositionCounterCard = ({
     const displayDate = dateTo || '';
     const formattedLastUpdated = lastUpdatedAt ? format(new Date(lastUpdatedAt), 'HH:mm:ss') : 'Never';
     const helperText = `From last saldo inicial until ${displayDate || 'today'}.`;
+    const isCrossCounter = counter.account_type === 'cross';
 
     return (
         <Card>
@@ -246,21 +295,35 @@ const PositionCounterCard = ({
 
             {error ? <ErrorBox>{error}</ErrorBox> : null}
 
-            <ValueWrap>
-                <ValueLabel>{loading ? 'Refreshing...' : 'Saldo Until Date'}</ValueLabel>
-                <Value>{loading && !value ? '...' : formatMoney(value?.balance || 0)}</Value>
-                <Subtext>{helperText}</Subtext>
-            </ValueWrap>
-
-            {counter.account_type === 'cross' ? (
-                <SecondaryMetric>
-                    <SecondaryLabel>Chave Pix Saldo Total</SecondaryLabel>
-                    <SecondaryValue>{formatMoney(value?.chavePixSaldoTotal || 0)}</SecondaryValue>
-                    <Subtext>
-                        {Number(value?.chavePixIncludedCount || 0)} transaction-source Cross subaccounts included.
-                    </Subtext>
-                </SecondaryMetric>
-            ) : null}
+            {isCrossCounter ? (
+                <MetricGrid>
+                    <MetricCard>
+                        <MetricLabel>{loading ? 'Refreshing...' : 'Saldo Until Date'}</MetricLabel>
+                        <MetricValue>{loading && !value ? '...' : formatMoney(value?.invoiceUntilDate || 0)}</MetricValue>
+                        <MetricMeta>{helperText}</MetricMeta>
+                    </MetricCard>
+                    <MetricCard>
+                        <MetricLabel>{loading ? 'Refreshing...' : 'Saldo Until Date + Chaves'}</MetricLabel>
+                        <MetricValue>{loading && !value ? '...' : formatMoney(value?.balance || 0)}</MetricValue>
+                        <MetricMeta>
+                            Invoice balance plus Cross transaction-source contribution.
+                        </MetricMeta>
+                    </MetricCard>
+                    <MetricCard>
+                        <MetricLabel>{loading ? 'Refreshing...' : 'Chave Pix Saldo Total'}</MetricLabel>
+                        <MetricValue>{loading && !value ? '...' : formatMoney(value?.chavePixSaldoTotal || 0)}</MetricValue>
+                        <MetricMeta>
+                            {Number(value?.chavePixIncludedCount || 0)} transaction-source Cross subaccounts included.
+                        </MetricMeta>
+                    </MetricCard>
+                </MetricGrid>
+            ) : (
+                <ValueWrap>
+                    <ValueLabel>{loading ? 'Refreshing...' : 'Saldo Until Date'}</ValueLabel>
+                    <Value>{loading && !value ? '...' : formatMoney(value?.balance || 0)}</Value>
+                    <Subtext>{helperText}</Subtext>
+                </ValueWrap>
+            )}
 
             <Footer>
                 <span>Updated: {formattedLastUpdated}</span>
