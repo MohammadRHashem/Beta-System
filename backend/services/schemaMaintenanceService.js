@@ -53,18 +53,25 @@ const ensureRuntimeSchema = async () => {
         subaccount_id int NOT NULL,
         name varchar(255) NOT NULL,
         excluded_cross_transaction_subaccount_ids longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL CHECK (json_valid(excluded_cross_transaction_subaccount_ids)),
+        outs_source_subaccount_id int DEFAULT NULL,
         created_at timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
         updated_at timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
         PRIMARY KEY (id),
         UNIQUE KEY ux_ipc_subaccount (subaccount_id),
         KEY idx_ipc_user (user_id),
+        KEY idx_ipc_outs_source_subaccount (outs_source_subaccount_id),
         CONSTRAINT fk_ipc_user FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,
-        CONSTRAINT fk_ipc_subaccount FOREIGN KEY (subaccount_id) REFERENCES subaccounts (id) ON DELETE CASCADE
+        CONSTRAINT fk_ipc_subaccount FOREIGN KEY (subaccount_id) REFERENCES subaccounts (id) ON DELETE CASCADE,
+        CONSTRAINT fk_ipc_outs_source_subaccount FOREIGN KEY (outs_source_subaccount_id) REFERENCES subaccounts (id) ON DELETE SET NULL
       )
     `);
     await pool.query(`
       ALTER TABLE invoice_position_counters
       ADD COLUMN IF NOT EXISTS excluded_cross_transaction_subaccount_ids longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL CHECK (json_valid(excluded_cross_transaction_subaccount_ids)) AFTER name
+    `);
+    await pool.query(`
+      ALTER TABLE invoice_position_counters
+      ADD COLUMN IF NOT EXISTS outs_source_subaccount_id int DEFAULT NULL AFTER excluded_cross_transaction_subaccount_ids
     `);
     console.log("[SCHEMA] invoice_position_counters ensured.");
 

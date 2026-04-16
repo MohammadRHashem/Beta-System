@@ -324,7 +324,7 @@ const PositionCounterCard = ({
                         <MetricLabel>{loading ? 'Refreshing...' : 'Geral'}</MetricLabel>
                         <MetricValue>{loading && !value ? '...' : formatMoney(value?.geral || 0)}</MetricValue>
                         <MetricMeta>
-                            {helperText} Excluding invoices linked to selected XPayz subaccounts.
+                            {helperText} Excluding linked invoices and subtracting outs only after the latest saldo inicial.
                         </MetricMeta>
                     </MetricCard>
                     <MetricCard>

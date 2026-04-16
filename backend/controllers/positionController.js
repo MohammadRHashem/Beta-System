@@ -44,17 +44,48 @@ const getInvoicePortalSubaccount = async (subaccountId) => {
 
 const getInvoiceCounterRow = async (counterId) => {
     const [[counter]] = await pool.query(
-        `SELECT ipc.id, ipc.user_id, ipc.subaccount_id, ipc.name, ipc.excluded_cross_transaction_subaccount_ids, ipc.created_at, ipc.updated_at,
+        `SELECT ipc.id, ipc.user_id, ipc.subaccount_id, ipc.name, ipc.excluded_cross_transaction_subaccount_ids,
+                ipc.outs_source_subaccount_id, ipc.created_at, ipc.updated_at,
                 s.name AS subaccount_name, s.account_type, s.portal_source_type,
-                s.invoice_recipient_pattern, s.subaccount_number, s.chave_pix, s.assigned_group_name
+                s.invoice_recipient_pattern, s.subaccount_number, s.chave_pix, s.assigned_group_name,
+                outs_sub.name AS outs_source_subaccount_name
          FROM invoice_position_counters ipc
          INNER JOIN subaccounts s ON s.id = ipc.subaccount_id
+         LEFT JOIN subaccounts outs_sub ON outs_sub.id = ipc.outs_source_subaccount_id
          WHERE ipc.id = ?
            AND s.portal_source_type = 'invoices'
          LIMIT 1`,
         [counterId]
     );
     return counter || null;
+};
+
+const getTransactionSourceSubaccount = async (subaccountId, accountType) => {
+    if (!Number.isInteger(subaccountId) || subaccountId <= 0) return null;
+    const [[subaccount]] = await pool.query(
+        `SELECT id, name, account_type, portal_source_type, invoice_recipient_pattern,
+                subaccount_number, chave_pix, assigned_group_name
+         FROM subaccounts
+         WHERE id = ?
+           AND account_type = ?
+           AND portal_source_type = 'transactions'
+         LIMIT 1`,
+        [subaccountId, accountType]
+    );
+    return subaccount || null;
+};
+
+const getLatestInvoiceStartingEntry = async (subaccountId) => {
+    const [[entry]] = await pool.query(
+        `SELECT id, transaction_date, amount, direction, starting_scope
+         FROM subaccount_invoice_manual_entries
+         WHERE subaccount_id = ?
+           AND is_starting_entry = 1
+         ORDER BY transaction_date DESC, id DESC
+         LIMIT 1`,
+        [subaccountId]
+    );
+    return entry || null;
 };
 
 const getTransactionContribution = async (counter) => {
@@ -103,6 +134,58 @@ const getTransactionContribution = async (counter) => {
     };
 };
 
+const getXpayzOutsContribution = async (counter, dateTo = '') => {
+    if (counter.account_type !== 'xpayz') {
+        return { outsValue: 0, anchorDate: null };
+    }
+
+    const outsSourceSubaccountId = Number.parseInt(counter.outs_source_subaccount_id, 10);
+    if (!Number.isInteger(outsSourceSubaccountId) || outsSourceSubaccountId <= 0) {
+        return { outsValue: 0, anchorDate: null };
+    }
+
+    const [outsSourceSubaccount, anchorEntry] = await Promise.all([
+        getTransactionSourceSubaccount(outsSourceSubaccountId, 'xpayz'),
+        getLatestInvoiceStartingEntry(counter.subaccount_id)
+    ]);
+
+    if (!outsSourceSubaccount) {
+        return { outsValue: 0, anchorDate: anchorEntry?.transaction_date || null };
+    }
+
+    const clauses = [
+        'COALESCE(xt.display_subaccount_id, owner_sub.id) = ?',
+        "xt.operation_direct = 'out'",
+        "COALESCE(xt.sync_control_state, 'normal') <> 'hidden'"
+    ];
+    const params = [outsSourceSubaccount.id];
+
+    if (anchorEntry?.transaction_date) {
+        clauses.push('xt.transaction_date >= ?');
+        params.push(anchorEntry.transaction_date);
+    }
+
+    if (isValidDate(dateTo)) {
+        clauses.push('xt.transaction_date <= ?');
+        params.push(`${dateTo} 23:59:59`);
+    }
+
+    const [[row]] = await pool.query(
+        `
+            SELECT COALESCE(SUM(xt.amount), 0) AS total_outs
+            FROM xpayz_transactions xt
+            LEFT JOIN subaccounts owner_sub ON owner_sub.subaccount_number = CAST(xt.subaccount_id AS CHAR)
+            WHERE ${clauses.join(' AND ')}
+        `,
+        params
+    );
+
+    return {
+        outsValue: parseMoney(row?.total_outs),
+        anchorDate: anchorEntry?.transaction_date || null
+    };
+};
+
 const buildInvoiceCounterValue = async (counter, dateTo = '') => {
     const effectiveDateTo = dateTo || getTodayDateValue();
     const excludedIds = normalizeIdList(counter.excluded_cross_transaction_subaccount_ids);
@@ -129,20 +212,27 @@ const buildInvoiceCounterValue = async (counter, dateTo = '') => {
     const totalBalance = parseMoney(summary.allTimeBalance);
     const totalStatementBalance = parseMoney(summary.statementAllTimeBalance);
     const totalManualBalance = totalBalance - totalStatementBalance;
-    const transactionContribution = await getTransactionContribution(counter);
+    const [transactionContribution, xpayzOutsContribution] = await Promise.all([
+        getTransactionContribution(counter),
+        getXpayzOutsContribution(counter, effectiveDateTo)
+    ]);
     const invoiceUntilDate = filteredBalance;
     const transactionSaldoTotal = parseMoney(transactionContribution.transactionSaldoTotal);
     const includedCount = Number(transactionContribution.includedCount || 0);
+    const outsValue = parseMoney(xpayzOutsContribution.outsValue);
+    const geralAfterOuts = invoiceUntilDate - outsValue;
 
     if (counter.account_type === 'xpayz') {
         return {
-            balance: invoiceUntilDate + transactionSaldoTotal,
+            balance: geralAfterOuts + transactionSaldoTotal,
             dateTo: effectiveDateTo,
             filteredBalance: invoiceUntilDate,
-            geral: invoiceUntilDate,
-            geralMaisChaves: invoiceUntilDate + transactionSaldoTotal,
+            geral: geralAfterOuts,
+            geralMaisChaves: geralAfterOuts + transactionSaldoTotal,
             chavePixSaldoTotal: transactionSaldoTotal,
             chavePixIncludedCount: includedCount,
+            outsValue,
+            anchorDate: xpayzOutsContribution.anchorDate,
             allTimeBalance: totalBalance,
             statementBalance: parseMoney(summary.statementBalance),
             manualBalance: parseMoney(summary.manualBalance),
@@ -183,11 +273,14 @@ const buildInvoiceCounterValue = async (counter, dateTo = '') => {
 exports.getInvoiceCounters = async (req, res) => {
     try {
         const [rows] = await pool.query(
-            `SELECT ipc.id, ipc.user_id, ipc.subaccount_id, ipc.name, ipc.excluded_cross_transaction_subaccount_ids, ipc.created_at, ipc.updated_at,
+            `SELECT ipc.id, ipc.user_id, ipc.subaccount_id, ipc.name, ipc.excluded_cross_transaction_subaccount_ids,
+                    ipc.outs_source_subaccount_id, ipc.created_at, ipc.updated_at,
                     s.name AS subaccount_name, s.account_type, s.portal_source_type,
-                    s.invoice_recipient_pattern, s.subaccount_number, s.chave_pix, s.assigned_group_name
+                    s.invoice_recipient_pattern, s.subaccount_number, s.chave_pix, s.assigned_group_name,
+                    outs_sub.name AS outs_source_subaccount_name
              FROM invoice_position_counters ipc
              INNER JOIN subaccounts s ON s.id = ipc.subaccount_id
+             LEFT JOIN subaccounts outs_sub ON outs_sub.id = ipc.outs_source_subaccount_id
              WHERE s.portal_source_type = 'invoices'
              ORDER BY ipc.name ASC, ipc.id ASC`
         );
@@ -203,6 +296,7 @@ exports.createInvoiceCounter = async (req, res) => {
     const name = String(req.body?.name || '').trim();
     const subaccountId = Number.parseInt(req.body?.subaccount_id, 10);
     const excludedCrossTransactionSubaccountIds = normalizeIdList(req.body?.excluded_cross_transaction_subaccount_ids);
+    const outsSourceSubaccountId = Number.parseInt(req.body?.outs_source_subaccount_id, 10);
 
     if (!name || !Number.isInteger(subaccountId) || subaccountId <= 0) {
         return res.status(400).json({ message: 'Name and invoice portal subaccount are required.' });
@@ -216,10 +310,34 @@ exports.createInvoiceCounter = async (req, res) => {
         if (subaccount.account_type !== 'cross' && subaccount.account_type !== 'xpayz' && excludedCrossTransactionSubaccountIds.length) {
             return res.status(400).json({ message: 'Transaction-subaccount exclusions can only be used on Cross or XPayz invoice counters.' });
         }
+        if (subaccount.account_type !== 'xpayz' && Number.isInteger(outsSourceSubaccountId) && outsSourceSubaccountId > 0) {
+            return res.status(400).json({ message: 'Outs source subaccount is only available on XPayz invoice counters.' });
+        }
+
+        let validatedOutsSourceSubaccountId = null;
+        if (subaccount.account_type === 'xpayz' && Number.isInteger(outsSourceSubaccountId) && outsSourceSubaccountId > 0) {
+            const outsSourceSubaccount = await getTransactionSourceSubaccount(outsSourceSubaccountId, 'xpayz');
+            if (!outsSourceSubaccount) {
+                return res.status(400).json({ message: 'Selected outs source must be an XPayz transaction-source subaccount.' });
+            }
+            validatedOutsSourceSubaccountId = outsSourceSubaccount.id;
+        }
 
         const [result] = await pool.query(
-            'INSERT INTO invoice_position_counters (user_id, subaccount_id, name, excluded_cross_transaction_subaccount_ids) VALUES (?, ?, ?, ?)',
-            [userId, subaccountId, name.slice(0, 255), JSON.stringify(excludedCrossTransactionSubaccountIds)]
+            `INSERT INTO invoice_position_counters (
+                user_id,
+                subaccount_id,
+                name,
+                excluded_cross_transaction_subaccount_ids,
+                outs_source_subaccount_id
+            ) VALUES (?, ?, ?, ?, ?)`,
+            [
+                userId,
+                subaccountId,
+                name.slice(0, 255),
+                JSON.stringify(excludedCrossTransactionSubaccountIds),
+                validatedOutsSourceSubaccountId
+            ]
         );
 
         const created = await getInvoiceCounterRow(result.insertId);
@@ -238,6 +356,7 @@ exports.updateInvoiceCounter = async (req, res) => {
     const name = String(req.body?.name || '').trim();
     const subaccountId = Number.parseInt(req.body?.subaccount_id, 10);
     const excludedCrossTransactionSubaccountIds = normalizeIdList(req.body?.excluded_cross_transaction_subaccount_ids);
+    const outsSourceSubaccountId = Number.parseInt(req.body?.outs_source_subaccount_id, 10);
 
     if (!Number.isInteger(counterId) || counterId <= 0) {
         return res.status(400).json({ message: 'Valid counter id is required.' });
@@ -259,10 +378,30 @@ exports.updateInvoiceCounter = async (req, res) => {
         if (subaccount.account_type !== 'cross' && subaccount.account_type !== 'xpayz' && excludedCrossTransactionSubaccountIds.length) {
             return res.status(400).json({ message: 'Transaction-subaccount exclusions can only be used on Cross or XPayz invoice counters.' });
         }
+        if (subaccount.account_type !== 'xpayz' && Number.isInteger(outsSourceSubaccountId) && outsSourceSubaccountId > 0) {
+            return res.status(400).json({ message: 'Outs source subaccount is only available on XPayz invoice counters.' });
+        }
+
+        let validatedOutsSourceSubaccountId = null;
+        if (subaccount.account_type === 'xpayz' && Number.isInteger(outsSourceSubaccountId) && outsSourceSubaccountId > 0) {
+            const outsSourceSubaccount = await getTransactionSourceSubaccount(outsSourceSubaccountId, 'xpayz');
+            if (!outsSourceSubaccount) {
+                return res.status(400).json({ message: 'Selected outs source must be an XPayz transaction-source subaccount.' });
+            }
+            validatedOutsSourceSubaccountId = outsSourceSubaccount.id;
+        }
 
         await pool.query(
-            'UPDATE invoice_position_counters SET name = ?, subaccount_id = ?, excluded_cross_transaction_subaccount_ids = ? WHERE id = ?',
-            [name.slice(0, 255), subaccountId, JSON.stringify(excludedCrossTransactionSubaccountIds), counterId]
+            `UPDATE invoice_position_counters
+             SET name = ?, subaccount_id = ?, excluded_cross_transaction_subaccount_ids = ?, outs_source_subaccount_id = ?
+             WHERE id = ?`,
+            [
+                name.slice(0, 255),
+                subaccountId,
+                JSON.stringify(excludedCrossTransactionSubaccountIds),
+                validatedOutsSourceSubaccountId,
+                counterId
+            ]
         );
 
         const updated = await getInvoiceCounterRow(counterId);

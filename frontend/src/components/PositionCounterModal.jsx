@@ -128,6 +128,7 @@ const PositionCounterModal = ({
     const [name, setName] = useState('');
     const [subaccountId, setSubaccountId] = useState('');
     const [excludedCrossTransactionSubaccountIds, setExcludedCrossTransactionSubaccountIds] = useState([]);
+    const [outsSourceSubaccountId, setOutsSourceSubaccountId] = useState('');
 
     useEffect(() => {
         if (!isOpen) return;
@@ -135,6 +136,9 @@ const PositionCounterModal = ({
         setSubaccountId(isEditMode ? String(editingCounter.subaccount_id || '') : '');
         setExcludedCrossTransactionSubaccountIds(
             isEditMode ? parseIdList(editingCounter.excluded_cross_transaction_subaccount_ids) : []
+        );
+        setOutsSourceSubaccountId(
+            isEditMode ? String(editingCounter.outs_source_subaccount_id || '') : ''
         );
     }, [editingCounter, isEditMode, isOpen]);
 
@@ -156,6 +160,7 @@ const PositionCounterModal = ({
             name: name.trim(),
             subaccount_id: Number.parseInt(subaccountId, 10),
             excluded_cross_transaction_subaccount_ids: excludedCrossTransactionSubaccountIds,
+            outs_source_subaccount_id: outsSourceSubaccountId ? Number.parseInt(outsSourceSubaccountId, 10) : null,
         });
     };
 
@@ -262,6 +267,28 @@ const PositionCounterModal = ({
                                 {isCrossCounter ? 'No Cross transaction-source subaccounts are available.' : 'No XPayz transaction-source subaccounts are available.'}
                             </EmptyBox>
                         )}
+                    </Field>
+                ) : null}
+
+                {isXpayzCounter ? (
+                    <Field>
+                        <Label>Outs Source Subaccount</Label>
+                        <Hint>
+                            Select one XPayz transaction-source subaccount whose <strong>out</strong> transactions will be
+                            subtracted from <strong>Geral</strong>. Only outs from the latest <strong>saldo inicial</strong>
+                            onward are counted.
+                        </Hint>
+                        <Select
+                            value={outsSourceSubaccountId}
+                            onChange={(event) => setOutsSourceSubaccountId(event.target.value)}
+                        >
+                            <option value="">Do not subtract outs</option>
+                            {transactionOptions.map((subaccount) => (
+                                <option key={subaccount.id} value={subaccount.id}>
+                                    {subaccount.name}
+                                </option>
+                            ))}
+                        </Select>
                     </Field>
                 ) : null}
 
