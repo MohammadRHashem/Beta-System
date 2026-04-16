@@ -252,6 +252,7 @@ const PositionCounterCard = ({
     const formattedLastUpdated = lastUpdatedAt ? format(new Date(lastUpdatedAt), 'HH:mm:ss') : 'Never';
     const helperText = `Until ${displayDate || 'today'}.`;
     const isCrossCounter = counter.account_type === 'cross';
+    const isXpayzCounter = counter.account_type === 'xpayz';
 
     return (
         <Card>
@@ -307,6 +308,30 @@ const PositionCounterCard = ({
                         <MetricValue>{loading && !value ? '...' : formatMoney(value?.balance || 0)}</MetricValue>
                         <MetricMeta>
                             {helperText}
+                        </MetricMeta>
+                    </MetricCard>
+                    <MetricCard>
+                        <MetricLabel>{loading ? 'Refreshing...' : 'Chave Pix'}</MetricLabel>
+                        <MetricValue>{loading && !value ? '...' : formatMoney(value?.chavePixSaldoTotal || 0)}</MetricValue>
+                        <MetricMeta>
+                            {Number(value?.chavePixIncludedCount || 0)} CHAVES. {helperText}
+                        </MetricMeta>
+                    </MetricCard>
+                </MetricGrid>
+            ) : isXpayzCounter ? (
+                <MetricGrid>
+                    <MetricCard>
+                        <MetricLabel>{loading ? 'Refreshing...' : 'Geral'}</MetricLabel>
+                        <MetricValue>{loading && !value ? '...' : formatMoney(value?.geral || 0)}</MetricValue>
+                        <MetricMeta>
+                            {helperText} Excluding invoices linked to selected XPayz subaccounts.
+                        </MetricMeta>
+                    </MetricCard>
+                    <MetricCard>
+                        <MetricLabel>{loading ? 'Refreshing...' : 'Geral + Chaves'}</MetricLabel>
+                        <MetricValue>{loading && !value ? '...' : formatMoney(value?.geralMaisChaves || 0)}</MetricValue>
+                        <MetricMeta>
+                            {helperText} Including transaction-source XPayz balances.
                         </MetricMeta>
                     </MetricCard>
                     <MetricCard>

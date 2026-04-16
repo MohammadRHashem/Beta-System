@@ -57,17 +57,17 @@ const getInvoiceCounterRow = async (counterId) => {
     return counter || null;
 };
 
-const getCrossTransactionContribution = async (counter) => {
-    if (counter.account_type !== 'cross') {
-        return { chavePixSaldoTotal: 0, chavePixIncludedCount: 0 };
+const getTransactionContribution = async (counter) => {
+    if (counter.account_type !== 'cross' && counter.account_type !== 'xpayz') {
+        return { transactionSaldoTotal: 0, includedCount: 0 };
     }
 
     const excludedIds = normalizeIdList(counter.excluded_cross_transaction_subaccount_ids);
     const clauses = [
-        "account_type = 'cross'",
+        'account_type = ?',
         "portal_source_type = 'transactions'"
     ];
-    const params = [];
+    const params = [counter.account_type];
 
     if (excludedIds.length) {
         clauses.push(`id NOT IN (${excludedIds.map(() => '?').join(', ')})`);
@@ -86,7 +86,7 @@ const getCrossTransactionContribution = async (counter) => {
     );
 
     if (!subaccounts.length) {
-        return { chavePixSaldoTotal: 0, chavePixIncludedCount: 0 };
+        return { transactionSaldoTotal: 0, includedCount: 0 };
     }
 
     const summaries = await Promise.all(
@@ -98,17 +98,21 @@ const getCrossTransactionContribution = async (counter) => {
     );
 
     return {
-        chavePixSaldoTotal: summaries.reduce((sum, summary) => sum + parseMoney(summary?.allTimeBalance), 0),
-        chavePixIncludedCount: subaccounts.length
+        transactionSaldoTotal: summaries.reduce((sum, summary) => sum + parseMoney(summary?.allTimeBalance), 0),
+        includedCount: subaccounts.length
     };
 };
 
 const buildInvoiceCounterValue = async (counter, dateTo = '') => {
     const effectiveDateTo = dateTo || getTodayDateValue();
+    const excludedIds = normalizeIdList(counter.excluded_cross_transaction_subaccount_ids);
     const filters = {
         statementScope: 'all',
         dateTo: effectiveDateTo
     };
+    if (counter.account_type === 'xpayz' && excludedIds.length) {
+        filters.excludeLinkedSubaccountIds = excludedIds;
+    }
     const portalSubaccount = {
         ...counter,
         id: counter.subaccount_id,
@@ -125,17 +129,42 @@ const buildInvoiceCounterValue = async (counter, dateTo = '') => {
     const totalBalance = parseMoney(summary.allTimeBalance);
     const totalStatementBalance = parseMoney(summary.statementAllTimeBalance);
     const totalManualBalance = totalBalance - totalStatementBalance;
-    const crossContribution = await getCrossTransactionContribution(counter);
+    const transactionContribution = await getTransactionContribution(counter);
     const invoiceUntilDate = filteredBalance;
-    const chavePixSaldoTotal = parseMoney(crossContribution.chavePixSaldoTotal);
+    const transactionSaldoTotal = parseMoney(transactionContribution.transactionSaldoTotal);
+    const includedCount = Number(transactionContribution.includedCount || 0);
+
+    if (counter.account_type === 'xpayz') {
+        return {
+            balance: invoiceUntilDate + transactionSaldoTotal,
+            dateTo: effectiveDateTo,
+            filteredBalance: invoiceUntilDate,
+            geral: invoiceUntilDate,
+            geralMaisChaves: invoiceUntilDate + transactionSaldoTotal,
+            chavePixSaldoTotal: transactionSaldoTotal,
+            chavePixIncludedCount: includedCount,
+            allTimeBalance: totalBalance,
+            statementBalance: parseMoney(summary.statementBalance),
+            manualBalance: parseMoney(summary.manualBalance),
+            statementAllTimeBalance: totalStatementBalance,
+            manualAllTimeBalance: totalManualBalance,
+            totalIn: parseMoney(summary.totalIn),
+            totalOut: parseMoney(summary.totalOut),
+            countIn: Number(summary.countIn || 0),
+            countOut: Number(summary.countOut || 0),
+            statementScope: summary.statementScope || 'all',
+            sourceType: summary.sourceType || 'invoices',
+            supportsStartingEntry: Boolean(summary.supportsStartingEntry)
+        };
+    }
 
     return {
-        balance: invoiceUntilDate + chavePixSaldoTotal,
+        balance: invoiceUntilDate + transactionSaldoTotal,
         dateTo: effectiveDateTo,
         filteredBalance: invoiceUntilDate,
         invoiceUntilDate,
-        chavePixSaldoTotal,
-        chavePixIncludedCount: crossContribution.chavePixIncludedCount,
+        chavePixSaldoTotal: transactionSaldoTotal,
+        chavePixIncludedCount: includedCount,
         allTimeBalance: totalBalance,
         statementBalance: parseMoney(summary.statementBalance),
         manualBalance: parseMoney(summary.manualBalance),
@@ -184,8 +213,8 @@ exports.createInvoiceCounter = async (req, res) => {
         if (!subaccount) {
             return res.status(400).json({ message: 'Selected subaccount must use portal source "invoices".' });
         }
-        if (subaccount.account_type !== 'cross' && excludedCrossTransactionSubaccountIds.length) {
-            return res.status(400).json({ message: 'Cross transaction exclusions can only be used on Cross invoice counters.' });
+        if (subaccount.account_type !== 'cross' && subaccount.account_type !== 'xpayz' && excludedCrossTransactionSubaccountIds.length) {
+            return res.status(400).json({ message: 'Transaction-subaccount exclusions can only be used on Cross or XPayz invoice counters.' });
         }
 
         const [result] = await pool.query(
@@ -227,8 +256,8 @@ exports.updateInvoiceCounter = async (req, res) => {
         if (!subaccount) {
             return res.status(400).json({ message: 'Selected subaccount must use portal source "invoices".' });
         }
-        if (subaccount.account_type !== 'cross' && excludedCrossTransactionSubaccountIds.length) {
-            return res.status(400).json({ message: 'Cross transaction exclusions can only be used on Cross invoice counters.' });
+        if (subaccount.account_type !== 'cross' && subaccount.account_type !== 'xpayz' && excludedCrossTransactionSubaccountIds.length) {
+            return res.status(400).json({ message: 'Transaction-subaccount exclusions can only be used on Cross or XPayz invoice counters.' });
         }
 
         await pool.query(

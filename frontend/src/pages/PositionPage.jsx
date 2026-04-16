@@ -149,6 +149,7 @@ const PositionPage = () => {
     const [counters, setCounters] = useState([]);
     const [invoiceSubaccounts, setInvoiceSubaccounts] = useState([]);
     const [crossTransactionSubaccounts, setCrossTransactionSubaccounts] = useState([]);
+    const [xpayzTransactionSubaccounts, setXpayzTransactionSubaccounts] = useState([]);
     const [counterValues, setCounterValues] = useState({});
     const [counterErrors, setCounterErrors] = useState({});
     const [loadingIds, setLoadingIds] = useState({});
@@ -233,12 +234,17 @@ const PositionPage = () => {
             const crossTransactions = rows
                 .filter((subaccount) => subaccount.portal_source_type === 'transactions' && subaccount.account_type === 'cross')
                 .sort((left, right) => String(left.name || '').localeCompare(String(right.name || '')));
+            const xpayzTransactions = rows
+                .filter((subaccount) => subaccount.portal_source_type === 'transactions' && subaccount.account_type === 'xpayz')
+                .sort((left, right) => String(left.name || '').localeCompare(String(right.name || '')));
             setInvoiceSubaccounts(filtered);
             setCrossTransactionSubaccounts(crossTransactions);
+            setXpayzTransactionSubaccounts(xpayzTransactions);
         } catch (error) {
             console.error('Failed to fetch invoice portal subaccounts', error);
             setInvoiceSubaccounts([]);
             setCrossTransactionSubaccounts([]);
+            setXpayzTransactionSubaccounts([]);
         }
     }, []);
 
@@ -391,6 +397,7 @@ const PositionPage = () => {
                 editingCounter={editingCounter}
                 invoiceSubaccounts={invoiceSubaccounts}
                 crossTransactionSubaccounts={crossTransactionSubaccounts}
+                xpayzTransactionSubaccounts={xpayzTransactionSubaccounts}
             />
         </>
     );

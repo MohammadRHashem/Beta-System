@@ -179,6 +179,24 @@ const addInvoiceStatementFilters = ({ filters, params, clauses }) => {
     addConfirmationFilter(filters, 'i.is_portal_confirmed', clauses);
     addInvoiceBadgeFilter(filters, 'statement', clauses);
 
+    const excludedLinkedSubaccountIds = Array.isArray(filters.excludeLinkedSubaccountIds)
+        ? filters.excludeLinkedSubaccountIds
+            .map((entry) => Number.parseInt(entry, 10))
+            .filter((entry) => Number.isInteger(entry) && entry > 0)
+        : [];
+    if (excludedLinkedSubaccountIds.length) {
+        clauses.push(`
+            NOT EXISTS (
+                SELECT 1
+                FROM subaccounts excluded_sub
+                WHERE excluded_sub.id IN (${excludedLinkedSubaccountIds.map(() => '?').join(', ')})
+                  AND excluded_sub.assigned_group_jid IS NOT NULL
+                  AND excluded_sub.assigned_group_jid = i.source_group_jid
+            )
+        `);
+        params.push(...excludedLinkedSubaccountIds);
+    }
+
     if (filters.direction === 'out') {
         clauses.push('1 = 0');
     }

@@ -115,7 +115,15 @@ const parseIdList = (value) => {
     return raw.map((entry) => Number.parseInt(entry, 10)).filter((entry) => Number.isInteger(entry) && entry > 0);
 };
 
-const PositionCounterModal = ({ isOpen, onClose, onSave, editingCounter, invoiceSubaccounts, crossTransactionSubaccounts }) => {
+const PositionCounterModal = ({
+    isOpen,
+    onClose,
+    onSave,
+    editingCounter,
+    invoiceSubaccounts,
+    crossTransactionSubaccounts,
+    xpayzTransactionSubaccounts
+}) => {
     const isEditMode = Boolean(editingCounter);
     const [name, setName] = useState('');
     const [subaccountId, setSubaccountId] = useState('');
@@ -134,6 +142,13 @@ const PositionCounterModal = ({ isOpen, onClose, onSave, editingCounter, invoice
         () => (invoiceSubaccounts || []).find((subaccount) => String(subaccount.id) === String(subaccountId)) || null,
         [invoiceSubaccounts, subaccountId]
     );
+    const transactionOptions = selectedSubaccount?.account_type === 'cross'
+        ? (crossTransactionSubaccounts || [])
+        : selectedSubaccount?.account_type === 'xpayz'
+            ? (xpayzTransactionSubaccounts || [])
+            : [];
+    const isCrossCounter = selectedSubaccount?.account_type === 'cross';
+    const isXpayzCounter = selectedSubaccount?.account_type === 'xpayz';
 
     const handleSubmit = (event) => {
         event.preventDefault();
@@ -198,17 +213,30 @@ const PositionCounterModal = ({ isOpen, onClose, onSave, editingCounter, invoice
                     <EmptyBox>No invoice-based portal subaccounts are available yet.</EmptyBox>
                 ) : null}
 
-                {selectedSubaccount?.account_type === 'cross' ? (
+                {isCrossCounter || isXpayzCounter ? (
                     <Field>
-                        <Label>Exclude Cross Transaction Subaccounts</Label>
+                        <Label>
+                            {isCrossCounter ? 'Exclude Cross Transaction Subaccounts' : 'Exclude XPayz Transaction Subaccounts'}
+                        </Label>
                         <Hint>
-                            This selector affects both the main <strong>Saldo Until Date</strong> and the secondary
-                            <strong> Chave Pix Saldo Total</strong>. The counter adds transaction-source Cross
-                            subaccount balances except the ones you exclude here.
+                            {isCrossCounter ? (
+                                <>
+                                    This selector affects both the main <strong>Saldo Until Date + Chaves</strong> and the secondary
+                                    <strong> Chave Pix Saldo Total</strong>. The counter adds transaction-source Cross
+                                    subaccount balances except the ones you exclude here.
+                                </>
+                            ) : (
+                                <>
+                                    This selector affects <strong>Geral</strong>, <strong>Geral + Chaves</strong>, and
+                                    <strong> Chave Pix</strong>. Geral excludes invoices sent to groups linked to the
+                                    selected excluded XPayz subaccounts, and the transaction-source XPayz totals also
+                                    exclude the same selections.
+                                </>
+                            )}
                         </Hint>
-                        {(crossTransactionSubaccounts || []).length ? (
+                        {transactionOptions.length ? (
                             <Checklist>
-                                {crossTransactionSubaccounts.map((subaccount) => {
+                                {transactionOptions.map((subaccount) => {
                                     const checked = excludedCrossTransactionSubaccountIds.includes(Number(subaccount.id));
                                     return (
                                         <CheckLabel key={subaccount.id}>
@@ -230,7 +258,9 @@ const PositionCounterModal = ({ isOpen, onClose, onSave, editingCounter, invoice
                                 })}
                             </Checklist>
                         ) : (
-                            <EmptyBox>No Cross transaction-source subaccounts are available.</EmptyBox>
+                            <EmptyBox>
+                                {isCrossCounter ? 'No Cross transaction-source subaccounts are available.' : 'No XPayz transaction-source subaccounts are available.'}
+                            </EmptyBox>
                         )}
                     </Field>
                 ) : null}
