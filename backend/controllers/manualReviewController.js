@@ -111,7 +111,7 @@ exports.confirmInvoice = async (req, res) => {
 
         await connection.commit();
         whatsappService.sendManualConfirmation(messageId);
-        invalidateInvoiceReadCaches();
+        invalidateInvoiceReadCaches({ recipientNames: false });
         
         if (io) {
             io.emit('manual:refresh');
@@ -140,7 +140,7 @@ exports.rejectInvoice = async (req, res) => {
         await pool.query('UPDATE forwarded_invoices SET is_confirmed = 2 WHERE original_message_id = ?', [messageId]);
         await pool.query('UPDATE invoices SET is_deleted = 1 WHERE message_id = ?', [messageId]);
         whatsappService.sendManualRejection(messageId);
-        invalidateInvoiceReadCaches();
+        invalidateInvoiceReadCaches({ recipientNames: false });
         if (io) {
             io.emit('manual:refresh');
             io.emit('invoices:updated');

@@ -1698,7 +1698,7 @@ const invoiceWorker = new Worker(
       for (const tempPath of tempFilePaths) {
         if (fsSync.existsSync(tempPath)) await fs.unlink(tempPath);
       }
-      invalidateInvoiceReadCaches();
+      invalidateInvoiceReadCaches({ recipientNames: false });
       if (io) io.emit("invoices:updated");
     }
   },

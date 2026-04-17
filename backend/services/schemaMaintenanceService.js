@@ -215,6 +215,8 @@ const ensureRuntimeSchema = async () => {
     `);
 
     await ensureIndex('invoices', 'idx_invoices_deleted_received', '(is_deleted, received_at, id)');
+    await ensureIndex('invoices', 'idx_invoices_deleted_id', '(is_deleted, id)');
+    await ensureIndex('invoices', 'idx_invoices_recipient_name_only', '(recipient_name)');
     await ensureIndex('invoices', 'idx_invoices_recipient_deleted_received', '(recipient_name, is_deleted, received_at, id)');
     await ensureIndex('invoices', 'idx_invoices_group_deleted_received', '(source_group_jid, is_deleted, received_at, id)');
     await ensureIndex('invoices', 'idx_invoices_transaction_amount_decimal', '(transaction_id, amount_decimal)');

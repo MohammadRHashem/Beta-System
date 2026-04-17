@@ -35,12 +35,36 @@ const clearCacheByPrefix = (cache, prefix) => {
 const subaccountCache = createCache();
 const portalAllTimeBalanceCache = createCache();
 const invoiceRecipientNamesCache = createCache();
+const invoiceQueryCache = createCache();
 const invoiceStartingEntryCache = createCache();
+const invoiceRecipientNamesPending = new Map();
+const invoiceQueryPending = new Map();
 
 const SUBACCOUNT_TTL_MS = 30 * 1000;
 const PORTAL_ALL_TIME_BALANCE_TTL_MS = 10 * 1000;
 const INVOICE_RECIPIENT_NAMES_TTL_MS = 60 * 1000;
+const INVOICE_QUERY_TTL_MS = 5 * 1000;
 const INVOICE_STARTING_ENTRY_TTL_MS = 5 * 1000;
+
+const loadCachedValue = async (cache, pending, key, ttlMs, loader) => {
+    const cached = readCache(cache, key);
+    if (cached !== null) return cached;
+
+    const existingPromise = pending.get(key);
+    if (existingPromise) return existingPromise;
+
+    const loadPromise = (async () => {
+        try {
+            const fresh = await loader();
+            return writeCache(cache, key, fresh, ttlMs);
+        } finally {
+            pending.delete(key);
+        }
+    })();
+
+    pending.set(key, loadPromise);
+    return loadPromise;
+};
 
 const getCachedSubaccount = async (keyParts, loader) => {
     const key = buildCacheKey(keyParts);
@@ -63,10 +87,24 @@ const getCachedPortalAllTimeBalance = async (keyParts, loader) => {
 
 const getCachedInvoiceRecipientNames = async (loader) => {
     const key = 'invoice-recipient-names';
-    const cached = readCache(invoiceRecipientNamesCache, key);
-    if (cached) return cached;
-    const fresh = await loader();
-    return writeCache(invoiceRecipientNamesCache, key, fresh, INVOICE_RECIPIENT_NAMES_TTL_MS);
+    return loadCachedValue(
+        invoiceRecipientNamesCache,
+        invoiceRecipientNamesPending,
+        key,
+        INVOICE_RECIPIENT_NAMES_TTL_MS,
+        loader
+    );
+};
+
+const getCachedInvoiceQuery = async (keyParts, loader) => {
+    const key = buildCacheKey(keyParts);
+    return loadCachedValue(
+        invoiceQueryCache,
+        invoiceQueryPending,
+        key,
+        INVOICE_QUERY_TTL_MS,
+        loader
+    );
 };
 
 const getCachedInvoiceStartingEntry = async (subaccountId, statementScope, loader) => {
@@ -83,10 +121,18 @@ const invalidatePortalReadCaches = () => {
     clearCache(invoiceStartingEntryCache);
 };
 
-const invalidateInvoiceReadCaches = () => {
-    clearCache(invoiceRecipientNamesCache);
+const invalidateInvoiceReadCaches = (options = {}) => {
+    const { recipientNames = true } = options;
+    clearCache(invoiceQueryCache);
     clearCache(portalAllTimeBalanceCache);
     clearCache(invoiceStartingEntryCache);
+    if (recipientNames) {
+        clearCache(invoiceRecipientNamesCache);
+    }
+};
+
+const invalidateInvoiceRecipientNamesCache = () => {
+    clearCache(invoiceRecipientNamesCache);
 };
 
 const invalidateSubaccountCache = (subaccountId) => {
@@ -97,8 +143,10 @@ module.exports = {
     getCachedSubaccount,
     getCachedPortalAllTimeBalance,
     getCachedInvoiceRecipientNames,
+    getCachedInvoiceQuery,
     getCachedInvoiceStartingEntry,
     invalidatePortalReadCaches,
     invalidateInvoiceReadCaches,
+    invalidateInvoiceRecipientNamesCache,
     invalidateSubaccountCache
 };

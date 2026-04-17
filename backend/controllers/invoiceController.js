@@ -12,6 +12,7 @@ const {
 } = require('../utils/invoiceQueryUtils');
 const {
     getCachedInvoiceRecipientNames,
+    getCachedInvoiceQuery,
     invalidateInvoiceReadCaches
 } = require('../services/readCacheService');
 
@@ -38,6 +39,30 @@ const parseArrayFilter = (value) => {
     }
     return [];
 };
+
+const buildInvoiceWhereClause = (filters) => {
+    const queryParts = ['WHERE 1=1'];
+    const params = [];
+    applyInvoiceFilters({ queryParts, params, filters });
+    return {
+        whereSql: queryParts.join(' '),
+        params
+    };
+};
+
+const buildInvoiceListCacheKey = ({ sortOrder, filters, pagination }) => JSON.stringify({
+    sortOrder,
+    filters: {
+        ...filters,
+        sourceGroups: parseArrayFilter(filters.sourceGroups),
+        recipientNames: parseArrayFilter(filters.recipientNames)
+    },
+    pagination: {
+        isAll: pagination.isAll,
+        limit: pagination.limitValue,
+        offset: pagination.offset
+    }
+});
 
 const applyInvoiceFilters = ({ queryParts, params, filters }) => {
     const {
@@ -237,60 +262,103 @@ exports.getAllInvoices = async (req, res) => {
         sourceGroups, recipientNames, reviewStatus, status, amountExact,
     } = req.query;
     const pagination = parsePagination(req.query, { defaultLimit: 50 });
-
-    const queryParts = [
-        'FROM invoices i',
-        'LEFT JOIN whatsapp_groups wg ON i.source_group_jid = wg.group_jid',
-        'WHERE 1=1'
-    ];
-    const params = [];
-    applyInvoiceFilters({
-        queryParts,
-        params,
-        filters: { search, dateFrom, dateTo, timeFrom, timeTo, sourceGroups, recipientNames, reviewStatus, status, amountExact }
+    const filters = { search, dateFrom, dateTo, timeFrom, timeTo, sourceGroups, recipientNames, reviewStatus, status, amountExact };
+    const { whereSql, params } = buildInvoiceWhereClause(filters);
+    const direction = sortOrder === 'asc' ? 'ASC' : 'DESC';
+    const cacheKey = buildInvoiceListCacheKey({
+        sortOrder: direction,
+        filters,
+        pagination
     });
 
-    const orderByClause = `i.received_at ${sortOrder === 'asc' ? 'ASC' : 'DESC'}`;
-    const query = queryParts.join(' ');
-
     try {
-        const countQuery = `SELECT count(*) as total ${query}`;
-        const [[{ total }]] = await pool.query(countQuery, params);
+        const payload = await getCachedInvoiceQuery(['invoice-list', cacheKey], async () => {
+            const countQuery = `SELECT COUNT(*) AS total FROM invoices i ${whereSql}`;
+            const [[{ total }]] = await pool.query(countQuery, params);
 
-        const dataQuery = `
-            SELECT 
-                i.id,
-                i.message_id,
-                i.received_at,
-                i.transaction_id,
-                i.sender_name,
-                i.recipient_name,
-                i.pix_key,
-                i.amount,
-                i.notes,
-                i.source_group_jid,
-                i.media_path,
-                i.is_deleted,
-                i.is_manual,
-                i.linked_transaction_id,
-                i.linked_transaction_source,
-                wg.group_name as source_group_name
-            ${query}
-            ORDER BY ${orderByClause}, i.id ${sortOrder === 'asc' ? 'ASC' : 'DESC'}
-        `;
-        const finalParams = [...params];
-        let finalDataQuery = dataQuery;
-        if (!pagination.isAll) {
-            finalDataQuery += ' LIMIT ? OFFSET ?';
-            finalParams.push(pagination.limitValue, pagination.offset);
-        }
+            let invoices = [];
+            if (pagination.isAll) {
+                const [rows] = await pool.query(
+                    `
+                        SELECT 
+                            i.id,
+                            i.message_id,
+                            i.received_at,
+                            i.transaction_id,
+                            i.sender_name,
+                            i.recipient_name,
+                            i.pix_key,
+                            i.amount,
+                            i.notes,
+                            i.source_group_jid,
+                            i.media_path,
+                            i.is_deleted,
+                            i.is_manual,
+                            i.linked_transaction_id,
+                            i.linked_transaction_source,
+                            wg.group_name AS source_group_name
+                        FROM invoices i
+                        LEFT JOIN whatsapp_groups wg ON i.source_group_jid = wg.group_jid
+                        ${whereSql}
+                        ORDER BY i.received_at ${direction}, i.id ${direction}
+                    `,
+                    params
+                );
+                invoices = rows;
+            } else {
+                const [pageIds] = await pool.query(
+                    `
+                        SELECT i.id, i.received_at
+                        FROM invoices i
+                        ${whereSql}
+                        ORDER BY i.received_at ${direction}, i.id ${direction}
+                        LIMIT ? OFFSET ?
+                    `,
+                    [...params, pagination.limitValue, pagination.offset]
+                );
 
-        const [invoices] = await pool.query(finalDataQuery, finalParams);
-        
-        res.json({
-            invoices,
-            ...buildPaginationMeta(total, pagination)
+                if (pageIds.length > 0) {
+                    const invoiceIds = pageIds.map((row) => row.id);
+                    const [rows] = await pool.query(
+                        `
+                            SELECT 
+                                i.id,
+                                i.message_id,
+                                i.received_at,
+                                i.transaction_id,
+                                i.sender_name,
+                                i.recipient_name,
+                                i.pix_key,
+                                i.amount,
+                                i.notes,
+                                i.source_group_jid,
+                                i.media_path,
+                                i.is_deleted,
+                                i.is_manual,
+                                i.linked_transaction_id,
+                                i.linked_transaction_source,
+                                wg.group_name AS source_group_name
+                            FROM invoices i
+                            LEFT JOIN whatsapp_groups wg ON i.source_group_jid = wg.group_jid
+                            WHERE i.id IN (?)
+                        `,
+                        [invoiceIds]
+                    );
+
+                    const rowMap = new Map(rows.map((row) => [row.id, row]));
+                    invoices = pageIds
+                        .map((pageRow) => rowMap.get(pageRow.id))
+                        .filter(Boolean);
+                }
+            }
+
+            return {
+                invoices,
+                ...buildPaginationMeta(total, pagination)
+            };
         });
+
+        res.json(payload);
     } catch (error) {
         console.error('[ERROR] Failed to fetch invoices:', error);
         res.status(500).json({ message: 'Failed to fetch invoices.' });
