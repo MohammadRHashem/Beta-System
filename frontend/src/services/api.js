@@ -2,6 +2,7 @@ import axios from 'axios';
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL || '/api').trim();
 const PORTAL_API_BASE = (import.meta.env.VITE_PORTAL_API_BASE_URL || `${API_BASE}/portal`).trim();
+const DEBUG_API = import.meta.env.VITE_DEBUG_API === 'true';
 
 const apiClient = axios.create({ baseURL: API_BASE });
 const portalApiClient = axios.create({ baseURL: PORTAL_API_BASE });
@@ -35,12 +36,14 @@ portalApiClient.interceptors.request.use(config => {
     if (token) {
         config.headers.Authorization = `Bearer ${token}`;
     }
-    console.log('[PORTAL API REQUEST]', {
-        method: config.method.toUpperCase(),
-        url: config.baseURL + config.url,
-        data: config.data,
-        params: config.params,
-    });
+    if (DEBUG_API) {
+        console.log('[PORTAL API REQUEST]', {
+            method: config.method.toUpperCase(),
+            url: config.baseURL + config.url,
+            data: config.data,
+            params: config.params,
+        });
+    }
     return config;
 }, error => Promise.reject(error));
 
@@ -48,14 +51,18 @@ portalApiClient.interceptors.request.use(config => {
 portalApiClient.interceptors.response.use(
     response => response,
     error => {
-        console.error('[PORTAL API ERROR]', {
-            message: error.message,
-            url: error.config.url,
-            status: error.response?.status,
-            responseData: error.response?.data,
-        });
+        if (DEBUG_API) {
+            console.error('[PORTAL API ERROR]', {
+                message: error.message,
+                url: error.config?.url,
+                status: error.response?.status,
+                responseData: error.response?.data,
+            });
+        }
         if (error.response?.status === 401 && !window.location.pathname.includes('/portal/login')) {
-            console.warn('[PORTAL API] Received 401 Unauthorized. Forcing logout and redirecting to login.');
+            if (DEBUG_API) {
+                console.warn('[PORTAL API] Received 401 Unauthorized. Forcing logout and redirecting to login.');
+            }
             localStorage.removeItem('portalAuthToken');
             localStorage.removeItem('portalClient');
             sessionStorage.removeItem('portalAuthToken');

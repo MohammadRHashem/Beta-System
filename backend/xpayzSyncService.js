@@ -3,6 +3,7 @@ const cron = require('node-cron');
 const path = require('path');
 const { execa } = require('execa');
 const pool = require('./config/db');
+const { invalidatePortalReadCaches } = require('./services/readCacheService');
 
 let isSyncing = false;
 
@@ -33,6 +34,17 @@ const syncSingleSubaccount = async (subaccountId, historical = false) => {
         subprocess.stderr.pipe(process.stderr);
 
         await subprocess;
+        await pool.query(
+            `
+                UPDATE xpayz_transactions xt
+                JOIN subaccounts s ON s.subaccount_number = CAST(xt.subaccount_id AS CHAR)
+                SET xt.display_subaccount_id = s.id
+                WHERE xt.subaccount_id = ?
+                  AND (xt.display_subaccount_id IS NULL OR xt.display_subaccount_id <> s.id)
+            `,
+            [subaccountId]
+        );
+        invalidatePortalReadCaches();
 
     } catch (error) {
         console.error(`[XPAYZ-SYNC-CRITICAL] Execution failed for subaccount ${subaccountId}.`);

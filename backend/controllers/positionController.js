@@ -154,7 +154,7 @@ const getXpayzOutsContribution = async (counter, dateTo = '') => {
     }
 
     const clauses = [
-        'COALESCE(xt.display_subaccount_id, owner_sub.id) = ?',
+        'xt.display_subaccount_id = ?',
         "xt.operation_direct = 'out'",
         "COALESCE(xt.sync_control_state, 'normal') <> 'hidden'"
     ];
@@ -174,7 +174,6 @@ const getXpayzOutsContribution = async (counter, dateTo = '') => {
         `
             SELECT COALESCE(SUM(xt.amount), 0) AS total_outs
             FROM xpayz_transactions xt
-            LEFT JOIN subaccounts owner_sub ON owner_sub.subaccount_number = CAST(xt.subaccount_id AS CHAR)
             WHERE ${clauses.join(' AND ')}
         `,
         params
@@ -695,7 +694,7 @@ exports.calculateLocalPosition = async (req, res) => {
 
                 const positionQuery = `
                     SELECT 
-                        SUM(CAST(REPLACE(i.amount, ',', '') AS DECIMAL(20, 2))) AS netPosition,
+                        SUM(i.amount_decimal) AS netPosition,
                         COUNT(i.id) AS transactionCount
                     FROM invoices i
                     INNER JOIN (
@@ -844,7 +843,7 @@ exports.calculateLocalPosition = async (req, res) => {
         // while also including all invoices that do NOT have a transaction_id.
         const positionQuery = `
             SELECT 
-                SUM(CAST(REPLACE(i.amount, ',', '') AS DECIMAL(20, 2))) AS netPosition,
+                SUM(i.amount_decimal) AS netPosition,
                 COUNT(i.id) AS transactionCount
             FROM invoices i
             INNER JOIN (

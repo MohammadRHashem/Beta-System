@@ -1,30 +1,17 @@
 const pool = require('../config/db');
 const { parsePagination, buildPaginationMeta } = require('../utils/pagination');
 const transactionService = require('./subaccountTransactionService');
+const {
+    getCachedPortalAllTimeBalance,
+    getCachedInvoiceStartingEntry,
+    invalidatePortalReadCaches
+} = require('./readCacheService');
 
 const STATEMENT_SCOPE = {
     GERAL: 'geral',
     CHAVE_PIX: 'chave_pix',
     ALL: 'all'
 };
-
-const NORMALIZED_INVOICE_AMOUNT_SQL = `
-    CAST(
-        CASE
-            WHEN REPLACE(i.amount, ' ', '') REGEXP '^[0-9]{1,3}(,[0-9]{3})+\\.[0-9]+$'
-                THEN REPLACE(REPLACE(i.amount, ' ', ''), ',', '')
-            WHEN REPLACE(i.amount, ' ', '') REGEXP '^[0-9]{1,3}(\\.[0-9]{3})+,[0-9]+$'
-                THEN REPLACE(REPLACE(REPLACE(i.amount, ' ', ''), '.', ''), ',', '.')
-            WHEN REPLACE(i.amount, ' ', '') REGEXP '^[0-9]{1,3}(,[0-9]{3})+$'
-                THEN REPLACE(REPLACE(i.amount, ' ', ''), ',', '')
-            WHEN REPLACE(i.amount, ' ', '') REGEXP '^[0-9]{1,3}(\\.[0-9]{3})+$'
-                THEN REPLACE(REPLACE(i.amount, ' ', ''), '.', '')
-            WHEN REPLACE(i.amount, ' ', '') REGEXP '^[0-9]+,[0-9]+$'
-                THEN REPLACE(REPLACE(i.amount, ' ', ''), ',', '.')
-            ELSE REPLACE(i.amount, ' ', '')
-        END AS DECIMAL(20, 2)
-    )
-`;
 
 const isValidDate = (value) => /^\d{4}-\d{2}-\d{2}$/.test(value || '');
 
@@ -108,29 +95,31 @@ const getInvoiceRecipientPattern = (subaccount) => {
 };
 
 const getStartingEntry = async (subaccountId, statementScope) => {
-    const query = statementScope === STATEMENT_SCOPE.ALL
-        ? `
-            SELECT id, transaction_date, direction, amount, starting_scope
-            FROM subaccount_invoice_manual_entries
-            WHERE subaccount_id = ?
-              AND is_starting_entry = 1
-            ORDER BY transaction_date DESC, id DESC
-            LIMIT 1
-        `
-        : `
-            SELECT id, transaction_date, direction, amount, starting_scope
-            FROM subaccount_invoice_manual_entries
-            WHERE subaccount_id = ?
-              AND starting_scope = ?
-              AND is_starting_entry = 1
-            ORDER BY transaction_date DESC, id DESC
-            LIMIT 1
-        `;
-    const params = statementScope === STATEMENT_SCOPE.ALL
-        ? [subaccountId]
-        : [subaccountId, statementScope];
-    const [[entry]] = await pool.query(query, params);
-    return entry || null;
+    return getCachedInvoiceStartingEntry(subaccountId, statementScope, async () => {
+        const query = statementScope === STATEMENT_SCOPE.ALL
+            ? `
+                SELECT id, transaction_date, direction, amount, starting_scope
+                FROM subaccount_invoice_manual_entries
+                WHERE subaccount_id = ?
+                  AND is_starting_entry = 1
+                ORDER BY transaction_date DESC, id DESC
+                LIMIT 1
+            `
+            : `
+                SELECT id, transaction_date, direction, amount, starting_scope
+                FROM subaccount_invoice_manual_entries
+                WHERE subaccount_id = ?
+                  AND starting_scope = ?
+                  AND is_starting_entry = 1
+                ORDER BY transaction_date DESC, id DESC
+                LIMIT 1
+            `;
+        const params = statementScope === STATEMENT_SCOPE.ALL
+            ? [subaccountId]
+            : [subaccountId, statementScope];
+        const [[entry]] = await pool.query(query, params);
+        return entry || null;
+    });
 };
 
 const addAnchorDateFilter = (anchorEntry, fieldName, params, clauses) => {
@@ -171,7 +160,7 @@ const addInvoiceStatementFilters = ({ filters, params, clauses }) => {
 
     const amountExact = parseExactAmount(filters.amountExact);
     if (amountExact != null) {
-        clauses.push(`${NORMALIZED_INVOICE_AMOUNT_SQL} = ?`);
+        clauses.push('i.amount_decimal = ?');
         params.push(amountExact);
     }
 
@@ -285,7 +274,7 @@ const listInvoiceStatementTransactions = async ({ subaccount, filters = {}, pagi
                 'statement' AS pool,
                 ? AS statement_scope,
                 i.received_at AS transaction_date,
-                ${NORMALIZED_INVOICE_AMOUNT_SQL} AS amount,
+                i.amount_decimal AS amount,
                 'in' AS operation_direct,
                 i.sender_name,
                 i.recipient_name AS counterparty_name,
@@ -377,44 +366,7 @@ const listInvoiceManualTransactions = async ({ subaccount, filters = {}, paginat
     };
 };
 
-const calculateInvoiceStatementBalance = async ({ subaccount, filters = {}, anchorEntry, statementScope }) => {
-    const base = getInvoiceStatementBase(subaccount);
-    const clauses = [...base.baseClauses];
-    const params = [...base.baseParams];
-
-    addInvoiceStatementScopeFilter({ subaccount, statementScope, params, clauses });
-    addAnchorDateFilter(anchorEntry, 'i.received_at', params, clauses);
-    addInvoiceStatementFilters({ filters, params, clauses });
-
-    const whereSql = buildWhereSql(clauses);
-    const [[row]] = await pool.query(
-        `SELECT COALESCE(SUM(${NORMALIZED_INVOICE_AMOUNT_SQL}), 0) AS balance ${base.fromSql} ${whereSql}`,
-        params
-    );
-    return Number(row?.balance || 0);
-};
-
-const calculateInvoiceManualBalance = async ({ subaccount, filters = {}, anchorEntry, statementScope }) => {
-    const clauses = ['sime.subaccount_id = ?'];
-    const params = [subaccount.id];
-
-    addInvoiceManualScopeFilter({ statementScope, clauses, params });
-    addAnchorDateFilter(anchorEntry, 'sime.transaction_date', params, clauses);
-    addInvoiceManualFilters({ filters, params, clauses });
-
-    const whereSql = buildWhereSql(clauses);
-    const [[row]] = await pool.query(
-        `
-            SELECT COALESCE(SUM(CASE WHEN sime.direction = 'in' THEN sime.amount ELSE -sime.amount END), 0) AS balance
-            FROM subaccount_invoice_manual_entries sime
-            ${whereSql}
-        `,
-        params
-    );
-    return Number(row?.balance || 0);
-};
-
-const calculateInvoiceStatementFlowSummary = async ({ subaccount, filters = {}, anchorEntry, statementScope }) => {
+const getInvoiceStatementAggregate = async ({ subaccount, filters = {}, anchorEntry, statementScope }) => {
     const base = getInvoiceStatementBase(subaccount);
     const clauses = [...base.baseClauses];
     const params = [...base.baseParams];
@@ -427,7 +379,8 @@ const calculateInvoiceStatementFlowSummary = async ({ subaccount, filters = {}, 
     const [[row]] = await pool.query(
         `
             SELECT
-                COALESCE(SUM(${NORMALIZED_INVOICE_AMOUNT_SQL}), 0) AS totalIn,
+                COALESCE(SUM(i.amount_decimal), 0) AS balance,
+                COALESCE(SUM(i.amount_decimal), 0) AS totalIn,
                 0 AS totalOut,
                 COUNT(*) AS countIn,
                 0 AS countOut
@@ -437,14 +390,20 @@ const calculateInvoiceStatementFlowSummary = async ({ subaccount, filters = {}, 
         params
     );
     return {
+        balance: Number(row?.balance || 0),
         totalIn: Number(row?.totalIn || 0),
-        totalOut: 0,
+        totalOut: Number(row?.totalOut || 0),
         countIn: Number(row?.countIn || 0),
-        countOut: 0
+        countOut: Number(row?.countOut || 0)
     };
 };
 
-const calculateInvoiceManualFlowSummary = async ({ subaccount, filters = {}, anchorEntry, statementScope }) => {
+const calculateInvoiceStatementBalance = async ({ subaccount, filters = {}, anchorEntry, statementScope }) => {
+    const aggregate = await getInvoiceStatementAggregate({ subaccount, filters, anchorEntry, statementScope });
+    return aggregate.balance;
+};
+
+const getInvoiceManualAggregate = async ({ subaccount, filters = {}, anchorEntry, statementScope }) => {
     const clauses = ['sime.subaccount_id = ?'];
     const params = [subaccount.id];
 
@@ -456,6 +415,7 @@ const calculateInvoiceManualFlowSummary = async ({ subaccount, filters = {}, anc
     const [[row]] = await pool.query(
         `
             SELECT
+                COALESCE(SUM(CASE WHEN sime.direction = 'in' THEN sime.amount ELSE -sime.amount END), 0) AS balance,
                 COALESCE(SUM(CASE WHEN sime.direction = 'in' THEN sime.amount ELSE 0 END), 0) AS totalIn,
                 COALESCE(SUM(CASE WHEN sime.direction = 'out' THEN sime.amount ELSE 0 END), 0) AS totalOut,
                 COUNT(CASE WHEN sime.direction = 'in' THEN 1 ELSE NULL END) AS countIn,
@@ -465,6 +425,32 @@ const calculateInvoiceManualFlowSummary = async ({ subaccount, filters = {}, anc
         `,
         params
     );
+    return {
+        balance: Number(row?.balance || 0),
+        totalIn: Number(row?.totalIn || 0),
+        totalOut: Number(row?.totalOut || 0),
+        countIn: Number(row?.countIn || 0),
+        countOut: Number(row?.countOut || 0)
+    };
+};
+
+const calculateInvoiceManualBalance = async ({ subaccount, filters = {}, anchorEntry, statementScope }) => {
+    const aggregate = await getInvoiceManualAggregate({ subaccount, filters, anchorEntry, statementScope });
+    return aggregate.balance;
+};
+
+const calculateInvoiceStatementFlowSummary = async ({ subaccount, filters = {}, anchorEntry, statementScope }) => {
+    const row = await getInvoiceStatementAggregate({ subaccount, filters, anchorEntry, statementScope });
+    return {
+        totalIn: Number(row?.totalIn || 0),
+        totalOut: 0,
+        countIn: Number(row?.countIn || 0),
+        countOut: 0
+    };
+};
+
+const calculateInvoiceManualFlowSummary = async ({ subaccount, filters = {}, anchorEntry, statementScope }) => {
+    const row = await getInvoiceManualAggregate({ subaccount, filters, anchorEntry, statementScope });
     return {
         totalIn: Number(row?.totalIn || 0),
         totalOut: Number(row?.totalOut || 0),
@@ -479,13 +465,17 @@ const getInvoiceDashboardSummary = async ({ subaccount, filters = {}, viewerMode
     const statementScope = normalizeStatementScope(normalizedFilters.statementScope, subaccount);
     const anchorEntry = await getStartingEntry(subaccount.id, statementScope);
 
-    const statementBalance = await calculateInvoiceStatementBalance({ subaccount, filters: normalizedFilters, anchorEntry, statementScope });
-    const manualBalance = await calculateInvoiceManualBalance({ subaccount, filters: normalizedFilters, anchorEntry, statementScope });
-    const statementAllTimeBalance = await calculateInvoiceStatementBalance({ subaccount, filters: {}, anchorEntry, statementScope });
-    const manualAllTimeBalance = await calculateInvoiceManualBalance({ subaccount, filters: {}, anchorEntry, statementScope });
-    const flowSummary = activePool === 'manual'
-        ? await calculateInvoiceManualFlowSummary({ subaccount, filters: normalizedFilters, anchorEntry, statementScope })
-        : await calculateInvoiceStatementFlowSummary({ subaccount, filters: normalizedFilters, anchorEntry, statementScope });
+    const statementAggregate = await getInvoiceStatementAggregate({ subaccount, filters: normalizedFilters, anchorEntry, statementScope });
+    const manualAggregate = await getInvoiceManualAggregate({ subaccount, filters: normalizedFilters, anchorEntry, statementScope });
+    const statementAllTimeBalance = await getCachedPortalAllTimeBalance(
+        ['portal-all-time', 'invoice', 'statement', subaccount.id, statementScope],
+        async () => (await getInvoiceStatementAggregate({ subaccount, filters: {}, anchorEntry, statementScope })).balance
+    );
+    const manualAllTimeBalance = await getCachedPortalAllTimeBalance(
+        ['portal-all-time', 'invoice', 'manual', subaccount.id, statementScope],
+        async () => (await getInvoiceManualAggregate({ subaccount, filters: {}, anchorEntry, statementScope })).balance
+    );
+    const flowSummary = activePool === 'manual' ? manualAggregate : statementAggregate;
 
     return {
         sourceType: 'invoices',
@@ -499,9 +489,9 @@ const getInvoiceDashboardSummary = async ({ subaccount, filters = {}, viewerMode
         totalOut: flowSummary.totalOut,
         countIn: flowSummary.countIn,
         countOut: flowSummary.countOut,
-        statementBalance,
-        manualBalance,
-        combinedBalance: statementBalance + manualBalance,
+        statementBalance: statementAggregate.balance,
+        manualBalance: manualAggregate.balance,
+        combinedBalance: statementAggregate.balance + manualAggregate.balance,
         allTimeBalance: statementAllTimeBalance + manualAllTimeBalance,
         statementAllTimeBalance,
         manualAllTimeBalance,
@@ -655,7 +645,7 @@ const createInvoiceManualTransaction = async ({ subaccount, actorUserId, payload
             actorUserId || null
         ]
     );
-
+    invalidatePortalReadCaches();
     return { id: result.insertId };
 };
 
@@ -712,6 +702,7 @@ const updateInvoiceManualTransaction = async ({ subaccount, actorUserId, transac
             subaccount.id
         ]
     );
+    invalidatePortalReadCaches();
 };
 
 const deleteInvoiceManualTransaction = async ({ subaccount, transactionId }) => {
@@ -724,6 +715,7 @@ const deleteInvoiceManualTransaction = async ({ subaccount, transactionId }) => 
         error.status = 404;
         throw error;
     }
+    invalidatePortalReadCaches();
 };
 
 const setInvoiceTransactionConfirmation = async ({ subaccount, transactionId, poolName, confirmed }) => {

@@ -859,6 +859,16 @@ const PortalTransactionWorkspace = ({ forceViewOnly = false }) => {
     }
   }, [effectiveFilters, isTextFiltersDebouncing]);
 
+  const refreshPortalData = useCallback(
+    async ({ includeSummary = true } = {}) => {
+      await fetchTransactions();
+      if (includeSummary) {
+        await fetchSummary();
+      }
+    },
+    [fetchSummary, fetchTransactions],
+  );
+
   const fetchTransferRows = useCallback(async () => {
     if (!transferOpen) return;
     const fetchId = ++latestTransferFetchIdRef.current;
@@ -907,12 +917,8 @@ const PortalTransactionWorkspace = ({ forceViewOnly = false }) => {
   }, [debouncedTransferAmountExact, debouncedTransferPixKey, debouncedTransferSearch, transferOpen]);
 
   useEffect(() => {
-    fetchTransactions();
-  }, [fetchTransactions]);
-
-  useEffect(() => {
-    fetchSummary();
-  }, [fetchSummary]);
+    refreshPortalData();
+  }, [refreshPortalData]);
 
   useEffect(() => {
     fetchTransferRows();
@@ -977,8 +983,7 @@ const PortalTransactionWorkspace = ({ forceViewOnly = false }) => {
       await createPortalTransaction(payload);
     }
     setEditorOpen(false);
-    fetchTransactions();
-    fetchSummary();
+    await refreshPortalData();
   };
 
   const removeTransaction = async (transaction) => {
@@ -989,8 +994,7 @@ const PortalTransactionWorkspace = ({ forceViewOnly = false }) => {
     );
     if (!confirmed) return;
     await deletePortalTransaction(transaction.id, activePool);
-    fetchTransactions();
-    fetchSummary();
+    await refreshPortalData();
   };
 
   const toggleAudience = async (transaction, audienceKey) => {
@@ -1000,7 +1004,7 @@ const PortalTransactionWorkspace = ({ forceViewOnly = false }) => {
       visibleInMaster: audienceKey === "master" ? !Boolean(transaction.visible_in_master) : undefined,
       visibleInViewOnly: audienceKey === "view_only" ? !Boolean(transaction.visible_in_view_only) : undefined,
     });
-    fetchTransactions();
+    await fetchTransactions();
   };
 
   const handleBadgeEdit = async (transaction) => {
@@ -1012,7 +1016,7 @@ const PortalTransactionWorkspace = ({ forceViewOnly = false }) => {
       pool: activePool,
       badgeLabel: nextLabel,
     });
-    fetchTransactions();
+    await fetchTransactions();
   };
 
   const beginNoteEdit = (transaction) => {
@@ -1024,7 +1028,7 @@ const PortalTransactionWorkspace = ({ forceViewOnly = false }) => {
     await updatePortalTransactionNotes(transaction.id, transaction.source, noteDraft, activePool);
     setEditingNoteKey(null);
     setNoteDraft("");
-    fetchTransactions();
+    await fetchTransactions();
   };
 
   const cancelNoteEdit = () => {
@@ -1037,15 +1041,13 @@ const PortalTransactionWorkspace = ({ forceViewOnly = false }) => {
     const passcode = nextConfirmed ? undefined : window.prompt("Unconfirm PIN");
     if (!nextConfirmed && passcode == null) return;
     await updatePortalTransactionConfirmation(transaction.id, transaction.source, nextConfirmed, passcode, activePool);
-    fetchTransactions();
-    fetchSummary();
+    await refreshPortalData();
   };
 
   const claimTransfer = async (row) => {
     await claimPortalTrkbitTransaction(row.id);
     fetchTransferRows();
-    fetchTransactions();
-    fetchSummary();
+    await refreshPortalData();
   };
 
   const renderTransferPixLabel = (pixKey) => {
@@ -1280,7 +1282,7 @@ const PortalTransactionWorkspace = ({ forceViewOnly = false }) => {
             <ActionsRow>
               <Meta>{isTextFiltersDebouncing ? "Updating filters..." : `${pagination.totalRecords || 0} records`}</Meta>
               <ButtonCluster>
-                <Button type="button" $variant="ghost" onClick={() => { fetchTransactions(); fetchSummary(); }}>
+            <Button type="button" $variant="ghost" onClick={() => { refreshPortalData(); }}>
                   <FaSyncAlt /> Refresh
                 </Button>
                 {canManageActivePool ? (

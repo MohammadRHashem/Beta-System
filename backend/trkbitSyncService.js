@@ -3,6 +3,7 @@ const axios = require('axios');
 const cron = require('node-cron');
 const pool = require('./config/db');
 const { format, differenceInHours } = require('date-fns');
+const { invalidatePortalReadCaches } = require('./services/readCacheService');
 
 // Configuration
 const API_URL = "https://shared-api.trkbit.co/supplier/bank/legacy/bank/brasilcash/account/5602362";
@@ -257,6 +258,14 @@ const fetchAndStoreTransactions = async (input = null) => {
                 }
             });
         }
+
+        await connection.query(`
+            UPDATE trkbit_transactions tt
+            JOIN subaccounts s ON s.chave_pix = tt.tx_pix_key
+            SET tt.display_subaccount_id = s.id
+            WHERE tt.display_subaccount_id IS NULL OR tt.display_subaccount_id <> s.id
+        `);
+        invalidatePortalReadCaches();
 
         return {
             startDate,

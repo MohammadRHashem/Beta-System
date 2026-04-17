@@ -1,5 +1,43 @@
 const pool = require("../config/db");
 
+const AMOUNT_DECIMAL_SQL = `
+  CAST(
+    CASE
+      WHEN REPLACE(amount, ' ', '') REGEXP '^[0-9]{1,3}(,[0-9]{3})+\\.[0-9]+$'
+        THEN REPLACE(REPLACE(amount, ' ', ''), ',', '')
+      WHEN REPLACE(amount, ' ', '') REGEXP '^[0-9]{1,3}(\\.[0-9]{3})+,[0-9]+$'
+        THEN REPLACE(REPLACE(REPLACE(amount, ' ', ''), '.', ''), ',', '.')
+      WHEN REPLACE(amount, ' ', '') REGEXP '^[0-9]{1,3}(,[0-9]{3})+$'
+        THEN REPLACE(REPLACE(amount, ' ', ''), ',', '')
+      WHEN REPLACE(amount, ' ', '') REGEXP '^[0-9]{1,3}(\\.[0-9]{3})+$'
+        THEN REPLACE(REPLACE(amount, ' ', ''), '.', '')
+      WHEN REPLACE(amount, ' ', '') REGEXP '^[0-9]+,[0-9]+$'
+        THEN REPLACE(REPLACE(amount, ' ', ''), ',', '.')
+      ELSE REPLACE(amount, ' ', '')
+    END AS DECIMAL(20, 2)
+  )
+`;
+
+const ensureIndex = async (tableName, indexName, columnsSql) => {
+  const [rows] = await pool.query(
+    `
+      SELECT 1
+      FROM INFORMATION_SCHEMA.STATISTICS
+      WHERE TABLE_SCHEMA = DATABASE()
+        AND TABLE_NAME = ?
+        AND INDEX_NAME = ?
+      LIMIT 1
+    `,
+    [tableName, indexName]
+  );
+
+  if (rows.length > 0) {
+    return;
+  }
+
+  await pool.query(`ALTER TABLE ${tableName} ADD INDEX ${indexName} ${columnsSql}`);
+};
+
 const ensureRuntimeSchema = async () => {
   try {
     await pool.query(`
@@ -96,6 +134,19 @@ const ensureRuntimeSchema = async () => {
       ADD COLUMN IF NOT EXISTS updated_by_user_id int NULL AFTER visible_in_view_only
     `);
     console.log("[SCHEMA] statement transaction control columns ensured.");
+    await pool.query(`
+      UPDATE xpayz_transactions xt
+      JOIN subaccounts s ON s.subaccount_number = CAST(xt.subaccount_id AS CHAR)
+      SET xt.display_subaccount_id = s.id
+      WHERE xt.display_subaccount_id IS NULL OR xt.display_subaccount_id <> s.id
+    `);
+    await pool.query(`
+      UPDATE trkbit_transactions tt
+      JOIN subaccounts s ON s.chave_pix = tt.tx_pix_key
+      SET tt.display_subaccount_id = s.id
+      WHERE tt.display_subaccount_id IS NULL OR tt.display_subaccount_id <> s.id
+    `);
+    console.log("[SCHEMA] statement display_subaccount_id backfill ensured.");
 
     await pool.query(`
       CREATE TABLE IF NOT EXISTS subaccount_profile_entries (
@@ -123,7 +174,14 @@ const ensureRuntimeSchema = async () => {
     `);
     await pool.query(`
       ALTER TABLE invoices
-      ADD COLUMN IF NOT EXISTS is_portal_confirmed tinyint(1) NOT NULL DEFAULT 1 AFTER linked_transaction_source
+      ADD COLUMN IF NOT EXISTS is_portal_confirmed tinyint(1) NOT NULL DEFAULT 1 AFTER linked_transaction_source,
+      ADD COLUMN IF NOT EXISTS amount_decimal decimal(20,2) NOT NULL DEFAULT 0.00 AFTER amount
+    `);
+    await pool.query(`
+      UPDATE invoices
+      SET amount_decimal = ${AMOUNT_DECIMAL_SQL}
+      WHERE amount_decimal = 0.00
+         OR amount_decimal IS NULL
     `);
     await pool.query(`
       CREATE TABLE IF NOT EXISTS subaccount_invoice_manual_entries (
@@ -155,6 +213,22 @@ const ensureRuntimeSchema = async () => {
       ALTER TABLE subaccount_invoice_manual_entries
       MODIFY COLUMN starting_scope enum('geral','chave_pix','all') NOT NULL DEFAULT 'geral'
     `);
+
+    await ensureIndex('invoices', 'idx_invoices_deleted_received', '(is_deleted, received_at, id)');
+    await ensureIndex('invoices', 'idx_invoices_recipient_deleted_received', '(recipient_name, is_deleted, received_at, id)');
+    await ensureIndex('invoices', 'idx_invoices_group_deleted_received', '(source_group_jid, is_deleted, received_at, id)');
+    await ensureIndex('invoices', 'idx_invoices_transaction_amount_decimal', '(transaction_id, amount_decimal)');
+    await ensureIndex('invoices', 'idx_invoices_amount_decimal_received', '(amount_decimal, received_at, id)');
+    await ensureIndex('subaccounts', 'idx_subaccounts_number', '(subaccount_number)');
+    await ensureIndex('subaccounts', 'idx_subaccounts_pix', '(chave_pix)');
+    await ensureIndex('subaccounts', 'idx_subaccounts_group', '(assigned_group_jid)');
+    await ensureIndex('xpayz_transactions', 'idx_xt_subaccount_date', '(subaccount_id, transaction_date, id)');
+    await ensureIndex('xpayz_transactions', 'idx_xt_display_date', '(display_subaccount_id, transaction_date, id)');
+    await ensureIndex('xpayz_transactions', 'idx_xt_direction_date', '(operation_direct, transaction_date, id)');
+    await ensureIndex('trkbit_transactions', 'idx_tt_pix_date', '(tx_pix_key, tx_date, uid)');
+    await ensureIndex('trkbit_transactions', 'idx_tt_display_date', '(display_subaccount_id, tx_date, uid)');
+    await ensureIndex('trkbit_transactions', 'idx_tt_type_date', '(tx_type, tx_date, uid)');
+    await ensureIndex('subaccount_manual_transactions', 'idx_smt_subaccount_direction_date', '(subaccount_id, direction, transaction_date, id)');
     console.log("[SCHEMA] invoice portal columns and subaccount_invoice_manual_entries ensured.");
   } catch (error) {
     console.error(
