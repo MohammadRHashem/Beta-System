@@ -4,6 +4,7 @@ const { parsePagination, buildPaginationMeta } = require('../utils/pagination');
 const {
     getCachedSubaccount,
     getCachedPortalAllTimeBalance,
+    getCachedPortalSummary,
     invalidatePortalReadCaches
 } = require('./readCacheService');
 
@@ -147,7 +148,7 @@ const addConfirmationFilter = (filters, fieldName, clauses) => {
 
 const addVisibilityFilters = (viewerMode, hiddenField, visibleMasterField, visibleViewOnlyField, clauses) => {
     if (viewerMode !== VIEWER_MODE.IMPERSONATION && hiddenField) {
-        clauses.push(`${hiddenField} <> 'hidden'`);
+        clauses.push(`(${hiddenField} IS NULL OR ${hiddenField} IN ('normal', 'blocked'))`);
     }
     if (viewerMode === VIEWER_MODE.MASTER && visibleMasterField) {
         clauses.push(`${visibleMasterField} = 1`);
@@ -523,32 +524,41 @@ const calculateManualFlowSummary = async ({ subaccount, filters = {}, viewerMode
 
 const getDashboardSummary = async ({ subaccount, filters = {}, viewerMode }) => {
     const normalizedFilters = normalizePortalFiltersForViewerMode(filters, viewerMode);
-    const activePool = normalizedFilters.pool === 'manual' ? 'manual' : 'statement';
-    const statementAggregate = await getStatementAggregate({ subaccount, filters: normalizedFilters, viewerMode });
-    const manualAggregate = await getManualAggregate({ subaccount, filters: normalizedFilters, viewerMode });
-    const statementAllTimeBalance = await getCachedPortalAllTimeBalance(
-        ['portal-all-time', 'transactions', 'statement', subaccount.id, viewerMode],
-        async () => (await getStatementAggregate({ subaccount, filters: {}, viewerMode })).balance
-    );
-    const manualAllTimeBalance = await getCachedPortalAllTimeBalance(
-        ['portal-all-time', 'transactions', 'manual', subaccount.id, viewerMode],
-        async () => (await getManualAggregate({ subaccount, filters: {}, viewerMode })).balance
-    );
-    const flowSummary = activePool === 'manual' ? manualAggregate : statementAggregate;
+    const cacheKey = JSON.stringify({
+        subaccountId: subaccount.id,
+        accountType: subaccount.account_type,
+        viewerMode,
+        filters: normalizedFilters
+    });
 
-    return {
-        activePool,
-        totalIn: flowSummary.totalIn,
-        totalOut: flowSummary.totalOut,
-        countIn: flowSummary.countIn,
-        countOut: flowSummary.countOut,
-        statementBalance: statementAggregate.balance,
-        manualBalance: manualAggregate.balance,
-        combinedBalance: statementAggregate.balance + manualAggregate.balance,
-        allTimeBalance: statementAllTimeBalance + manualAllTimeBalance,
-        statementAllTimeBalance,
-        manualAllTimeBalance
-    };
+    return getCachedPortalSummary(['portal-summary', 'transactions', cacheKey], async () => {
+        const activePool = normalizedFilters.pool === 'manual' ? 'manual' : 'statement';
+        const statementAggregate = await getStatementAggregate({ subaccount, filters: normalizedFilters, viewerMode });
+        const manualAggregate = await getManualAggregate({ subaccount, filters: normalizedFilters, viewerMode });
+        const statementAllTimeBalance = await getCachedPortalAllTimeBalance(
+            ['portal-all-time', 'transactions', 'statement', subaccount.id, viewerMode],
+            async () => (await getStatementAggregate({ subaccount, filters: {}, viewerMode })).balance
+        );
+        const manualAllTimeBalance = await getCachedPortalAllTimeBalance(
+            ['portal-all-time', 'transactions', 'manual', subaccount.id, viewerMode],
+            async () => (await getManualAggregate({ subaccount, filters: {}, viewerMode })).balance
+        );
+        const flowSummary = activePool === 'manual' ? manualAggregate : statementAggregate;
+
+        return {
+            activePool,
+            totalIn: flowSummary.totalIn,
+            totalOut: flowSummary.totalOut,
+            countIn: flowSummary.countIn,
+            countOut: flowSummary.countOut,
+            statementBalance: statementAggregate.balance,
+            manualBalance: manualAggregate.balance,
+            combinedBalance: statementAggregate.balance + manualAggregate.balance,
+            allTimeBalance: statementAllTimeBalance + manualAllTimeBalance,
+            statementAllTimeBalance,
+            manualAllTimeBalance
+        };
+    });
 };
 
 const listPortalTransactions = async (client, query = {}) => {

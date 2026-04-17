@@ -403,7 +403,7 @@ exports.getTrkbitTransactionsForTransfer = async (req, res) => {
                 tt.display_subaccount_id IS NULL
                 OR tt.display_subaccount_id <> ?
             )
-              AND tt.sync_control_state <> 'hidden'
+              AND (tt.sync_control_state IS NULL OR tt.sync_control_state IN ('normal', 'blocked'))
         `;
         let query = baseQuery;
         const params = [subaccount.id];

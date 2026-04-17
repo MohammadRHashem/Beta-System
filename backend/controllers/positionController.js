@@ -2,6 +2,7 @@ const pool = require('../config/db');
 const alfaBalanceService = require('../services/alfaBalanceService');
 const portalLedgerService = require('../services/portalLedgerService');
 const transactionService = require('../services/subaccountTransactionService');
+const { getCachedInvoicePositionCounterValue } = require('../services/readCacheService');
 
 const PORTAL_IMPERSONATION_VIEWER_MODE = 'impersonation';
 
@@ -10,6 +11,26 @@ const isValidDate = (value) => /^\d{4}-\d{2}-\d{2}$/.test(value || '');
 const parseMoney = (value) => Number.parseFloat(value || 0) || 0;
 
 const getTodayDateValue = () => new Date().toISOString().split('T')[0];
+
+const mapWithConcurrency = async (items, concurrency, worker) => {
+    const safeConcurrency = Math.max(1, Number(concurrency) || 1);
+    const results = new Array(items.length);
+    let nextIndex = 0;
+
+    const runWorker = async () => {
+        while (nextIndex < items.length) {
+            const currentIndex = nextIndex;
+            nextIndex += 1;
+            results[currentIndex] = await worker(items[currentIndex], currentIndex);
+        }
+    };
+
+    await Promise.all(
+        Array.from({ length: Math.min(safeConcurrency, items.length) }, () => runWorker())
+    );
+
+    return results;
+};
 
 const normalizeIdList = (value) => {
     if (value == null || value === '') return [];
@@ -120,13 +141,11 @@ const getTransactionContribution = async (counter) => {
         return { transactionSaldoTotal: 0, includedCount: 0 };
     }
 
-    const summaries = await Promise.all(
-        subaccounts.map((subaccount) => transactionService.getDashboardSummary({
+    const summaries = await mapWithConcurrency(subaccounts, 3, (subaccount) => transactionService.getDashboardSummary({
             subaccount,
             filters: {},
             viewerMode: PORTAL_IMPERSONATION_VIEWER_MODE
-        }))
-    );
+        }));
 
     return {
         transactionSaldoTotal: summaries.reduce((sum, summary) => sum + parseMoney(summary?.allTimeBalance), 0),
@@ -156,7 +175,7 @@ const getXpayzOutsContribution = async (counter, dateTo = '') => {
     const clauses = [
         'xt.display_subaccount_id = ?',
         "xt.operation_direct = 'out'",
-        "COALESCE(xt.sync_control_state, 'normal') <> 'hidden'"
+        "(xt.sync_control_state IS NULL OR xt.sync_control_state IN ('normal', 'blocked'))"
     ];
     const params = [outsSourceSubaccount.id];
 
@@ -449,7 +468,10 @@ exports.calculateInvoiceCounter = async (req, res) => {
             return res.status(404).json({ message: 'Invoice counter not found.' });
         }
 
-        const data = await buildInvoiceCounterValue(counter, dateTo);
+        const data = await getCachedInvoicePositionCounterValue(
+            ['invoice-position-counter', counterId, dateTo || getTodayDateValue()],
+            async () => buildInvoiceCounterValue(counter, dateTo)
+        );
         res.json(data);
     } catch (error) {
         console.error('[ERROR] Failed to calculate invoice position counter:', error);

@@ -3,6 +3,7 @@ const { parsePagination, buildPaginationMeta } = require('../utils/pagination');
 const transactionService = require('./subaccountTransactionService');
 const {
     getCachedPortalAllTimeBalance,
+    getCachedPortalSummary,
     getCachedInvoiceStartingEntry,
     invalidatePortalReadCaches
 } = require('./readCacheService');
@@ -94,6 +95,8 @@ const getInvoiceRecipientPattern = (subaccount) => {
     return pattern || null;
 };
 
+const hasSqlWildcard = (value) => /[%_]/.test(String(value || ''));
+
 const getStartingEntry = async (subaccountId, statementScope) => {
     return getCachedInvoiceStartingEntry(subaccountId, statementScope, async () => {
         const query = statementScope === STATEMENT_SCOPE.ALL
@@ -135,11 +138,12 @@ const getInvoiceStatementBase = (subaccount) => {
         error.status = 400;
         throw error;
     }
+    const useLike = hasSqlWildcard(pattern);
     return {
         fromSql: 'FROM invoices i',
         baseClauses: [
             'COALESCE(i.is_deleted, 0) = 0',
-            'i.recipient_name LIKE ?'
+            useLike ? 'i.recipient_name LIKE ?' : 'i.recipient_name = ?'
         ],
         baseParams: [pattern]
     };
@@ -461,48 +465,58 @@ const calculateInvoiceManualFlowSummary = async ({ subaccount, filters = {}, anc
 
 const getInvoiceDashboardSummary = async ({ subaccount, filters = {}, viewerMode }) => {
     const normalizedFilters = transactionService.normalizePortalFiltersForViewerMode(filters, viewerMode);
-    const activePool = normalizedFilters.pool === 'manual' ? 'manual' : 'statement';
     const statementScope = normalizeStatementScope(normalizedFilters.statementScope, subaccount);
-    const anchorEntry = await getStartingEntry(subaccount.id, statementScope);
-
-    const statementAggregate = await getInvoiceStatementAggregate({ subaccount, filters: normalizedFilters, anchorEntry, statementScope });
-    const manualAggregate = await getInvoiceManualAggregate({ subaccount, filters: normalizedFilters, anchorEntry, statementScope });
-    const statementAllTimeBalance = await getCachedPortalAllTimeBalance(
-        ['portal-all-time', 'invoice', 'statement', subaccount.id, statementScope],
-        async () => (await getInvoiceStatementAggregate({ subaccount, filters: {}, anchorEntry, statementScope })).balance
-    );
-    const manualAllTimeBalance = await getCachedPortalAllTimeBalance(
-        ['portal-all-time', 'invoice', 'manual', subaccount.id, statementScope],
-        async () => (await getInvoiceManualAggregate({ subaccount, filters: {}, anchorEntry, statementScope })).balance
-    );
-    const flowSummary = activePool === 'manual' ? manualAggregate : statementAggregate;
-
-    return {
-        sourceType: 'invoices',
-        supportsVisibility: false,
-        supportsBadgeEditing: false,
-        supportsTransfer: false,
-        supportsStartingEntry: true,
-        activePool,
+    const cacheKey = JSON.stringify({
+        subaccountId: subaccount.id,
+        accountType: subaccount.account_type,
+        viewerMode,
         statementScope,
-        totalIn: flowSummary.totalIn,
-        totalOut: flowSummary.totalOut,
-        countIn: flowSummary.countIn,
-        countOut: flowSummary.countOut,
-        statementBalance: statementAggregate.balance,
-        manualBalance: manualAggregate.balance,
-        combinedBalance: statementAggregate.balance + manualAggregate.balance,
-        allTimeBalance: statementAllTimeBalance + manualAllTimeBalance,
-        statementAllTimeBalance,
-        manualAllTimeBalance,
-        startingEntry: anchorEntry ? {
-            id: anchorEntry.id,
-            amount: Number(anchorEntry.amount || 0),
-            direction: anchorEntry.direction,
-            transaction_date: anchorEntry.transaction_date,
-            statement_scope: anchorEntry.starting_scope
-        } : null
-    };
+        filters: normalizedFilters
+    });
+
+    return getCachedPortalSummary(['portal-summary', 'invoices', cacheKey], async () => {
+        const activePool = normalizedFilters.pool === 'manual' ? 'manual' : 'statement';
+        const anchorEntry = await getStartingEntry(subaccount.id, statementScope);
+
+        const statementAggregate = await getInvoiceStatementAggregate({ subaccount, filters: normalizedFilters, anchorEntry, statementScope });
+        const manualAggregate = await getInvoiceManualAggregate({ subaccount, filters: normalizedFilters, anchorEntry, statementScope });
+        const statementAllTimeBalance = await getCachedPortalAllTimeBalance(
+            ['portal-all-time', 'invoice', 'statement', subaccount.id, statementScope],
+            async () => (await getInvoiceStatementAggregate({ subaccount, filters: {}, anchorEntry, statementScope })).balance
+        );
+        const manualAllTimeBalance = await getCachedPortalAllTimeBalance(
+            ['portal-all-time', 'invoice', 'manual', subaccount.id, statementScope],
+            async () => (await getInvoiceManualAggregate({ subaccount, filters: {}, anchorEntry, statementScope })).balance
+        );
+        const flowSummary = activePool === 'manual' ? manualAggregate : statementAggregate;
+
+        return {
+            sourceType: 'invoices',
+            supportsVisibility: false,
+            supportsBadgeEditing: false,
+            supportsTransfer: false,
+            supportsStartingEntry: true,
+            activePool,
+            statementScope,
+            totalIn: flowSummary.totalIn,
+            totalOut: flowSummary.totalOut,
+            countIn: flowSummary.countIn,
+            countOut: flowSummary.countOut,
+            statementBalance: statementAggregate.balance,
+            manualBalance: manualAggregate.balance,
+            combinedBalance: statementAggregate.balance + manualAggregate.balance,
+            allTimeBalance: statementAllTimeBalance + manualAllTimeBalance,
+            statementAllTimeBalance,
+            manualAllTimeBalance,
+            startingEntry: anchorEntry ? {
+                id: anchorEntry.id,
+                amount: Number(anchorEntry.amount || 0),
+                direction: anchorEntry.direction,
+                transaction_date: anchorEntry.transaction_date,
+                statement_scope: anchorEntry.starting_scope
+            } : null
+        };
+    });
 };
 
 const listInvoicePortalTransactions = async (client, query = {}) => {

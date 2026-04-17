@@ -227,9 +227,11 @@ const ensureRuntimeSchema = async () => {
     await ensureIndex('xpayz_transactions', 'idx_xt_subaccount_date', '(subaccount_id, transaction_date, id)');
     await ensureIndex('xpayz_transactions', 'idx_xt_display_date', '(display_subaccount_id, transaction_date, id)');
     await ensureIndex('xpayz_transactions', 'idx_xt_direction_date', '(operation_direct, transaction_date, id)');
+    await ensureIndex('xpayz_transactions', 'idx_xt_display_direction_state_date', '(display_subaccount_id, operation_direct, sync_control_state, transaction_date, id)');
     await ensureIndex('trkbit_transactions', 'idx_tt_pix_date', '(tx_pix_key, tx_date, uid)');
     await ensureIndex('trkbit_transactions', 'idx_tt_display_date', '(display_subaccount_id, tx_date, uid)');
     await ensureIndex('trkbit_transactions', 'idx_tt_type_date', '(tx_type, tx_date, uid)');
+    await ensureIndex('trkbit_transactions', 'idx_tt_display_type_state_date', '(display_subaccount_id, tx_type, sync_control_state, tx_date, uid)');
     await ensureIndex('subaccount_manual_transactions', 'idx_smt_subaccount_direction_date', '(subaccount_id, direction, transaction_date, id)');
     console.log("[SCHEMA] invoice portal columns and subaccount_invoice_manual_entries ensured.");
   } catch (error) {
