@@ -14,8 +14,6 @@ const { syncSingleSubaccount } = require("../xpayzSyncService");
 // const usdtService = require('./usdtService');
 const { parseFormattedCurrency } = require("../utils/currencyParser");
 const usdtLinkService = require("./usdtLinkService"); // <--- ADD IMPORT
-const { toInvoiceAmountDecimal } = require("../utils/invoiceQueryUtils");
-const { invalidateInvoiceReadCaches } = require("./readCacheService");
 
 let client;
 let qrCodeData;
@@ -1661,7 +1659,7 @@ const invoiceWorker = new Worker(
         const correctUtcDate = new Date(originalMessage.timestamp * 1000);
         // === MODIFIED INSERT STATEMENT ===
         await pool.query(
-          `INSERT INTO invoices (message_id, transaction_id, sender_name, recipient_name, pix_key, amount, amount_decimal, source_group_jid, received_at, raw_json_data, media_path, is_deleted, linked_transaction_id, linked_transaction_source) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          `INSERT INTO invoices (message_id, transaction_id, sender_name, recipient_name, pix_key, amount, source_group_jid, received_at, raw_json_data, media_path, is_deleted, linked_transaction_id, linked_transaction_source) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             messageId,
             transaction_id,
@@ -1669,7 +1667,6 @@ const invoiceWorker = new Worker(
             recipient.name,
             recipient.pix_key,
             amount,
-            toInvoiceAmountDecimal(amount),
             chat.id._serialized,
             correctUtcDate,
             JSON.stringify(invoiceJson),
@@ -1698,7 +1695,6 @@ const invoiceWorker = new Worker(
       for (const tempPath of tempFilePaths) {
         if (fsSync.existsSync(tempPath)) await fs.unlink(tempPath);
       }
-      invalidateInvoiceReadCaches({ recipientNames: false });
       if (io) io.emit("invoices:updated");
     }
   },

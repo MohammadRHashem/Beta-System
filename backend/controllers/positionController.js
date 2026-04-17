@@ -2,7 +2,6 @@ const pool = require('../config/db');
 const alfaBalanceService = require('../services/alfaBalanceService');
 const portalLedgerService = require('../services/portalLedgerService');
 const transactionService = require('../services/subaccountTransactionService');
-const { getCachedInvoicePositionCounterValue } = require('../services/readCacheService');
 
 const PORTAL_IMPERSONATION_VIEWER_MODE = 'impersonation';
 
@@ -11,26 +10,6 @@ const isValidDate = (value) => /^\d{4}-\d{2}-\d{2}$/.test(value || '');
 const parseMoney = (value) => Number.parseFloat(value || 0) || 0;
 
 const getTodayDateValue = () => new Date().toISOString().split('T')[0];
-
-const mapWithConcurrency = async (items, concurrency, worker) => {
-    const safeConcurrency = Math.max(1, Number(concurrency) || 1);
-    const results = new Array(items.length);
-    let nextIndex = 0;
-
-    const runWorker = async () => {
-        while (nextIndex < items.length) {
-            const currentIndex = nextIndex;
-            nextIndex += 1;
-            results[currentIndex] = await worker(items[currentIndex], currentIndex);
-        }
-    };
-
-    await Promise.all(
-        Array.from({ length: Math.min(safeConcurrency, items.length) }, () => runWorker())
-    );
-
-    return results;
-};
 
 const normalizeIdList = (value) => {
     if (value == null || value === '') return [];
@@ -141,11 +120,13 @@ const getTransactionContribution = async (counter) => {
         return { transactionSaldoTotal: 0, includedCount: 0 };
     }
 
-    const summaries = await mapWithConcurrency(subaccounts, 3, (subaccount) => transactionService.getDashboardSummary({
+    const summaries = await Promise.all(
+        subaccounts.map((subaccount) => transactionService.getDashboardSummary({
             subaccount,
             filters: {},
             viewerMode: PORTAL_IMPERSONATION_VIEWER_MODE
-        }));
+        }))
+    );
 
     return {
         transactionSaldoTotal: summaries.reduce((sum, summary) => sum + parseMoney(summary?.allTimeBalance), 0),
@@ -173,9 +154,9 @@ const getXpayzOutsContribution = async (counter, dateTo = '') => {
     }
 
     const clauses = [
-        'xt.display_subaccount_id = ?',
+        'COALESCE(xt.display_subaccount_id, owner_sub.id) = ?',
         "xt.operation_direct = 'out'",
-        "(xt.sync_control_state IS NULL OR xt.sync_control_state IN ('normal', 'blocked'))"
+        "COALESCE(xt.sync_control_state, 'normal') <> 'hidden'"
     ];
     const params = [outsSourceSubaccount.id];
 
@@ -193,6 +174,7 @@ const getXpayzOutsContribution = async (counter, dateTo = '') => {
         `
             SELECT COALESCE(SUM(xt.amount), 0) AS total_outs
             FROM xpayz_transactions xt
+            LEFT JOIN subaccounts owner_sub ON owner_sub.subaccount_number = CAST(xt.subaccount_id AS CHAR)
             WHERE ${clauses.join(' AND ')}
         `,
         params
@@ -468,10 +450,7 @@ exports.calculateInvoiceCounter = async (req, res) => {
             return res.status(404).json({ message: 'Invoice counter not found.' });
         }
 
-        const data = await getCachedInvoicePositionCounterValue(
-            ['invoice-position-counter', counterId, dateTo || getTodayDateValue()],
-            async () => buildInvoiceCounterValue(counter, dateTo)
-        );
+        const data = await buildInvoiceCounterValue(counter, dateTo);
         res.json(data);
     } catch (error) {
         console.error('[ERROR] Failed to calculate invoice position counter:', error);
@@ -716,7 +695,7 @@ exports.calculateLocalPosition = async (req, res) => {
 
                 const positionQuery = `
                     SELECT 
-                        SUM(i.amount_decimal) AS netPosition,
+                        SUM(CAST(REPLACE(i.amount, ',', '') AS DECIMAL(20, 2))) AS netPosition,
                         COUNT(i.id) AS transactionCount
                     FROM invoices i
                     INNER JOIN (
@@ -865,7 +844,7 @@ exports.calculateLocalPosition = async (req, res) => {
         // while also including all invoices that do NOT have a transaction_id.
         const positionQuery = `
             SELECT 
-                SUM(i.amount_decimal) AS netPosition,
+                SUM(CAST(REPLACE(i.amount, ',', '') AS DECIMAL(20, 2))) AS netPosition,
                 COUNT(i.id) AS transactionCount
             FROM invoices i
             INNER JOIN (

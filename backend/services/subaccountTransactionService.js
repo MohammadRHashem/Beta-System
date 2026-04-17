@@ -1,12 +1,6 @@
 const crypto = require('crypto');
 const pool = require('../config/db');
 const { parsePagination, buildPaginationMeta } = require('../utils/pagination');
-const {
-    getCachedSubaccount,
-    getCachedPortalAllTimeBalance,
-    getCachedPortalSummary,
-    invalidatePortalReadCaches
-} = require('./readCacheService');
 
 const VIEWER_MODE = {
     IMPERSONATION: 'impersonation',
@@ -148,7 +142,7 @@ const addConfirmationFilter = (filters, fieldName, clauses) => {
 
 const addVisibilityFilters = (viewerMode, hiddenField, visibleMasterField, visibleViewOnlyField, clauses) => {
     if (viewerMode !== VIEWER_MODE.IMPERSONATION && hiddenField) {
-        clauses.push(`(${hiddenField} IS NULL OR ${hiddenField} IN ('normal', 'blocked'))`);
+        clauses.push(`${hiddenField} <> 'hidden'`);
     }
     if (viewerMode === VIEWER_MODE.MASTER && visibleMasterField) {
         clauses.push(`${visibleMasterField} = 1`);
@@ -171,8 +165,11 @@ const getStatementConfig = (accountType) => {
     if (accountType === 'cross') {
         return {
             source: 'trkbit',
-            fromSql: 'FROM trkbit_transactions tt',
-            effectiveOwnerSql: 'tt.display_subaccount_id',
+            fromSql: `
+                FROM trkbit_transactions tt
+                LEFT JOIN subaccounts owner_sub ON owner_sub.chave_pix = tt.tx_pix_key
+            `,
+            effectiveOwnerSql: 'COALESCE(tt.display_subaccount_id, owner_sub.id)',
             dateField: 'tt.tx_date',
             confirmationField: 'tt.is_portal_confirmed',
             visibleMasterField: 'tt.visible_in_master',
@@ -203,7 +200,7 @@ const getStatementConfig = (accountType) => {
                     tt.sync_control_state,
                     tt.visible_in_master,
                     tt.visible_in_view_only,
-                    tt.display_subaccount_id AS effective_subaccount_id,
+                    COALESCE(tt.display_subaccount_id, owner_sub.id) AS effective_subaccount_id,
                     tt.tx_id AS external_reference,
                     tt.updated_by_user_id
             `
@@ -214,9 +211,10 @@ const getStatementConfig = (accountType) => {
         source: 'xpayz',
         fromSql: `
             FROM xpayz_transactions xt
+            LEFT JOIN subaccounts owner_sub ON owner_sub.subaccount_number = CAST(xt.subaccount_id AS CHAR)
             LEFT JOIN bridge_transactions bt ON bt.xpayz_transaction_id = xt.id
         `,
-        effectiveOwnerSql: 'xt.display_subaccount_id',
+        effectiveOwnerSql: 'COALESCE(xt.display_subaccount_id, owner_sub.id)',
         dateField: 'xt.transaction_date',
         confirmationField: 'xt.is_portal_confirmed',
         visibleMasterField: 'xt.visible_in_master',
@@ -248,7 +246,7 @@ const getStatementConfig = (accountType) => {
                 xt.sync_control_state,
                 xt.visible_in_master,
                 xt.visible_in_view_only,
-                xt.display_subaccount_id AS effective_subaccount_id,
+                COALESCE(xt.display_subaccount_id, owner_sub.id) AS effective_subaccount_id,
                 xt.xpayz_transaction_id AS external_reference,
                 xt.updated_by_user_id,
                 bt.correlation_id,
@@ -326,23 +324,19 @@ const normalizeRows = (rows = []) => rows.map((row) => ({
 }));
 
 const getSubaccountById = async (subaccountId) => {
-    return getCachedSubaccount(['subaccount-id', subaccountId], async () => {
-        const [[subaccount]] = await pool.query(
-            'SELECT id, name, account_type, portal_source_type, invoice_recipient_pattern, subaccount_number, chave_pix, assigned_group_name FROM subaccounts WHERE id = ?',
-            [subaccountId]
-        );
-        return subaccount || null;
-    });
+    const [[subaccount]] = await pool.query(
+        'SELECT id, name, account_type, portal_source_type, invoice_recipient_pattern, subaccount_number, chave_pix, assigned_group_name FROM subaccounts WHERE id = ?',
+        [subaccountId]
+    );
+    return subaccount || null;
 };
 
 const getSubaccountByNumber = async (subaccountNumber) => {
-    return getCachedSubaccount(['subaccount-number', subaccountNumber], async () => {
-        const [[subaccount]] = await pool.query(
-            'SELECT id, name, account_type, portal_source_type, invoice_recipient_pattern, subaccount_number, chave_pix, assigned_group_name FROM subaccounts WHERE subaccount_number = ?',
-            [subaccountNumber]
-        );
-        return subaccount || null;
-    });
+    const [[subaccount]] = await pool.query(
+        'SELECT id, name, account_type, portal_source_type, invoice_recipient_pattern, subaccount_number, chave_pix, assigned_group_name FROM subaccounts WHERE subaccount_number = ?',
+        [subaccountNumber]
+    );
+    return subaccount || null;
 };
 
 const getPortalSubaccount = async (client) => {
@@ -441,7 +435,32 @@ const listManualTransactions = async ({ subaccount, filters = {}, viewerMode, pa
     };
 };
 
-const getStatementAggregate = async ({ subaccount, filters = {}, viewerMode }) => {
+const calculateStatementBalance = async ({ subaccount, filters = {}, viewerMode }) => {
+    const config = getStatementConfig(subaccount.account_type);
+    const clauses = [`${config.effectiveOwnerSql} = ?`];
+    const params = [subaccount.id];
+    addStatementFilters(config, filters, viewerMode, params, clauses);
+    const whereSql = buildWhereSql(clauses);
+    const sql = `SELECT COALESCE(SUM(${config.signedAmountSql}), 0) AS balance ${config.fromSql} ${whereSql}`;
+    const [[row]] = await pool.query(sql, params);
+    return Number(row?.balance || 0);
+};
+
+const calculateManualBalance = async ({ subaccount, filters = {}, viewerMode }) => {
+    const clauses = ['smt.subaccount_id = ?'];
+    const params = [subaccount.id];
+    addManualFilters(filters, viewerMode, params, clauses);
+    const whereSql = buildWhereSql(clauses);
+    const sql = `
+        SELECT COALESCE(SUM(CASE WHEN smt.direction = 'in' THEN smt.amount ELSE -smt.amount END), 0) AS balance
+        FROM subaccount_manual_transactions smt
+        ${whereSql}
+    `;
+    const [[row]] = await pool.query(sql, params);
+    return Number(row?.balance || 0);
+};
+
+const calculateStatementFlowSummary = async ({ subaccount, filters = {}, viewerMode }) => {
     const config = getStatementConfig(subaccount.account_type);
     const clauses = [`${config.effectiveOwnerSql} = ?`];
     const params = [subaccount.id];
@@ -449,7 +468,6 @@ const getStatementAggregate = async ({ subaccount, filters = {}, viewerMode }) =
     const whereSql = buildWhereSql(clauses);
     const sql = `
         SELECT
-            COALESCE(SUM(${config.signedAmountSql}), 0) AS balance,
             COALESCE(SUM(${config.creditAmountSql}), 0) AS totalIn,
             COALESCE(SUM(${config.debitAmountSql}), 0) AS totalOut,
             COUNT(${config.creditCountSql}) AS countIn,
@@ -459,52 +477,6 @@ const getStatementAggregate = async ({ subaccount, filters = {}, viewerMode }) =
     `;
     const [[row]] = await pool.query(sql, params);
     return {
-        balance: Number(row?.balance || 0),
-        totalIn: Number(row?.totalIn || 0),
-        totalOut: Number(row?.totalOut || 0),
-        countIn: Number(row?.countIn || 0),
-        countOut: Number(row?.countOut || 0)
-    };
-};
-
-const calculateStatementBalance = async ({ subaccount, filters = {}, viewerMode }) => {
-    const aggregate = await getStatementAggregate({ subaccount, filters, viewerMode });
-    return aggregate.balance;
-};
-
-const getManualAggregate = async ({ subaccount, filters = {}, viewerMode }) => {
-    const clauses = ['smt.subaccount_id = ?'];
-    const params = [subaccount.id];
-    addManualFilters(filters, viewerMode, params, clauses);
-    const whereSql = buildWhereSql(clauses);
-    const sql = `
-        SELECT
-            COALESCE(SUM(CASE WHEN smt.direction = 'in' THEN smt.amount ELSE -smt.amount END), 0) AS balance,
-            COALESCE(SUM(CASE WHEN smt.direction = 'in' THEN smt.amount ELSE 0 END), 0) AS totalIn,
-            COALESCE(SUM(CASE WHEN smt.direction = 'out' THEN smt.amount ELSE 0 END), 0) AS totalOut,
-            COUNT(CASE WHEN smt.direction = 'in' THEN 1 ELSE NULL END) AS countIn,
-            COUNT(CASE WHEN smt.direction = 'out' THEN 1 ELSE NULL END) AS countOut
-        FROM subaccount_manual_transactions smt
-        ${whereSql}
-    `;
-    const [[row]] = await pool.query(sql, params);
-    return {
-        balance: Number(row?.balance || 0),
-        totalIn: Number(row?.totalIn || 0),
-        totalOut: Number(row?.totalOut || 0),
-        countIn: Number(row?.countIn || 0),
-        countOut: Number(row?.countOut || 0)
-    };
-};
-
-const calculateManualBalance = async ({ subaccount, filters = {}, viewerMode }) => {
-    const aggregate = await getManualAggregate({ subaccount, filters, viewerMode });
-    return aggregate.balance;
-};
-
-const calculateStatementFlowSummary = async ({ subaccount, filters = {}, viewerMode }) => {
-    const row = await getStatementAggregate({ subaccount, filters, viewerMode });
-    return {
         totalIn: Number(row?.totalIn || 0),
         totalOut: Number(row?.totalOut || 0),
         countIn: Number(row?.countIn || 0),
@@ -513,7 +485,20 @@ const calculateStatementFlowSummary = async ({ subaccount, filters = {}, viewerM
 };
 
 const calculateManualFlowSummary = async ({ subaccount, filters = {}, viewerMode }) => {
-    const row = await getManualAggregate({ subaccount, filters, viewerMode });
+    const clauses = ['smt.subaccount_id = ?'];
+    const params = [subaccount.id];
+    addManualFilters(filters, viewerMode, params, clauses);
+    const whereSql = buildWhereSql(clauses);
+    const sql = `
+        SELECT
+            COALESCE(SUM(CASE WHEN smt.direction = 'in' THEN smt.amount ELSE 0 END), 0) AS totalIn,
+            COALESCE(SUM(CASE WHEN smt.direction = 'out' THEN smt.amount ELSE 0 END), 0) AS totalOut,
+            COUNT(CASE WHEN smt.direction = 'in' THEN 1 ELSE NULL END) AS countIn,
+            COUNT(CASE WHEN smt.direction = 'out' THEN 1 ELSE NULL END) AS countOut
+        FROM subaccount_manual_transactions smt
+        ${whereSql}
+    `;
+    const [[row]] = await pool.query(sql, params);
     return {
         totalIn: Number(row?.totalIn || 0),
         totalOut: Number(row?.totalOut || 0),
@@ -524,41 +509,28 @@ const calculateManualFlowSummary = async ({ subaccount, filters = {}, viewerMode
 
 const getDashboardSummary = async ({ subaccount, filters = {}, viewerMode }) => {
     const normalizedFilters = normalizePortalFiltersForViewerMode(filters, viewerMode);
-    const cacheKey = JSON.stringify({
-        subaccountId: subaccount.id,
-        accountType: subaccount.account_type,
-        viewerMode,
-        filters: normalizedFilters
-    });
+    const activePool = normalizedFilters.pool === 'manual' ? 'manual' : 'statement';
+    const statementBalance = await calculateStatementBalance({ subaccount, filters: normalizedFilters, viewerMode });
+    const manualBalance = await calculateManualBalance({ subaccount, filters: normalizedFilters, viewerMode });
+    const statementAllTimeBalance = await calculateStatementBalance({ subaccount, filters: {}, viewerMode });
+    const manualAllTimeBalance = await calculateManualBalance({ subaccount, filters: {}, viewerMode });
+    const flowSummary = activePool === 'manual'
+        ? await calculateManualFlowSummary({ subaccount, filters: normalizedFilters, viewerMode })
+        : await calculateStatementFlowSummary({ subaccount, filters: normalizedFilters, viewerMode });
 
-    return getCachedPortalSummary(['portal-summary', 'transactions', cacheKey], async () => {
-        const activePool = normalizedFilters.pool === 'manual' ? 'manual' : 'statement';
-        const statementAggregate = await getStatementAggregate({ subaccount, filters: normalizedFilters, viewerMode });
-        const manualAggregate = await getManualAggregate({ subaccount, filters: normalizedFilters, viewerMode });
-        const statementAllTimeBalance = await getCachedPortalAllTimeBalance(
-            ['portal-all-time', 'transactions', 'statement', subaccount.id, viewerMode],
-            async () => (await getStatementAggregate({ subaccount, filters: {}, viewerMode })).balance
-        );
-        const manualAllTimeBalance = await getCachedPortalAllTimeBalance(
-            ['portal-all-time', 'transactions', 'manual', subaccount.id, viewerMode],
-            async () => (await getManualAggregate({ subaccount, filters: {}, viewerMode })).balance
-        );
-        const flowSummary = activePool === 'manual' ? manualAggregate : statementAggregate;
-
-        return {
-            activePool,
-            totalIn: flowSummary.totalIn,
-            totalOut: flowSummary.totalOut,
-            countIn: flowSummary.countIn,
-            countOut: flowSummary.countOut,
-            statementBalance: statementAggregate.balance,
-            manualBalance: manualAggregate.balance,
-            combinedBalance: statementAggregate.balance + manualAggregate.balance,
-            allTimeBalance: statementAllTimeBalance + manualAllTimeBalance,
-            statementAllTimeBalance,
-            manualAllTimeBalance
-        };
-    });
+    return {
+        activePool,
+        totalIn: flowSummary.totalIn,
+        totalOut: flowSummary.totalOut,
+        countIn: flowSummary.countIn,
+        countOut: flowSummary.countOut,
+        statementBalance,
+        manualBalance,
+        combinedBalance: statementBalance + manualBalance,
+        allTimeBalance: statementAllTimeBalance + manualAllTimeBalance,
+        statementAllTimeBalance,
+        manualAllTimeBalance
+    };
 };
 
 const listPortalTransactions = async (client, query = {}) => {
@@ -585,8 +557,9 @@ const loadStatementTransactionForSubaccount = async ({ subaccount, source, trans
             `
                 SELECT
                     tt.*,
-                    tt.display_subaccount_id AS effective_subaccount_id
+                    COALESCE(tt.display_subaccount_id, owner_sub.id) AS effective_subaccount_id
                 FROM trkbit_transactions tt
+                LEFT JOIN subaccounts owner_sub ON owner_sub.chave_pix = tt.tx_pix_key
                 WHERE tt.uid = ?
                 LIMIT 1
             `,
@@ -600,8 +573,9 @@ const loadStatementTransactionForSubaccount = async ({ subaccount, source, trans
         `
             SELECT
                 xt.*,
-                xt.display_subaccount_id AS effective_subaccount_id
+                COALESCE(xt.display_subaccount_id, owner_sub.id) AS effective_subaccount_id
             FROM xpayz_transactions xt
+            LEFT JOIN subaccounts owner_sub ON owner_sub.subaccount_number = CAST(xt.subaccount_id AS CHAR)
             WHERE xt.id = ?
             LIMIT 1
         `,
@@ -670,7 +644,7 @@ const createStatementTransaction = async ({ subaccount, actorUserId, payload }) 
                 notes
             ]
         );
-        invalidatePortalReadCaches();
+
         return { id: uid, source: 'trkbit' };
     }
 
@@ -706,7 +680,7 @@ const createStatementTransaction = async ({ subaccount, actorUserId, payload }) 
             actorUserId || null
         ]
     );
-    invalidatePortalReadCaches();
+
     return { id: result.insertId, source: 'xpayz' };
 };
 
@@ -786,7 +760,6 @@ const updateStatementTransaction = async ({ subaccount, actorUserId, transaction
                 transactionId
             ]
         );
-        invalidatePortalReadCaches();
         return;
     }
 
@@ -812,7 +785,6 @@ const updateStatementTransaction = async ({ subaccount, actorUserId, transaction
             transactionId
         ]
     );
-    invalidatePortalReadCaches();
 };
 
 const deleteStatementTransaction = async ({ subaccount, actorUserId, transactionId }) => {
@@ -835,7 +807,6 @@ const deleteStatementTransaction = async ({ subaccount, actorUserId, transaction
             `,
             [actorUserId || null, transactionId]
         );
-        invalidatePortalReadCaches();
         return;
     }
 
@@ -849,7 +820,6 @@ const deleteStatementTransaction = async ({ subaccount, actorUserId, transaction
         `,
         [actorUserId || null, transactionId]
     );
-    invalidatePortalReadCaches();
 };
 
 const createManualTransaction = async ({ subaccount, actorUserId, payload }) => {
@@ -891,7 +861,7 @@ const createManualTransaction = async ({ subaccount, actorUserId, payload }) => 
             actorUserId || null
         ]
     );
-    invalidatePortalReadCaches();
+
     return { id: result.insertId };
 };
 
@@ -945,7 +915,6 @@ const updateManualTransaction = async ({ subaccount, actorUserId, transactionId,
             subaccount.id
         ]
     );
-    invalidatePortalReadCaches();
 };
 
 const deleteManualTransaction = async ({ subaccount, transactionId }) => {
@@ -958,7 +927,6 @@ const deleteManualTransaction = async ({ subaccount, transactionId }) => {
         error.status = 404;
         throw error;
     }
-    invalidatePortalReadCaches();
 };
 
 const setTransactionVisibility = async ({ subaccount, transactionId, poolName, visibleInMaster, visibleInViewOnly }) => {
@@ -977,7 +945,6 @@ const setTransactionVisibility = async ({ subaccount, transactionId, poolName, v
             error.status = 404;
             throw error;
         }
-        invalidatePortalReadCaches();
         return;
     }
 
@@ -999,7 +966,6 @@ const setTransactionVisibility = async ({ subaccount, transactionId, poolName, v
             `,
             [visibleInMaster, visibleInViewOnly, transactionId]
         );
-        invalidatePortalReadCaches();
         return;
     }
 
@@ -1012,7 +978,6 @@ const setTransactionVisibility = async ({ subaccount, transactionId, poolName, v
         `,
         [visibleInMaster, visibleInViewOnly, transactionId]
     );
-    invalidatePortalReadCaches();
 };
 
 const setTransactionBadgeLabel = async ({ subaccount, transactionId, poolName, badgeLabel, actorUserId }) => {
@@ -1154,7 +1119,6 @@ const moveStatementTransaction = async ({ source, transactionId, targetSubaccoun
             `,
             [targetSubaccount.id, sanitizeBadgeLabel(badgeLabel) || 'added', actorUserId || null, transactionId]
         );
-        invalidatePortalReadCaches();
         return targetSubaccount;
     }
 
@@ -1177,7 +1141,6 @@ const moveStatementTransaction = async ({ source, transactionId, targetSubaccoun
         `,
         [targetSubaccount.id, sanitizeBadgeLabel(badgeLabel) || 'added', actorUserId || null, transactionId]
     );
-    invalidatePortalReadCaches();
     return targetSubaccount;
 };
 

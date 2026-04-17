@@ -399,11 +399,12 @@ exports.getTrkbitTransactionsForTransfer = async (req, res) => {
         }
         const baseQuery = `
             FROM trkbit_transactions tt
+            LEFT JOIN subaccounts owner_sub ON owner_sub.chave_pix = tt.tx_pix_key
             WHERE (
-                tt.display_subaccount_id IS NULL
-                OR tt.display_subaccount_id <> ?
+                COALESCE(tt.display_subaccount_id, owner_sub.id) IS NULL
+                OR COALESCE(tt.display_subaccount_id, owner_sub.id) <> ?
             )
-              AND (tt.sync_control_state IS NULL OR tt.sync_control_state IN ('normal', 'blocked'))
+              AND tt.sync_control_state <> 'hidden'
         `;
         let query = baseQuery;
         const params = [subaccount.id];

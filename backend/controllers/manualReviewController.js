@@ -1,6 +1,5 @@
 const pool = require('../config/db');
 const whatsappService = require('../services/whatsappService');
-const { invalidateInvoiceReadCaches } = require('../services/readCacheService');
 
 exports.getPendingInvoices = async (req, res) => {
     try {
@@ -111,7 +110,6 @@ exports.confirmInvoice = async (req, res) => {
 
         await connection.commit();
         whatsappService.sendManualConfirmation(messageId);
-        invalidateInvoiceReadCaches({ recipientNames: false });
         
         if (io) {
             io.emit('manual:refresh');
@@ -140,7 +138,6 @@ exports.rejectInvoice = async (req, res) => {
         await pool.query('UPDATE forwarded_invoices SET is_confirmed = 2 WHERE original_message_id = ?', [messageId]);
         await pool.query('UPDATE invoices SET is_deleted = 1 WHERE message_id = ?', [messageId]);
         whatsappService.sendManualRejection(messageId);
-        invalidateInvoiceReadCaches({ recipientNames: false });
         if (io) {
             io.emit('manual:refresh');
             io.emit('invoices:updated');
@@ -194,7 +191,7 @@ exports.getCandidateInvoices = async (req, res) => {
                 (fi.is_confirmed = 0 OR fi.original_message_id IS NULL)
                 AND i.is_deleted = 0
                 AND i.linked_transaction_id IS NULL
-                AND i.amount_decimal BETWEEN ? AND ?
+                AND CAST(REPLACE(i.amount, ',', '') AS DECIMAL(20, 2)) BETWEEN ? AND ?
                 ${safeRecipientPrefix ? 'AND LOWER(i.recipient_name) LIKE ?' : ''}
             ORDER BY i.received_at DESC;
         `;

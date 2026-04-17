@@ -4,133 +4,49 @@ const path = require('path');
 const fs = require('fs');
 const { parseFormattedCurrency } = require('../utils/currencyParser');
 const { parsePagination, buildPaginationMeta } = require('../utils/pagination');
-const {
-    normalizeExactAmountInput,
-    toInvoiceAmountDecimal,
-    toStoredInvoiceAmount,
-    buildUtcRangeFromSaoPauloInput
-} = require('../utils/invoiceQueryUtils');
-const {
-    getCachedInvoiceRecipientNames,
-    getCachedInvoiceQuery,
-    invalidateInvoiceReadCaches
-} = require('../services/readCacheService');
 
-const parseInvoiceTimestampInput = (value) => {
-    if (!value) return null;
-    const normalized = String(value).trim().replace(' ', 'T');
-    const saoPauloDate = new Date(`${normalized}-03:00`);
-    if (!Number.isNaN(saoPauloDate.getTime())) {
-        return saoPauloDate;
-    }
-    const fallback = new Date(value);
-    return Number.isNaN(fallback.getTime()) ? null : fallback;
-};
+// ... (getAllInvoices, getBusinessDay, exportInvoices, getRecipientNames REMAIN UNCHANGED) ...
 
-const parseArrayFilter = (value) => {
-    if (Array.isArray(value)) {
-        return value.filter(Boolean);
-    }
-    if (typeof value === 'string') {
-        return value
-            .split(',')
-            .map((entry) => entry.trim())
-            .filter(Boolean);
-    }
-    return [];
-};
+// ... existing imports and previous functions ...
 
-const buildInvoiceWhereClause = (filters) => {
-    const queryParts = ['WHERE 1=1'];
-    const params = [];
-    applyInvoiceFilters({ queryParts, params, filters });
-    return {
-        whereSql: queryParts.join(' '),
-        params
-    };
-};
+const NORMALIZED_AMOUNT_SQL = `
+    CAST(
+        CASE
+            WHEN REPLACE(i.amount, ' ', '') REGEXP '^[0-9]{1,3}(,[0-9]{3})+\\.[0-9]+$'
+                THEN REPLACE(REPLACE(i.amount, ' ', ''), ',', '')
+            WHEN REPLACE(i.amount, ' ', '') REGEXP '^[0-9]{1,3}(\\.[0-9]{3})+,[0-9]+$'
+                THEN REPLACE(REPLACE(REPLACE(i.amount, ' ', ''), '.', ''), ',', '.')
+            WHEN REPLACE(i.amount, ' ', '') REGEXP '^[0-9]{1,3}(,[0-9]{3})+$'
+                THEN REPLACE(REPLACE(i.amount, ' ', ''), ',', '')
+            WHEN REPLACE(i.amount, ' ', '') REGEXP '^[0-9]{1,3}(\\.[0-9]{3})+$'
+                THEN REPLACE(REPLACE(i.amount, ' ', ''), '.', '')
+            WHEN REPLACE(i.amount, ' ', '') REGEXP '^[0-9]+,[0-9]+$'
+                THEN REPLACE(REPLACE(i.amount, ' ', ''), ',', '.')
+            ELSE REPLACE(i.amount, ' ', '')
+        END AS DECIMAL(20, 2)
+    )
+`;
 
-const buildInvoiceListCacheKey = ({ sortOrder, filters, pagination }) => JSON.stringify({
-    sortOrder,
-    filters: {
-        ...filters,
-        sourceGroups: parseArrayFilter(filters.sourceGroups),
-        recipientNames: parseArrayFilter(filters.recipientNames)
-    },
-    pagination: {
-        isAll: pagination.isAll,
-        limit: pagination.limitValue,
-        offset: pagination.offset
-    }
-});
+const normalizeExactAmountInput = (rawValue) => {
+    if (rawValue === undefined || rawValue === null) return { isEmpty: true, value: null };
+    const trimmed = String(rawValue).trim();
+    if (!trimmed) return { isEmpty: true, value: null };
 
-const applyInvoiceFilters = ({ queryParts, params, filters }) => {
-    const {
-        search,
-        dateFrom,
-        dateTo,
-        timeFrom,
-        timeTo,
-        sourceGroups,
-        recipientNames,
-        reviewStatus,
-        status,
-        amountExact
-    } = filters;
-
-    if (search) {
-        queryParts.push('AND (i.transaction_id LIKE ? OR i.sender_name LIKE ? OR i.recipient_name LIKE ? OR i.pix_key LIKE ? OR i.notes LIKE ?)');
-        const searchTerm = `%${search}%`;
-        params.push(searchTerm, searchTerm, searchTerm, searchTerm, searchTerm);
+    // Accepted:
+    // 1500      -> 1500.00
+    // 1500.5    -> 1500.50
+    // 1500.55   -> 1500.55
+    // 1500.     -> 1500.00
+    if (!/^\d+(?:\.\d{0,2})?$/.test(trimmed)) {
+        return { isEmpty: false, isValid: false, value: null };
     }
 
-    const normalizedAmountFilter = normalizeExactAmountInput(amountExact);
-    if (!normalizedAmountFilter.isEmpty) {
-        if (normalizedAmountFilter.isValid) {
-            queryParts.push('AND i.amount_decimal = ?');
-            params.push(normalizedAmountFilter.value);
-        } else {
-            queryParts.push('AND 1 = 0');
-        }
+    const numeric = Number.parseFloat(trimmed);
+    if (!Number.isFinite(numeric)) {
+        return { isEmpty: false, isValid: false, value: null };
     }
 
-    const { utcStart, utcEnd } = buildUtcRangeFromSaoPauloInput({ dateFrom, dateTo, timeFrom, timeTo });
-    if (utcStart) {
-        queryParts.push('AND i.received_at >= ?');
-        params.push(utcStart);
-    }
-    if (utcEnd) {
-        queryParts.push('AND i.received_at <= ?');
-        params.push(utcEnd);
-    }
-
-    const sourceGroupList = parseArrayFilter(sourceGroups);
-    if (sourceGroupList.length > 0) {
-        queryParts.push('AND i.source_group_jid IN (?)');
-        params.push(sourceGroupList);
-    }
-
-    const recipientList = parseArrayFilter(recipientNames);
-    if (recipientList.length > 0) {
-        queryParts.push('AND i.recipient_name IN (?)');
-        params.push(recipientList);
-    }
-
-    const reviewCondition = "(i.sender_name IS NULL OR i.sender_name = '' OR i.recipient_name IS NULL OR i.recipient_name = '' OR i.amount IS NULL OR i.amount = '0.00')";
-    if (reviewStatus === 'only_review') {
-        queryParts.push(`AND ${reviewCondition}`);
-    } else if (reviewStatus === 'hide_review') {
-        queryParts.push(`AND NOT ${reviewCondition}`);
-    }
-
-    if (status === 'only_deleted') {
-        queryParts.push('AND i.is_deleted = 1');
-    } else if (status === 'only_duplicates') {
-        queryParts.push("AND i.transaction_id IS NOT NULL AND i.transaction_id != ''");
-        queryParts.push('AND i.id NOT IN (SELECT MIN(id) FROM invoices WHERE transaction_id IS NOT NULL AND transaction_id != \'\' GROUP BY transaction_id, amount)');
-    } else if (status !== 'only_deleted') {
-        queryParts.push('AND i.is_deleted = 0');
-    }
+    return { isEmpty: false, isValid: true, value: numeric.toFixed(2) };
 };
 
 exports.createInvoice = async (req, res) => {
@@ -144,18 +60,16 @@ exports.createInvoice = async (req, res) => {
         return res.status(400).json({ message: "A timestamp (received_at) is required for all new entries." });
     }
     
-    const receivedAt = parseInvoiceTimestampInput(received_at);
-    const amountValue = toStoredInvoiceAmount(amount);
-    const amountDecimal = toInvoiceAmountDecimal(amount);
+    const receivedAt = new Date(received_at);
+    const amountValue = (amount === null || amount === undefined || amount === '') ? '0.00' : amount;
 
     try {
         const [result] = await pool.query(
             `INSERT INTO invoices 
-            (amount, amount_decimal, notes, received_at, is_manual, sender_name, recipient_name, transaction_id, pix_key, source_group_jid) 
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            (amount, notes, received_at, is_manual, sender_name, recipient_name, transaction_id, pix_key, source_group_jid) 
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
                 amountValue, 
-                amountDecimal,
                 notes, 
                 receivedAt, 
                 true, 
@@ -175,7 +89,6 @@ exports.createInvoice = async (req, res) => {
         } catch (socketError) {
             console.error('[SOCKET-WARN] Failed to emit update event:', socketError.message);
         }
-        invalidateInvoiceReadCaches();
 
         res.status(201).json({ message: 'Invoice created successfully', id: result.insertId });
     } catch (error) {
@@ -191,15 +104,14 @@ exports.updateInvoice = async (req, res) => {
         notes, received_at, is_deleted, source_group_jid // <--- NEW PARAMETER
     } = req.body;
 
-    const newTimestamp = received_at ? parseInvoiceTimestampInput(received_at) : null;
-    const amountValue = toStoredInvoiceAmount(amount);
-    const amountDecimal = toInvoiceAmountDecimal(amount);
+    const newTimestamp = received_at ? new Date(received_at) : null;
+    const amountValue = (amount === null || amount === undefined || amount === '') ? '0.00' : amount;
 
     try {
         await pool.query(
             `UPDATE invoices SET 
                 transaction_id = ?, sender_name = ?, recipient_name = ?, pix_key = ?, 
-                amount = ?, amount_decimal = ?, notes = ?, received_at = ?, is_deleted = ?, source_group_jid = ?
+                amount = ?, notes = ?, received_at = ?, is_deleted = ?, source_group_jid = ?
             WHERE id = ?`,
             [
                 transaction_id, 
@@ -207,7 +119,6 @@ exports.updateInvoice = async (req, res) => {
                 recipient_name, 
                 pix_key, 
                 amountValue, 
-                amountDecimal,
                 notes, 
                 newTimestamp, 
                 !!is_deleted, 
@@ -224,7 +135,6 @@ exports.updateInvoice = async (req, res) => {
         } catch (socketError) {
             console.error('[SOCKET-WARN] Failed to emit update event:', socketError.message);
         }
-        invalidateInvoiceReadCaches();
 
         res.json({ message: 'Invoice updated successfully.' });
     } catch (error) {
@@ -245,7 +155,6 @@ exports.deleteInvoice = async (req, res) => {
         } catch (socketError) {
             console.error('[SOCKET-WARN] Failed to emit update event:', socketError.message);
         }
-        invalidateInvoiceReadCaches();
 
         res.status(204).send();
     } catch (error) {
@@ -262,103 +171,97 @@ exports.getAllInvoices = async (req, res) => {
         sourceGroups, recipientNames, reviewStatus, status, amountExact,
     } = req.query;
     const pagination = parsePagination(req.query, { defaultLimit: 50 });
-    const filters = { search, dateFrom, dateTo, timeFrom, timeTo, sourceGroups, recipientNames, reviewStatus, status, amountExact };
-    const { whereSql, params } = buildInvoiceWhereClause(filters);
-    const direction = sortOrder === 'asc' ? 'ASC' : 'DESC';
-    const cacheKey = buildInvoiceListCacheKey({
-        sortOrder: direction,
-        filters,
-        pagination
-    });
+
+    let query = `
+        FROM invoices i
+        LEFT JOIN whatsapp_groups wg ON i.source_group_jid = wg.group_jid
+        WHERE 1=1
+    `;
+    const params = [];
+
+    if (search) {
+        query += ` AND (i.transaction_id LIKE ? OR i.sender_name LIKE ? OR i.recipient_name LIKE ? OR i.pix_key LIKE ? OR i.notes LIKE ?)`;
+        const searchTerm = `%${search}%`;
+        params.push(searchTerm, searchTerm, searchTerm, searchTerm, searchTerm);
+    }
+
+    const normalizedAmountFilter = normalizeExactAmountInput(amountExact);
+    if (!normalizedAmountFilter.isEmpty) {
+        if (normalizedAmountFilter.isValid) {
+            query += ` AND ${NORMALIZED_AMOUNT_SQL} = ?`;
+            params.push(normalizedAmountFilter.value);
+        } else {
+            query += ' AND 1 = 0';
+        }
+    }
+    
+    if (dateFrom) {
+        const startDateTime = `${dateFrom} ${timeFrom || '00:00:00'}`;
+        query += ' AND CONVERT_TZ(i.received_at, "+00:00", "-03:00") >= ?';
+        params.push(startDateTime);
+    }
+    if (dateTo) {
+        const endDateTime = `${dateTo} ${timeTo || '23:59:59'}`;
+        query += ' AND CONVERT_TZ(i.received_at, "+00:00", "-03:00") <= ?';
+        params.push(endDateTime);
+    }
+
+    if (sourceGroups && sourceGroups.length > 0) {
+        query += ` AND i.source_group_jid IN (?)`;
+        params.push(Array.isArray(sourceGroups) ? sourceGroups : [sourceGroups]);
+    }
+    if (recipientNames && recipientNames.length > 0) {
+        query += ` AND i.recipient_name IN (?)`;
+        params.push(Array.isArray(recipientNames) ? recipientNames : [recipientNames]);
+    }
+    
+    const reviewCondition = "(i.sender_name IS NULL OR i.sender_name = '' OR i.recipient_name IS NULL OR i.recipient_name = '' OR i.amount IS NULL OR i.amount = '0.00')";
+    if (reviewStatus === 'only_review') {
+        query += ` AND ${reviewCondition}`;
+    } else if (reviewStatus === 'hide_review') {
+        query += ` AND NOT ${reviewCondition}`;
+    }
+
+    if (status === 'only_deleted') {
+        query += ' AND i.is_deleted = 1';
+    } else if (status === 'only_duplicates') {
+        query += ` AND i.transaction_id IS NOT NULL AND i.transaction_id != '' AND i.id NOT IN (SELECT MIN(id) FROM invoices WHERE transaction_id IS NOT NULL AND transaction_id != '' GROUP BY transaction_id, amount)`;
+    } else {
+        if (status !== 'only_deleted') {
+            query += ' AND i.is_deleted = 0';
+        }
+    }
+
+    const orderByClause = `i.received_at ${sortOrder === 'asc' ? 'ASC' : 'DESC'}`;
 
     try {
-        const payload = await getCachedInvoiceQuery(['invoice-list', cacheKey], async () => {
-            const countQuery = `SELECT COUNT(*) AS total FROM invoices i ${whereSql}`;
-            const [[{ total }]] = await pool.query(countQuery, params);
+        const countQuery = `SELECT count(*) as total ${query}`;
+        const [[{ total }]] = await pool.query(countQuery, params);
 
-            let invoices = [];
-            if (pagination.isAll) {
-                const [rows] = await pool.query(
-                    `
-                        SELECT 
-                            i.id,
-                            i.message_id,
-                            i.received_at,
-                            i.transaction_id,
-                            i.sender_name,
-                            i.recipient_name,
-                            i.pix_key,
-                            i.amount,
-                            i.notes,
-                            i.source_group_jid,
-                            i.media_path,
-                            i.is_deleted,
-                            i.is_manual,
-                            i.linked_transaction_id,
-                            i.linked_transaction_source,
-                            wg.group_name AS source_group_name
-                        FROM invoices i
-                        LEFT JOIN whatsapp_groups wg ON i.source_group_jid = wg.group_jid
-                        ${whereSql}
-                        ORDER BY i.received_at ${direction}, i.id ${direction}
-                    `,
-                    params
-                );
-                invoices = rows;
-            } else {
-                const [pageIds] = await pool.query(
-                    `
-                        SELECT i.id, i.received_at
-                        FROM invoices i
-                        ${whereSql}
-                        ORDER BY i.received_at ${direction}, i.id ${direction}
-                        LIMIT ? OFFSET ?
-                    `,
-                    [...params, pagination.limitValue, pagination.offset]
-                );
+        // === MODIFIED: Select the new columns ===
+        const dataQuery = `
+            SELECT 
+                i.*, 
+                wg.group_name as source_group_name,
+                i.linked_transaction_id,
+                i.linked_transaction_source
+            ${query}
+            ORDER BY ${orderByClause}, i.id ${sortOrder === 'asc' ? 'ASC' : 'DESC'}
+        `;
+        // =====================================
+        const finalParams = [...params];
+        let finalDataQuery = dataQuery;
+        if (!pagination.isAll) {
+            finalDataQuery += ' LIMIT ? OFFSET ?';
+            finalParams.push(pagination.limitValue, pagination.offset);
+        }
 
-                if (pageIds.length > 0) {
-                    const invoiceIds = pageIds.map((row) => row.id);
-                    const [rows] = await pool.query(
-                        `
-                            SELECT 
-                                i.id,
-                                i.message_id,
-                                i.received_at,
-                                i.transaction_id,
-                                i.sender_name,
-                                i.recipient_name,
-                                i.pix_key,
-                                i.amount,
-                                i.notes,
-                                i.source_group_jid,
-                                i.media_path,
-                                i.is_deleted,
-                                i.is_manual,
-                                i.linked_transaction_id,
-                                i.linked_transaction_source,
-                                wg.group_name AS source_group_name
-                            FROM invoices i
-                            LEFT JOIN whatsapp_groups wg ON i.source_group_jid = wg.group_jid
-                            WHERE i.id IN (?)
-                        `,
-                        [invoiceIds]
-                    );
-
-                    const rowMap = new Map(rows.map((row) => [row.id, row]));
-                    invoices = pageIds
-                        .map((pageRow) => rowMap.get(pageRow.id))
-                        .filter(Boolean);
-                }
-            }
-
-            return {
-                invoices,
-                ...buildPaginationMeta(total, pagination)
-            };
+        const [invoices] = await pool.query(finalDataQuery, finalParams);
+        
+        res.json({
+            invoices,
+            ...buildPaginationMeta(total, pagination)
         });
-
-        res.json(payload);
     } catch (error) {
         console.error('[ERROR] Failed to fetch invoices:', error);
         res.status(500).json({ message: 'Failed to fetch invoices.' });
@@ -386,54 +289,98 @@ exports.exportInvoices = async (req, res) => {
         sourceGroups, recipientNames, reviewStatus, status, amountExact,
     } = req.query;
 
-    const queryParts = [
-        'SELECT',
-        "CONVERT_TZ(i.received_at, '+00:00', '-03:00') AS received_at,",
-        'i.transaction_id,',
-        'i.sender_name,',
-        'i.recipient_name,',
-        'wg.group_name as source_group_name,',
-        'i.amount',
-        'FROM invoices i',
-        'LEFT JOIN whatsapp_groups wg ON i.source_group_jid = wg.group_jid',
-        'WHERE 1=1'
-    ];
+    let query = `
+        SELECT 
+            CONVERT_TZ(i.received_at, '+00:00', '-03:00') AS received_at, 
+            i.transaction_id, 
+            i.sender_name, 
+            i.recipient_name, 
+            wg.group_name as source_group_name, 
+            i.amount
+        FROM invoices i
+        LEFT JOIN whatsapp_groups wg ON i.source_group_jid = wg.group_jid
+        WHERE 1=1
+    `;
     
     const params = [];
-    applyInvoiceFilters({
-        queryParts,
-        params,
-        filters: { search, dateFrom, dateTo, timeFrom, timeTo, sourceGroups, recipientNames, reviewStatus, status: '', amountExact }
-    });
 
+    // Apply identical filtering logic from getAllInvoices
+    if (search) {
+        query += ` AND (i.transaction_id LIKE ? OR i.sender_name LIKE ? OR i.recipient_name LIKE ? OR i.pix_key LIKE ? OR i.notes LIKE ?)`;
+        const searchTerm = `%${search}%`;
+        params.push(searchTerm, searchTerm, searchTerm, searchTerm, searchTerm);
+    }
+
+    const normalizedAmountFilter = normalizeExactAmountInput(amountExact);
+    if (!normalizedAmountFilter.isEmpty) {
+        if (normalizedAmountFilter.isValid) {
+            query += ` AND ${NORMALIZED_AMOUNT_SQL} = ?`;
+            params.push(normalizedAmountFilter.value);
+        } else {
+            query += ' AND 1 = 0';
+        }
+    }
+    
+    if (dateFrom) {
+        const startDateTime = `${dateFrom} ${timeFrom || '00:00:00'}`;
+        query += ' AND CONVERT_TZ(i.received_at, "+00:00", "-03:00") >= ?';
+        params.push(startDateTime);
+    }
+    if (dateTo) {
+        const endDateTime = `${dateTo} ${timeTo || '23:59:59'}`;
+        query += ' AND CONVERT_TZ(i.received_at, "+00:00", "-03:00") <= ?';
+        params.push(endDateTime);
+    }
+
+    if (sourceGroups && typeof sourceGroups === 'string' && sourceGroups.length > 0) {
+        query += ` AND i.source_group_jid IN (?)`;
+        params.push(sourceGroups.split(','));
+    }
+    if (recipientNames && typeof recipientNames === 'string' && recipientNames.length > 0) {
+        query += ` AND i.recipient_name IN (?)`;
+        params.push(recipientNames.split(','));
+    }
+    
+    const reviewCondition = "(i.sender_name IS NULL OR i.sender_name = '' OR i.recipient_name IS NULL OR i.recipient_name = '' OR i.amount IS NULL OR i.amount = '0.00')";
+    if (reviewStatus === 'only_review') {
+        query += ` AND ${reviewCondition}`;
+    } else if (reviewStatus === 'hide_review') {
+        query += ` AND NOT ${reviewCondition}`;
+    }
+
+    // === FIX START: Logic updated to be aware of the is_deleted flag ===
     if (status === 'only_deleted') {
-        queryParts.push('AND i.is_deleted = 1');
+        query += ' AND i.is_deleted = 1';
     } else if (status === 'only_duplicates') {
-        queryParts.push('AND i.is_deleted = 0');
-        queryParts.push("AND i.transaction_id IS NOT NULL AND i.transaction_id != ''");
-        queryParts.push(`AND i.id NOT IN (
+        // Show ONLY the copies (not the first one), among non-deleted invoices.
+        query += ` AND i.is_deleted = 0 AND i.transaction_id IS NOT NULL AND i.transaction_id != '' AND i.id NOT IN (
             SELECT min_id FROM (
-                SELECT MIN(id) as min_id
-                FROM invoices
-                WHERE transaction_id IS NOT NULL AND transaction_id != '' AND is_deleted = 0
+                SELECT MIN(id) as min_id 
+                FROM invoices 
+                WHERE transaction_id IS NOT NULL AND transaction_id != '' AND is_deleted = 0 
                 GROUP BY transaction_id, amount
             ) as t
-        )`);
+        )`;
     } else {
-        queryParts.push(`AND i.is_deleted = 0 AND (
-            (i.transaction_id IS NULL OR i.transaction_id = '')
-            OR i.id IN (
+        // DEFAULT BEHAVIOR: Show all non-deleted invoices, but only the FIRST instance (MIN id) for any given transaction_id.
+        query += ` AND i.is_deleted = 0 AND (
+            -- Condition 1: Include all invoices that DO NOT have a transaction ID
+            (i.transaction_id IS NULL OR i.transaction_id = '') 
+            OR 
+            -- Condition 2: For invoices with a transaction ID, only include the one with the smallest ID from the NON-DELETED set.
+            i.id IN (
                 SELECT min_id FROM (
-                    SELECT MIN(id) as min_id
-                    FROM invoices
-                    WHERE transaction_id IS NOT NULL AND transaction_id != '' AND is_deleted = 0
+                    SELECT MIN(id) as min_id 
+                    FROM invoices 
+                    WHERE transaction_id IS NOT NULL AND transaction_id != '' AND is_deleted = 0 
                     GROUP BY transaction_id, amount
                 ) as t
             )
-        )`);
+        )`;
     }
-    queryParts.push('ORDER BY i.received_at ASC');
-    const query = queryParts.join(' ');
+    // === FIX END ===
+    
+    query += ' ORDER BY i.received_at ASC';
 
     try {
         const [invoicesFromDb] = await pool.query(query, params);
@@ -494,14 +441,10 @@ exports.exportInvoices = async (req, res) => {
 
 exports.getRecipientNames = async (req, res) => {
     try {
-        const recipientNames = await getCachedInvoiceRecipientNames(async () => {
-            const [recipients] = await pool.query(
-                "SELECT DISTINCT recipient_name FROM invoices WHERE recipient_name IS NOT NULL AND recipient_name != '' ORDER BY recipient_name ASC"
-            );
-            return recipients.map((row) => row.recipient_name);
-        });
-        res.setHeader('Cache-Control', 'private, max-age=60');
-        res.json(recipientNames);
+        const [recipients] = await pool.query(
+            "SELECT DISTINCT recipient_name FROM invoices WHERE recipient_name IS NOT NULL AND recipient_name != '' ORDER BY recipient_name ASC"
+        );
+        res.json(recipients.map(r => r.recipient_name));
     } catch (error) {
         console.error('[ERROR] Failed to fetch recipient names:', error);
         res.status(500).json({ message: 'Failed to fetch recipient names.' });

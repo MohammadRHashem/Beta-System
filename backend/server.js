@@ -20,8 +20,6 @@ const manualReviewController = require('./controllers/manualReviewController');
 
 const app = express();
 const server = http.createServer(app);
-app.disable('x-powered-by');
-app.set('etag', 'strong');
 
 const fallbackCorsOrigins = [
     'https://platform.betaserver.dev',
@@ -107,10 +105,7 @@ const abbreviationUpload = multer({
 // --- ROUTE DEFINITIONS ---
 
 // Serve uploaded files for frontend previews
-app.use('/uploads/broadcasts', express.static(broadcastUploadsDir, {
-    etag: true,
-    maxAge: '5m'
-}));
+app.use('/uploads/broadcasts', express.static(broadcastUploadsDir));
 
 // 1. Public Portal Routes (Login)
 // We will now handle the login route directly here for clarity.
@@ -143,12 +138,8 @@ app.use('/api', (req, res, next) => {
 // --- Static Frontend Hosting ---
 const frontendPath = path.join(__dirname, '..', 'frontend', 'dist');
 if (fs.existsSync(frontendPath)) {
-    app.use(express.static(frontendPath, {
-        etag: true,
-        maxAge: '1h'
-    }));
+    app.use(express.static(frontendPath));
     app.get('*', (req, res) => {
-        res.setHeader('Cache-Control', 'no-cache');
         res.sendFile(path.resolve(frontendPath, 'index.html'));
     });
 }

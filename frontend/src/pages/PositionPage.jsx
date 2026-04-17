@@ -15,24 +15,6 @@ import { FaPlus, FaSyncAlt } from 'react-icons/fa';
 
 const getTodayDateValue = () => new Date().toISOString().split('T')[0];
 
-const runWithConcurrency = async (items, concurrency, worker) => {
-    const safeConcurrency = Math.max(1, Number(concurrency) || 1);
-    const queue = [...items];
-
-    const runners = Array.from(
-        { length: Math.min(safeConcurrency, queue.length) },
-        async () => {
-            while (queue.length) {
-                const nextItem = queue.shift();
-                if (!nextItem) return;
-                await worker(nextItem);
-            }
-        }
-    );
-
-    await Promise.all(runners);
-};
-
 const PageContainer = styled.div`
     display: flex;
     flex-direction: column;
@@ -215,7 +197,7 @@ const PositionPage = () => {
 
         setRefreshingAll(true);
         try {
-            await runWithConcurrency(rows, 3, (counter) => refreshCounter(counter.id));
+            await Promise.all(rows.map((counter) => refreshCounter(counter.id)));
         } finally {
             setRefreshingAll(false);
         }

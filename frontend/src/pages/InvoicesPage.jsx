@@ -25,47 +25,6 @@ const useDebounce = (value, delay) => {
   return debouncedValue;
 };
 
-const RECIPIENT_CACHE_KEY = "invoiceRecipientNamesCache:v1";
-const RECIPIENT_CACHE_TTL_MS = 60 * 1000;
-
-const readRecipientCache = () => {
-  try {
-    const raw = sessionStorage.getItem(RECIPIENT_CACHE_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw);
-    if (!parsed || !Array.isArray(parsed.values) || Number(parsed.expiresAt || 0) < Date.now()) {
-      sessionStorage.removeItem(RECIPIENT_CACHE_KEY);
-      return null;
-    }
-    return parsed.values;
-  } catch (_error) {
-    sessionStorage.removeItem(RECIPIENT_CACHE_KEY);
-    return null;
-  }
-};
-
-const writeRecipientCache = (values) => {
-  try {
-    sessionStorage.setItem(
-      RECIPIENT_CACHE_KEY,
-      JSON.stringify({
-        values,
-        expiresAt: Date.now() + RECIPIENT_CACHE_TTL_MS,
-      }),
-    );
-  } catch (_error) {
-    // Ignore storage failures.
-  }
-};
-
-const clearRecipientCache = () => {
-  try {
-    sessionStorage.removeItem(RECIPIENT_CACHE_KEY);
-  } catch (_error) {
-    // Ignore storage failures.
-  }
-};
-
 const PageContainer = styled.div`
   height: 100%;
   min-height: 0;
@@ -240,23 +199,9 @@ const InvoicesPage = ({ allGroups }) => {
 
   useEffect(() => {
     if (!isAuthenticated) return;
-    const cachedRecipientNames = readRecipientCache();
-    if (cachedRecipientNames) {
-      setRecipientNames(cachedRecipientNames);
-      return;
-    }
-
-    const timer = window.setTimeout(() => {
-      getRecipientNames()
-        .then((res) => {
-          const nextRecipientNames = res.data || [];
-          setRecipientNames(nextRecipientNames);
-          writeRecipientCache(nextRecipientNames);
-        })
-        .catch(() => setRecipientNames([]));
-    }, 120);
-
-    return () => window.clearTimeout(timer);
+    getRecipientNames()
+      .then((res) => setRecipientNames(res.data || []))
+      .catch(() => setRecipientNames([]));
   }, [isAuthenticated]);
 
   const handleFilterChange = (nextFiltersOrUpdater) => {
@@ -298,7 +243,6 @@ const InvoicesPage = ({ allGroups }) => {
     if (!window.confirm("Are you sure you want to permanently delete this invoice?")) return;
     try {
       await deleteInvoice(id);
-      clearRecipientCache();
       fetchInvoices();
     } catch (_error) {
       alert("Failed to delete invoice.");
@@ -314,7 +258,6 @@ const InvoicesPage = ({ allGroups }) => {
 
   const handleSaveAndRefresh = () => {
     closeAllModals();
-    clearRecipientCache();
     fetchInvoices();
   };
 
